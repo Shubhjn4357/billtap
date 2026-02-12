@@ -35,7 +35,7 @@ export const useAuth = () => {
         return await authService.googleSignIn(idToken);
     };
 
-    const sendPhoneVerification = async (phoneNumber: string, recaptchaVerifier: any) => {
+    const sendPhoneVerification = async (phoneNumber: string, recaptchaVerifier?: any) => {
         return await authService.sendPhoneVerification(phoneNumber, recaptchaVerifier);
     };
 

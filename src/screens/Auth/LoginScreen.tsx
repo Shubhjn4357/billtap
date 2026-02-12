@@ -1,9 +1,7 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, Image, Alert } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 
@@ -11,7 +9,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { AppButton } from '../../components/common/AppButton';
 import { AppInput } from '../../components/common/AppInput';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
-import { auth } from '../../api/firebaseConfig'; // For recaptcha config
+import { CustomRecaptchaModal, CustomRecaptchaModalRef } from '../../components/auth/CustomRecaptchaModal';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -22,13 +20,14 @@ export const LoginScreen = () => {
     const [verificationCode, setVerificationCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [phoneMode, setPhoneMode] = useState(false);
+
     const [googleRequest, googleResponse, promptAsync] = Google.useAuthRequest({
-        webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com', 
-        androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
-        iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
+        webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+        // androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
+        // iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
     });
 
-    const recaptchaVerifier = React.useRef(null);
+    const recaptchaVerifier = useRef<CustomRecaptchaModalRef>(null);
     const theme = useTheme();
     const router = useRouter();
 
@@ -43,7 +42,12 @@ export const LoginScreen = () => {
         if (!phoneNumber) return Alert.alert('Error', 'Enter phone number');
         setLoading(true);
         try {
-            const vid = await sendPhoneVerification(phoneNumber, recaptchaVerifier.current);
+            // Attempt to use the verifier if available, otherwise pass undefined/null if user claims it's optional
+            const verifier = recaptchaVerifier.current
+                ? { type: 'recaptcha', verify: () => recaptchaVerifier.current!.verify() }
+                : undefined;
+
+            const vid = await sendPhoneVerification(phoneNumber, verifier);
             setVerificationId(vid);
             Alert.alert('Success', 'OTP Sent');
         } catch (e: any) {
@@ -68,10 +72,7 @@ export const LoginScreen = () => {
 
     return (
         <ScreenWrapper style={{ justifyContent: 'center' }}>
-            <FirebaseRecaptchaVerifierModal
-                ref={recaptchaVerifier}
-                firebaseConfig={auth.app.options}
-            />
+            <CustomRecaptchaModal ref={recaptchaVerifier} />
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.form}>
                 <View style={styles.logoContainer}>
@@ -122,9 +123,9 @@ export const LoginScreen = () => {
                         >
                             Sign in with Google
                         </AppButton>
-                        <AppButton 
-                            mode="contained" 
-                            icon="phone" 
+                            <AppButton
+                                mode="contained"
+                                icon="phone"
                             style={{ marginTop: 12 }}
                             onPress={() => setPhoneMode(true)}
                         >

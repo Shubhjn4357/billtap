@@ -25,7 +25,7 @@ export const authService = {
      * @param recaptchaVerifier The reCAPTCHA verifier instance.
      * @returns A Promise resolving to the verification ID.
      */
-    async sendPhoneVerification(phoneNumber: string, recaptchaVerifier: any): Promise<string> {
+    async sendPhoneVerification(phoneNumber: string, recaptchaVerifier?: any): Promise<string> {
         const phoneProvider = new PhoneAuthProvider(auth);
         return await phoneProvider.verifyPhoneNumber(phoneNumber, recaptchaVerifier);
     },
