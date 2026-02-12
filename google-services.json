@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "623333541227",
+    "project_id": "billtap-6c010",
+    "storage_bucket": "billtap-6c010.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:623333541227:android:621e9383bdf3d0e0a1b82e",
+        "android_client_info": {
+          "package_name": "com.autoloop.billtap"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "623333541227-9nptc63mdtuc0f8ab7glst67brt8vh2m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATfRuKNKSzJdXekCKHmyZCY9Uiwi_-FA0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "623333541227-9nptc63mdtuc0f8ab7glst67brt8vh2m.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

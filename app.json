@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "billmap",
-    "slug": "billmap",
+    "name": "billtap",
+    "slug": "billtap",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,9 +13,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "com.autoloop.billtap",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.autoloop.billtap",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
