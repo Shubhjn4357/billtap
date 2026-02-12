@@ -1,6 +1,7 @@
 import { Redirect } from 'expo-router';
 import { useUserStore, useSettingsStore } from '../src/store';
 
+
 export default function Index() {
     const { isAuthenticated } = useUserStore();
     const { hasSeenOnboarding } = useSettingsStore();

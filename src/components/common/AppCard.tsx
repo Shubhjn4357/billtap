@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { Card, CardProps } from 'react-native-paper';
+import { Card } from 'react-native-paper';
 import { StyleProp, ViewStyle } from 'react-native';
 
 type AppCardProps = React.ComponentProps<typeof Card> & {
