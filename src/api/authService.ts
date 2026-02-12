@@ -1,10 +1,10 @@
-
 import { 
     GoogleAuthProvider, 
     PhoneAuthProvider, 
     signInWithCredential, 
     signOut as firebaseSignOut,
-    User
+    User,
+    ApplicationVerifier
 } from 'firebase/auth';
 import { auth } from './firebaseConfig';
 
@@ -25,7 +25,7 @@ export const authService = {
      * @param recaptchaVerifier The reCAPTCHA verifier instance.
      * @returns A Promise resolving to the verification ID.
      */
-    async sendPhoneVerification(phoneNumber: string, recaptchaVerifier?: any): Promise<string> {
+    async sendPhoneVerification(phoneNumber: string, recaptchaVerifier?: ApplicationVerifier): Promise<string> {
         const phoneProvider = new PhoneAuthProvider(auth);
         return await phoneProvider.verifyPhoneNumber(phoneNumber, recaptchaVerifier);
     },

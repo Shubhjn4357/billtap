@@ -1,6 +1,5 @@
-
-import { useState, useEffect } from 'react';
-import { User, onAuthStateChanged } from 'firebase/auth';
+import { ApplicationVerifier, User, onAuthStateChanged } from 'firebase/auth';
+import { useEffect, useState } from 'react';
 import { authService } from '../api/authService';
 import { auth } from '../api/firebaseConfig';
 import { useUserStore } from '../store';
@@ -29,13 +28,13 @@ export const useAuth = () => {
             setLoading(false);
         });
         return () => unsubscribe();
-    }, []);
+    }, [setLoading, setUser]);
 
     const signInWithGoogle = async (idToken: string) => {
         return await authService.googleSignIn(idToken);
     };
 
-    const sendPhoneVerification = async (phoneNumber: string, recaptchaVerifier?: any) => {
+    const sendPhoneVerification = async (phoneNumber: string, recaptchaVerifier?: ApplicationVerifier) => {
         return await authService.sendPhoneVerification(phoneNumber, recaptchaVerifier);
     };
 

@@ -1,6 +1,7 @@
-import React, { forwardRef, useImperativeHandle, useState, useRef } from 'react';
-import { Modal, StyleSheet, View, ActivityIndicator, TouchableOpacity, Text } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { ApplicationVerifier } from 'firebase/auth';
+import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { auth } from '../../api/firebaseConfig';
 
 interface CustomRecaptchaModalProps {
@@ -8,7 +9,7 @@ interface CustomRecaptchaModalProps {
     cancelLabel?: string;
 }
 
-export interface CustomRecaptchaModalRef {
+export interface CustomRecaptchaModalRef extends ApplicationVerifier {
     verify: () => Promise<string>;
 }
 
@@ -24,17 +25,12 @@ export const CustomRecaptchaModal = forwardRef<CustomRecaptchaModalRef, CustomRe
     // @ts-ignore
     const authDomain = firebaseConfig.authDomain || 'billtap-6c010.firebaseapp.com';
 
-    // We point to the firebase auth handler. 
-    // This URL typically hosts the reCAPTCHA for phone auth flows.
-    // However, without the proper query params and context, it might just show a blank page or 404.
-    // The "expo-firebase-recaptcha" library used a local HTML string with a site key.
-    // Since we don't have the user's specific SITE KEY (it was likely inside the removed library usage or config),
-    // we are exploring if the generic handler works OR if we need a site key.
-    // 
+    // We point to the firebase auth handler.
     // If this fails (blank screen), we need the User to provide a reCAPTCHA v2 / Invisible site key.
     const uri = `https://${authDomain}/__/auth/handler`;
 
     useImperativeHandle(ref, () => ({
+        type: 'recaptcha',
         verify: () => {
             return new Promise((resolve, reject) => {
                 promiseRef.current = { resolve, reject };
@@ -52,7 +48,7 @@ export const CustomRecaptchaModal = forwardRef<CustomRecaptchaModalRef, CustomRe
         }
     };
 
-    const handleMessage = (event: any) => {
+    const handleMessage = (event: WebViewMessageEvent) => {
         const data = event.nativeEvent.data;
         // Check if data looks like a token
         if (data && typeof data === 'string') {
@@ -105,6 +101,8 @@ export const CustomRecaptchaModal = forwardRef<CustomRecaptchaModalRef, CustomRe
         </Modal>
     );
 });
+
+CustomRecaptchaModal.displayName = 'CustomRecaptchaModal';
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },

@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform, Image, Alert } from 'react-native';
-import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
-import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 
-import { useAuth } from '../../hooks/useAuth';
+import * as WebBrowser from 'expo-web-browser';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Image, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Text, useTheme } from 'react-native-paper';
+
+import { CustomRecaptchaModal, CustomRecaptchaModalRef } from '../../components/auth/CustomRecaptchaModal';
 import { AppButton } from '../../components/common/AppButton';
 import { AppInput } from '../../components/common/AppInput';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
-import { CustomRecaptchaModal, CustomRecaptchaModalRef } from '../../components/auth/CustomRecaptchaModal';
+import { useAuth } from '../../hooks/useAuth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -29,25 +29,22 @@ export const LoginScreen = () => {
 
     const recaptchaVerifier = useRef<CustomRecaptchaModalRef>(null);
     const theme = useTheme();
-    const router = useRouter();
+    
 
     useEffect(() => {
         if (googleResponse?.type === 'success') {
             const { id_token } = googleResponse.params;
             signInWithGoogle(id_token).catch(e => Alert.alert('Login Error', e.message));
         }
-    }, [googleResponse]);
+    }, [googleResponse, signInWithGoogle]);
 
     const handleSendVerification = async () => {
         if (!phoneNumber) return Alert.alert('Error', 'Enter phone number');
         setLoading(true);
         try {
             // Attempt to use the verifier if available, otherwise pass undefined/null if user claims it's optional
-            const verifier = recaptchaVerifier.current
-                ? { type: 'recaptcha', verify: () => recaptchaVerifier.current!.verify() }
-                : undefined;
-
-            const vid = await sendPhoneVerification(phoneNumber, verifier);
+            // Attempt to use the verifier if available, otherwise pass undefined/null if user claims it's optional
+            const vid = await sendPhoneVerification(phoneNumber, recaptchaVerifier.current || undefined);
             setVerificationId(vid);
             Alert.alert('Success', 'OTP Sent');
         } catch (e: any) {
