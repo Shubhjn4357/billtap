@@ -1,12 +1,17 @@
 import { Redirect } from 'expo-router';
-import { useUserStore } from '../store';
+import { useUserStore, useSettingsStore } from '../src/store';
 
 export default function Index() {
     const { isAuthenticated } = useUserStore();
+    const { hasSeenOnboarding } = useSettingsStore();
 
-    // If authenticated, _layout handles the logic to go to home or setup
-    // If not, it sends to login.
-    // This index is just a fallback entry
+    if (isAuthenticated) {
+        return <Redirect href="/(tabs)/home" />;
+    }
 
-    return <Redirect href={isAuthenticated ? "/(tabs)/home" : "/login"} />;
+    if (!hasSeenOnboarding) {
+        return <Redirect href="/onboarding" />;
+    }
+
+    return <Redirect href="/login" />;
 }

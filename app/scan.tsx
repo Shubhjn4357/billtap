@@ -1,2 +1,3 @@
-import BarcodeScannerScreen from '../components/screens/stock/BarcodeScannerScreen';
-export default BarcodeScannerScreen;
+
+import ScanScreen from '../src/screens/Stock/ScanScreen';
+export default ScanScreen;

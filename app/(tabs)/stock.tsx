@@ -1,2 +1,3 @@
-import StockListScreen from '../../components/screens/stock/StockListScreen';
+
+import { StockListScreen } from '../../src/screens/Stock/StockListScreen';
 export default StockListScreen;
