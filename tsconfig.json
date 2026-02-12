@@ -6,7 +6,6 @@
     "paths": {
       "@/*": ["./*"],
     },
-    "skipLibCheck": true,
-    "module": "esnext"
+    "skipLibCheck": true
   }
 }
