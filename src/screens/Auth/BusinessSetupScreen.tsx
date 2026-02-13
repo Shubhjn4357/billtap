@@ -1,26 +1,41 @@
 
-import { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { TextInput, Button, Text, useTheme } from 'react-native-paper';
+import { useEffect, useState } from 'react';
+import { StyleSheet, ScrollView, Alert } from 'react-native';
+import { TextInput, Button, Text, List, useTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../../api/firebaseConfig';
-import { useUserStore } from '../../store';
+import { Config } from '../../constants/Config';
+import { BUSINESS_SETUP_TEXT, COMMON_TEXT } from '../../constants/staticText';
+import { normalizeCurrencyCode } from '../../utils/formatters';
+import { useSettingsStore, useUserStore } from '../../store';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 
 export default function BusinessSetupScreen() {
     const { user, setUser } = useUserStore();
+    const { setCurrency } = useSettingsStore();
     const router = useRouter();
     const theme = useTheme();
-    
-    const [businessName, setBusinessName] = useState('');
-    const [address, setAddress] = useState('');
-    const [gst, setGst] = useState('');
+
+    const [businessName, setBusinessName] = useState(user?.businessName ?? '');
+    const [address, setAddress] = useState(user?.address ?? '');
+    const [gst, setGst] = useState(user?.gstNumber ?? '');
+    const [currency, setSelectedCurrency] = useState(
+        normalizeCurrencyCode(user?.currency ?? Config.defaultCurrency)
+    );
     const [loading, setLoading] = useState(false);
 
+    useEffect(() => {
+        if (!user) return;
+        setBusinessName(user.businessName ?? '');
+        setAddress(user.address ?? '');
+        setGst(user.gstNumber ?? '');
+        setSelectedCurrency(normalizeCurrencyCode(user.currency ?? Config.defaultCurrency));
+    }, [user]);
+
     const handleSave = async () => {
-        if (!businessName) {
-            Alert.alert('Required', 'Business Name is required');
+        if (!businessName.trim()) {
+            Alert.alert(COMMON_TEXT.alerts.validation, BUSINESS_SETUP_TEXT.requiredBusinessName);
             return;
         }
 
@@ -30,24 +45,32 @@ export default function BusinessSetupScreen() {
             if (!uid) return;
 
             const updateData = {
-                businessName,
-                address,
-                gstNumber: gst,
-                gstEnabled: !!gst,
-                updatedAt: Date.now()
+                businessName: businessName.trim(),
+                address: address.trim(),
+                gstNumber: gst.trim(),
+                gstEnabled: !!gst.trim(),
+                currency,
+                updatedAt: serverTimestamp(),
             };
 
             await setDoc(doc(db, 'users', uid), updateData, { merge: true });
-            
-            // Update local store
+
             if (user) {
-                setUser({ ...user, ...updateData });
+                setUser({
+                    ...user,
+                    businessName: businessName.trim(),
+                    address: address.trim(),
+                    gstNumber: gst.trim(),
+                    gstEnabled: !!gst.trim(),
+                    currency,
+                });
             }
+            setCurrency(currency);
 
             router.replace('/(tabs)/home');
 
-        } catch (error: any) {
-            Alert.alert('Error', error.message);
+        } catch (error: unknown) {
+            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : BUSINESS_SETUP_TEXT.saveFailed);
         } finally {
             setLoading(false);
         }
@@ -56,13 +79,13 @@ export default function BusinessSetupScreen() {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={styles.container}>
-                <Text variant="headlineMedium" style={{ marginBottom: 20, fontWeight: 'bold' }}>Setup Business</Text>
+                <Text variant="headlineMedium" style={{ marginBottom: 20, fontWeight: 'bold' }}>{BUSINESS_SETUP_TEXT.title}</Text>
                 <Text variant="bodyLarge" style={{ marginBottom: 30, color: theme.colors.secondary }}>
-                    Enter your business details to get started with BillTap.
+                    {BUSINESS_SETUP_TEXT.subtitle}
                 </Text>
 
                 <TextInput
-                    label="Business Name"
+                    label={BUSINESS_SETUP_TEXT.fields.businessName}
                     value={businessName}
                     onChangeText={setBusinessName}
                     mode="outlined"
@@ -70,7 +93,7 @@ export default function BusinessSetupScreen() {
                 />
 
                 <TextInput
-                    label="Business Address"
+                    label={BUSINESS_SETUP_TEXT.fields.businessAddress}
                     value={address}
                     onChangeText={setAddress}
                     mode="outlined"
@@ -80,7 +103,7 @@ export default function BusinessSetupScreen() {
                 />
 
                 <TextInput
-                    label="GST Number (Optional)"
+                    label={BUSINESS_SETUP_TEXT.fields.gstNumber}
                     value={gst}
                     onChangeText={setGst}
                     mode="outlined"
@@ -88,13 +111,32 @@ export default function BusinessSetupScreen() {
                     autoCapitalize="characters"
                 />
 
+                <List.Section>
+                    <List.Subheader>{BUSINESS_SETUP_TEXT.fields.defaultCurrency}</List.Subheader>
+                    <List.Accordion
+                        title={`${currency} - ${Config.supportedCurrencies.find((entry) => entry.code === currency)?.label ?? ''}`}
+                        left={(props) => <List.Icon {...props} icon="cash-multiple" />}
+                    >
+                        {Config.supportedCurrencies.map((entry) => (
+                            <List.Item
+                                key={entry.code}
+                                title={`${entry.code} - ${entry.label}`}
+                                onPress={() => setSelectedCurrency(entry.code)}
+                                right={(props) => (
+                                    entry.code === currency ? <List.Icon {...props} icon="check" /> : null
+                                )}
+                            />
+                        ))}
+                    </List.Accordion>
+                </List.Section>
+
                 <Button 
                     mode="contained" 
                     onPress={handleSave} 
                     loading={loading} 
                     style={styles.button}
                 >
-                    Start Billing
+                    {BUSINESS_SETUP_TEXT.actions.startBilling}
                 </Button>
             </ScrollView>
         </ScreenWrapper>

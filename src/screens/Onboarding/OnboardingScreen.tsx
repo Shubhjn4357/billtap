@@ -1,31 +1,18 @@
 import React, { useRef, useState } from 'react';
-import { View, FlatList, StyleSheet, Dimensions, useWindowDimensions, Animated } from 'react-native';
+import { View, FlatList, StyleSheet, useWindowDimensions, Animated, type ViewToken } from 'react-native';
 import { Text, useTheme, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useSettingsStore } from '../../store';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppButton } from '../../components/common/AppButton';
+import { COMMON_TEXT, ONBOARDING_TEXT } from '../../constants/staticText';
 
-const slides = [
-    {
-        id: '1',
-        title: 'Welcome to BillTap',
-        description: 'Generate professional invoices and manage your billing effortlessly.',
-        icon: 'file-document-outline',
-    },
-    {
-        id: '2',
-        title: 'Manage Inventory',
-        description: 'Keep track of your stock levels in real-time with barcode scanning.',
-        icon: 'package-variant-closed',
-    },
-    {
-        id: '3',
-        title: 'Grow Your Business',
-        description: 'Get actionable insights and reports to scale your operations.',
-        icon: 'chart-line',
-    },
-];
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+const slides = ONBOARDING_TEXT.slides.map((slide) => ({
+    ...slide,
+    icon: slide.icon as IconName,
+}));
 
 const Paginator = ({ data, scrollX }: { data: typeof slides; scrollX: Animated.Value }) => {
     const { width } = useWindowDimensions();
@@ -64,14 +51,14 @@ export const OnboardingScreen = () => {
     const theme = useTheme();
     const router = useRouter();
     const { setHasSeenOnboarding } = useSettingsStore();
-    const { width, height } = useWindowDimensions();
+    const { width } = useWindowDimensions();
     const scrollX = useRef(new Animated.Value(0)).current;
     const slidesRef = useRef<FlatList>(null);
     const [currentIndex, setCurrentIndex] = useState(0);
 
-    const viewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    const viewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems && viewableItems.length > 0) {
-            setCurrentIndex(viewableItems[0].index);
+            setCurrentIndex(viewableItems[0].index ?? 0);
         }
     }).current;
 
@@ -98,7 +85,7 @@ export const OnboardingScreen = () => {
                     renderItem={({ item }) => (
                         <View style={[styles.slide, { width }]}>
                             <MaterialCommunityIcons 
-                                name={item.icon as any} 
+                                name={item.icon}
                                 size={120} 
                                 color={theme.colors.primary} 
                                 style={{ marginBottom: 40 }}
@@ -135,7 +122,7 @@ export const OnboardingScreen = () => {
                         onPress={scrollTo}
                         contentStyle={{ height: 48 }}
                     >
-                        {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
+                        {currentIndex === slides.length - 1 ? COMMON_TEXT.actions.getStarted : COMMON_TEXT.actions.next}
                     </AppButton>
                     
                     {currentIndex < slides.length - 1 && (
@@ -145,7 +132,7 @@ export const OnboardingScreen = () => {
                             style={{ marginTop: 10 }}
                             textColor={theme.colors.secondary}
                         >
-                            Skip
+                            {COMMON_TEXT.actions.skip}
                         </Button>
                     )}
                 </View>

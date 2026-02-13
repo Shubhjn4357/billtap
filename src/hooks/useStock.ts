@@ -1,8 +1,20 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { itemService } from '../api/itemService';
-import { Item } from '../types';
+import type { Item } from '../types';
 import { useAuth } from './useAuth';
+
+type NewStockItem = Omit<Item, 'id' | 'userId' | 'updatedAt' | 'nameLowercase'>;
+type StockItemUpdate = Partial<Omit<Item, 'id' | 'userId' | 'updatedAt'>>;
+
+const getErrorMessage = (error: unknown) => {
+    if (error instanceof Error) return error.message;
+    return 'Something went wrong. Please try again.';
+};
+
+const sortItemsByName = (data: Item[]) => {
+    return [...data].sort((a, b) => a.nameLowercase.localeCompare(b.nameLowercase));
+};
 
 export const useStock = () => {
     const { user } = useAuth();
@@ -12,48 +24,118 @@ export const useStock = () => {
     const [searchQuery, setSearchQuery] = useState('');
 
     const fetchItems = useCallback(async () => {
-        if (!user) return;
+        if (!user) {
+            setItems([]);
+            return;
+        }
         setLoading(true);
         setError(null);
         try {
             const data = await itemService.getUserItems(user.uid);
-            setItems(data);
-        } catch (err: any) {
-            setError(err.message);
+            setItems(sortItemsByName(data));
+        } catch (error: unknown) {
+            setError(getErrorMessage(error));
         } finally {
             setLoading(false);
         }
     }, [user]);
 
-    // Initial fetch when user logs in
     useEffect(() => {
         if (user) {
-            fetchItems();
-        } else {
-            setItems([]);
+            void fetchItems();
+            return;
         }
+        setItems([]);
+        setError(null);
     }, [user, fetchItems]);
 
-    // Local Search filtering
-    const filteredItems = items.filter(item => 
-        item.nameLowercase.includes(searchQuery.toLowerCase()) || 
-        (item.barcode && item.barcode.includes(searchQuery))
-    );
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const filteredItems = useMemo(() => {
+        if (!normalizedSearch) {
+            return items;
+        }
 
-    const addItem = async (item: Omit<Item, 'id' | 'userId' | 'updatedAt' | 'nameLowercase'>) => {
-        if (!user) return;
+        return items.filter((item) =>
+            item.nameLowercase.includes(normalizedSearch) ||
+            (item.barcode && item.barcode.includes(searchQuery.trim()))
+        );
+    }, [items, normalizedSearch, searchQuery]);
+
+    const addItem = async (item: NewStockItem) => {
+        if (!user) throw new Error('You must be logged in to add items.');
+
         setLoading(true);
+        setError(null);
         try {
-            await itemService.addItem({
+            const payload = {
                 ...item,
                 userId: user.uid,
-                nameLowercase: item.name.toLowerCase(),
+                nameLowercase: item.name.trim().toLowerCase(),
                 updatedAt: new Date(),
+            };
+            const id = await itemService.addItem(payload);
+
+            setItems((current) => sortItemsByName([
+                ...current,
+                {
+                    id,
+                    ...payload,
+                },
+            ]));
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            setError(message);
+            throw new Error(message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const updateItem = async (id: string, updates: StockItemUpdate) => {
+        if (!user) throw new Error('You must be logged in to update items.');
+
+        setLoading(true);
+        setError(null);
+        try {
+            await itemService.updateItem(id, updates);
+            setItems((current) => {
+                const next = current.map((item) => {
+                    if (item.id !== id) return item;
+
+                    const nextName = typeof updates.name === 'string' ? updates.name.trim() : item.name;
+                    const merged: Item = {
+                        ...item,
+                        ...updates,
+                        name: nextName,
+                        nameLowercase: nextName.toLowerCase(),
+                        updatedAt: new Date(),
+                    };
+                    return merged;
+                });
+
+                return sortItemsByName(next);
             });
-            await fetchItems(); // Refresh list
-        } catch (err: any) {
-            setError(err.message);
-            throw err;
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            setError(message);
+            throw new Error(message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const deleteItem = async (id: string) => {
+        if (!user) throw new Error('You must be logged in to delete items.');
+
+        setLoading(true);
+        setError(null);
+        try {
+            await itemService.deleteItem(id);
+            setItems((current) => current.filter((item) => item.id !== id));
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            setError(message);
+            throw new Error(message);
         } finally {
             setLoading(false);
         }
@@ -67,6 +149,8 @@ export const useStock = () => {
         searchQuery,
         setSearchQuery,
         fetchItems,
-        addItem
+        addItem,
+        updateItem,
+        deleteItem,
     };
 };

@@ -1,8 +1,8 @@
-
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { UserProfile } from '../types';
+import { Config } from '../constants/Config';
+import type { UserProfile } from '../types';
 
 interface UserState {
     user: UserProfile | null;
@@ -23,6 +23,12 @@ interface SettingsState {
     setThemeMode: (mode: 'light' | 'dark' | 'auto') => void;
     hasSeenOnboarding: boolean;
     setHasSeenOnboarding: (seen: boolean) => void;
+}
+
+interface NetworkState {
+    isConnected: boolean | null;
+    isInternetReachable: boolean | null;
+    setNetworkState: (payload: { isConnected: boolean | null; isInternetReachable: boolean | null }) => void;
 }
 
 export const useUserStore = create<UserState>()(
@@ -47,13 +53,18 @@ export const useSettingsStore = create<SettingsState>()(
         (set) => ({
             isBiometricEnabled: false,
             toggleBiometric: (enabled) => set({ isBiometricEnabled: enabled }),
-            currencySymbol: '₹',
-            setCurrency: (symbol) => set({ currencySymbol: symbol }),
+            currencySymbol: Config.defaultCurrency,
+            setCurrency: (symbol) =>
+                set({
+                    currencySymbol: Config.supportedCurrencies.some((entry) => entry.code === symbol.toUpperCase())
+                        ? symbol.toUpperCase()
+                        : Config.defaultCurrency,
+                }),
             autoTheme: true,
             themeMode: 'light',
             setThemeMode: (mode) => set({
                 autoTheme: mode === 'auto',
-                themeMode: mode === 'auto' ? 'light' : mode
+                themeMode: mode === 'auto' ? 'light' : mode,
             }),
             hasSeenOnboarding: false,
             setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
@@ -64,3 +75,9 @@ export const useSettingsStore = create<SettingsState>()(
         }
     )
 );
+
+export const useNetworkStore = create<NetworkState>((set) => ({
+    isConnected: true,
+    isInternetReachable: true,
+    setNetworkState: ({ isConnected, isInternetReachable }) => set({ isConnected, isInternetReachable }),
+}));

@@ -6,15 +6,30 @@ import {
     deleteDoc,
     doc,
     getDocs,
+    getDoc,
     query,
+    runTransaction,
+    serverTimestamp,
     where,
     orderBy,
-    writeBatch
+    type DocumentData
 } from 'firebase/firestore';
 import { db } from './firebaseConfig';
-import { Item } from '../types';
+import type { BillItem, Item } from '../types';
 
 const ITEMS_COLLECTION = 'items';
+
+const toItem = (raw: DocumentData, id: string): Item => ({
+    id,
+    userId: raw.userId,
+    name: raw.name,
+    nameLowercase: raw.nameLowercase,
+    price: raw.price,
+    stock: raw.stock,
+    category: raw.category,
+    barcode: raw.barcode,
+    updatedAt: raw.updatedAt,
+});
 
 export const itemService = {
     /**
@@ -23,7 +38,8 @@ export const itemService = {
     async addItem(item: Omit<Item, 'id'>): Promise<string> {
         const docRef = await addDoc(collection(db, ITEMS_COLLECTION), {
             ...item,
-            updatedAt: new Date()
+            nameLowercase: item.name.toLowerCase(),
+            updatedAt: serverTimestamp()
         });
         return docRef.id;
     },
@@ -33,27 +49,82 @@ export const itemService = {
      */
     async updateItem(id: string, updates: Partial<Item>): Promise<void> {
         const docRef = doc(db, ITEMS_COLLECTION, id);
-        await updateDoc(docRef, {
+        const payload: Record<string, unknown> = {
             ...updates,
-            updatedAt: new Date()
+            updatedAt: serverTimestamp(),
+        };
+
+        if (typeof updates.name === 'string') {
+            payload.nameLowercase = updates.name.toLowerCase();
+        }
+
+        await updateDoc(docRef, {
+            ...payload,
         });
     },
 
     /**
-     * Updates stock for an item with an atomic transaction (simulated with batch for now, or direct update).
-     * In a real app, use runTransaction for concurrency safety.
-     * Here we just use updateDoc for simplicity as requested in the plan "Atomic transaction...".
+     * Updates stock for a single item in a transaction.
      */
     async updateStock(id: string, qty: number, type: 'IN' | 'OUT'): Promise<void> {
-        // This is a simplified version. Ideally, you read the current stock inside a transaction.
-        // For now, we assume the caller handles the logic or we implement a proper transaction later.
-        // Implementing a simple increment/decrement is better done via FieldValue.increment
-        // but we need to import it. simpler to just set it for now if we don't have the current value.
-        // Wait, the interface says `updateStock(itemId: string, qty: number, type: 'IN' | 'OUT')`
-        // We will leave this for implementation detail in useStock hook or here using increment.
+        if (qty <= 0) {
+            throw new Error('Quantity must be greater than 0.');
+        }
+
         const docRef = doc(db, ITEMS_COLLECTION, id);
-        // logic implementation pending exact requirement, placeholder for now
-        console.log(`Updating stock for ${id}: ${type} ${qty}`);
+        await runTransaction(db, async (transaction) => {
+            const itemSnap = await transaction.get(docRef);
+            if (!itemSnap.exists()) {
+                throw new Error('Item not found.');
+            }
+
+            const currentStock = Number(itemSnap.data().stock ?? 0);
+            const nextStock = type === 'IN' ? currentStock + qty : currentStock - qty;
+            if (nextStock < 0) {
+                throw new Error(`Insufficient stock for "${itemSnap.data().name}".`);
+            }
+
+            transaction.update(docRef, {
+                stock: nextStock,
+                updatedAt: serverTimestamp(),
+            });
+        });
+    },
+
+    /**
+     * Atomically consumes stock for checkout.
+     */
+    async consumeStock(items: Pick<BillItem, 'id' | 'quantity'>[]): Promise<void> {
+        const grouped = new Map<string, number>();
+        for (const item of items) {
+            if (item.quantity <= 0) continue;
+            grouped.set(item.id, (grouped.get(item.id) ?? 0) + item.quantity);
+        }
+
+        if (grouped.size === 0) {
+            throw new Error('No valid line items to consume stock.');
+        }
+
+        await runTransaction(db, async (transaction) => {
+            for (const [itemId, qty] of grouped.entries()) {
+                const itemRef = doc(db, ITEMS_COLLECTION, itemId);
+                const itemSnap = await transaction.get(itemRef);
+                if (!itemSnap.exists()) {
+                    throw new Error(`Item ${itemId} no longer exists.`);
+                }
+
+                const currentStock = Number(itemSnap.data().stock ?? 0);
+                const nextStock = currentStock - qty;
+                if (nextStock < 0) {
+                    throw new Error(`Insufficient stock for "${itemSnap.data().name}".`);
+                }
+
+                transaction.update(itemRef, {
+                    stock: nextStock,
+                    updatedAt: serverTimestamp(),
+                });
+            }
+        });
     },
 
     /**
@@ -73,7 +144,16 @@ export const itemService = {
             orderBy('nameLowercase', 'asc')
         );
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Item));
+        return snapshot.docs.map((itemDoc) => toItem(itemDoc.data(), itemDoc.id));
+    },
+
+    /**
+     * Fetches a single item.
+     */
+    async getItem(id: string): Promise<Item | null> {
+        const itemDoc = await getDoc(doc(db, ITEMS_COLLECTION, id));
+        if (!itemDoc.exists()) return null;
+        return toItem(itemDoc.data(), itemDoc.id);
     },
 
     /**
@@ -87,6 +167,6 @@ export const itemService = {
             where('nameLowercase', '<=', queryText.toLowerCase() + '\uf8ff')
         );
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Item));
+        return snapshot.docs.map((itemDoc) => toItem(itemDoc.data(), itemDoc.id));
     }
 };

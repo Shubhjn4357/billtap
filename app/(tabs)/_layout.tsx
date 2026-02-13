@@ -1,13 +1,11 @@
 
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { useTheme } from 'react-native-paper';
 import { CurvedBottomBar } from '../../src/components/layout/CurvedBottomBar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { TAB_TITLES } from '../../src/constants/staticText';
 
 export default function TabLayout() {
-  const theme = useTheme();
-
   return (
     <Tabs
       tabBar={(props) => <CurvedBottomBar {...props} />}
@@ -18,7 +16,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Home',
+          title: TAB_TITLES.home,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="home" size={size} color={color} />
           ),
@@ -27,7 +25,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="stock"
         options={{
-          title: 'Stock',
+          title: TAB_TITLES.stock,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="package-variant" size={size} color={color} />
           ),
@@ -36,7 +34,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="billing"
         options={{
-          title: 'Bill',
+          title: TAB_TITLES.bill,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="calculator" size={size} color={color} />
           ),
@@ -45,7 +43,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="reports"
         options={{
-          title: 'Reports',
+          title: TAB_TITLES.reports,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="chart-bar" size={size} color={color} />
           ),
@@ -54,15 +52,12 @@ export default function TabLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          title: TAB_TITLES.settings,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="cog" size={size} color={color} />
           ),
         }}
       />
-
-      {/* Hide other tabs if they exist but shouldn't be in the bar */}
-      <Tabs.Screen name="billing-history" options={{ href: null }} />
 
     </Tabs>
   );

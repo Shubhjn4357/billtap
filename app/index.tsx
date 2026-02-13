@@ -1,18 +1,9 @@
-import { Redirect } from 'expo-router';
-import { useUserStore, useSettingsStore } from '../src/store';
-
+import { ActivityIndicator, View } from 'react-native';
 
 export default function Index() {
-    const { isAuthenticated } = useUserStore();
-    const { hasSeenOnboarding } = useSettingsStore();
-
-    if (isAuthenticated) {
-        return <Redirect href="/(tabs)/home" />;
-    }
-
-    if (!hasSeenOnboarding) {
-        return <Redirect href="/onboarding" />;
-    }
-
-    return <Redirect href="/login" />;
+    return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" />
+        </View>
+    );
 }

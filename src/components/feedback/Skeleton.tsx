@@ -1,20 +1,20 @@
 
-import React, { useEffect } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, type StyleProp, type ViewStyle } from 'react-native';
 import { useTheme } from 'react-native-paper';
 
 interface SkeletonProps {
-    width?: number | string;
-    height?: number | string;
-    style?: any;
+    width?: number | `${number}%` | 'auto';
+    height?: number;
+    style?: StyleProp<ViewStyle>;
 }
 
 export const Skeleton: React.FC<SkeletonProps> = ({ width = '100%', height = 20, style }) => {
     const theme = useTheme();
-    const opacity = new Animated.Value(0.3);
+    const opacity = useRef(new Animated.Value(0.3)).current;
 
     useEffect(() => {
-        Animated.loop(
+        const animation = Animated.loop(
             Animated.sequence([
                 Animated.timing(opacity, {
                     toValue: 0.7,
@@ -27,8 +27,12 @@ export const Skeleton: React.FC<SkeletonProps> = ({ width = '100%', height = 20,
                     useNativeDriver: true,
                 }),
             ])
-        ).start();
-    }, []);
+        );
+        animation.start();
+        return () => {
+            animation.stop();
+        };
+    }, [opacity]);
 
     return (
         <Animated.View

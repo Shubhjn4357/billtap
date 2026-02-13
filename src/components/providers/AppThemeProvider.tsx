@@ -1,19 +1,19 @@
 
-import React from 'react';
-import { useColorScheme } from 'react-native';
-import {
-    MD3DarkTheme,
-    MD3LightTheme,
-    adaptNavigationTheme,
-    PaperProvider,
-    MD3Theme,
-} from 'react-native-paper';
 import {
     DarkTheme as NavigationDarkTheme,
     DefaultTheme as NavigationDefaultTheme,
     ThemeProvider as NavigationThemeProvider,
     type Theme as NavigationTheme,
 } from '@react-navigation/native';
+import React from 'react';
+import { useColorScheme } from 'react-native';
+import {
+    MD3DarkTheme,
+    MD3LightTheme,
+    MD3Theme,
+    PaperProvider,
+    adaptNavigationTheme,
+} from 'react-native-paper';
 import { Colors } from '../../constants/Colors';
 import { useSettingsStore } from '../../store';
 
@@ -32,6 +32,7 @@ const CustomLightTheme = {
         ...LightTheme.colors,
         ...Colors.light,
     },
+    fonts: MD3LightTheme.fonts,
 } as AppTheme;
 
 const CustomDarkTheme = {
@@ -42,6 +43,7 @@ const CustomDarkTheme = {
         ...DarkTheme.colors,
         ...Colors.dark,
     },
+    fonts: MD3DarkTheme.fonts,
 } as AppTheme;
 
 export const AppThemeProvider = ({ children }: { children: React.ReactNode }) => {

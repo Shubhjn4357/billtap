@@ -1,0 +1,342 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function hasAdminClaim() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    function hasAdminRoleDoc() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isAdmin() {
+      return hasAdminClaim() || hasAdminRoleDoc();
+    }
+
+    function validOptionalString(data, field, maxLength) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLength);
+    }
+
+    function validCurrency(data, field) {
+      return !(field in data) || (data[field] is string && data[field].size() == 3);
+    }
+
+    function validOptionalNumber(data, field, minValue) {
+      return !(field in data) || (data[field] is number && data[field] >= minValue);
+    }
+
+    function validOptionalTimestamp(data, field) {
+      return !(field in data) || data[field] is timestamp;
+    }
+
+    function validUserPayload(data) {
+      return data.keys().hasOnly([
+          'uid',
+          'email',
+          'phoneNumber',
+          'displayName',
+          'photoURL',
+          'businessName',
+          'address',
+          'gstNumber',
+          'gstEnabled',
+          'currency',
+          'role',
+          'subscriptionStatus',
+          'subscriptionPlanId',
+          'subscriptionPlanName',
+          'subscriptionAmountMonthly',
+          'subscriptionCurrency',
+          'subscriptionStartsAt',
+          'subscriptionEndsAt',
+          'createdAt',
+          'updatedAt'
+        ])
+        && validOptionalString(data, 'uid', 128)
+        && validOptionalString(data, 'email', 254)
+        && validOptionalString(data, 'phoneNumber', 20)
+        && validOptionalString(data, 'displayName', 120)
+        && validOptionalString(data, 'photoURL', 500)
+        && validOptionalString(data, 'businessName', 120)
+        && validOptionalString(data, 'address', 300)
+        && validOptionalString(data, 'gstNumber', 20)
+        && (!('gstEnabled' in data) || data.gstEnabled is bool)
+        && validCurrency(data, 'currency')
+        && (!('role' in data) || data.role in ['owner', 'staff', 'admin'])
+        && (!('subscriptionStatus' in data) || data.subscriptionStatus in ['inactive', 'active', 'expired', 'canceled'])
+        && validOptionalString(data, 'subscriptionPlanId', 40)
+        && validOptionalString(data, 'subscriptionPlanName', 80)
+        && validOptionalNumber(data, 'subscriptionAmountMonthly', 0)
+        && validCurrency(data, 'subscriptionCurrency')
+        && validOptionalTimestamp(data, 'subscriptionStartsAt')
+        && validOptionalTimestamp(data, 'subscriptionEndsAt')
+        && validOptionalTimestamp(data, 'createdAt')
+        && validOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function validItemPayload(data) {
+      return data.keys().hasOnly([
+          'userId',
+          'name',
+          'nameLowercase',
+          'price',
+          'stock',
+          'category',
+          'barcode',
+          'updatedAt'
+        ])
+        && data.keys().hasAll(['userId', 'name', 'nameLowercase', 'price', 'stock'])
+        && data.userId is string
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 120
+        && data.nameLowercase is string
+        && data.nameLowercase == data.name.lower()
+        && data.price is number
+        && data.price >= 0
+        && data.stock is int
+        && data.stock >= 0
+        && validOptionalString(data, 'category', 60)
+        && validOptionalString(data, 'barcode', 64)
+        && validOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function validOrderPayload(data) {
+      return data.keys().hasOnly([
+          'userId',
+          'customerName',
+          'customerPhone',
+          'businessName',
+          'businessAddress',
+          'gstNumber',
+          'currency',
+          'items',
+          'total',
+          'createdAt'
+        ])
+        && data.keys().hasAll(['userId', 'items', 'total'])
+        && data.userId is string
+        && data.items is list
+        && data.items.size() > 0
+        && data.items.size() <= 250
+        && data.total is number
+        && data.total >= 0
+        && validOptionalString(data, 'customerName', 120)
+        && validOptionalString(data, 'customerPhone', 20)
+        && validOptionalString(data, 'businessName', 120)
+        && validOptionalString(data, 'businessAddress', 300)
+        && validOptionalString(data, 'gstNumber', 20)
+        && validCurrency(data, 'currency')
+        && validOptionalTimestamp(data, 'createdAt');
+    }
+
+    function validPlanPayload(data) {
+      return data.keys().hasOnly([
+          'name',
+          'description',
+          'monthlyPrice',
+          'currency',
+          'isActive',
+          'displayOrder',
+          'features',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasAll(['name', 'description', 'monthlyPrice', 'currency', 'isActive', 'displayOrder', 'features'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.description is string
+        && data.description.size() <= 250
+        && data.monthlyPrice is number
+        && data.monthlyPrice >= 0
+        && data.currency is string
+        && data.currency.size() == 3
+        && data.isActive is bool
+        && data.displayOrder is int
+        && data.features is list
+        && data.features.size() <= 20
+        && validOptionalTimestamp(data, 'createdAt')
+        && validOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function validOfferPayload(data) {
+      return data.keys().hasOnly([
+          'title',
+          'message',
+          'bannerUrl',
+          'bannerBackground',
+          'ctaText',
+          'ctaRoute',
+          'audience',
+          'isActive',
+          'priority',
+          'startsAt',
+          'endsAt',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasAll(['title', 'message', 'audience', 'isActive', 'priority'])
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 120
+        && data.message is string
+        && data.message.size() > 0
+        && data.message.size() <= 400
+        && validOptionalString(data, 'bannerUrl', 500)
+        && validOptionalString(data, 'bannerBackground', 20)
+        && validOptionalString(data, 'ctaText', 40)
+        && validOptionalString(data, 'ctaRoute', 120)
+        && data.audience in ['all', 'active_subscribers', 'inactive_subscribers']
+        && data.isActive is bool
+        && data.priority is int
+        && validOptionalTimestamp(data, 'startsAt')
+        && validOptionalTimestamp(data, 'endsAt')
+        && validOptionalTimestamp(data, 'createdAt')
+        && validOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function validPaymentIntentPayload(data) {
+      return data.keys().hasOnly([
+          'userId',
+          'planId',
+          'planName',
+          'amount',
+          'currency',
+          'provider',
+          'status',
+          'checkoutUrl',
+          'providerReference',
+          'failureReason',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasAll(['userId', 'planId', 'planName', 'amount', 'currency', 'provider', 'status'])
+        && data.userId is string
+        && data.planId is string
+        && data.planName is string
+        && data.amount is number
+        && data.amount >= 0
+        && data.currency is string
+        && data.currency.size() == 3
+        && data.provider in ['stripe', 'razorpay', 'mock']
+        && data.status in ['pending', 'succeeded', 'failed', 'canceled']
+        && validOptionalString(data, 'checkoutUrl', 600)
+        && validOptionalString(data, 'providerReference', 120)
+        && validOptionalString(data, 'failureReason', 240)
+        && validOptionalTimestamp(data, 'createdAt')
+        && validOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function validAnalyticsEventPayload(data) {
+      return data.keys().hasOnly([
+          'userId',
+          'eventType',
+          'source',
+          'planId',
+          'offerId',
+          'value',
+          'currency',
+          'metadata',
+          'createdAt'
+        ])
+        && data.keys().hasAll(['userId', 'eventType'])
+        && data.userId is string
+        && data.eventType in [
+          'offer_impression',
+          'offer_click',
+          'subscription_screen_view',
+          'plan_selected',
+          'checkout_started',
+          'checkout_redirected',
+          'payment_success',
+          'payment_failed'
+        ]
+        && validOptionalString(data, 'source', 80)
+        && validOptionalString(data, 'planId', 40)
+        && validOptionalString(data, 'offerId', 80)
+        && validOptionalNumber(data, 'value', 0)
+        && validCurrency(data, 'currency')
+        && (!('metadata' in data) || data.metadata is map)
+        && validOptionalTimestamp(data, 'createdAt');
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId)
+        && validUserPayload(request.resource.data)
+        && !('role' in request.resource.data);
+      allow update: if (isAdmin() && validUserPayload(request.resource.data))
+        || (isOwner(userId)
+          && validUserPayload(request.resource.data)
+          && request.resource.data.role == resource.data.role);
+      allow delete: if false;
+    }
+
+    match /items/{itemId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.userId == request.auth.uid || isAdmin())
+        && validItemPayload(request.resource.data);
+      allow update: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin())
+        && request.resource.data.userId == resource.data.userId
+        && validItemPayload(request.resource.data);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && (request.resource.data.userId == request.auth.uid || isAdmin())
+        && validOrderPayload(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    match /plans/{planId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() && validPlanPayload(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /offers/{offerId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() && validOfferPayload(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /payment_intents/{intentId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create, update: if isAdmin() && validPaymentIntentPayload(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /analytics_events/{eventId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && validAnalyticsEventPayload(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    match /analytics_daily/{dateId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+  }
+}

@@ -4,15 +4,27 @@ import { useCallback } from 'react';
 
 export const useHaptics = () => {
     const triggerSelection = useCallback(async () => {
-        await Haptics.selectionAsync();
+        try {
+            await Haptics.selectionAsync();
+        } catch {
+            // Ignore unsupported platforms.
+        }
     }, []);
 
     const triggerImpact = useCallback(async (style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Medium) => {
-        await Haptics.impactAsync(style);
+        try {
+            await Haptics.impactAsync(style);
+        } catch {
+            // Ignore unsupported platforms.
+        }
     }, []);
 
     const triggerNotification = useCallback(async (type: Haptics.NotificationFeedbackType = Haptics.NotificationFeedbackType.Success) => {
-        await Haptics.notificationAsync(type);
+        try {
+            await Haptics.notificationAsync(type);
+        } catch {
+            // Ignore unsupported platforms.
+        }
     }, []);
 
     return {

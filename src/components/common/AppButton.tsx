@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { type GestureResponderEvent } from 'react-native';
 import { Button, ButtonProps } from 'react-native-paper';
 import { useHaptics } from '../../hooks/useHaptics';
 
@@ -17,7 +18,7 @@ export const AppButton: React.FC<AppButtonProps> = ({
 }) => {
     const { triggerSelection } = useHaptics();
 
-    const handlePress = (e: any) => {
+    const handlePress = (e: GestureResponderEvent) => {
         if (haptic) triggerSelection();
         onPress && onPress(e);
     };

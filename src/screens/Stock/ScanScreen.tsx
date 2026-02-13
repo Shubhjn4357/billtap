@@ -1,17 +1,17 @@
 
 import { useState, useEffect } from 'react';
-import { Text, View, StyleSheet, Button } from 'react-native';
-import { CameraView, Camera } from 'expo-camera';
-import { useRouter } from 'expo-router';
-import { useTheme } from 'react-native-paper';
-import { useCartStore } from '../../store/cartStore';
+import { Text, View, StyleSheet } from 'react-native';
+import { CameraView, Camera, type BarcodeScanningResult } from 'expo-camera';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Button } from 'react-native-paper';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function ScanScreen() {
     const [hasPermission, setHasPermission] = useState<boolean | null>(null);
     const [scanned, setScanned] = useState(false);
+    const [lastCode, setLastCode] = useState('');
     const router = useRouter();
-    const theme = useTheme();
+    const params = useLocalSearchParams<{ target?: string | string[] }>();
     const haptics = useHaptics();
 
     useEffect(() => {
@@ -22,45 +22,31 @@ export default function ScanScreen() {
         getPermissions();
     }, []);
 
-    // Assuming we want to add to cart or search stock
-    // For now, let's assume it populates a global scan result in store or params
-    // But useCartStore has setScannedCode, let's use that if we scanned for cart
-    // OR we might be scanning for stock lookup.
-    // The store had `setScannedCode`. Let's support that.
-
-    // Note: useCartStore definition I wrote earlier didn't include `setScannedCode`.
-    // I should update useCartStore or just handle it here.
-    // Let's assume for now we just pass it back via router params or global store.
-
-    // Checking my previous write for useCartStore... I missed `scannedCode` in my new implementation!
-    // I need to add it back or use a different approach.
-    // Given the user constraint "Atomic Implementation", I should update useCartStore too if needed.
-    // But for now, let's just log it or alert it to show it works, or verify useCartStore again.
-
-    // Actually, let's look at `useCartStore` I wrote:
-    /*
-    export const useCartStore = create<CartState>((set, get) => ({
-        items: [], ...
-    */
-    // It checks `items`, `customerName`, etc. I removed `scannedCode`.
-    // I should probably add `scannedCode` back if it's used by other screens (like StockList).
-    // Or simpler: Navigate back with params? Expo Router supports params.
-    // `router.push({ pathname: '/stock', params: { scannedCode: data } })`
-
-    const handleBarCodeScanned = ({ type, data }: { type: string, data: string }) => {
+    const handleBarCodeScanned = ({ data }: BarcodeScanningResult) => {
         setScanned(true);
-        haptics.triggerNotification();
-        // Navigate back with the code.
-        // Assuming the previous screen listens for params or we use a global store.
-        // For now, let's assume we navigate to stock list with query
-        router.replace({ pathname: '/(tabs)/stock', params: { search: data } });
+        setLastCode(data);
+        void haptics.triggerNotification();
+        const targetParam = Array.isArray(params.target) ? params.target[0] : params.target;
+        const target = targetParam === 'billing' ? '/(tabs)/billing' : '/(tabs)/stock';
+        router.replace({ pathname: target, params: { search: data } });
     };
 
     if (hasPermission === null) {
-        return <Text>Requesting for camera permission</Text>;
+        return (
+            <View style={styles.centered}>
+                <Text>Requesting camera permission...</Text>
+            </View>
+        );
     }
     if (hasPermission === false) {
-        return <Text>No access to camera</Text>;
+        return (
+            <View style={styles.centered}>
+                <Text>No access to camera.</Text>
+                <Button mode="contained" style={styles.actionButton} onPress={() => router.back()}>
+                    Go Back
+                </Button>
+            </View>
+        );
     }
 
     return (
@@ -69,10 +55,17 @@ export default function ScanScreen() {
                 style={StyleSheet.absoluteFillObject}
                 onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
                 barcodeScannerSettings={{
-                    barcodeTypes: ["qr", "ean13", "code128"],
+                    barcodeTypes: ['qr', 'ean13', 'code128'],
                 }}
             />
-            {scanned && <Button title={'Tap to Scan Again'} onPress={() => setScanned(false)} />}
+            {scanned && (
+                <View style={styles.overlay}>
+                    <Text style={styles.overlayText}>Scanned: {lastCode}</Text>
+                    <Button mode="contained" onPress={() => setScanned(false)}>
+                        Scan Again
+                    </Button>
+                </View>
+            )}
         </View>
     );
 }
@@ -82,5 +75,28 @@ const styles = StyleSheet.create({
         flex: 1,
         flexDirection: 'column',
         justifyContent: 'center',
+    },
+    centered: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 20,
+    },
+    actionButton: {
+        marginTop: 16,
+    },
+    overlay: {
+        position: 'absolute',
+        left: 20,
+        right: 20,
+        bottom: 40,
+        padding: 16,
+        borderRadius: 12,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        gap: 12,
+    },
+    overlayText: {
+        color: '#fff',
+        textAlign: 'center',
     },
 });
