@@ -40,6 +40,7 @@ export const SubscriptionScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingPlans, setLoadingPlans] = useState(false);
     const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
+    const isLivePaymentConfigured = Boolean(process.env.EXPO_PUBLIC_PAYMENT_API_BASE_URL?.trim());
 
     useEffect(() => {
         const fetchPlans = async () => {
@@ -162,6 +163,11 @@ export const SubscriptionScreen = () => {
     };
 
     const handleLiveCheckout = async () => {
+        if (!isLivePaymentConfigured) {
+            Alert.alert(SUBSCRIPTION_TEXT.checkoutUnavailable, SUBSCRIPTION_TEXT.checkoutUnavailableDefault);
+            return;
+        }
+
         if (!user) {
             Alert.alert(COMMON_TEXT.alerts.loginRequired, SUBSCRIPTION_TEXT.loginToContinue);
             return;
@@ -346,12 +352,18 @@ export const SubscriptionScreen = () => {
                 <Text variant="bodySmall" style={{ marginBottom: 8 }}>
                     {SUBSCRIPTION_TEXT.selectedLabel}: {selectedPlan.name} ({formatCurrency(selectedPlan.monthlyPrice, selectedPlan.currency)}/month)
                 </Text>
+                {!isLivePaymentConfigured && (
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline, marginBottom: 8 }}>
+                        {SUBSCRIPTION_TEXT.checkoutDisabledNote}
+                    </Text>
+                )}
                 <AppButton
                     mode="contained"
                     onPress={() => { void handleLiveCheckout(); }}
                     loading={loading}
+                    disabled={!isLivePaymentConfigured}
                 >
-                    {SUBSCRIPTION_TEXT.startLiveButton}
+                    {isLivePaymentConfigured ? SUBSCRIPTION_TEXT.startLiveButton : SUBSCRIPTION_TEXT.startLiveDisabledButton}
                 </AppButton>
                 <AppButton
                     mode="contained"

@@ -243,6 +243,7 @@ export const SUBSCRIPTION_TEXT = {
     checkoutStartFailed: 'Failed to start checkout.',
     checkoutUnavailable: 'Checkout Unavailable',
     checkoutUnavailableDefault: 'Payment checkout is not configured yet.',
+    checkoutDisabledNote: 'Live payment is currently disabled. Use test success/failure buttons for now.',
     openFailedTitle: 'Open Failed',
     openFailedBody: 'Could not open checkout URL.',
     checkoutStartedTitle: 'Checkout Started',
@@ -251,6 +252,7 @@ export const SUBSCRIPTION_TEXT = {
     loginToActivate: 'Please login to activate subscription.',
     loginToContinue: 'Please login to continue.',
     startLiveButton: 'Start Live Payment (Scaffold)',
+    startLiveDisabledButton: 'Live Payment Disabled',
     testSuccessButton: 'Test Payment Success',
     testFailButton: 'Test Payment Fail',
 } as const;
