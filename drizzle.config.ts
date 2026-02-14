@@ -23,13 +23,11 @@ dns.lookup = (hostname, options, callback) => {
                     callback(null, addresses[0] as any, 4);
                 }
             } else {
-                // @ts-ignore
-                originalLookup(hostname, options as any, callback);
+                originalLookup(hostname, options as any, callback as any);
             }
         });
     } else {
-        // @ts-ignore
-        originalLookup(hostname, options as any, callback);
+        originalLookup(hostname, options as any, callback as any);
     }
 };
 
