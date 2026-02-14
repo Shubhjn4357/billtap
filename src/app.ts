@@ -222,7 +222,7 @@ const hasAudienceAccess = (audience: string, subscriptionStatus: string | null) 
     return false;
 };
 
-const isCronAuthorized = (provided: string | undefined, authorizationHeader: string | undefined, cronSecret: string | undefined) => {
+const isCronAuthorized = (provided: string | undefined, authorizationHeader?: string, cronSecret?: string) => {
     const expected = cronSecret;
     if (!expected) return true;
     if (provided === expected) return true;
