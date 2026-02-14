@@ -1236,6 +1236,43 @@ app.post('/jobs/sync-offers', async (c) => {
     return c.json({ ok: true, activated: activated.length, deactivated: deactivated.length });
 });
 
+app.post('/jobs/run-all', async (c) => {
+    if (!isCronAuthorized(c.req.header('X-Cron-Secret'), c.req.header('Authorization'))) {
+        return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    }
+
+    const now = new Date();
+
+    // Expire subscriptions
+    const expired = await db
+        .update(users)
+        .set({
+            subscriptionStatus: 'expired',
+            updatedAt: now,
+        })
+        .where(and(eq(users.subscriptionStatus, 'active'), lte(users.subscriptionEndsAt, now)))
+        .returning({ uid: users.uid });
+
+    // Sync offers
+    const activated = await db
+        .update(offers)
+        .set({ isActive: true, updatedAt: now })
+        .where(and(eq(offers.isActive, false), lte(offers.startsAt, now), or(sql`${offers.endsAt} is null`, gte(offers.endsAt, now))))
+        .returning({ id: offers.id });
+
+    const deactivated = await db
+        .update(offers)
+        .set({ isActive: false, updatedAt: now })
+        .where(and(eq(offers.isActive, true), lte(offers.endsAt, now)))
+        .returning({ id: offers.id });
+
+    return c.json({
+        ok: true,
+        subscriptions: { expired: expired.length },
+        offers: { activated: activated.length, deactivated: deactivated.length }
+    });
+});
+
 app.notFound((c) => {
     return c.json({ ok: false, message: 'Route not found.' }, 404);
 });

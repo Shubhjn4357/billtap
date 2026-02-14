@@ -1,0 +1,16 @@
+{
+    "$schema": "https://openapi.vercel.sh/vercel.json",
+    "buildCommand": "pnpm install",
+    "rewrites": [
+        {
+            "source": "/api/(.*)",
+            "destination": "/api/[[...route]]"
+        }
+    ],
+    "crons": [
+        {
+            "path": "/api/jobs/run-all",
+            "schedule": "0 * * * *"
+        }
+    ]
+}
