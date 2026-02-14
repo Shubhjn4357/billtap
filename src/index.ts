@@ -4,11 +4,11 @@ import { cors } from 'hono/cors';
 import { and, asc, desc, eq, gte, lte, or, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
-import { verifyGoogleIdentityToken } from './lib/auth/google';
-import { signSessionToken, verifySessionToken } from './lib/auth/tokens';
-import { DEFAULT_SERVER_PLANS } from './lib/constants/defaultPlans';
-import { db } from './lib/db/client';
-import { analyticsEvents, items, offers, orders, paymentIntents, phoneVerifications, plans, users, type UserRow } from './lib/db/schema';
+import { verifyGoogleIdentityToken } from './auth/google';
+import { signSessionToken, verifySessionToken } from './auth/tokens';
+import { DEFAULT_SERVER_PLANS } from './constants/defaultPlans';
+import { db } from './db/client';
+import { analyticsEvents, items, offers, orders, paymentIntents, phoneVerifications, plans, users, type UserRow } from './db/schema';
 
 export const runtime = 'nodejs';
 
@@ -1282,3 +1282,4 @@ app.onError((error, c) => {
 });
 
 export default handle(app);
+
