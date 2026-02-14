@@ -1,5 +1,4 @@
-import { handle } from 'hono/vercel';
-import { Hono } from 'hono';
+import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { and, asc, desc, eq, gte, lte, or, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -9,8 +8,6 @@ import { signSessionToken, verifySessionToken } from './auth/tokens';
 import { DEFAULT_SERVER_PLANS } from './constants/defaultPlans';
 import { db } from './db/client';
 import { analyticsEvents, items, offers, orders, paymentIntents, phoneVerifications, plans, users, type UserRow } from './db/schema';
-
-export const runtime = 'nodejs';
 
 type AppVariables = {
     authUser: UserRow | null;
@@ -83,14 +80,14 @@ const getAuthUserFromRequest = async (authorizationHeader: string | undefined) =
     return entry[0] ?? null;
 };
 
-const optionalAuth = async (c: any, next: any) => {
+const optionalAuth = async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
     const authUser = await getAuthUserFromRequest(authHeader);
     c.set('authUser', authUser ?? null);
     await next();
 };
 
-const requireAuth = async (c: any, next: any) => {
+const requireAuth = async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
     const authUser = await getAuthUserFromRequest(authHeader);
 
@@ -102,7 +99,7 @@ const requireAuth = async (c: any, next: any) => {
     await next();
 };
 
-const requireAdmin = async (c: any, next: any) => {
+const requireAdmin = async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
     const authUser = await getAuthUserFromRequest(authHeader);
 
@@ -206,6 +203,7 @@ const isCronAuthorized = (provided: string | undefined, authorizationHeader?: st
     const bearer = getBearerToken(authorizationHeader);
     return bearer === expected;
 };
+
 app.get("/", async (c) => {
     return c.json({
         ok: true,
@@ -213,6 +211,7 @@ app.get("/", async (c) => {
         now: new Date().toISOString(),
     });
 });
+
 app.get('/health', async (c) => {
     await ensurePlansSeeded();
     return c.json({
@@ -1287,5 +1286,5 @@ app.onError((error, c) => {
     return c.json({ ok: false, message: asErrorMessage(error) }, 500);
 });
 
-export default handle(app);
+export { app };
 

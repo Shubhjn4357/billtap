@@ -25,5 +25,9 @@
     "drizzle-kit": "^0.31.9",
     "typescript": "^5.9.3",
     "vercel": "^48.2.9"
-  }
+  },
+  "engines": {
+    "pnpm": "^9.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
 }
