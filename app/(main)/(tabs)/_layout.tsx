@@ -1,9 +1,9 @@
 
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { CurvedBottomBar } from '../../src/components/layout/CurvedBottomBar';
+import { CurvedBottomBar } from '../../../src/components/layout/CurvedBottomBar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { TAB_TITLES } from '../../src/constants/staticText';
+import { TAB_TITLES } from '../../../src/constants/staticText';
 
 export default function TabLayout() {
   return (
