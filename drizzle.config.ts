@@ -12,22 +12,24 @@ dns.lookup = (hostname, options, callback) => {
         options = {};
     }
 
-    // Only intercept neon.tech domains to be safe, or just intercept all
     if (hostname.includes('neon.tech')) {
         dns.resolve4(hostname, (err, addresses) => {
             if (!err && addresses && addresses.length > 0) {
-                if (options && options.all) {
+                if (options && (options as any).all) {
                     const result = addresses.map(addr => ({ address: addr, family: 4 }));
-                    callback(null, result);
+                    // @ts-ignore
+                    callback(null, result as any);
                 } else {
-                    callback(null, addresses[0], 4);
+                    callback(null, addresses[0] as any, 4);
                 }
             } else {
-                originalLookup(hostname, options, callback);
+                // @ts-ignore
+                originalLookup(hostname, options as any, callback);
             }
         });
     } else {
-        originalLookup(hostname, options, callback);
+        // @ts-ignore
+        originalLookup(hostname, options as any, callback);
     }
 };
 
