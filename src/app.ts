@@ -13,7 +13,7 @@ type AppVariables = {
     authUser: UserRow | null;
 };
 
-const app = new Hono<{ Variables: AppVariables }>();
+const app = new Hono<{ Variables: AppVariables }>().basePath('/api');
 
 app.use('*', cors({
     origin: '*',

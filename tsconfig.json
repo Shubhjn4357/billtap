@@ -1,15 +1,14 @@
 {
   "compilerOptions": {
-    "target": "ESNext",
+    "target": "esnext",
     "module": "esnext",
     "strict": true,
     "skipLibCheck": true,
     "types": ["node"],
     "jsx": "react-jsx",
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "jsxImportSource": "hono/jsx",
     "outDir": "./dist",
-    "esModuleInterop": true
   },
   "include": ["api/**/*.ts", "src/**/*.ts", "drizzle.config.ts"],
   "exclude": ["node_modules", "dist"]
