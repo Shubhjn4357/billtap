@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/app.ts",
     "start": "tsx src/app.ts",
+    "build": "tsc",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
@@ -28,8 +29,14 @@
     "typescript": "^5.9.3",
     "vercel": "^48.2.9"
   },
-  "engines": {
-    "pnpm": "^9.0.0"
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "tsx"
+    ]
   },
-  "packageManager": "pnpm@9.0.0"
+  "engines": {
+    "pnpm": "^10.0.0"
+  },
+  "packageManager": "pnpm@10.0.0"
 }
