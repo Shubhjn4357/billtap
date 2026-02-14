@@ -1,5 +1,5 @@
 import type { Config } from 'drizzle-kit';
-import dns from 'dns';
+import * as dns from 'dns';
 
 // Hack to fix DNS resolution issue with Neon on local machine
 dns.setServers(['8.8.8.8']);
@@ -13,6 +13,7 @@ dns.lookup = (hostname, options, callback) => {
     }
 
     if (hostname.includes('neon.tech')) {
+        // @ts-ignore
         dns.resolve4(hostname, (err, addresses) => {
             if (!err && addresses && addresses.length > 0) {
                 if (options && (options as any).all) {
