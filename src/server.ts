@@ -13,3 +13,4 @@ serve({
     fetch: app.fetch,
     port,
 });
+export const runtime = 'edge';
