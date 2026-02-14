@@ -7,8 +7,8 @@ if (process.env.NODE_ENV !== 'production') {
     dotenv.config();
 }
 
-const databaseUrl = process.env.DATABASE_URL || '';
-console.log({ databaseUrl });
+const databaseUrl = process.env.DATABASE_URL;
+
 if (!databaseUrl) {
     throw new Error('DATABASE_URL is required for Neon database connection.');
 }
@@ -16,4 +16,3 @@ if (!databaseUrl) {
 const sql = neon(databaseUrl);
 
 export const db = drizzle(sql, { schema });
-export const runtime = 'edge';
