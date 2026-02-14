@@ -1,0 +1,16 @@
+{
+  "name": "billtap-backend",
+  "main": "src/server.ts",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "triggers": {
+    "crons": [
+      "0 2 * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

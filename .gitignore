@@ -1,4 +1,6 @@
 # dev
+.wrangler
+.dev.vars
 .yarn/
 !.yarn/releases
 .vscode/*

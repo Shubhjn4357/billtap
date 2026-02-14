@@ -6,20 +6,42 @@ import { z } from 'zod';
 import { verifyGoogleIdentityToken } from './auth/google';
 import { signSessionToken, verifySessionToken } from './auth/tokens';
 import { DEFAULT_SERVER_PLANS } from './constants/defaultPlans';
-import { db } from './db/client';
-import { analyticsEvents, items, offers, orders, paymentIntents, phoneVerifications, plans, users, type UserRow } from './db/schema';
+import { type DrizzleClient, schema } from './db/client';
+import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
+
+// Schema imports
+const { analyticsEvents, items, offers, orders, paymentIntents, phoneVerifications, plans, users } = schema;
+type UserRow = typeof users.$inferSelect;
+
+type Bindings = {
+    DATABASE_URL: string;
+    CRON_SECRET?: string;
+};
 
 type AppVariables = {
     authUser: UserRow | null;
+    db: DrizzleClient;
 };
 
-const app = new Hono<{ Variables: AppVariables }>().basePath('/api');
+const app = new Hono<{ Bindings: Bindings; Variables: AppVariables }>().basePath('/api');
 
 app.use('*', cors({
     origin: '*',
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Cron-Secret', 'X-Webhook-Secret'],
 }));
+
+// Database middleware
+app.use(async (c, next) => {
+    if (!c.env.DATABASE_URL) {
+        return c.json({ ok: false, message: 'Database configuration missing.' }, 500);
+    }
+    const sql = neon(c.env.DATABASE_URL);
+    const db = drizzle(sql, { schema });
+    c.set('db', db);
+    await next();
+});
 
 const parseBoolean = (value: string | undefined, fallback = false) => {
     if (value === undefined) return fallback;
@@ -69,7 +91,7 @@ const toUserProfile = (row: UserRow) => ({
     subscriptionEndsAt: row.subscriptionEndsAt,
 });
 
-const getAuthUserFromRequest = async (authorizationHeader: string | undefined) => {
+const getAuthUserFromRequest = async (authorizationHeader: string | undefined, db: DrizzleClient) => {
     const token = getBearerToken(authorizationHeader);
     if (!token) return null;
 
@@ -80,16 +102,18 @@ const getAuthUserFromRequest = async (authorizationHeader: string | undefined) =
     return entry[0] ?? null;
 };
 
-const optionalAuth = async (c: Context, next: Next) => {
+const optionalAuth = async (c: Context<{ Bindings: Bindings; Variables: AppVariables }>, next: Next) => {
     const authHeader = c.req.header('Authorization');
-    const authUser = await getAuthUserFromRequest(authHeader);
+    const db = c.get('db');
+    const authUser = await getAuthUserFromRequest(authHeader, db);
     c.set('authUser', authUser ?? null);
     await next();
 };
 
-const requireAuth = async (c: Context, next: Next) => {
+const requireAuth = async (c: Context<{ Bindings: Bindings; Variables: AppVariables }>, next: Next) => {
     const authHeader = c.req.header('Authorization');
-    const authUser = await getAuthUserFromRequest(authHeader);
+    const db = c.get('db');
+    const authUser = await getAuthUserFromRequest(authHeader, db);
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
@@ -99,9 +123,10 @@ const requireAuth = async (c: Context, next: Next) => {
     await next();
 };
 
-const requireAdmin = async (c: Context, next: Next) => {
+const requireAdmin = async (c: Context<{ Bindings: Bindings; Variables: AppVariables }>, next: Next) => {
     const authHeader = c.req.header('Authorization');
-    const authUser = await getAuthUserFromRequest(authHeader);
+    const db = c.get('db');
+    const authUser = await getAuthUserFromRequest(authHeader, db);
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
@@ -115,7 +140,7 @@ const requireAdmin = async (c: Context, next: Next) => {
     await next();
 };
 
-const ensurePlansSeeded = async () => {
+const ensurePlansSeeded = async (db: DrizzleClient) => {
     const countResult = await db.select({ count: sql<number>`count(*)` }).from(plans);
     const count = Number(countResult[0]?.count ?? 0);
     if (count > 0) {
@@ -131,7 +156,7 @@ const ensurePlansSeeded = async () => {
     );
 };
 
-const upsertUser = async (uid: string, payload: Partial<UserRow>) => {
+const upsertUser = async (uid: string, payload: Partial<UserRow>, db: DrizzleClient) => {
     const now = new Date();
 
     await db
@@ -196,8 +221,8 @@ const hasAudienceAccess = (audience: string, subscriptionStatus: string | null) 
     return false;
 };
 
-const isCronAuthorized = (provided: string | undefined, authorizationHeader?: string) => {
-    const expected = process.env.CRON_SECRET;
+const isCronAuthorized = (provided: string | undefined, authorizationHeader: string | undefined, cronSecret: string | undefined) => {
+    const expected = cronSecret;
     if (!expected) return true;
     if (provided === expected) return true;
     const bearer = getBearerToken(authorizationHeader);
@@ -213,7 +238,8 @@ app.get("/", async (c) => {
 });
 
 app.get('/health', async (c) => {
-    await ensurePlansSeeded();
+    const db = c.get('db');
+    await ensurePlansSeeded(db);
     return c.json({
         ok: true,
         service: 'billtap-api',
@@ -223,6 +249,7 @@ app.get('/health', async (c) => {
 
 app.post('/auth/google', async (c) => {
     try {
+        const db = c.get('db');
         const body = await c.req.json();
         const schema = z.object({
             idToken: z.string().min(20),
@@ -240,7 +267,7 @@ app.post('/auth/google', async (c) => {
             displayName: google.name ?? null,
             photoURL: google.picture ?? null,
             role: isFirstUser ? 'admin' : undefined,
-        });
+        }, db);
 
         const token = signSessionToken({
             uid: user.uid,
@@ -259,6 +286,7 @@ app.post('/auth/google', async (c) => {
 
 app.post('/auth/phone/send', async (c) => {
     try {
+        const db = c.get('db');
         const body = await c.req.json();
         const schema = z.object({
             phoneNumber: z.string().min(6),
@@ -298,6 +326,7 @@ app.post('/auth/phone/send', async (c) => {
 
 app.post('/auth/phone/verify', async (c) => {
     try {
+        const db = c.get('db');
         const body = await c.req.json();
         const schema = z.object({
             verificationId: z.string().min(8),
@@ -348,7 +377,7 @@ app.post('/auth/phone/verify', async (c) => {
             phoneNumber: normalizedPhone,
             displayName: normalizedPhone,
             role: isFirstUser ? 'admin' : undefined,
-        });
+        }, db);
 
         const token = signSessionToken({
             uid: user.uid,
@@ -378,7 +407,8 @@ app.post('/auth/logout', requireAuth, async (c) => {
 });
 
 app.get('/plans', optionalAuth, async (c) => {
-    await ensurePlansSeeded();
+    const db = c.get('db');
+    await ensurePlansSeeded(db);
 
     const includeInactive = parseBoolean(c.req.query('includeInactive'), false);
     const authUser = c.get('authUser') as UserRow | null;
@@ -397,7 +427,8 @@ app.get('/plans', optionalAuth, async (c) => {
 });
 
 app.get('/offers/active', optionalAuth, async (c) => {
-    const authUser = c.get('authUser') as UserRow | null;
+    const authUser = c.get('authUser');
+    const db = c.get('db');
     const now = new Date();
 
     const data = await db
@@ -442,10 +473,11 @@ app.patch('/users/me', requireAuth, async (c) => {
         });
 
         const payload = schema.parse(body);
+        const db = c.get('db');
         const nextUser = await upsertUser(authUser.uid, {
             ...payload,
             role: authUser.role,
-        });
+        }, db);
 
         return c.json({
             ok: true,
@@ -457,6 +489,7 @@ app.patch('/users/me', requireAuth, async (c) => {
 });
 app.get('/items', requireAuth, async (c) => {
     const authUser = c.get('authUser') as UserRow;
+    const db = c.get('db');
     const queryText = c.req.query('q')?.trim();
 
     if (queryText) {
@@ -489,6 +522,7 @@ app.get('/items', requireAuth, async (c) => {
 
 app.get('/items/:id', requireAuth, async (c) => {
     const authUser = c.get('authUser') as UserRow;
+    const db = c.get('db');
     const id = c.req.param('id');
 
     const data = await db
@@ -507,6 +541,7 @@ app.get('/items/:id', requireAuth, async (c) => {
 app.post('/items', requireAuth, async (c) => {
     try {
         const authUser = c.get('authUser') as UserRow;
+        const db = c.get('db');
         const body = await c.req.json();
 
         const schema = z.object({
@@ -559,6 +594,7 @@ app.post('/items', requireAuth, async (c) => {
 app.patch('/items/:id', requireAuth, async (c) => {
     try {
         const authUser = c.get('authUser') as UserRow;
+        const db = c.get('db');
         const id = c.req.param('id');
         const body = await c.req.json();
 
@@ -611,6 +647,7 @@ app.patch('/items/:id', requireAuth, async (c) => {
 
 app.delete('/items/:id', requireAuth, async (c) => {
     const authUser = c.get('authUser') as UserRow;
+    const db = c.get('db');
     const id = c.req.param('id');
 
     const deleted = await db
@@ -659,6 +696,7 @@ app.post('/bills', requireAuth, async (c) => {
 
         const billId = payload.id ?? nanoid();
         const createdAt = payload.createdAt ?? new Date();
+        const db = c.get('db');
 
         if (payload.id) {
             const existingOrder = await db
@@ -724,6 +762,7 @@ app.post('/bills', requireAuth, async (c) => {
 
 app.get('/bills', requireAuth, async (c) => {
     const authUser = c.get('authUser') as UserRow;
+    const db = c.get('db');
 
     const max = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
     const start = parseDate(c.req.query('start'));
@@ -772,6 +811,7 @@ app.post('/analytics/events', requireAuth, async (c) => {
         });
 
         const payload = schema.parse(body);
+        const db = c.get('db');
 
         await db.insert(analyticsEvents).values({
             id: nanoid(),
@@ -795,6 +835,7 @@ app.post('/analytics/events', requireAuth, async (c) => {
 app.get('/analytics/events', requireAdmin, async (c) => {
     const startDate = parseDate(c.req.query('startDate')) ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const max = Math.min(Math.max(Number(c.req.query('limit') ?? 2000), 1), 10000);
+    const db = c.get('db');
 
     const data = await db
         .select()
@@ -807,6 +848,7 @@ app.get('/analytics/events', requireAdmin, async (c) => {
 });
 app.get('/admin/users', requireAdmin, async (c) => {
     const max = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
+    const db = c.get('db');
     const data = await db.select().from(users).orderBy(desc(users.updatedAt)).limit(max);
 
     return c.json({
@@ -841,7 +883,8 @@ app.patch('/admin/users/:uid', requireAdmin, async (c) => {
         });
 
         const payload = schema.parse(body);
-        const nextUser = await upsertUser(uid, payload);
+        const db = c.get('db');
+        const nextUser = await upsertUser(uid, payload, db);
 
         return c.json({ ok: true, user: toUserProfile(nextUser) });
     } catch (error: unknown) {
@@ -856,10 +899,11 @@ app.patch('/admin/users/:uid/role', requireAdmin, async (c) => {
 
         const schema = z.object({ role: z.enum(['owner', 'staff', 'admin']) });
         const payload = schema.parse(body);
+        const db = c.get('db');
 
         const nextUser = await upsertUser(uid, {
             role: payload.role,
-        });
+        }, db);
 
         return c.json({ ok: true, user: toUserProfile(nextUser) });
     } catch (error: unknown) {
@@ -884,6 +928,7 @@ app.put('/admin/plans/:id', requireAdmin, async (c) => {
 
         const payload = schema.parse(body);
         const now = new Date();
+        const db = c.get('db');
 
         await db
             .insert(plans)
@@ -915,7 +960,8 @@ app.put('/admin/plans/:id', requireAdmin, async (c) => {
 });
 
 app.get('/admin/plans', requireAdmin, async (c) => {
-    await ensurePlansSeeded();
+    const db = c.get('db');
+    await ensurePlansSeeded(db);
 
     const includeInactive = parseBoolean(c.req.query('includeInactive'), true);
 
@@ -949,6 +995,7 @@ app.put('/admin/offers/:id', requireAdmin, async (c) => {
 
         const payload = schema.parse(body);
         const now = new Date();
+        const db = c.get('db');
 
         await db
             .insert(offers)
@@ -998,6 +1045,7 @@ app.patch('/admin/offers/:id/active', requireAdmin, async (c) => {
         const body = await c.req.json();
         const schema = z.object({ isActive: z.boolean() });
         const payload = schema.parse(body);
+        const db = c.get('db');
 
         await db
             .update(offers)
@@ -1012,6 +1060,7 @@ app.patch('/admin/offers/:id/active', requireAdmin, async (c) => {
 
 app.get('/admin/offers', requireAdmin, async (c) => {
     const includeInactive = parseBoolean(c.req.query('includeInactive'), true);
+    const db = c.get('db');
 
     const data = await db
         .select()
@@ -1023,7 +1072,8 @@ app.get('/admin/offers', requireAdmin, async (c) => {
 });
 
 app.post('/admin/seed/default-plans', requireAdmin, async (c) => {
-    await ensurePlansSeeded();
+    const db = c.get('db');
+    await ensurePlansSeeded(db);
     return c.json({ ok: true, count: DEFAULT_SERVER_PLANS.length });
 });
 
@@ -1049,6 +1099,7 @@ app.post('/payments/subscription-checkout', requireAuth, async (c) => {
         const checkoutBase = process.env.CHECKOUT_BASE_URL || 'https://example.com/checkout';
         const checkoutUrl = `${checkoutBase}?intentId=${encodeURIComponent(intentId)}&provider=${provider}`;
         const now = new Date();
+        const db = c.get('db');
 
         await db.insert(paymentIntents).values({
             id: intentId,
@@ -1090,6 +1141,7 @@ app.post('/payments/subscription-checkout', requireAuth, async (c) => {
 
 app.get('/payments/intents/:intentId/status', requireAuth, async (c) => {
     const authUser = c.get('authUser') as UserRow;
+    const db = c.get('db');
     const intentId = c.req.param('intentId');
 
     const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.id, intentId)).limit(1);
@@ -1129,6 +1181,7 @@ app.post('/payments/webhook', async (c) => {
         });
 
         const payload = schema.parse(body);
+        const db = c.get('db');
 
         const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.id, payload.intentId)).limit(1);
         const intent = rows[0];
@@ -1162,7 +1215,7 @@ app.post('/payments/webhook', async (c) => {
                 subscriptionCurrency: intent.currency,
                 subscriptionStartsAt: startsAt,
                 subscriptionEndsAt: endsAt,
-            });
+            }, db);
 
             await db.insert(analyticsEvents).values({
                 id: nanoid(),
@@ -1201,11 +1254,12 @@ app.post('/payments/webhook', async (c) => {
 });
 
 app.post('/jobs/expire-subscriptions', async (c) => {
-    if (!isCronAuthorized(c.req.header('X-Cron-Secret'), c.req.header('Authorization'))) {
+    if (!isCronAuthorized(c.req.header('X-Cron-Secret'), c.req.header('Authorization'), c.env.CRON_SECRET)) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     }
 
     const now = new Date();
+    const db = c.get('db');
 
     const updated = await db
         .update(users)
@@ -1220,11 +1274,12 @@ app.post('/jobs/expire-subscriptions', async (c) => {
 });
 
 app.post('/jobs/sync-offers', async (c) => {
-    if (!isCronAuthorized(c.req.header('X-Cron-Secret'), c.req.header('Authorization'))) {
+    if (!isCronAuthorized(c.req.header('X-Cron-Secret'), c.req.header('Authorization'), c.env.CRON_SECRET)) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     }
 
     const now = new Date();
+    const db = c.get('db');
 
     const activated = await db
         .update(offers)
@@ -1242,11 +1297,12 @@ app.post('/jobs/sync-offers', async (c) => {
 });
 
 app.post('/jobs/run-all', async (c) => {
-    if (!isCronAuthorized(c.req.header('X-Cron-Secret'), c.req.header('Authorization'))) {
+    if (!isCronAuthorized(c.req.header('X-Cron-Secret'), c.req.header('Authorization'), c.env.CRON_SECRET)) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     }
 
     const now = new Date();
+    const db = c.get('db');
 
     // Expire subscriptions
     const expired = await db
