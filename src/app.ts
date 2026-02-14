@@ -1286,5 +1286,5 @@ app.onError((error, c) => {
     return c.json({ ok: false, message: asErrorMessage(error) }, 500);
 });
 
-export { app };
+export default app;
 
