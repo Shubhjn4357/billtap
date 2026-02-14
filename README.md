@@ -1,196 +1,354 @@
-# BillTap
+# BillTap Client
 
-BillTap is an Expo + React Native billing app for small merchants.
-It includes inventory management, checkout with atomic stock validation, invoice PDF generation, and sales reporting.
+Cross-platform mobile and web application built with Expo (React Native).
 
-## Stack
+## 🚀 Tech Stack
 
-- Expo SDK 54 + Expo Router
-- React Native 0.81 / React 19
-- Firebase Auth + Firestore
-- Zustand state management
-- React Native Paper UI
+- **Framework**: Expo SDK 54
+- **Navigation**: Expo Router (file-based routing)
+- **State Management**: Zustand
+- **Styling**: React Native Paper + Custom theme system
+- **Auth**: Google OAuth + Phone OTP
+- **Offline Support**: AsyncStorage with queue-based sync
+- **Testing**: Vitest
 
-## Quick Start
+## 📋 Prerequisites
 
-1. Install dependencies:
+- Node.js 18+ and pnpm
+- [Expo account](https://expo.dev) (free)
+- Android Studio (for Android builds)
+- Xcode (for iOS builds, macOS only)
+- Backend API deployed (see [backend README](../backend/README.md))
+- Google Cloud Console project with OAuth credentials
+
+## 🛠️ Local Setup
+
+### 1. Install Dependencies
 
 ```bash
+cd client
 pnpm install
 ```
 
-2. Create `.env` from `.env.example` and fill Firebase + Google OAuth values.
-
-3. Start the app:
+### 2. Configure Environment Variables
 
 ```bash
+cp .env.example .env
+```
+
+Edit `.env` with your values:
+
+| Variable | Description | Required | Example |
+|----------|-------------|----------|---------|
+| `EXPO_PUBLIC_API_BASE_URL` | Backend API base URL | ✅ Yes | `https://your-backend.vercel.app/api` |
+| `EXPO_PUBLIC_ENABLE_LIVE_PAYMENTS` | Enable real payment processing | No | `false` (default) |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | Google OAuth Web Client ID | ✅ Yes | `123-abc.apps.googleusercontent.com` |
+| `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` | Google OAuth Android Client ID | For Android | `123-xyz.apps.googleusercontent.com` |
+| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | Google OAuth iOS Client ID | For iOS | `123-ios.apps.googleusercontent.com` |
+
+### 3. Run Development Server
+
+```bash
+# Start Expo dev server
 pnpm start
+
+# Run on specific platform
+pnpm android    # Android
+pnpm ios        # iOS (macOS only)
+pnpm web        # Web browser
 ```
 
-## Environment Variables
+## 🔑 Google OAuth Setup
 
-Required keys are documented in `.env.example`:
+### Create OAuth Credentials
 
-- `EXPO_PUBLIC_FIREBASE_API_KEY`
-- `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`
-- `EXPO_PUBLIC_FIREBASE_PROJECT_ID`
-- `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`
-- `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-- `EXPO_PUBLIC_FIREBASE_APP_ID`
-- `EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID`
-- `EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID`
-- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
-- `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
-- `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create new project or select existing
+3. Enable **Google+ API**
+4. Go to **APIs & Services → Credentials**
+5. Click **Create Credentials → OAuth 2.0 Client ID**
 
-## Static Text System
+### Web Client ID (Required for all platforms)
 
-All app legal copy, company identity, changelog text, sitemap labels, and Settings static labels are centralized in:
+1. Application type: **Web application**
+2. Authorized JavaScript origins:
+   - `http://localhost:3000` (for local dev)
+   - `https://your-backend.vercel.app` (your deployed backend)
+3. Authorized redirect URIs:
+   - `https://your-backend.vercel.app/api/auth/google`
+4. Copy **Client ID** → use as `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
 
-- `src/constants/staticText.ts`
-- Date helpers used across app screens/layout are centralized in:
-- `src/utils/date.ts`
+### Android Client ID (For Android app)
 
-If you want to change product/company values globally (for example `AutoLoop`, support emails, app legal dates, policy wording), edit:
+1. Application type: **Android**
+2. Get your SHA-1 fingerprint:
+   ```bash
+   # For development
+   keytool -keystore ~/.android/debug.keystore -list -v -alias androiddebugkey
+   # Password: android
+   
+   # For production (after creating release keystore)
+   keytool -keystore path/to/release.keystore -list -v
+   ```
+3. Enter your package name (from `app.json`: `android.package`)
+4. Enter SHA-1 fingerprint
+5. Copy **Client ID** → use as `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
 
-- `BRAND` object in `src/constants/staticText.ts`
+### iOS Client ID (For iOS app)
 
-If you want to update policy/legal sections, edit:
+1. Application type: **iOS**
+2. Enter iOS Bundle ID (from `app.json`: `ios.bundleIdentifier`)
+3. Copy **Client ID** → use as `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
 
-- `TERMS_SECTIONS` in `src/constants/staticText.ts`
-- `PRIVACY_SECTIONS` in `src/constants/staticText.ts`
+## 📱 Build & Deploy
 
-If you want to update app UI labels/messages globally, edit:
-
-- `SETTINGS_TEXT`, `COMMON_TEXT`, `AUTH_TEXT`, `ONBOARDING_TEXT`, `BUSINESS_SETUP_TEXT`
-- `SUBSCRIPTION_TEXT`, `ADMIN_TEXT`, `BILLING_TEXT`, `REPORTS_TEXT`, `STOCK_TEXT`
-
-## Scripts
-
-- `pnpm start` - start Metro
-- `pnpm android` - run Android dev target
-- `pnpm ios` - run iOS dev target
-- `pnpm web` - run web dev target
-- `pnpm lint` - run ESLint
-- `pnpm typecheck` - run TypeScript checks
-- `pnpm test` - run unit tests
-- `pnpm test:watch` - run tests in watch mode
-- `pnpm test:coverage` - run tests with coverage
-- `pnpm doctor` - run Expo Doctor
-- `pnpm build:web` - static web export smoke test
-
-## Current Product Coverage
-
-- Authentication:
-  - Google sign-in (env-configured)
-  - Phone OTP on native builds
-- Inventory:
-  - Add/edit/delete items
-  - Barcode-assisted search flow
-- Billing:
-  - Cart-based checkout
-  - Currency-aware totals and invoices
-  - Atomic stock validation and decrement in Firestore transaction
-  - PDF invoice sharing
-- Insights:
-  - Dashboard summary cards
-  - Reports with date-range filters
-  - Top product highlights
-  - Per-bill PDF sharing
-  - Summary report PDF export
-- Subscription:
-  - Dedicated subscription/payment test screen
-  - Four monthly plans
-  - Test payment success/failure flows
-  - Successful payment writes subscription status + validity dates to user profile
-- Admin & Growth:
-  - Role-gated admin control panel for user, plans, and offers management
-  - Centralized plan pricing (Firestore `plans`) used by subscription screen
-  - Marketing offer banners (Firestore `offers`) with audience targeting
-  - Automated subscription expiry handling based on validity date
-  - Funnel analytics block in admin panel (last 30 days)
-
-## Payment + Automation Stack (Scaffolded)
-
-- Client payment flow:
-  - `subscription` screen now supports `Start Live Payment (Scaffold)` via backend endpoint.
-  - Secure activation path is webhook-driven (client no longer trusted for real payments).
-- Cloud Functions backend (`functions/`):
-  - `createSubscriptionCheckout` - creates payment intent scaffold.
-  - `paymentWebhook` - verifies payment result and activates subscription on success.
-  - `paymentIntentStatus` - checks payment intent status.
-  - `seedDefaultPlans` - seeds starter/growth/pro/enterprise plans.
-- Scheduled automation:
-  - `expireSubscriptionsDaily`
-  - `syncOffersBySchedule`
-  - `createRenewalTasksDaily`
-  - `aggregateFunnelDaily`
-
-## Analytics Events
-
-Tracked events are saved in Firestore collection `analytics_events`:
-
-- `offer_impression`
-- `offer_click`
-- `subscription_screen_view`
-- `plan_selected`
-- `checkout_started`
-- `checkout_redirected`
-- `payment_success`
-- `payment_failed`
-
-Admin panel computes funnel conversion rates from these events.
-
-## CI
-
-GitHub Actions (`.github/workflows/android_build.yml`) now runs:
-
-1. `expo-doctor`
-2. `lint`
-3. `typecheck`
-4. `test`
-5. `build:web` smoke test
-6. Android build + artifact upload
-
-## Firestore Security
-
-This repo includes:
-
-- `firestore.rules`
-- `firestore.indexes.json`
-- `firebase.json`
-
-Deploy with Firebase CLI:
+### Web Build
 
 ```bash
-firebase deploy --only firestore:rules,firestore:indexes
+# Build static web app
+pnpm build:web
+
+# Output in: /dist
+# Deploy to: Vercel, Netlify, or any static host
 ```
 
-The bundled rules include ownership checks plus schema/type validation for `users`, `items`, `orders`, `plans`, `offers`, `payment_intents`, and `analytics_events`.
-
-## Cloud Functions Deploy
-
-1. Install function deps:
+#### Deploy Web to Vercel
 
 ```bash
-cd functions
+# Install Vercel CLI
+npm i -g vercel
+
+# Build first
+pnpm build:web
+
+# Deploy dist folder
+cd dist
+vercel
+```
+
+### Android Build
+
+#### Development Build
+
+```bash
+# Install Expo CLI
+npm i -g eas-cli
+
+# Login to Expo
+eas login
+
+# Configure EAS Build
+eas build:configure
+
+# Build development APK (for testing)
+eas build --profile development --platform android
+```
+
+#### Production Build
+
+```bash
+# Build production APK
+eas build --profile production --platform android --local
+
+# OR build AAB for Google Play Store
+eas build --profile production --platform android
+```
+
+#### Manual Android Build (Alternative)
+
+```bash
+# Prebuild native Android project
+npx expo prebuild --platform android
+
+# Open in Android Studio
+cd android
+./gradlew assembleRelease
+
+# APK location: android/app/build/outputs/apk/release/app-release.apk
+```
+
+### iOS Build (macOS only)
+
+```bash
+# Build development
+eas build --profile development --platform ios
+
+# Build for App Store
+eas build --profile production --platform ios
+
+# OR build locally
+eas build --profile production --platform ios --local
+```
+
+## 🧪 Testing & Quality
+
+```bash
+# Type checking
+pnpm typecheck
+
+# Linting
+pnpm lint
+
+# Run tests
+pnpm test
+
+# Watch mode
+pnpm test:watch
+
+# Coverage report
+pnpm test:coverage
+
+# Health check
+pnpm doctor
+```
+
+## 📡 API Configuration
+
+The app communicates with the backend via REST API. All endpoints are defined in `src/api/`.
+
+### API Services
+
+- **authService.ts** - Authentication (Google, Phone OTP)
+- **userService.ts** - User profile management
+- **itemService.ts** - Inventory CRUD
+- **billService.ts** - Bill/order creation
+- **paymentService.ts** - Subscription payments
+- **marketingService.ts** - Plans and offers
+- **analyticsService.ts** - Event tracking
+- **adminService.ts** - Admin operations
+- **offlineSyncService.ts** - Queue-based offline sync
+
+### Verify API Connection
+
+```bash
+# Test backend health
+curl https://your-backend.vercel.app/api/health
+
+# Should return:
+# {"ok":true,"service":"billtap-api","now":"..."}
+```
+
+## 🌐 Platform-Specific Configuration
+
+### Android (`app.json`)
+
+```json
+{
+  "expo": {
+    "android": {
+      "package": "com.yourcompany.billtap",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    }
+  }
+}
+```
+
+### iOS (`app.json`)
+
+```json
+{
+  "expo": {
+    "ios": {
+      "bundleIdentifier": "com.yourcompany.billtap",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan barcodes for inventory items",
+        "NSPhotoLibraryUsageDescription": "Save and share bills as images"
+      }
+    }
+  }
+}
+```
+
+## 📚 Project Structure
+
+```
+client/
+├── app/                    # Expo Router pages
+│   ├── (auth)/            # Auth screens (login, signup)
+│   ├── (onboarding)/      # Onboarding flow
+│   ├── (tabs)/            # Main tabs (home, items, bills, etc.)
+│   ├── admin/             # Admin screens
+│   └── _layout.tsx        # Root layout
+├── src/
+│   ├── api/               # API service layer
+│   ├── components/        # Reusable components
+│   ├── constants/         # App constants
+│   ├── hooks/             # Custom React hooks
+│   ├── screens/           # Screen components
+│   ├── store/             # Zustand stores
+│   ├── types/             # TypeScript types
+│   └── utils/             # Utility functions
+├── assets/                # Images, fonts, etc.
+└── .env                   # Environment variables
+```
+
+## 🔧 Troubleshooting
+
+### Backend Connection Failed
+
+- Verify `EXPO_PUBLIC_API_BASE_URL` is correct
+- Check backend is deployed and accessible
+- Test: `curl https://your-backend.vercel.app/api/health`
+
+### Google Sign-In Not Working
+
+- Verify Web Client ID is correct
+- Check authorized origins include backend URL
+- For Android: Verify SHA-1 fingerprint matches
+- For iOS: Verify bundle identifier matches
+
+### Build Errors
+
+```bash
+# Clear caches
+npx expo start -c
+
+# Reset and reinstall
+rm -rf node_modules
 pnpm install
+
+# For Android native issues
+cd android
+./gradlew clean
 ```
 
-2. Deploy functions:
+## 📝 Development Commands
 
-```bash
-firebase deploy --only functions
-```
+- `pnpm start` - Start Expo dev server
+- `pnpm android` - Run on Android
+- `pnpm ios` - Run on iOS
+- `pnpm web` - Run in web browser
+- `pnpm lint` - Lint code
+- `pnpm typecheck` - Type checking
+- `pnpm test` - Run tests
+- `pnpm doctor` - Diagnose issues
+- `pnpm build:web` - Build web app
 
-3. Set app env for payment API base URL:
+## 📚 Additional Documentation
 
-```bash
-EXPO_PUBLIC_PAYMENT_API_BASE_URL=https://us-central1-<your-project-id>.cloudfunctions.net
-```
+- [SETUP.md](../SETUP.md) - Complete setup guide
+- [DEPLOYMENT.md](../DEPLOYMENT.md) - Deployment guide
+- [API_REFERENCE.md](../API_REFERENCE.md) - API documentation
+- [ENV_VARIABLES.md](../ENV_VARIABLES.md) - Environment variables
 
-## Important Production TODOs
+## 🎯 Next Steps
 
-- In `functions/index.js`, replace placeholder payment order/session logic with real provider SDK calls.
-- Verify webhook signatures before trusting webhook payloads.
-- Prefer setting `admin=true` custom claims for trusted admin identities.
+1. ✅ Configure environment variables
+2. ✅ Set up Google OAuth credentials
+3. ✅ Verify backend connection
+4. 🔨 Test on development device
+5. 🚀 Build for production
+6. 📦 Deploy/publish to stores
+
+## 💡 Notes
+
+- **Offline Support**: App caches data locally and syncs when online
+- **Payment Demo**: Payments in demo mode unless backend has real provider configured
+- **First User = Admin**: First user to sign up gets admin role
+- **Expo Updates**: OTA updates enabled for quick fixes without store approval

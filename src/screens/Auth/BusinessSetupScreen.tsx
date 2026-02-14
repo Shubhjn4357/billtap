@@ -1,10 +1,8 @@
-
 import { useEffect, useState } from 'react';
 import { StyleSheet, ScrollView, Alert } from 'react-native';
 import { TextInput, Button, Text, List, useTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db } from '../../api/firebaseConfig';
+import { userService } from '../../api/userService';
 import { Config } from '../../constants/Config';
 import { BUSINESS_SETUP_TEXT, COMMON_TEXT } from '../../constants/staticText';
 import { normalizeCurrencyCode } from '../../utils/formatters';
@@ -41,34 +39,17 @@ export default function BusinessSetupScreen() {
 
         setLoading(true);
         try {
-            const uid = auth.currentUser?.uid;
-            if (!uid) return;
-
-            const updateData = {
+            const updatedUser = await userService.updateCurrentUser({
                 businessName: businessName.trim(),
                 address: address.trim(),
                 gstNumber: gst.trim(),
                 gstEnabled: !!gst.trim(),
                 currency,
-                updatedAt: serverTimestamp(),
-            };
+            });
 
-            await setDoc(doc(db, 'users', uid), updateData, { merge: true });
-
-            if (user) {
-                setUser({
-                    ...user,
-                    businessName: businessName.trim(),
-                    address: address.trim(),
-                    gstNumber: gst.trim(),
-                    gstEnabled: !!gst.trim(),
-                    currency,
-                });
-            }
+            setUser(updatedUser);
             setCurrency(currency);
-
             router.replace('/(tabs)/home');
-
         } catch (error: unknown) {
             Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : BUSINESS_SETUP_TEXT.saveFailed);
         } finally {
@@ -130,10 +111,10 @@ export default function BusinessSetupScreen() {
                     </List.Accordion>
                 </List.Section>
 
-                <Button 
-                    mode="contained" 
-                    onPress={handleSave} 
-                    loading={loading} 
+                <Button
+                    mode="contained"
+                    onPress={handleSave}
+                    loading={loading}
                     style={styles.button}
                 >
                     {BUSINESS_SETUP_TEXT.actions.startBilling}

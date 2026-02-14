@@ -4,8 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { List, Switch, Text, useTheme } from 'react-native-paper';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db } from '../../api/firebaseConfig';
+import { userService } from '../../api/userService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
@@ -80,11 +79,11 @@ export const SettingsScreen = () => {
             setUser({ ...user, currency: normalized });
         }
 
-        const uid = auth.currentUser?.uid;
-        if (!uid) return;
+        if (!user) return;
 
         try {
-            await setDoc(doc(db, 'users', uid), { currency: normalized, updatedAt: serverTimestamp() }, { merge: true });
+            const updatedUser = await userService.updateCurrentUser({ currency: normalized });
+            setUser(updatedUser);
         } catch (error: unknown) {
             setCurrency(previousCurrency);
             if (user) {

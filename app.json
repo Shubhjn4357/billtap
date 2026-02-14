@@ -21,7 +21,6 @@
     },
     "android": {
       "package": "com.autoloop.billtap",
-      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundImage": "./assets/images/android-icon-background.png"
       },

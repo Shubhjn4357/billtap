@@ -1,0 +1,83 @@
+import { API_CONFIG } from '../constants/Api';
+import { getSessionToken } from './session';
+
+export class ApiError extends Error {
+    status: number;
+    details?: unknown;
+
+    constructor(message: string, status: number, details?: unknown) {
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
+        this.details = details;
+    }
+}
+
+const resolveUrl = (path: string) => {
+    if (/^https?:\/\//i.test(path)) {
+        return path;
+    }
+
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${API_CONFIG.baseUrl}${normalizedPath}`;
+};
+
+const tryParseJson = (value: string) => {
+    if (!value) return null;
+    try {
+        return JSON.parse(value) as unknown;
+    } catch {
+        return null;
+    }
+};
+
+interface RequestOptions {
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    body?: unknown;
+    headers?: Record<string, string>;
+    skipAuth?: boolean;
+}
+
+const request = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
+    const { method = 'GET', body, headers = {}, skipAuth = false } = options;
+
+    const requestHeaders: Record<string, string> = {
+        ...headers,
+    };
+
+    if (!skipAuth) {
+        const token = await getSessionToken();
+        if (token) {
+            requestHeaders.Authorization = `Bearer ${token}`;
+        }
+    }
+
+    const hasBody = body !== undefined;
+    if (hasBody && !requestHeaders['Content-Type']) {
+        requestHeaders['Content-Type'] = 'application/json';
+    }
+
+    const response = await fetch(resolveUrl(path), {
+        method,
+        headers: requestHeaders,
+        body: hasBody ? JSON.stringify(body) : undefined,
+    });
+
+    const text = await response.text();
+    const parsed = tryParseJson(text) as { message?: string } | null;
+
+    if (!response.ok) {
+        const message = parsed?.message ?? `Request failed (${response.status})`;
+        throw new ApiError(message, response.status, parsed ?? text);
+    }
+
+    return (parsed as T) ?? ({} as T);
+};
+
+export const apiClient = {
+    get: <T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}) => request<T>(path, { ...options, method: 'GET' }),
+    post: <T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}) => request<T>(path, { ...options, method: 'POST', body }),
+    put: <T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}) => request<T>(path, { ...options, method: 'PUT', body }),
+    patch: <T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}) => request<T>(path, { ...options, method: 'PATCH', body }),
+    delete: <T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}) => request<T>(path, { ...options, method: 'DELETE' }),
+};

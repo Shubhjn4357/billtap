@@ -1,0 +1,359 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiClient, ApiError } from './httpClient';
+import { isOnline } from '../utils/network';
+import type { AnalyticsEventType, BillItem, Item, UserProfile } from '../types';
+
+const OFFLINE_QUEUE_KEY = 'billtap_offline_queue_v1';
+const ITEM_CACHE_KEY = 'billtap_item_cache_v1';
+const BILL_CACHE_KEY = 'billtap_bill_cache_v1';
+
+interface QueueMutationBase {
+    id: string;
+    createdAt: string;
+}
+
+interface OfflineItemPayload {
+    id: string;
+    name: string;
+    nameLowercase: string;
+    price: number;
+    stock: number;
+    category?: string | null;
+    barcode?: string | null;
+}
+
+interface OfflineBillPayload {
+    id: string;
+    customerName?: string;
+    customerPhone?: string;
+    businessName?: string;
+    businessAddress?: string;
+    gstNumber?: string;
+    currency?: string;
+    items: BillItem[];
+    total: number;
+    createdAt: string;
+}
+
+type OfflineMutation =
+    | (QueueMutationBase & {
+        type: 'upsert_item';
+        payload: OfflineItemPayload;
+    })
+    | (QueueMutationBase & {
+        type: 'delete_item';
+        payload: { id: string };
+    })
+    | (QueueMutationBase & {
+        type: 'create_bill';
+        payload: OfflineBillPayload;
+    })
+    | (QueueMutationBase & {
+        type: 'update_user_me';
+        payload: Partial<UserProfile>;
+    })
+    | (QueueMutationBase & {
+        type: 'analytics_event';
+        payload: {
+            eventType: AnalyticsEventType;
+            source?: string;
+            planId?: string;
+            offerId?: string;
+            value?: number;
+            currency?: string;
+            metadata?: Record<string, string | number | boolean>;
+        };
+    });
+
+const readJson = async <T>(key: string, fallback: T): Promise<T> => {
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return fallback;
+
+    try {
+        return JSON.parse(raw) as T;
+    } catch {
+        return fallback;
+    }
+};
+
+const writeJson = async <T>(key: string, value: T) => {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+};
+
+const normalizeItem = (item: Item): Item => ({
+    ...item,
+    nameLowercase: item.nameLowercase ?? item.name.toLowerCase(),
+    updatedAt: item.updatedAt ?? new Date().toISOString(),
+});
+
+const sortItems = (itemsToSort: Item[]) => {
+    return [...itemsToSort].sort((a, b) => a.nameLowercase.localeCompare(b.nameLowercase));
+};
+
+const sortBills = <T extends { createdAt?: string | number | Date }>(entries: T[]) => {
+    return [...entries].sort((a, b) => {
+        const dateA = new Date(a.createdAt ?? 0).getTime();
+        const dateB = new Date(b.createdAt ?? 0).getTime();
+        return dateB - dateA;
+    });
+};
+
+const shouldDropMutation = (error: unknown) => {
+    if (!(error instanceof ApiError)) return false;
+    return error.status === 400 || error.status === 404;
+};
+
+const shouldStopFlush = (error: unknown) => {
+    if (!(error instanceof ApiError)) return true;
+    return error.status === 401 || error.status === 403 || error.status >= 500;
+};
+
+const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
+    switch (mutation.type) {
+        case 'upsert_item': {
+            const payload = {
+                name: mutation.payload.name,
+                price: mutation.payload.price,
+                stock: mutation.payload.stock,
+                category: mutation.payload.category ?? undefined,
+                barcode: mutation.payload.barcode ?? undefined,
+            };
+
+            try {
+                const patchResponse = await apiClient.patch<{ ok: boolean; message?: string }>(
+                    `/items/${encodeURIComponent(mutation.payload.id)}`,
+                    payload
+                );
+                if (!patchResponse.ok) {
+                    throw new Error(patchResponse.message || 'Failed to update item.');
+                }
+            } catch (error: unknown) {
+                if (!(error instanceof ApiError) || error.status !== 404) {
+                    throw error;
+                }
+
+                const createResponse = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/items', {
+                    id: mutation.payload.id,
+                    ...payload,
+                });
+
+                if (!createResponse.ok) {
+                    throw new Error(createResponse.message || 'Failed to create item.');
+                }
+            }
+            return;
+        }
+        case 'delete_item': {
+            try {
+                const response = await apiClient.delete<{ ok: boolean; message?: string }>(
+                    `/items/${encodeURIComponent(mutation.payload.id)}`
+                );
+                if (!response.ok) {
+                    throw new Error(response.message || 'Failed to delete item.');
+                }
+            } catch (error: unknown) {
+                if (error instanceof ApiError && error.status === 404) {
+                    return;
+                }
+                throw error;
+            }
+            return;
+        }
+        case 'create_bill': {
+            const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/bills', {
+                id: mutation.payload.id,
+                customerName: mutation.payload.customerName,
+                customerPhone: mutation.payload.customerPhone,
+                businessName: mutation.payload.businessName,
+                businessAddress: mutation.payload.businessAddress,
+                gstNumber: mutation.payload.gstNumber,
+                currency: mutation.payload.currency,
+                items: mutation.payload.items,
+                total: mutation.payload.total,
+                createdAt: mutation.payload.createdAt,
+            });
+
+            if (!response.ok) {
+                throw new Error(response.message || 'Failed to create bill.');
+            }
+            return;
+        }
+        case 'update_user_me': {
+            const response = await apiClient.patch<{ ok: boolean; user?: UserProfile; message?: string }>(
+                '/users/me',
+                mutation.payload
+            );
+            if (!response.ok) {
+                throw new Error(response.message || 'Failed to update user.');
+            }
+            return;
+        }
+        case 'analytics_event': {
+            const response = await apiClient.post<{ ok: boolean; message?: string }>('/analytics/events', mutation.payload);
+            if (!response.ok) {
+                throw new Error(response.message || 'Failed to log analytics event.');
+            }
+            return;
+        }
+        default:
+            return;
+    }
+};
+
+const generateLocalId = (prefix: string) => {
+    const random = Math.random().toString(36).slice(2, 10);
+    const stamp = Date.now().toString(36);
+    return `local_${prefix}_${stamp}_${random}`;
+};
+
+export const offlineSyncService = {
+    createLocalId(prefix: string) {
+        return generateLocalId(prefix);
+    },
+
+    async getCachedItems(): Promise<Item[]> {
+        const data = await readJson<Item[]>(ITEM_CACHE_KEY, []);
+        return sortItems(data.map(normalizeItem));
+    },
+
+    async setCachedItems(itemsToPersist: Item[]): Promise<void> {
+        await writeJson(ITEM_CACHE_KEY, sortItems(itemsToPersist.map(normalizeItem)));
+    },
+
+    async upsertCachedItem(item: Item): Promise<void> {
+        const current = await this.getCachedItems();
+        const exists = current.some((entry) => entry.id === item.id);
+        const next = exists
+            ? current.map((entry) => (entry.id === item.id ? normalizeItem(item) : entry))
+            : [...current, normalizeItem(item)];
+        await this.setCachedItems(next);
+    },
+
+    async removeCachedItem(itemId: string): Promise<void> {
+        const current = await this.getCachedItems();
+        await this.setCachedItems(current.filter((entry) => entry.id !== itemId));
+    },
+
+    async getCachedBills<T extends { id: string; createdAt?: string | number | Date }>(): Promise<T[]> {
+        const data = await readJson<T[]>(BILL_CACHE_KEY, []);
+        return sortBills(data);
+    },
+
+    async setCachedBills<T extends { id: string; createdAt?: string | number | Date }>(entries: T[]): Promise<void> {
+        await writeJson(BILL_CACHE_KEY, sortBills(entries));
+    },
+
+    async upsertCachedBill<T extends { id: string; createdAt?: string | number | Date }>(entry: T): Promise<void> {
+        const current = await this.getCachedBills<T>();
+        const exists = current.some((item) => item.id === entry.id);
+        const next = exists
+            ? current.map((item) => (item.id === entry.id ? entry : item))
+            : [entry, ...current];
+        await this.setCachedBills(next);
+    },
+
+    async applyLocalBillStock(itemsInBill: BillItem[]): Promise<void> {
+        const currentItems = await this.getCachedItems();
+        const grouped = new Map<string, number>();
+
+        for (const line of itemsInBill) {
+            grouped.set(line.id, (grouped.get(line.id) ?? 0) + line.quantity);
+        }
+
+        const nextItems = [...currentItems];
+
+        for (const [itemId, qty] of grouped.entries()) {
+            const index = nextItems.findIndex((entry) => entry.id === itemId);
+            if (index < 0) {
+                throw new Error(`Item ${itemId} no longer exists.`);
+            }
+
+            const stock = Number(nextItems[index].stock ?? 0);
+            const nextStock = stock - qty;
+            if (nextStock < 0) {
+                throw new Error(`Insufficient stock for "${nextItems[index].name}".`);
+            }
+
+            nextItems[index] = {
+                ...nextItems[index],
+                stock: nextStock,
+                updatedAt: new Date().toISOString(),
+            };
+        }
+
+        await this.setCachedItems(nextItems);
+    },
+
+    async getQueue(): Promise<OfflineMutation[]> {
+        return await readJson<OfflineMutation[]>(OFFLINE_QUEUE_KEY, []);
+    },
+
+    async enqueueMutation(mutation: Omit<OfflineMutation, 'id' | 'createdAt'>): Promise<void> {
+        const queue = await this.getQueue();
+        const nextMutation = {
+            ...mutation,
+            id: generateLocalId('queue'),
+            createdAt: new Date().toISOString(),
+        } as OfflineMutation;
+
+        queue.push(nextMutation);
+        await writeJson(OFFLINE_QUEUE_KEY, queue);
+    },
+
+    async clearQueue(): Promise<void> {
+        await AsyncStorage.removeItem(OFFLINE_QUEUE_KEY);
+    },
+
+    async clearCaches(): Promise<void> {
+        await Promise.all([
+            AsyncStorage.removeItem(ITEM_CACHE_KEY),
+            AsyncStorage.removeItem(BILL_CACHE_KEY),
+        ]);
+    },
+
+    async clearAllLocalData(): Promise<void> {
+        await Promise.all([
+            this.clearQueue(),
+            this.clearCaches(),
+        ]);
+    },
+
+    async flushQueue(): Promise<{ processed: number; remaining: number }> {
+        if (!(await isOnline())) {
+            const queued = await this.getQueue();
+            return { processed: 0, remaining: queued.length };
+        }
+
+        const queue = await this.getQueue();
+        if (queue.length === 0) {
+            return { processed: 0, remaining: 0 };
+        }
+
+        const nextQueue: OfflineMutation[] = [];
+        let processed = 0;
+
+        for (let i = 0; i < queue.length; i += 1) {
+            const mutation = queue[i];
+            try {
+                await applyMutation(mutation);
+                processed += 1;
+            } catch (error: unknown) {
+                if (shouldDropMutation(error)) {
+                    processed += 1;
+                    continue;
+                }
+
+                nextQueue.push(mutation, ...queue.slice(i + 1));
+                if (shouldStopFlush(error)) {
+                    break;
+                }
+            }
+        }
+
+        await writeJson(OFFLINE_QUEUE_KEY, nextQueue);
+        return {
+            processed,
+            remaining: nextQueue.length,
+        };
+    },
+};

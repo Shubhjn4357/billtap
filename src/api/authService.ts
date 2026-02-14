@@ -1,57 +1,90 @@
-import {
-    ApplicationVerifier,
-    GoogleAuthProvider,
-    PhoneAuthProvider,
-    User,
-    browserLocalPersistence,
-    setPersistence,
-    signOut as firebaseSignOut,
-    signInWithCredential
-} from 'firebase/auth';
-import { auth } from './firebaseConfig';
-import { Platform } from 'react-native';
+import type { UserProfile } from '../types';
+import { apiClient, ApiError } from './httpClient';
+import { offlineSyncService } from './offlineSyncService';
+import { clearSessionToken, setSessionToken } from './session';
+
+export interface PhoneVerificationSession {
+    verificationId: string;
+    testCode?: string;
+    expiresAt?: string;
+}
+
+interface AuthResponse {
+    ok: boolean;
+    token: string;
+    user: UserProfile;
+    message?: string;
+}
 
 export const authService = {
-    /**
-     * Completes the Google Sign-In process using the identity token received from Google.
-     * @param idToken The identity token from Google Auth.
-     */
-    async googleSignIn(idToken: string): Promise<User> {
-        if (Platform.OS === 'web') {
-            await setPersistence(auth, browserLocalPersistence);
-        }
-        const credential = GoogleAuthProvider.credential(idToken);
-        const result = await signInWithCredential(auth, credential);
-        return result.user;
-    },
+    async googleSignIn(idToken: string): Promise<UserProfile> {
+        const response = await apiClient.post<AuthResponse>('/auth/google', { idToken }, { skipAuth: true });
 
-    /**
-     * Sends a verification code to the provided phone number.
-     * @param phoneNumber The phone number to verify (e.g., +1234567890).
-     * @param recaptchaVerifier The reCAPTCHA verifier instance.
-     * @returns A Promise resolving to the verification ID.
-     */
-    async sendPhoneVerification(phoneNumber: string, recaptchaVerifier?: ApplicationVerifier): Promise<string> {
-        if (Platform.OS === 'web' && !recaptchaVerifier) {
-            throw new Error('Phone sign-in on web requires a reCAPTCHA verifier.');
+        if (!response.ok || !response.token || !response.user) {
+            throw new Error(response.message || 'Unable to sign in with Google.');
         }
 
-        const phoneProvider = new PhoneAuthProvider(auth);
-        return await phoneProvider.verifyPhoneNumber(phoneNumber, recaptchaVerifier);
+        await setSessionToken(response.token);
+        return response.user;
     },
 
-    /**
-     * Confirms the phone number verification using the verification ID and code.
-     * @param verificationId The verification ID received from verifyPhoneNumber.
-     * @param verificationCode The verification code entered by the user.
-     */
-    async confirmPhoneVerification(verificationId: string, verificationCode: string): Promise<User> {
-        const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
-        const result = await signInWithCredential(auth, credential);
-        return result.user;
+    async sendPhoneVerification(phoneNumber: string): Promise<PhoneVerificationSession> {
+        const response = await apiClient.post<{
+            ok: boolean;
+            verificationId: string;
+            testCode?: string;
+            expiresAt?: string;
+            message?: string;
+        }>('/auth/phone/send', { phoneNumber }, { skipAuth: true });
+
+        if (!response.ok || !response.verificationId) {
+            throw new Error(response.message || 'Unable to send OTP.');
+        }
+
+        return {
+            verificationId: response.verificationId,
+            testCode: response.testCode,
+            expiresAt: response.expiresAt,
+        };
     },
 
-    async signOut() {
-        return await firebaseSignOut(auth);
+    async confirmPhoneVerification(verificationId: string, verificationCode: string): Promise<UserProfile> {
+        const response = await apiClient.post<AuthResponse>(
+            '/auth/phone/verify',
+            { verificationId, verificationCode },
+            { skipAuth: true }
+        );
+
+        if (!response.ok || !response.token || !response.user) {
+            throw new Error(response.message || 'Unable to verify OTP.');
+        }
+
+        await setSessionToken(response.token);
+        return response.user;
+    },
+
+    async getCurrentUser(): Promise<UserProfile | null> {
+        try {
+            const response = await apiClient.get<{ ok: boolean; user?: UserProfile; message?: string }>('/auth/me');
+            if (!response.ok || !response.user) return null;
+            return response.user;
+        } catch (error: unknown) {
+            if (error instanceof ApiError && error.status === 401) {
+                await clearSessionToken();
+                return null;
+            }
+            throw error;
+        }
+    },
+
+    async signOut(): Promise<void> {
+        try {
+            await apiClient.post<{ ok: boolean }>('/auth/logout');
+        } catch {
+            // Ignore network errors during local sign out.
+        } finally {
+            await offlineSyncService.clearAllLocalData();
+            await clearSessionToken();
+        }
     }
 };

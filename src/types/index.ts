@@ -1,7 +1,4 @@
-
-import type { Timestamp } from 'firebase/firestore';
-
-export type FirestoreDate = Timestamp | Date | number | string;
+export type FirestoreDate = Date | number | string;
 
 export type SubscriptionStatus = 'inactive' | 'active' | 'expired' | 'canceled';
 export type UserRole = 'owner' | 'staff' | 'admin';

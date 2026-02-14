@@ -1,172 +1,256 @@
-
-import {
-    collection,
-    addDoc,
-    updateDoc,
-    deleteDoc,
-    doc,
-    getDocs,
-    getDoc,
-    query,
-    runTransaction,
-    serverTimestamp,
-    where,
-    orderBy,
-    type DocumentData
-} from 'firebase/firestore';
-import { db } from './firebaseConfig';
 import type { BillItem, Item } from '../types';
+import { apiClient, ApiError } from './httpClient';
+import { offlineSyncService } from './offlineSyncService';
+import { isOnline } from '../utils/network';
 
-const ITEMS_COLLECTION = 'items';
-
-const toItem = (raw: DocumentData, id: string): Item => ({
-    id,
-    userId: raw.userId,
-    name: raw.name,
-    nameLowercase: raw.nameLowercase,
-    price: raw.price,
-    stock: raw.stock,
-    category: raw.category,
-    barcode: raw.barcode,
-    updatedAt: raw.updatedAt,
+const toItem = (raw: Item): Item => ({
+    ...raw,
+    nameLowercase: raw.nameLowercase ?? raw.name.toLowerCase(),
+    updatedAt: raw.updatedAt ?? new Date().toISOString(),
 });
 
 export const itemService = {
-    /**
-     * Adds a new item to inventory.
-     */
     async addItem(item: Omit<Item, 'id'>): Promise<string> {
-        const docRef = await addDoc(collection(db, ITEMS_COLLECTION), {
+        const localId = offlineSyncService.createLocalId('item');
+        const normalized = toItem({
             ...item,
-            nameLowercase: item.name.toLowerCase(),
-            updatedAt: serverTimestamp()
+            id: localId,
         });
-        return docRef.id;
-    },
 
-    /**
-     * Updates an existing item.
-     */
-    async updateItem(id: string, updates: Partial<Item>): Promise<void> {
-        const docRef = doc(db, ITEMS_COLLECTION, id);
-        const payload: Record<string, unknown> = {
-            ...updates,
-            updatedAt: serverTimestamp(),
-        };
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/items', {
+                    id: localId,
+                    name: item.name,
+                    price: item.price,
+                    stock: item.stock,
+                    category: item.category,
+                    barcode: item.barcode,
+                });
 
-        if (typeof updates.name === 'string') {
-            payload.nameLowercase = updates.name.toLowerCase();
+                if (!response.ok || !response.id) {
+                    throw new Error(response.message || 'Failed to add item.');
+                }
+
+                await offlineSyncService.upsertCachedItem({
+                    ...normalized,
+                    id: response.id,
+                });
+                return response.id;
+            } catch (error: unknown) {
+                if (error instanceof ApiError) {
+                    throw error;
+                }
+            }
         }
 
-        await updateDoc(docRef, {
-            ...payload,
+        await offlineSyncService.upsertCachedItem(normalized);
+        await offlineSyncService.enqueueMutation({
+            type: 'upsert_item',
+            payload: {
+                id: localId,
+                name: normalized.name,
+                nameLowercase: normalized.nameLowercase,
+                price: normalized.price,
+                stock: normalized.stock,
+                category: normalized.category ?? null,
+                barcode: normalized.barcode ?? null,
+            },
+        });
+
+        return localId;
+    },
+
+    async updateItem(id: string, updates: Partial<Item>): Promise<void> {
+        const current = await this.getItem(id);
+        if (!current) {
+            throw new Error('Item not found.');
+        }
+
+        const merged = toItem({
+            ...current,
+            ...updates,
+            id,
+            name: typeof updates.name === 'string' ? updates.name : current.name,
+            nameLowercase: typeof updates.name === 'string'
+                ? updates.name.toLowerCase()
+                : current.nameLowercase,
+            updatedAt: new Date().toISOString(),
+        });
+
+        await offlineSyncService.upsertCachedItem(merged);
+
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.patch<{ ok: boolean; message?: string }>(`/items/${id}`, {
+                    name: merged.name,
+                    price: merged.price,
+                    stock: merged.stock,
+                    category: merged.category,
+                    barcode: merged.barcode,
+                });
+
+                if (!response.ok) {
+                    throw new Error(response.message || 'Failed to update item.');
+                }
+
+                return;
+            } catch (error: unknown) {
+                if (error instanceof ApiError && error.status < 500) {
+                    throw error;
+                }
+            }
+        }
+
+        await offlineSyncService.enqueueMutation({
+            type: 'upsert_item',
+            payload: {
+                id: merged.id,
+                name: merged.name,
+                nameLowercase: merged.nameLowercase,
+                price: merged.price,
+                stock: merged.stock,
+                category: merged.category ?? null,
+                barcode: merged.barcode ?? null,
+            },
         });
     },
 
-    /**
-     * Updates stock for a single item in a transaction.
-     */
     async updateStock(id: string, qty: number, type: 'IN' | 'OUT'): Promise<void> {
         if (qty <= 0) {
             throw new Error('Quantity must be greater than 0.');
         }
 
-        const docRef = doc(db, ITEMS_COLLECTION, id);
-        await runTransaction(db, async (transaction) => {
-            const itemSnap = await transaction.get(docRef);
-            if (!itemSnap.exists()) {
-                throw new Error('Item not found.');
-            }
+        const item = await this.getItem(id);
+        if (!item) {
+            throw new Error('Item not found.');
+        }
 
-            const currentStock = Number(itemSnap.data().stock ?? 0);
-            const nextStock = type === 'IN' ? currentStock + qty : currentStock - qty;
-            if (nextStock < 0) {
-                throw new Error(`Insufficient stock for "${itemSnap.data().name}".`);
-            }
+        const nextStock = type === 'IN' ? item.stock + qty : item.stock - qty;
+        if (nextStock < 0) {
+            throw new Error(`Insufficient stock for "${item.name}".`);
+        }
 
-            transaction.update(docRef, {
-                stock: nextStock,
-                updatedAt: serverTimestamp(),
-            });
-        });
+        await this.updateItem(id, { stock: nextStock });
     },
 
-    /**
-     * Atomically consumes stock for checkout.
-     */
-    async consumeStock(items: Pick<BillItem, 'id' | 'quantity'>[]): Promise<void> {
+    async consumeStock(itemsToConsume: Pick<BillItem, 'id' | 'quantity'>[]): Promise<void> {
         const grouped = new Map<string, number>();
-        for (const item of items) {
+        for (const item of itemsToConsume) {
             if (item.quantity <= 0) continue;
             grouped.set(item.id, (grouped.get(item.id) ?? 0) + item.quantity);
         }
 
-        if (grouped.size === 0) {
-            throw new Error('No valid line items to consume stock.');
+        for (const [id, qty] of grouped.entries()) {
+            await this.updateStock(id, qty, 'OUT');
+        }
+    },
+
+    async deleteItem(id: string): Promise<void> {
+        await offlineSyncService.removeCachedItem(id);
+
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.delete<{ ok: boolean; message?: string }>(`/items/${id}`);
+                if (!response.ok) {
+                    throw new Error(response.message || 'Failed to delete item.');
+                }
+                return;
+            } catch (error: unknown) {
+                if (error instanceof ApiError && error.status < 500 && error.status !== 404) {
+                    throw error;
+                }
+            }
         }
 
-        await runTransaction(db, async (transaction) => {
-            for (const [itemId, qty] of grouped.entries()) {
-                const itemRef = doc(db, ITEMS_COLLECTION, itemId);
-                const itemSnap = await transaction.get(itemRef);
-                if (!itemSnap.exists()) {
-                    throw new Error(`Item ${itemId} no longer exists.`);
-                }
-
-                const currentStock = Number(itemSnap.data().stock ?? 0);
-                const nextStock = currentStock - qty;
-                if (nextStock < 0) {
-                    throw new Error(`Insufficient stock for "${itemSnap.data().name}".`);
-                }
-
-                transaction.update(itemRef, {
-                    stock: nextStock,
-                    updatedAt: serverTimestamp(),
-                });
-            }
+        await offlineSyncService.enqueueMutation({
+            type: 'delete_item',
+            payload: { id },
         });
     },
 
-    /**
-     * Deletes an item.
-     */
-    async deleteItem(id: string): Promise<void> {
-        await deleteDoc(doc(db, ITEMS_COLLECTION, id));
+    async getUserItems(_userId: string): Promise<Item[]> {
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.get<{ ok: boolean; items?: Item[]; message?: string }>('/items');
+                if (!response.ok || !response.items) {
+                    throw new Error(response.message || 'Failed to fetch items.');
+                }
+
+                const normalized = response.items.map(toItem);
+                await offlineSyncService.setCachedItems(normalized);
+                return normalized;
+            } catch (error: unknown) {
+                if (error instanceof ApiError && error.status < 500) {
+                    throw error;
+                }
+            }
+        }
+
+        return await offlineSyncService.getCachedItems();
     },
 
-    /**
-     * Fetches items for a specific user.
-     */
-    async getUserItems(userId: string): Promise<Item[]> {
-        const q = query(
-            collection(db, ITEMS_COLLECTION),
-            where('userId', '==', userId),
-            orderBy('nameLowercase', 'asc')
-        );
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map((itemDoc) => toItem(itemDoc.data(), itemDoc.id));
-    },
-
-    /**
-     * Fetches a single item.
-     */
     async getItem(id: string): Promise<Item | null> {
-        const itemDoc = await getDoc(doc(db, ITEMS_COLLECTION, id));
-        if (!itemDoc.exists()) return null;
-        return toItem(itemDoc.data(), itemDoc.id);
+        const cached = await offlineSyncService.getCachedItems();
+        const cachedItem = cached.find((entry) => entry.id === id) ?? null;
+
+        const online = await isOnline();
+        if (!online) {
+            return cachedItem;
+        }
+
+        try {
+            await offlineSyncService.flushQueue();
+            const response = await apiClient.get<{ ok: boolean; item?: Item; message?: string }>(`/items/${id}`);
+            if (!response.ok || !response.item) return null;
+            const normalized = toItem(response.item);
+            await offlineSyncService.upsertCachedItem(normalized);
+            return normalized;
+        } catch {
+            return cachedItem;
+        }
     },
 
-    /**
-     * Search items by name or barcode.
-     */
-    async searchItems(userId: string, queryText: string): Promise<Item[]> {
-        const q = query(
-            collection(db, ITEMS_COLLECTION),
-            where('userId', '==', userId),
-            where('nameLowercase', '>=', queryText.toLowerCase()),
-            where('nameLowercase', '<=', queryText.toLowerCase() + '\uf8ff')
+    async searchItems(_userId: string, queryText: string): Promise<Item[]> {
+        const query = queryText.trim().toLowerCase();
+        const cached = await offlineSyncService.getCachedItems();
+
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const encoded = encodeURIComponent(queryText);
+                const response = await apiClient.get<{ ok: boolean; items?: Item[]; message?: string }>(`/items?q=${encoded}`);
+
+                if (!response.ok || !response.items) {
+                    throw new Error(response.message || 'Failed to search items.');
+                }
+
+                const normalized = response.items.map(toItem);
+                await offlineSyncService.setCachedItems(normalized);
+                return normalized;
+            } catch (error: unknown) {
+                if (error instanceof ApiError && error.status < 500) {
+                    throw error;
+                }
+            }
+        }
+
+        if (!query) {
+            return cached;
+        }
+
+        return cached.filter((item) =>
+            item.nameLowercase.includes(query) ||
+            (item.barcode && item.barcode.includes(queryText.trim()))
         );
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map((itemDoc) => toItem(itemDoc.data(), itemDoc.id));
     }
 };

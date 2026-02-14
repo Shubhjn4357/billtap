@@ -1,4 +1,3 @@
-import type { ApplicationVerifier } from 'firebase/auth';
 import { useCallback, useMemo } from 'react';
 import { authService } from '../api/authService';
 import { useUserStore } from '../store';
@@ -7,16 +6,20 @@ export const useAuth = () => {
     const { user, isLoading, setUser } = useUserStore();
 
     const signInWithGoogle = useCallback(async (idToken: string) => {
-        return await authService.googleSignIn(idToken);
-    }, []);
+        const profile = await authService.googleSignIn(idToken);
+        setUser(profile);
+        return profile;
+    }, [setUser]);
 
-    const sendPhoneVerification = useCallback(async (phoneNumber: string, recaptchaVerifier?: ApplicationVerifier) => {
-        return await authService.sendPhoneVerification(phoneNumber, recaptchaVerifier);
+    const sendPhoneVerification = useCallback(async (phoneNumber: string) => {
+        return await authService.sendPhoneVerification(phoneNumber);
     }, []);
 
     const confirmPhoneVerification = useCallback(async (verificationId: string, verificationCode: string) => {
-        return await authService.confirmPhoneVerification(verificationId, verificationCode);
-    }, []);
+        const profile = await authService.confirmPhoneVerification(verificationId, verificationCode);
+        setUser(profile);
+        return profile;
+    }, [setUser]);
 
     const signOut = useCallback(async () => {
         await authService.signOut();

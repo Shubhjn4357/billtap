@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import * as Linking from 'expo-linking';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { analyticsService } from '../../api/analyticsService';
 import { adminService } from '../../api/adminService';
-import { Chip, Text, useTheme } from 'react-native-paper';
-import { auth, db } from '../../api/firebaseConfig';
 import { paymentService } from '../../api/paymentService';
+import { userService } from '../../api/userService';
+import { Chip, Text, useTheme } from 'react-native-paper';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { API_CONFIG } from '../../constants/Api';
 import { COMMON_TEXT, SUBSCRIPTION_TEXT } from '../../constants/staticText';
 import { DEFAULT_SUBSCRIPTION_PLANS } from '../../constants/subscriptionPlans';
 import { useAuth } from '../../hooks/useAuth';
@@ -40,7 +40,7 @@ export const SubscriptionScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingPlans, setLoadingPlans] = useState(false);
     const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
-    const isLivePaymentConfigured = Boolean(process.env.EXPO_PUBLIC_PAYMENT_API_BASE_URL?.trim());
+    const isLivePaymentConfigured = API_CONFIG.enableLivePayments;
 
     useEffect(() => {
         const fetchPlans = async () => {
@@ -85,7 +85,6 @@ export const SubscriptionScreen = () => {
             return;
         }
 
-        const uid = auth.currentUser?.uid ?? user.uid;
         const startsAt = new Date();
         const endsAt = buildNextMonthEnd(startsAt);
 
@@ -105,16 +104,8 @@ export const SubscriptionScreen = () => {
             // (Razorpay/Stripe) and move final subscription activation to verified server callbacks/webhooks.
             await new Promise((resolve) => setTimeout(resolve, 600));
 
-            await setDoc(
-                doc(db, 'users', uid),
-                {
-                    ...payload,
-                    updatedAt: serverTimestamp(),
-                },
-                { merge: true }
-            );
-
-            setUser({ ...user, ...payload });
+            const updatedUser = await userService.updateCurrentUser(payload);
+            setUser(updatedUser);
             await analyticsService.logEvent({
                 userId: user.uid,
                 eventType: 'payment_success',

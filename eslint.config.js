@@ -10,6 +10,6 @@ module.exports = defineConfig([
     },
   },
   {
-    ignores: ['dist/*', 'functions/**/*'],
+    ignores: ['dist/*', 'functions/**/*', 'backend/**/*'],
   },
 ]);

@@ -1,126 +1,99 @@
-
-import {
-    addDoc,
-    collection,
-    doc,
-    getDocs,
-    limit,
-    orderBy,
-    query,
-    runTransaction,
-    serverTimestamp,
-    type DocumentData,
-    type QueryConstraint,
-    where,
-} from 'firebase/firestore';
-import { db } from './firebaseConfig';
-import type { Bill, FirestoreDate } from '../types';
+import { apiClient } from './httpClient';
+import { offlineSyncService } from './offlineSyncService';
+import { isOnline } from '../utils/network';
+import type { Bill } from '../types';
 
 export interface StoredBill extends Bill {
     id: string;
-    createdAt: FirestoreDate;
+    createdAt: string | Date | number;
 }
 
-const BILLS_COLLECTION = 'orders';
-const ITEMS_COLLECTION = 'items';
-
-const toStoredBill = (id: string, raw: DocumentData): StoredBill => ({
-    id,
-    userId: raw.userId,
-    customerName: raw.customerName,
-    customerPhone: raw.customerPhone,
-    businessName: raw.businessName,
-    businessAddress: raw.businessAddress,
-    gstNumber: raw.gstNumber,
-    currency: raw.currency,
-    items: raw.items ?? [],
-    total: Number(raw.total ?? 0),
-    createdAt: raw.createdAt,
-});
-
 export const billService = {
-    /**
-     * Creates a new bill record.
-     */
     async createBill(bill: Omit<Bill, 'createdAt'>): Promise<string> {
-        const docRef = await addDoc(collection(db, BILLS_COLLECTION), {
+        const generatedId = offlineSyncService.createLocalId('bill');
+        const createdAt = new Date().toISOString();
+        const billPayload = {
+            id: generatedId,
             ...bill,
-            createdAt: serverTimestamp(),
-        });
-        return docRef.id;
-    },
+            createdAt,
+        };
 
-    /**
-     * Creates a bill and decrements stock atomically.
-     */
-    async createBillWithStockValidation(bill: Omit<Bill, 'createdAt'>): Promise<string> {
-        const orderRef = doc(collection(db, BILLS_COLLECTION));
-
-        await runTransaction(db, async (transaction) => {
-            const grouped = new Map<string, number>();
-            for (const line of bill.items) {
-                if (line.quantity <= 0) {
-                    throw new Error(`Invalid quantity for "${line.name}".`);
-                }
-                grouped.set(line.id, (grouped.get(line.id) ?? 0) + line.quantity);
-            }
-
-            for (const [itemId, qty] of grouped.entries()) {
-                const itemRef = doc(db, ITEMS_COLLECTION, itemId);
-                const itemSnap = await transaction.get(itemRef);
-                if (!itemSnap.exists()) {
-                    throw new Error(`Item ${itemId} no longer exists.`);
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/bills', billPayload);
+                if (!response.ok || !response.id) {
+                    throw new Error(response.message || 'Failed to create bill.');
                 }
 
-                const data = itemSnap.data();
-                if (data.userId !== bill.userId) {
-                    throw new Error('Item ownership mismatch. Please refresh and retry.');
-                }
-
-                const currentStock = Number(data.stock ?? 0);
-                const nextStock = currentStock - qty;
-                if (nextStock < 0) {
-                    throw new Error(`Insufficient stock for "${data.name}".`);
-                }
-
-                transaction.update(itemRef, {
-                    stock: nextStock,
-                    updatedAt: serverTimestamp(),
+                await offlineSyncService.upsertCachedBill<StoredBill>({
+                    ...bill,
+                    id: response.id,
+                    createdAt,
                 });
+                return response.id;
+            } catch {
+                // Fall back to offline queue below.
             }
-
-            transaction.set(orderRef, {
-                ...bill,
-                createdAt: serverTimestamp(),
-            });
-        });
-
-        return orderRef.id;
-    },
-
-    async getUserBills(userId: string, max = 200): Promise<StoredBill[]> {
-        const q = query(
-            collection(db, BILLS_COLLECTION),
-            where('userId', '==', userId),
-            orderBy('createdAt', 'desc'),
-            limit(max)
-        );
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map((billDoc) => toStoredBill(billDoc.id, billDoc.data()));
-    },
-
-    async getUserBillsInRange(userId: string, start: Date, end?: Date): Promise<StoredBill[]> {
-        const constraints: QueryConstraint[] = [
-            where('userId', '==', userId),
-            where('createdAt', '>=', start),
-            orderBy('createdAt', 'desc'),
-        ];
-        if (end) {
-            constraints.splice(2, 0, where('createdAt', '<=', end));
         }
 
-        const q = query(collection(db, BILLS_COLLECTION), ...constraints);
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map((billDoc) => toStoredBill(billDoc.id, billDoc.data()));
+        await offlineSyncService.applyLocalBillStock(bill.items);
+        await offlineSyncService.upsertCachedBill<StoredBill>({
+            ...bill,
+            id: generatedId,
+            createdAt,
+        });
+        await offlineSyncService.enqueueMutation({
+            type: 'create_bill',
+            payload: {
+                id: generatedId,
+                customerName: bill.customerName,
+                customerPhone: bill.customerPhone,
+                businessName: bill.businessName,
+                businessAddress: bill.businessAddress,
+                gstNumber: bill.gstNumber,
+                currency: bill.currency,
+                items: bill.items,
+                total: bill.total,
+                createdAt,
+            },
+        });
+
+        return generatedId;
+    },
+
+    async createBillWithStockValidation(bill: Omit<Bill, 'createdAt'>): Promise<string> {
+        return await this.createBill(bill);
+    },
+
+    async getUserBills(_userId: string, max = 200): Promise<StoredBill[]> {
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.get<{ ok: boolean; bills?: StoredBill[]; message?: string }>(`/bills?limit=${max}`);
+                if (!response.ok || !response.bills) {
+                    throw new Error(response.message || 'Failed to fetch bills.');
+                }
+                await offlineSyncService.setCachedBills(response.bills);
+                return response.bills;
+            } catch {
+                // Fall back to cache.
+            }
+        }
+
+        return await offlineSyncService.getCachedBills<StoredBill>();
+    },
+
+    async getUserBillsInRange(_userId: string, start: Date, end?: Date): Promise<StoredBill[]> {
+        const entries = await this.getUserBills(_userId, 2000);
+        const startTime = start.getTime();
+        const endTime = end ? end.getTime() : Number.POSITIVE_INFINITY;
+
+        return entries.filter((entry) => {
+            const createdAt = new Date(entry.createdAt ?? 0).getTime();
+            return createdAt >= startTime && createdAt <= endTime;
+        });
     },
 };

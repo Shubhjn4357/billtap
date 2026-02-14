@@ -1,23 +1,21 @@
-
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import NetInfo from '@react-native-community/netinfo';
 import { View } from 'react-native';
 import { ActivityIndicator } from 'react-native-paper';
 import 'react-native-reanimated';
 
-import { auth, db } from '../src/api/firebaseConfig';
+import { authService } from '../src/api/authService';
+import { offlineSyncService } from '../src/api/offlineSyncService';
+import { userService } from '../src/api/userService';
 import { AppThemeProvider } from '../src/components/providers/AppThemeProvider';
 import { Config } from '../src/constants/Config';
 import { STACK_ROUTE_TITLES } from '../src/constants/staticText';
 import { toDateSafe } from '../src/utils/date';
 import { normalizeCurrencyCode } from '../src/utils/formatters';
 import { useNetworkStore, useSettingsStore, useUserStore } from '../src/store';
-import type { UserProfile } from '../src/types';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -36,92 +34,87 @@ export default function RootLayout() {
     const router = useRouter();
 
     useEffect(() => {
-        setLoading(true);
-        const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
-            if (!authUser) {
-                setUser(null);
-                setLoading(false);
-                return;
-            }
+        let isMounted = true;
 
-            const baseProfile: UserProfile = {
-                uid: authUser.uid,
-                email: authUser.email,
-                phoneNumber: authUser.phoneNumber,
-                displayName: authUser.displayName,
-                photoURL: authUser.photoURL,
-            };
+        const bootstrap = async () => {
+            setLoading(true);
 
             try {
-                const profileRef = doc(db, 'users', authUser.uid);
-                const profileSnap = await getDoc(profileRef);
-                const profileData = profileSnap.exists() ? profileSnap.data() : {};
-                const profileCurrency = normalizeCurrencyCode(profileData.currency ?? baseProfile.currency ?? Config.defaultCurrency);
+                const profile = await authService.getCurrentUser();
+                if (!isMounted) return;
 
+                if (!profile) {
+                    setUser(null);
+                    setLoading(false);
+                    return;
+                }
+
+                const profileCurrency = normalizeCurrencyCode(profile.currency ?? Config.defaultCurrency);
                 setUser({
-                    ...baseProfile,
-                    businessName: profileData.businessName ?? baseProfile.businessName,
-                    address: profileData.address ?? baseProfile.address,
-                    gstEnabled: profileData.gstEnabled ?? baseProfile.gstEnabled,
-                    gstNumber: profileData.gstNumber ?? baseProfile.gstNumber,
+                    ...profile,
                     currency: profileCurrency,
-                    role: profileData.role ?? baseProfile.role,
-                    subscriptionStatus: profileData.subscriptionStatus ?? baseProfile.subscriptionStatus,
-                    subscriptionPlanId: profileData.subscriptionPlanId ?? baseProfile.subscriptionPlanId,
-                    subscriptionPlanName: profileData.subscriptionPlanName ?? baseProfile.subscriptionPlanName,
-                    subscriptionAmountMonthly: profileData.subscriptionAmountMonthly ?? baseProfile.subscriptionAmountMonthly,
-                    subscriptionCurrency: profileData.subscriptionCurrency ?? baseProfile.subscriptionCurrency,
-                    subscriptionStartsAt: profileData.subscriptionStartsAt ?? baseProfile.subscriptionStartsAt,
-                    subscriptionEndsAt: profileData.subscriptionEndsAt ?? baseProfile.subscriptionEndsAt,
                 });
                 setCurrency(profileCurrency);
+                try {
+                    await offlineSyncService.flushQueue();
+                } catch {
+                    // Ignore transient sync failures during bootstrap.
+                }
             } catch {
-                setUser({
-                    ...baseProfile,
-                    currency: normalizeCurrencyCode(baseProfile.currency ?? Config.defaultCurrency),
-                });
-                setCurrency(normalizeCurrencyCode(baseProfile.currency ?? Config.defaultCurrency));
+                if (!isMounted) return;
+                setUser(null);
+                setCurrency(Config.defaultCurrency);
             } finally {
-                setLoading(false);
+                if (isMounted) {
+                    setLoading(false);
+                }
             }
-        });
+        };
 
-        return unsubscribe;
+        void bootstrap();
+
+        return () => {
+            isMounted = false;
+        };
     }, [setCurrency, setLoading, setUser]);
 
     useEffect(() => {
         const endDate = toDateSafe(user?.subscriptionEndsAt);
         const shouldExpire = user?.subscriptionStatus === 'active' && endDate && endDate.getTime() < Date.now();
-        const uid = auth.currentUser?.uid;
 
-        if (!shouldExpire || !uid || !user) {
+        if (!shouldExpire || !user) {
             return;
         }
 
         const expireSubscription = async () => {
-            await setDoc(
-                doc(db, 'users', uid),
-                {
+            try {
+                const updatedUser = await userService.updateCurrentUser({ subscriptionStatus: 'expired' });
+                setUser(updatedUser);
+            } catch {
+                setUser({
+                    ...user,
                     subscriptionStatus: 'expired',
-                    updatedAt: serverTimestamp(),
-                },
-                { merge: true }
-            );
-            setUser({
-                ...user,
-                subscriptionStatus: 'expired',
-            });
+                });
+            }
         };
 
         void expireSubscription();
     }, [user, setUser]);
 
     useEffect(() => {
+        let wasOnline = false;
         const unsubscribe = NetInfo.addEventListener((state) => {
+            const isNowOnline = Boolean(state.isConnected) && state.isInternetReachable !== false;
             setNetworkState({
                 isConnected: state.isConnected,
                 isInternetReachable: state.isInternetReachable,
             });
+
+            if (isNowOnline && !wasOnline) {
+                void offlineSyncService.flushQueue();
+            }
+
+            wasOnline = isNowOnline;
         });
 
         return unsubscribe;
@@ -147,7 +140,7 @@ export default function RootLayout() {
             if (currentSegment && ['login', 'index', 'onboarding'].includes(currentSegment)) {
                 router.replace('/(tabs)/home');
             }
-        } else if (!isAuthenticated) {
+        } else {
             const isPublicRoute = currentSegment ? publicRoutes.includes(currentSegment) : false;
 
             if (!currentSegment || currentSegment === 'index') {
