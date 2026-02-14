@@ -206,7 +206,13 @@ const isCronAuthorized = (provided: string | undefined, authorizationHeader?: st
     const bearer = getBearerToken(authorizationHeader);
     return bearer === expected;
 };
-
+app.get("/", async (c) => {
+    return c.json({
+        ok: true,
+        service: 'billtap-api',
+        now: new Date().toISOString(),
+    });
+});
 app.get('/health', async (c) => {
     await ensurePlansSeeded();
     return c.json({
