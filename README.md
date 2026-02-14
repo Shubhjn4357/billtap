@@ -172,9 +172,15 @@ Expected response:
 - `POST /api/admin/seed/default-plans` - Seed default plans
 - `GET /api/analytics/events` - Get analytics events
 
-### Cron Jobs
-- `POST /api/jobs/expire-subscriptions` - Expire outdated subscriptions (runs daily at 2 AM UTC)
-- `POST /api/jobs/sync-offers` - Activate/deactivate offers based on schedule (runs hourly)
+### Cron Jobs (Vercel Serverless)
+
+**Important**: Vercel Hobby tier allows **1 daily cron job only**.
+
+Configured endpoint `/api/jobs/run-all` runs daily at 2 AM UTC:
+- Expires subscriptions when `subscriptionEndsAt` has passed
+- Activates/deactivates offers based on their schedules
+
+For hourly runs, see `CRON_JOBS.md` for GitHub Actions alternative or upgrade to Pro.
 
 ## 🔒 Security Notes
 
