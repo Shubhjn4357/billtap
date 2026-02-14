@@ -1,5 +1,5 @@
 {
-  "name": "billtap-backend",
+  "name": "billtap-api",
   "main": "src/server.ts",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": [

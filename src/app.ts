@@ -34,6 +34,7 @@ app.use('*', cors({
 
 // Database middleware
 app.use(async (c, next) => {
+    console.log('Runtime Env Keys:', Object.entries(c.env || {}));
     if (!c.env.DATABASE_URL) {
         return c.json({ ok: false, message: 'Database configuration missing.' }, 500);
     }
