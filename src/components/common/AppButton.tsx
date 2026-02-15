@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { type GestureResponderEvent } from 'react-native';
+import { StyleSheet, type GestureResponderEvent } from 'react-native';
 import { Button, ButtonProps } from 'react-native-paper';
 import { useHaptics } from '../../hooks/useHaptics';
 
@@ -13,6 +13,7 @@ export const AppButton: React.FC<AppButtonProps> = ({
     haptic = true, 
     style, 
     contentStyle,
+    labelStyle,
     children, 
     ...props 
 }) => {
@@ -26,11 +27,26 @@ export const AppButton: React.FC<AppButtonProps> = ({
     return (
         <Button 
             onPress={handlePress} 
-            style={[{ borderRadius: 8 }, style]}
-            contentStyle={[{ paddingVertical: 4 }, contentStyle]}
+            style={[styles.button, style]}
+            contentStyle={[styles.content, contentStyle]}
+            labelStyle={[styles.label, labelStyle]}
             {...props}
         >
             {children}
         </Button>
     );
 };
+
+const styles = StyleSheet.create({
+    button: {
+        borderRadius: 14,
+    },
+    content: {
+        minHeight: 48,
+        paddingVertical: 5,
+    },
+    label: {
+        fontWeight: '700',
+        letterSpacing: 0.15,
+    },
+});

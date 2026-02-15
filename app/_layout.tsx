@@ -8,6 +8,7 @@ import * as Updates from 'expo-updates';
 import 'react-native-reanimated';
 
 import { authService } from '../src/api/authService';
+import { ApiError } from '../src/api/httpClient';
 import { offlineSyncService } from '../src/api/offlineSyncService';
 import { paymentReminderService } from '../src/services/paymentReminderService';
 import { userService } from '../src/api/userService';
@@ -73,8 +74,28 @@ export default function RootLayout() {
                 } catch {
                     // Ignore transient sync failures during bootstrap.
                 }
-            } catch {
+            } catch (error: unknown) {
                 if (!isMounted) return;
+                const isUnauthorized = error instanceof ApiError && error.status === 401;
+                if (isUnauthorized) {
+                    setUser(null);
+                    setCurrency(Config.defaultCurrency);
+                    return;
+                }
+
+                const latestLocalUser = useUserStore.getState().user;
+
+                // Keep local session for transient/offline errors. Only force logout on explicit unauthorized.
+                if (latestLocalUser) {
+                    const localCurrency = normalizeCurrencyCode(latestLocalUser.currency ?? Config.defaultCurrency);
+                    setUser({
+                        ...latestLocalUser,
+                        currency: localCurrency,
+                    });
+                    setCurrency(localCurrency);
+                    return;
+                }
+
                 setUser(null);
                 setCurrency(Config.defaultCurrency);
             } finally {
@@ -132,7 +153,7 @@ export default function RootLayout() {
                 isInternetReachable: state.isInternetReachable,
             });
 
-            if (isNowOnline && !wasOnline) {
+            if (isNowOnline && !wasOnline && userId) {
                 void offlineSyncService.flushQueue();
                 if (Platform.OS !== 'web') {
                     void paymentReminderService.syncPendingPaymentReminders();
@@ -143,7 +164,7 @@ export default function RootLayout() {
         });
 
         return unsubscribe;
-    }, [setNetworkState]);
+    }, [setNetworkState, userId]);
 
     // Hide splash screen when ready
     useEffect(() => {

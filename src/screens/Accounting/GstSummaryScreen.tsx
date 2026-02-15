@@ -6,6 +6,7 @@ import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -58,10 +59,10 @@ export const GstSummaryScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>GST Summary</Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 4 }}>
-                    HSN-wise taxable value and GST position.
-                </Text>
+                <PageHeaderCard
+                    title="GST Summary"
+                    subtitle="HSN-wise taxable value and GST position."
+                />
 
                 <AppCard>
                     <AppInput label="Start Date (YYYY-MM-DD)" value={start} onChangeText={setStart} />

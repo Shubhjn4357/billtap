@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Chip, Text, useTheme } from 'react-native-paper';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { APP_SITEMAP, SITEMAP_TEXT, type SitemapEntry } from '../../constants/staticText';
 import { useAuth } from '../../hooks/useAuth';
@@ -20,12 +21,10 @@ export const SitemapScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}>
-                <Text variant="headlineMedium" style={{ fontWeight: '700' }}>
-                    {SITEMAP_TEXT.title}
-                </Text>
-                <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 6, marginBottom: 12 }}>
-                    {SITEMAP_TEXT.subtitle}
-                </Text>
+                <PageHeaderCard
+                    title={SITEMAP_TEXT.title}
+                    subtitle={SITEMAP_TEXT.subtitle}
+                />
 
                 {APP_SITEMAP.map((entry) => {
                     const needsAdmin = entry.access === 'admin';

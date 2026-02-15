@@ -5,6 +5,7 @@ import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import type { Account } from '../../types';
 
@@ -110,10 +111,10 @@ export const JournalEntryScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>Journal Voucher</Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 4 }}>
-                    Post balanced accounting entries manually.
-                </Text>
+                <PageHeaderCard
+                    title="Journal Voucher"
+                    subtitle="Post balanced accounting entries manually."
+                />
 
                 {error ? (
                     <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>

@@ -21,6 +21,7 @@ jobs:
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      NODE_ENV: production
 
     steps:
       - name: Checkout code
@@ -141,16 +142,19 @@ jobs:
             cat build-metadata/signing-fingerprints.txt
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build Android Release
+      - name: Build Android Release Bundle
         run: |
           cd android
-          ./gradlew --no-daemon --no-parallel --stacktrace -Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8' assembleRelease
+          ./gradlew --no-daemon --no-parallel --stacktrace \
+            -Dorg.gradle.jvmargs='-Xmx4608m -XX:MaxMetaspaceSize=1280m -Dfile.encoding=UTF-8' \
+            -Dorg.gradle.workers.max=2 \
+            bundleRelease -x lint -x lintVitalRelease
 
-      - name: Upload Artifact (Release)
+      - name: Upload Artifact (Release AAB)
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-dev
-          path: android/app/build/outputs/apk/release/*.apk
+          name: app-release-bundle-dev
+          path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 14
 

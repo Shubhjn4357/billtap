@@ -5,6 +5,7 @@ import { adminService } from '../../api/adminService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { ADMIN_TEXT, COMMON_TEXT } from '../../constants/staticText';
 import { DEFAULT_SUBSCRIPTION_PLANS } from '../../constants/subscriptionPlans';
@@ -343,27 +344,23 @@ export const AdminPanelScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingBottom: 110, paddingTop: 14 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <View style={{ flex: 1, marginRight: 12 }}>
-                        <Text variant="headlineSmall" style={{ fontWeight: '700' }}>
-                            {ADMIN_TEXT.title}
-                        </Text>
-                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                            {ADMIN_TEXT.subtitle}
-                        </Text>
-                    </View>
-                    <AppButton
-                        mode="outlined"
-                        compact
-                        onPress={() => {
-                            void loadData();
-                            void fetchFunnelData();
-                        }}
-                        loading={loading || analyticsLoading}
-                    >
-                        {ADMIN_TEXT.refresh}
-                    </AppButton>
-                </View>
+                <PageHeaderCard
+                    title={ADMIN_TEXT.title}
+                    subtitle={ADMIN_TEXT.subtitle}
+                    right={(
+                        <AppButton
+                            mode="outlined"
+                            compact
+                            onPress={() => {
+                                void loadData();
+                                void fetchFunnelData();
+                            }}
+                            loading={loading || analyticsLoading}
+                        >
+                            {ADMIN_TEXT.refresh}
+                        </AppButton>
+                    )}
+                />
 
                 <AppCard>
                     <Text variant="titleMedium" style={{ fontWeight: '700' }}>

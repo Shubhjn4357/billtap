@@ -3,7 +3,10 @@ import { useState, useEffect } from 'react';
 import { Text, View, StyleSheet } from 'react-native';
 import { CameraView, Camera, type BarcodeScanningResult } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Button } from 'react-native-paper';
+import { useTheme } from 'react-native-paper';
+import { AppButton } from '../../components/common/AppButton';
+import { AppCard } from '../../components/common/AppCard';
+import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function ScanScreen() {
@@ -13,6 +16,7 @@ export default function ScanScreen() {
     const router = useRouter();
     const params = useLocalSearchParams<{ target?: string | string[]; returnPath?: string | string[] }>();
     const haptics = useHaptics();
+    const theme = useTheme();
 
     useEffect(() => {
         const getPermissions = async () => {
@@ -45,19 +49,27 @@ export default function ScanScreen() {
 
     if (hasPermission === null) {
         return (
-            <View style={styles.centered}>
-                <Text>Requesting camera permission...</Text>
-            </View>
+            <ScreenWrapper>
+                <View style={styles.centered}>
+                    <AppCard>
+                        <Text style={styles.centerText}>Requesting camera permission...</Text>
+                    </AppCard>
+                </View>
+            </ScreenWrapper>
         );
     }
     if (hasPermission === false) {
         return (
-            <View style={styles.centered}>
-                <Text>No access to camera.</Text>
-                <Button mode="contained" style={styles.actionButton} onPress={() => router.back()}>
-                    Go Back
-                </Button>
-            </View>
+            <ScreenWrapper>
+                <View style={styles.centered}>
+                    <AppCard>
+                        <Text style={styles.centerText}>No access to camera.</Text>
+                        <AppButton mode="contained" style={styles.actionButton} onPress={() => router.back()}>
+                            Go Back
+                        </AppButton>
+                    </AppCard>
+                </View>
+            </ScreenWrapper>
         );
     }
 
@@ -71,11 +83,11 @@ export default function ScanScreen() {
                 }}
             />
             {scanned && (
-                <View style={styles.overlay}>
-                    <Text style={styles.overlayText}>Scanned: {lastCode}</Text>
-                    <Button mode="contained" onPress={() => setScanned(false)}>
+                <View style={[styles.overlay, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline }]}>
+                    <Text style={[styles.overlayText, { color: theme.colors.onSurface }]}>Scanned: {lastCode}</Text>
+                    <AppButton mode="contained" onPress={() => setScanned(false)}>
                         Scan Again
-                    </Button>
+                    </AppButton>
                 </View>
             )}
         </View>
@@ -94,6 +106,9 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 20,
     },
+    centerText: {
+        textAlign: 'center',
+    },
     actionButton: {
         marginTop: 16,
     },
@@ -104,11 +119,10 @@ const styles = StyleSheet.create({
         bottom: 40,
         padding: 16,
         borderRadius: 12,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderWidth: 1,
         gap: 12,
     },
     overlayText: {
-        color: '#fff',
         textAlign: 'center',
     },
 });

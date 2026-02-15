@@ -5,9 +5,11 @@ import { Alert, Platform, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { List, Switch, Text, useTheme } from 'react-native-paper';
 import { adminService } from '../../api/adminService';
+import { offlineSyncService } from '../../api/offlineSyncService';
 import { userService } from '../../api/userService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { Config } from '../../constants/Config';
 import { SETTINGS_TEXT } from '../../constants/staticText';
@@ -26,6 +28,12 @@ const formatTimestamp = (value: Date | null): string => {
         hour: '2-digit',
         minute: '2-digit',
     }).format(value);
+};
+
+const parseDateSafe = (value: string | null): Date | null => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const getRuntimeVersion = (): string => {
@@ -63,6 +71,11 @@ export const SettingsScreen = () => {
     const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
     const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
     const [canAccessAdminPanel, setCanAccessAdminPanel] = useState(false);
+    const [pendingSyncCount, setPendingSyncCount] = useState(0);
+    const [oldestPendingAt, setOldestPendingAt] = useState<Date | null>(null);
+    const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncMessage, setSyncMessage] = useState<string>(SETTINGS_TEXT.dataSync.idleMessage);
 
     const effectiveDark = autoTheme ? theme.dark : themeMode === 'dark';
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol);
@@ -160,6 +173,42 @@ export const SettingsScreen = () => {
         }
     };
 
+    const refreshQueueStats = useCallback(async () => {
+        try {
+            const stats = await offlineSyncService.getQueueStats();
+            setPendingSyncCount(stats.pendingCount);
+            setOldestPendingAt(parseDateSafe(stats.oldestCreatedAt));
+            setSyncMessage(
+                stats.pendingCount > 0
+                    ? SETTINGS_TEXT.dataSync.queuedMessage
+                    : SETTINGS_TEXT.dataSync.idleMessage
+            );
+        } catch {
+            // Keep last known state on read failures.
+        }
+    }, []);
+
+    const runManualSync = useCallback(async () => {
+        if (isSyncing) return;
+        setIsSyncing(true);
+        setSyncMessage(SETTINGS_TEXT.dataSync.syncingMessage);
+
+        try {
+            const result = await offlineSyncService.flushQueue();
+            setLastSyncAt(new Date());
+            if (result.remaining > 0) {
+                setSyncMessage(`Synced ${result.processed}. ${result.remaining} pending.`);
+            } else {
+                setSyncMessage(SETTINGS_TEXT.dataSync.idleMessage);
+            }
+        } catch {
+            setSyncMessage('Sync failed. Please try again.');
+        } finally {
+            setIsSyncing(false);
+            await refreshQueueStats();
+        }
+    }, [isSyncing, refreshQueueStats]);
+
     useEffect(() => {
         void checkForUpdates();
     }, [checkForUpdates]);
@@ -176,17 +225,17 @@ export const SettingsScreen = () => {
         void verifyAdminAccess();
     }, []);
 
+    useEffect(() => {
+        void refreshQueueStats();
+    }, [refreshQueueStats]);
+
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-                <View style={{ marginBottom: 20, marginTop: 8 }}>
-                    <Text variant="headlineMedium" style={{ fontWeight: 'bold', marginBottom: 5 }}>
-                        {SETTINGS_TEXT.title}
-                    </Text>
-                    <Text variant="bodyMedium" style={{ color: theme.colors.outline }}>
-                        {user?.email || user?.phoneNumber || SETTINGS_TEXT.userFallback}
-                    </Text>
-                </View>
+                <PageHeaderCard
+                    title={SETTINGS_TEXT.title}
+                    subtitle={user?.email || user?.phoneNumber || SETTINGS_TEXT.userFallback}
+                />
 
                 <List.Section>
                     <List.Subheader>{SETTINGS_TEXT.sections.appearance}</List.Subheader>
@@ -274,6 +323,35 @@ export const SettingsScreen = () => {
                         left={(props) => <List.Icon {...props} icon="store" />}
                         onPress={() => router.push('/business-setup' as never)}
                     />
+                </List.Section>
+
+                <List.Section>
+                    <List.Subheader>{SETTINGS_TEXT.sections.dataSync}</List.Subheader>
+                    <AppCard>
+                        <Text variant="titleSmall" style={{ fontWeight: '700' }}>
+                            {SETTINGS_TEXT.dataSync.title}
+                        </Text>
+                        <Text variant="bodySmall" style={{ marginTop: 8 }}>
+                            {SETTINGS_TEXT.dataSync.statusLabel}: {pendingSyncCount}
+                        </Text>
+                        <Text variant="bodySmall" style={{ marginTop: 2 }}>
+                            {SETTINGS_TEXT.dataSync.oldestLabel}: {formatTimestamp(oldestPendingAt)}
+                        </Text>
+                        <Text variant="bodySmall" style={{ marginTop: 2 }}>
+                            {SETTINGS_TEXT.dataSync.lastSyncLabel}: {formatTimestamp(lastSyncAt)}
+                        </Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 6 }}>
+                            {syncMessage}
+                        </Text>
+                        <AppButton
+                            mode="outlined"
+                            style={{ marginTop: 10 }}
+                            loading={isSyncing}
+                            onPress={() => { void runManualSync(); }}
+                        >
+                            {SETTINGS_TEXT.dataSync.syncNowButton}
+                        </AppButton>
+                    </AppCard>
                 </List.Section>
 
                 <List.Section>

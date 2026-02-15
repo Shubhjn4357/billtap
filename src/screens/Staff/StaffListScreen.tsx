@@ -5,6 +5,7 @@ import { Text, FAB, List, Chip, useTheme, ActivityIndicator } from 'react-native
 import { useRouter, Href } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppCard } from '../../components/common/AppCard';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { useUserStore } from '../../store';
 import { staffService } from '../../api/staffService';
 import type { UserProfile, StaffInvite } from '../../types';
@@ -65,7 +66,7 @@ export const StaffListScreen = () => {
         return (
             <ScreenWrapper>
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <Text>Only owners can manage staff.</Text>
+                    <Text style={{ color: theme.colors.outline }}>Only owners can manage staff.</Text>
                 </View>
             </ScreenWrapper>
         );
@@ -73,8 +74,11 @@ export const StaffListScreen = () => {
 
     return (
         <ScreenWrapper>
-            <View style={{ padding: 16 }}>
-                <Text variant="headlineSmall" style={{ marginBottom: 10 }}>Staff Management</Text>
+            <View style={{ flex: 1, paddingTop: 16 }}>
+                <PageHeaderCard
+                    title="Staff Management"
+                    subtitle={`${staff.length} active staff | ${invites.length} pending invite(s)`}
+                />
 
                 {loading ? (
                     <ActivityIndicator style={{ marginTop: 20 }} />
@@ -85,7 +89,7 @@ export const StaffListScreen = () => {
                             data={staff}
                             keyExtractor={item => item.uid}
                             renderItem={renderStaffItem}
-                            ListEmptyComponent={<Text style={{ fontStyle: 'italic', color: 'gray' }}>No active staff.</Text>}
+                            ListEmptyComponent={<Text style={{ fontStyle: 'italic', color: theme.colors.outline }}>No active staff.</Text>}
                         />
 
                         <Text variant="titleMedium" style={{ marginTop: 20, marginBottom: 5 }}>Pending Invites</Text>
@@ -93,7 +97,7 @@ export const StaffListScreen = () => {
                             data={invites}
                             keyExtractor={item => item.id}
                             renderItem={renderInviteItem}
-                            ListEmptyComponent={<Text style={{ fontStyle: 'italic', color: 'gray' }}>No pending invites.</Text>}
+                            ListEmptyComponent={<Text style={{ fontStyle: 'italic', color: theme.colors.outline }}>No pending invites.</Text>}
                         />
                     </>
                 )}

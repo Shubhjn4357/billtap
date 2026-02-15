@@ -4,8 +4,10 @@ import { View, Alert } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
 import { AppButton } from '../../components/common/AppButton';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { COMMON_TEXT } from '../../constants/staticText';
 import { staffService } from '../../api/staffService';
 
@@ -33,29 +35,31 @@ export const AddStaffScreen = () => {
 
     return (
         <ScreenWrapper>
-            <View style={{ padding: 16 }}>
-                <Text variant="headlineSmall" style={{ marginBottom: 20 }}>Invite Staff Member</Text>
-                
-                <Text style={{ marginBottom: 20 }}>
-                    Enter the phone number of the staff member you want to invite. 
-                    They will receive a code to join your business.
-                </Text>
-
-                <AppInput
-                    label="Phone Number"
-                    value={phone}
-                    onChangeText={setPhone}
-                    keyboardType="phone-pad"
+            <View style={{ paddingTop: 16 }}>
+                <PageHeaderCard
+                    title="Invite Staff Member"
+                    subtitle="Enter a staff phone number. They receive a one-time code to join your business."
                 />
+                <AppCard>
+                    <AppInput
+                        label="Phone Number"
+                        value={phone}
+                        onChangeText={setPhone}
+                        keyboardType="phone-pad"
+                    />
 
-                <AppButton
-                    mode="contained"
-                    onPress={handleInvite}
-                    loading={loading}
-                    style={{ marginTop: 20 }}
-                >
-                    Send Invite
-                </AppButton>
+                    <AppButton
+                        mode="contained"
+                        onPress={handleInvite}
+                        loading={loading}
+                        style={{ marginTop: 8 }}
+                    >
+                        Send Invite
+                    </AppButton>
+                    <Text variant="bodySmall" style={{ marginTop: 10 }}>
+                        Use a 10-digit number with country code if needed.
+                    </Text>
+                </AppCard>
             </View>
         </ScreenWrapper>
     );

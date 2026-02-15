@@ -1,6 +1,6 @@
 import React from 'react';
-import { Card } from 'react-native-paper';
-import { StyleProp, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { Card, useTheme } from 'react-native-paper';
 
 type AppCardProps = React.ComponentProps<typeof Card> & {
     style?: StyleProp<ViewStyle>;
@@ -14,14 +14,41 @@ export const AppCard: React.FC<AppCardProps> = ({
     children,
     ...props
 }) => {
+    const theme = useTheme();
+
     return (
         <Card
-            style={[{ borderRadius: 16, marginBottom: 12 }, style]}
+            mode="elevated"
+            style={[
+                styles.card,
+                {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.dark ? 'rgba(255,255,255,0.08)' : 'rgba(2,6,23,0.06)',
+                    shadowColor: '#020617',
+                },
+                style,
+            ]}
             {...props}
         >
-            <Card.Content style={[{ paddingVertical: 14, paddingHorizontal: 14 }, contentStyle]}>
+            <Card.Content style={[styles.content, contentStyle]}>
                 {children}
             </Card.Content>
         </Card>
     );
 };
+
+const styles = StyleSheet.create({
+    card: {
+        borderRadius: 20,
+        borderWidth: 1,
+        marginBottom: 12,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+        elevation: 2,
+    },
+    content: {
+        paddingVertical: 16,
+        paddingHorizontal: 16,
+    },
+});

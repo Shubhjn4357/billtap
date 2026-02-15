@@ -6,6 +6,7 @@ import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import type { Account, AccountType } from '../../types';
 
@@ -85,10 +86,10 @@ export const AccountsScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>Chart Of Accounts</Text>
-                <Text variant="bodyMedium" style={{ marginTop: 4, color: theme.colors.outline }}>
-                    Create and organize your accounting heads.
-                </Text>
+                <PageHeaderCard
+                    title="Chart Of Accounts"
+                    subtitle="Create and organize your accounting heads."
+                />
 
                 {error ? (
                     <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>

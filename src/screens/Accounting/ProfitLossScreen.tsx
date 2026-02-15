@@ -6,6 +6,7 @@ import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -53,10 +54,10 @@ export const ProfitLossScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>Profit & Loss</Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 4 }}>
-                    Income versus expense from posted ledgers.
-                </Text>
+                <PageHeaderCard
+                    title="Profit & Loss"
+                    subtitle="Income versus expense from posted ledgers."
+                />
 
                 <AppCard>
                     <AppInput label="Start Date (YYYY-MM-DD)" value={start} onChangeText={setStart} />

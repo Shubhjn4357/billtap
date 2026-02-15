@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, RefreshControl, Share, View } from 'react-native';
+import { Alert, FlatList, RefreshControl, Share, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, SegmentedButtons, Text, useTheme } from 'react-native-paper';
@@ -198,15 +198,17 @@ export const ReportsScreen = () => {
 
     return (
         <ScreenWrapper>
-            <View style={{ paddingTop: 20, paddingBottom: 10 }}>
-                <Text variant="headlineMedium" style={{ fontWeight: 'bold' }}>{REPORTS_TEXT.title}</Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.outline }}>
+            <AppCard style={{ backgroundColor: theme.colors.primaryContainer }}>
+                <Text variant="headlineSmall" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
+                    {REPORTS_TEXT.title}
+                </Text>
+                <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer }}>
                     {REPORTS_TEXT.subtitle}
                 </Text>
-                <Text variant="labelSmall" style={{ color: theme.colors.outline }}>
+                <Text variant="labelSmall" style={{ color: theme.colors.onPrimaryContainer }}>
                     {REPORTS_TEXT.activeRangePrefix} {RANGE_LABELS[range]}
                 </Text>
-            </View>
+            </AppCard>
 
             <SegmentedButtons
                 value={range}
@@ -217,17 +219,17 @@ export const ReportsScreen = () => {
                     { value: '30d', label: REPORTS_TEXT.rangeButtons['30d'] },
                     { value: 'all', label: REPORTS_TEXT.rangeButtons.all },
                 ]}
-                style={{ marginBottom: 12 }}
+                style={styles.rangeSelector}
             />
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <AppCard style={{ flex: 1, marginRight: 8 }}>
+            <View style={styles.metricRow}>
+                <AppCard style={[styles.metricCard, styles.metricCardLeft]}>
                     <Text variant="labelMedium" style={{ color: theme.colors.outline }}>{REPORTS_TEXT.metrics.revenue}</Text>
                     <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>
                         {formatCurrency(summary.totalRevenue, activeCurrency)}
                     </Text>
                 </AppCard>
-                <AppCard style={{ flex: 1, marginLeft: 8 }}>
+                <AppCard style={styles.metricCard}>
                     <Text variant="labelMedium" style={{ color: theme.colors.outline }}>{REPORTS_TEXT.metrics.orders}</Text>
                     <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>{summary.totalOrders}</Text>
                 </AppCard>
@@ -259,9 +261,14 @@ export const ReportsScreen = () => {
                             </Text>
                         ) : (
                             summary.topItems.slice(0, 3).map((entry, index) => (
-                                <Text key={`${entry.name}-${index}`} variant="bodySmall">
-                                    {entry.name} | {entry.qty} qty | {formatCurrency(entry.revenue, activeCurrency)}
-                                </Text>
+                                <View key={`${entry.name}-${index}`} style={styles.topItemRow}>
+                                    <Text variant="bodySmall" style={styles.topItemRank}>
+                                        #{index + 1}
+                                    </Text>
+                                    <Text variant="bodySmall" style={styles.topItemText}>
+                                        {entry.name} | {entry.qty} qty | {formatCurrency(entry.revenue, activeCurrency)}
+                                    </Text>
+                                </View>
                             ))
                         )}
                     </View>
@@ -269,8 +276,14 @@ export const ReportsScreen = () => {
                         {COMMON_TEXT.actions.share}
                     </AppButton>
                 </View>
-                <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                    <AppButton mode="contained-tonal" compact icon="code-json" onPress={() => { void handleExportJson(); }}>
+                <View style={styles.exportRow}>
+                    <AppButton
+                        mode="contained-tonal"
+                        compact
+                        icon="code-json"
+                        onPress={() => { void handleExportJson(); }}
+                        style={styles.exportButton}
+                    >
                         Export JSON
                     </AppButton>
                     <AppButton mode="contained-tonal" compact icon="microsoft-excel" onPress={() => { void handleExportExcel(); }}>
@@ -284,6 +297,10 @@ export const ReportsScreen = () => {
                     {error}
                 </Text>
             )}
+
+            <Text variant="titleMedium" style={styles.recentBillHeading}>
+                Recent Bills
+            </Text>
 
             {loading && filteredBills.length === 0 ? (
                 <View style={{ marginTop: 24 }}>
@@ -313,3 +330,42 @@ export const ReportsScreen = () => {
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    rangeSelector: {
+        marginBottom: 12,
+    },
+    metricRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    metricCard: {
+        flex: 1,
+    },
+    metricCardLeft: {
+        marginRight: 8,
+    },
+    topItemRow: {
+        flexDirection: 'row',
+        marginTop: 4,
+    },
+    topItemRank: {
+        width: 24,
+        fontWeight: '700',
+    },
+    topItemText: {
+        flex: 1,
+    },
+    exportRow: {
+        flexDirection: 'column',
+        marginTop: 10,
+    },
+    exportButton: {
+        marginBottom: 8,
+    },
+    recentBillHeading: {
+        marginTop: 2,
+        marginBottom: 10,
+        fontWeight: '700',
+    },
+});

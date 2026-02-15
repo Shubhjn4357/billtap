@@ -4,6 +4,8 @@ import { View, FlatList, StyleSheet } from 'react-native';
 import { Text, FAB, Searchbar, useTheme, Chip } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { AppCard } from '../../components/common/AppCard';
+import { AppButton } from '../../components/common/AppButton';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { usePartyStore } from '../../store';
 import { partyService } from '../../api/partyService'; // Need to create this service
@@ -51,12 +53,10 @@ export const PartyListScreen = () => {
 
     return (
         <ScreenWrapper>
-             <View style={styles.headerRow}>
-                <Text variant="titleMedium" style={{ fontWeight: '700' }}>Parties</Text>
-                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                    {filteredParties.length} contacts
-                </Text>
-            </View>
+            <PageHeaderCard
+                title="Parties"
+                subtitle={`${filteredParties.length} contacts available`}
+            />
             <Searchbar
                 placeholder="Search Parties..."
                 onChangeText={setSearchQuery}
@@ -70,7 +70,16 @@ export const PartyListScreen = () => {
                 refreshing={refreshing}
                 onRefresh={loadParties}
                 contentContainerStyle={{ paddingBottom: 80 }}
-                ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20 }}>No parties found</Text>}
+                ListEmptyComponent={(
+                    <AppCard style={{ marginTop: 20 }}>
+                        <Text style={{ textAlign: 'center', color: theme.colors.outline }}>
+                            No parties found.
+                        </Text>
+                        <AppButton mode="contained-tonal" style={{ marginTop: 10 }} onPress={() => router.push('/party/new' as never)}>
+                            Add Party
+                        </AppButton>
+                    </AppCard>
+                )}
             />
              <FAB
                 icon="plus"
@@ -84,12 +93,6 @@ export const PartyListScreen = () => {
 };
 
 const styles = StyleSheet.create({
-    headerRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
     fab: {
         position: 'absolute',
         margin: 16,

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text, useTheme } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
@@ -41,15 +41,33 @@ export const DashboardScreen = () => {
         }, [fetchBills, fetchOffers])
     );
 
+    const displayName = user?.displayName?.trim() || 'Merchant';
+
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingBottom: 80, paddingTop: 20 }}>
-                <Text variant="headlineMedium" style={{ fontWeight: 'bold', marginBottom: 5 }}>
-                    Hello, {user?.displayName || 'Merchant'}
-                </Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginBottom: 20 }}>
-                    Overview
-                </Text>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
+                <AppCard
+                    style={[
+                        styles.heroCard,
+                        { backgroundColor: theme.colors.primaryContainer },
+                    ]}
+                >
+                    <Text
+                        variant="headlineSmall"
+                        style={[styles.heroTitle, { color: theme.colors.onPrimaryContainer }]}
+                    >
+                        Hello, {displayName}
+                    </Text>
+                    <Text
+                        variant="bodyMedium"
+                        style={[styles.heroSubtitle, { color: theme.colors.onPrimaryContainer }]}
+                    >
+                        Here is your live business snapshot.
+                    </Text>
+                </AppCard>
 
                 {primaryOffer && (
                     <AppCard
@@ -67,7 +85,7 @@ export const DashboardScreen = () => {
                             <AppButton
                                 mode="contained"
                                 compact
-                                style={{ marginTop: 10, alignSelf: 'flex-start' }}
+                                style={styles.offerButton}
                                 onPress={() => {
                                     if (user) {
                                         void analyticsService.logEvent({
@@ -101,17 +119,23 @@ export const DashboardScreen = () => {
                 )}
 
                 <AppCard style={{ backgroundColor: theme.colors.tertiaryContainer }}>
-                    <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onTertiaryContainer }}>
+                    <Text
+                        variant="titleMedium"
+                        style={{ fontWeight: '700', color: theme.colors.onTertiaryContainer }}
+                    >
                         Quick Actions
                     </Text>
-                    <Text variant="bodySmall" style={{ color: theme.colors.onTertiaryContainer, marginBottom: 10 }}>
+                    <Text
+                        variant="bodySmall"
+                        style={{ color: theme.colors.onTertiaryContainer, marginBottom: 10 }}
+                    >
                         Jump to your most-used workflows.
                     </Text>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <View style={styles.quickActionRow}>
                         <AppButton
                             mode="contained"
                             compact
-                            style={{ flex: 1, marginRight: 6 }}
+                            style={styles.quickActionHalf}
                             onPress={() => router.push('/(main)/(tabs)/billing')}
                             icon="calculator"
                         >
@@ -120,64 +144,138 @@ export const DashboardScreen = () => {
                         <AppButton
                             mode="contained"
                             compact
-                            style={{ flex: 1, marginHorizontal: 6 }}
+                            style={[styles.quickActionHalf, styles.quickActionHalfSpacer]}
                             onPress={() => router.push('/(main)/(tabs)/stock')}
                             icon="package-variant"
                         >
                             Stock
                         </AppButton>
-                        <AppButton
-                            mode="contained"
-                            compact
-                            style={{ flex: 1, marginLeft: 6 }}
-                            onPress={() => router.push('/(main)/(tabs)/reports')}
-                            icon="chart-line"
-                        >
-                            Reports
-                        </AppButton>
                     </View>
+                    <AppButton
+                        mode="contained"
+                        compact
+                        style={styles.quickActionFull}
+                        onPress={() => router.push('/(main)/(tabs)/reports')}
+                        icon="chart-line"
+                    >
+                        Reports
+                    </AppButton>
                 </AppCard>
 
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <AppCard style={{ flex: 1, marginRight: 8, backgroundColor: theme.colors.primaryContainer }}>
-                        <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>Today&apos;s Sales</Text>
-                        <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: theme.colors.onPrimaryContainer }}>
+                <View style={styles.metricRow}>
+                    <AppCard
+                        style={[
+                            styles.metricCard,
+                            styles.metricCardLeft,
+                            { backgroundColor: theme.colors.primaryContainer },
+                        ]}
+                    >
+                        <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>
+                            Today&apos;s Sales
+                        </Text>
+                        <Text
+                            variant="headlineSmall"
+                            style={[styles.metricValue, { color: theme.colors.onPrimaryContainer }]}
+                        >
                             {loading ? '...' : formatCurrency(stats.todaySales, activeCurrency)}
                         </Text>
                     </AppCard>
-                    <AppCard style={{ flex: 1, marginLeft: 8, backgroundColor: theme.colors.secondaryContainer }}>
-                        <Text variant="labelMedium" style={{ color: theme.colors.onSecondaryContainer }}>Today&apos;s Orders</Text>
-                        <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: theme.colors.onSecondaryContainer }}>
+                    <AppCard
+                        style={[
+                            styles.metricCard,
+                            { backgroundColor: theme.colors.secondaryContainer },
+                        ]}
+                    >
+                        <Text variant="labelMedium" style={{ color: theme.colors.onSecondaryContainer }}>
+                            Today&apos;s Orders
+                        </Text>
+                        <Text
+                            variant="headlineSmall"
+                            style={[styles.metricValue, { color: theme.colors.onSecondaryContainer }]}
+                        >
                             {loading ? '...' : stats.todayOrders}
                         </Text>
                     </AppCard>
                 </View>
 
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <AppCard style={{ flex: 1, marginRight: 8 }}>
-                        <Text variant="labelMedium" style={{ color: theme.colors.outline }}>7-Day Sales</Text>
-                        <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>
+                <View style={styles.metricRow}>
+                    <AppCard style={[styles.metricCard, styles.metricCardLeft]}>
+                        <Text variant="labelMedium" style={{ color: theme.colors.outline }}>
+                            7-Day Sales
+                        </Text>
+                        <Text variant="titleLarge" style={styles.metricValue}>
                             {loading ? '...' : formatCurrency(stats.weeklySales, activeCurrency)}
                         </Text>
                     </AppCard>
-                    <AppCard style={{ flex: 1, marginLeft: 8 }}>
-                        <Text variant="labelMedium" style={{ color: theme.colors.outline }}>Average Order</Text>
-                        <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>
+                    <AppCard style={styles.metricCard}>
+                        <Text variant="labelMedium" style={{ color: theme.colors.outline }}>
+                            Average Order
+                        </Text>
+                        <Text variant="titleLarge" style={styles.metricValue}>
                             {loading ? '...' : formatCurrency(stats.averageOrderValue, activeCurrency)}
                         </Text>
                     </AppCard>
                 </View>
 
                 <AppCard>
-                    <Text variant="labelMedium" style={{ color: theme.colors.outline }}>Lifetime Revenue</Text>
-                    <Text variant="headlineSmall" style={{ fontWeight: 'bold' }}>
+                    <Text variant="labelMedium" style={{ color: theme.colors.outline }}>
+                        Lifetime Revenue
+                    </Text>
+                    <Text variant="headlineSmall" style={styles.metricValue}>
                         {loading ? '...' : formatCurrency(stats.totalRevenue, activeCurrency)}
                     </Text>
                     <Text variant="bodyMedium" style={{ color: theme.colors.outline }}>
-                        {loading ? 'Loading...' : `${stats.totalOrders} total orders`}
+                        {loading ? 'Updating...' : `${stats.totalOrders} total orders`}
                     </Text>
                 </AppCard>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    scrollContent: {
+        paddingBottom: 80,
+        paddingTop: 18,
+    },
+    heroCard: {
+        marginBottom: 12,
+    },
+    heroTitle: {
+        fontWeight: '800',
+    },
+    heroSubtitle: {
+        marginTop: 6,
+        opacity: 0.92,
+    },
+    offerButton: {
+        marginTop: 10,
+        alignSelf: 'flex-start',
+    },
+    quickActionRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    quickActionHalf: {
+        flex: 1,
+    },
+    quickActionHalfSpacer: {
+        marginLeft: 8,
+    },
+    quickActionFull: {
+        marginTop: 8,
+    },
+    metricRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    metricCard: {
+        flex: 1,
+    },
+    metricCardLeft: {
+        marginRight: 8,
+    },
+    metricValue: {
+        fontWeight: 'bold',
+    },
+});

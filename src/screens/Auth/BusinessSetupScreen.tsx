@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, ScrollView, Alert } from 'react-native';
-import { TextInput, Button, Text, List, useTheme } from 'react-native-paper';
+import { List, Text, useTheme } from 'react-native-paper';
 import { useRouter, Href } from 'expo-router';
 import { userService } from '../../api/userService';
 import { Config } from '../../constants/Config';
 import { BUSINESS_SETUP_TEXT, COMMON_TEXT } from '../../constants/staticText';
 import { normalizeCurrencyCode } from '../../utils/formatters';
 import { useSettingsStore, useUserStore } from '../../store';
+import { AppButton } from '../../components/common/AppButton';
+import { AppCard } from '../../components/common/AppCard';
+import { AppInput } from '../../components/common/AppInput';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 
 export default function BusinessSetupScreen() {
@@ -66,89 +70,97 @@ export default function BusinessSetupScreen() {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={styles.container}>
-                <Text variant="headlineMedium" style={{ marginBottom: 20, fontWeight: 'bold' }}>{BUSINESS_SETUP_TEXT.title}</Text>
-                <Text variant="bodyLarge" style={{ marginBottom: 30, color: theme.colors.secondary }}>
-                    {BUSINESS_SETUP_TEXT.subtitle}
-                </Text>
-
-                <TextInput
-                    label={BUSINESS_SETUP_TEXT.fields.businessName}
-                    value={businessName}
-                    onChangeText={setBusinessName}
-                    mode="outlined"
-                    style={styles.input}
+                <PageHeaderCard
+                    title={BUSINESS_SETUP_TEXT.title}
+                    subtitle={BUSINESS_SETUP_TEXT.subtitle}
                 />
 
-                <TextInput
-                    label={BUSINESS_SETUP_TEXT.fields.businessAddress}
-                    value={address}
-                    onChangeText={setAddress}
-                    mode="outlined"
-                    multiline
-                    numberOfLines={3}
-                    style={styles.input}
-                />
+                <AppCard>
+                    <Text variant="titleSmall" style={styles.sectionTitle}>
+                        Business Profile
+                    </Text>
+                    <AppInput
+                        label={BUSINESS_SETUP_TEXT.fields.businessName}
+                        value={businessName}
+                        onChangeText={setBusinessName}
+                        style={styles.input}
+                    />
 
-                <TextInput
-                    label={BUSINESS_SETUP_TEXT.fields.gstNumber}
-                    value={gst}
-                    onChangeText={setGst}
-                    mode="outlined"
-                    style={styles.input}
-                    autoCapitalize="characters"
-                />
+                    <AppInput
+                        label={BUSINESS_SETUP_TEXT.fields.businessAddress}
+                        value={address}
+                        onChangeText={setAddress}
+                        multiline
+                        numberOfLines={3}
+                        style={styles.input}
+                    />
 
-                <List.Section>
-                    <List.Subheader>Business Category</List.Subheader>
-                    <List.Accordion
-                        title={category || 'Select Category'}
-                        left={props => <List.Icon {...props} icon="shape" />}
-                    >
-                        {['Retail', 'Wholesale', 'Services', 'Manufacturing', 'Other'].map((cat) => (
-                            <List.Item
-                                key={cat}
-                                title={cat}
-                                onPress={() => setCategory(cat)}
-                                right={props => cat === category ? <List.Icon {...props} icon="check" /> : null}
-                            />
-                        ))}
-                    </List.Accordion>
-                </List.Section>
+                    <AppInput
+                        label={BUSINESS_SETUP_TEXT.fields.gstNumber}
+                        value={gst}
+                        onChangeText={setGst}
+                        style={styles.input}
+                        autoCapitalize="characters"
+                    />
+                </AppCard>
 
-                <List.Section>
-                    <List.Subheader>{BUSINESS_SETUP_TEXT.fields.defaultCurrency}</List.Subheader>
-                    <List.Accordion
-                        title={`${currency} - ${Config.supportedCurrencies.find((entry) => entry.code === currency)?.label ?? ''}`}
-                        left={(props) => <List.Icon {...props} icon="cash-multiple" />}
-                    >
-                        {Config.supportedCurrencies.map((entry) => (
-                            <List.Item
-                                key={entry.code}
-                                title={`${entry.code} - ${entry.label}`}
-                                onPress={() => setSelectedCurrency(entry.code)}
-                                right={(props) => (
-                                    entry.code === currency ? <List.Icon {...props} icon="check" /> : null
-                                )}
-                            />
-                        ))}
-                    </List.Accordion>
-                </List.Section>
+                <AppCard>
+                    <List.Section>
+                        <List.Subheader>Business Category</List.Subheader>
+                        <List.Accordion
+                            title={category || 'Select Category'}
+                            left={(props) => <List.Icon {...props} icon="shape" />}
+                        >
+                            {['Retail', 'Wholesale', 'Services', 'Manufacturing', 'Other'].map((cat) => (
+                                <List.Item
+                                    key={cat}
+                                    title={cat}
+                                    onPress={() => setCategory(cat)}
+                                    right={(props) => (cat === category ? <List.Icon {...props} icon="check" /> : null)}
+                                />
+                            ))}
+                        </List.Accordion>
+                    </List.Section>
 
-                <Button
+                    <List.Section>
+                        <List.Subheader>{BUSINESS_SETUP_TEXT.fields.defaultCurrency}</List.Subheader>
+                        <List.Accordion
+                            title={`${currency} - ${Config.supportedCurrencies.find((entry) => entry.code === currency)?.label ?? ''}`}
+                            left={(props) => <List.Icon {...props} icon="cash-multiple" />}
+                        >
+                            {Config.supportedCurrencies.map((entry) => (
+                                <List.Item
+                                    key={entry.code}
+                                    title={`${entry.code} - ${entry.label}`}
+                                    onPress={() => setSelectedCurrency(entry.code)}
+                                    right={(props) => (
+                                        entry.code === currency ? <List.Icon {...props} icon="check" /> : null
+                                    )}
+                                />
+                            ))}
+                        </List.Accordion>
+                    </List.Section>
+                </AppCard>
+
+                <AppButton
                     mode="contained"
                     onPress={handleSave}
                     loading={loading}
                     style={styles.button}
                 >
                     {BUSINESS_SETUP_TEXT.actions.startBilling}
-                </Button>
+                </AppButton>
+                <Text variant="bodySmall" style={{ color: theme.colors.outline, textAlign: 'center' }}>
+                    You can edit these details any time in Settings.
+                </Text>
             </ScrollView>
         </ScreenWrapper>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 20 },
-    input: { marginBottom: 20 },
-    button: { marginTop: 20, paddingVertical: 6 }
+    container: { flexGrow: 1, paddingTop: 16, paddingBottom: 120 },
+    sectionTitle: { fontWeight: '700', marginBottom: 10 },
+    input: { marginBottom: 10 },
+    button: { marginTop: 8, marginBottom: 10 },
 });

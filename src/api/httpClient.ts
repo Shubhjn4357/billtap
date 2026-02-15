@@ -31,6 +31,12 @@ const tryParseJson = (value: string) => {
     }
 };
 
+const DEFAULT_TIMEOUT_MS = (() => {
+    const raw = Number(process.env.EXPO_PUBLIC_API_TIMEOUT_MS ?? 15000);
+    if (!Number.isFinite(raw) || raw <= 0) return 15000;
+    return Math.floor(raw);
+})();
+
 interface RequestOptions {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body?: unknown;
@@ -57,11 +63,25 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
         requestHeaders['Content-Type'] = 'application/json';
     }
 
-    const response = await fetch(resolveUrl(path), {
-        method,
-        headers: requestHeaders,
-        body: hasBody ? JSON.stringify(body) : undefined,
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+        response = await fetch(resolveUrl(path), {
+            method,
+            headers: requestHeaders,
+            body: hasBody ? JSON.stringify(body) : undefined,
+            signal: controller.signal,
+        });
+    } catch (error: unknown) {
+        if (error instanceof Error && error.name === 'AbortError') {
+            throw new ApiError(`Request timed out after ${DEFAULT_TIMEOUT_MS}ms.`, 0, error);
+        }
+        throw new ApiError('Network request failed. Check your internet connection.', 0, error);
+    } finally {
+        clearTimeout(timeout);
+    }
 
     const text = await response.text();
     const parsed = tryParseJson(text) as { message?: string } | null;

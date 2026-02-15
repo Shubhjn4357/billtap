@@ -306,6 +306,14 @@ export const offlineSyncService = {
         return await readJson<OfflineMutation[]>(OFFLINE_QUEUE_KEY, []);
     },
 
+    async getQueueStats(): Promise<{ pendingCount: number; oldestCreatedAt: string | null }> {
+        const queue = await this.getQueue();
+        return {
+            pendingCount: queue.length,
+            oldestCreatedAt: queue.length > 0 ? queue[0].createdAt : null,
+        };
+    },
+
     async enqueueMutation(mutation: Omit<OfflineMutation, 'id' | 'createdAt'>): Promise<void> {
         const queue = await this.getQueue();
         const nextMutation = {

@@ -52,6 +52,7 @@ export const SETTINGS_TEXT = {
         appearance: 'Appearance',
         billingPreferences: 'Billing Preferences',
         account: 'Account',
+        dataSync: 'Data Sync',
         appInformation: 'App Information',
     },
     appearance: {
@@ -82,6 +83,16 @@ export const SETTINGS_TEXT = {
         privacyDescription: 'How data is handled and protected',
         sitemapTitle: 'Sitemap',
         sitemapDescription: 'App route index',
+    },
+    dataSync: {
+        title: 'Offline Queue',
+        statusLabel: 'Pending Changes',
+        oldestLabel: 'Oldest Pending',
+        lastSyncLabel: 'Last Sync',
+        idleMessage: 'All local changes are synced.',
+        queuedMessage: 'Some local changes are waiting to sync.',
+        syncingMessage: 'Sync in progress...',
+        syncNowButton: 'Sync Now',
     },
     updateCard: {
         title: 'Version & Updates',
@@ -165,7 +176,7 @@ export const AUTH_TEXT = {
         subtitle: 'Sign in to continue',
         googleSignInNotConfiguredTitle: 'Google Sign-In Not Configured',
         googleSignInNotConfiguredBody:
-            'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (and platform-specific client IDs) in your .env file.',
+            'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (plus platform client IDs where needed) in your .env file and ensure Android SHA fingerprints are added in Google Cloud.',
         phoneNotSupportedTitle: 'Not Supported',
         phoneNotSupportedBody: 'Phone sign-in is not available until reCAPTCHA is ready.',
         enterPhoneNumber: 'Enter phone number',
@@ -688,13 +699,13 @@ export const APP_SITEMAP: SitemapEntry[] = [
     },
     {
         title: 'Login',
-        route: '/login',
+        route: '/(auth)/login',
         description: 'Authentication entry point.',
         access: 'public',
     },
     {
         title: 'Onboarding',
-        route: '/onboarding',
+        route: '/(auth)/onboarding',
         description: 'First-time app introduction.',
         access: 'public',
     },

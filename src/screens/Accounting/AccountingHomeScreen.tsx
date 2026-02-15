@@ -6,6 +6,7 @@ import { Text, useTheme } from 'react-native-paper';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -66,10 +67,10 @@ export const AccountingHomeScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 100 }}>
-                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>Accounting Suite</Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 4, marginBottom: 12 }}>
-                    Ledger, GST and financial controls in one place.
-                </Text>
+                <PageHeaderCard
+                    title="Accounting Suite"
+                    subtitle="Ledger, GST and financial controls in one place."
+                />
 
                 {error ? (
                     <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 12 }}>

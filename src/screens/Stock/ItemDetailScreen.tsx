@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppInput } from '../../components/common/AppInput';
 import { AppButton } from '../../components/common/AppButton';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { COMMON_TEXT, STOCK_TEXT } from '../../constants/staticText';
 import { useStock } from '../../hooks/useStock';
 import { Config } from '../../constants/Config';
@@ -146,9 +147,10 @@ export const ItemDetailScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 20, paddingBottom: 40 }}>
-                <Text variant="headlineSmall" style={{ marginBottom: 20 }}>
-                    {isNew ? STOCK_TEXT.itemDetail.addTitle : STOCK_TEXT.itemDetail.editTitle}
-                </Text>
+                <PageHeaderCard
+                    title={isNew ? STOCK_TEXT.itemDetail.addTitle : STOCK_TEXT.itemDetail.editTitle}
+                    subtitle="Configure pricing, stock controls, tax and identifiers."
+                />
 
                 <Section title="Basic Details">
                     <AppInput

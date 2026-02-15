@@ -74,7 +74,7 @@ export const OnboardingScreen = () => {
 
     const finishOnboarding = () => {
         setHasSeenOnboarding(true);
-        router.replace('/login');
+        router.replace('/(auth)/login' as any);
     };
 
     return (

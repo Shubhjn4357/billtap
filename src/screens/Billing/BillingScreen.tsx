@@ -1,6 +1,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, FlatList, Alert } from 'react-native';
+import { Alert, FlatList, StyleSheet, View } from 'react-native';
 import { Text, Searchbar, Divider, useTheme, IconButton } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -87,17 +87,30 @@ export const BillingScreen = () => {
     };
 
     const renderCartItem = useCallback(({ item }: { item: (typeof cart)[number] }) => (
-        <AppCard style={{ marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flex: 1 }}>
-                    <Text variant="bodyLarge" style={{ fontWeight: 'bold' }}>{item.name}</Text>
-                    <Text variant="bodyMedium">{formatCurrency(item.price, activeCurrency)} x {item.quantity}</Text>
+        <AppCard style={styles.cartItemCard}>
+            <View style={styles.cartItemRow}>
+                <View style={styles.cartItemInfo}>
+                    <Text variant="bodyLarge" style={styles.cartItemName}>
+                        {item.name}
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                        {formatCurrency(item.price, activeCurrency)} x {item.quantity} ={' '}
+                        {formatCurrency(item.price * item.quantity, activeCurrency)}
+                    </Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <AppButton mode="text" onPress={() => updateQuantity(item.id, -1)} compact>-</AppButton>
-                    <Text>{item.quantity}</Text>
-                    <AppButton
-                        mode="text"
+                <View style={styles.qtyControls}>
+                    <IconButton
+                        icon="minus-circle-outline"
+                        size={20}
+                        onPress={() => updateQuantity(item.id, -1)}
+                        accessibilityLabel="Decrease quantity"
+                    />
+                    <Text variant="labelLarge" style={styles.qtyValue}>
+                        {item.quantity}
+                    </Text>
+                    <IconButton
+                        icon="plus-circle-outline"
+                        size={20}
                         onPress={() => {
                             const stockItem = stockById.get(item.id);
                             if (stockItem && item.quantity >= stockItem.stock) {
@@ -106,24 +119,19 @@ export const BillingScreen = () => {
                             }
                             updateQuantity(item.id, 1);
                         }}
-                        compact
-                    >
-                        +
-                    </AppButton>
-                    <AppButton
-                        mode="text"
+                        accessibilityLabel="Increase quantity"
+                    />
+                    <IconButton
+                        icon="trash-can-outline"
+                        size={20}
+                        iconColor={theme.colors.error}
                         onPress={() => removeItem(item.id)}
-                        textColor={theme.colors.error}
-                        compact
-                        icon="delete"
                         accessibilityLabel="Remove item"
-                    >
-                        {' '}
-                    </AppButton>
+                    />
                 </View>
             </View>
         </AppCard>
-    ), [activeCurrency, removeItem, stockById, theme.colors.error, updateQuantity]);
+    ), [activeCurrency, removeItem, stockById, theme.colors.error, theme.colors.outline, updateQuantity]);
 
     const handleCheckout = async () => {
         if (cart.length === 0) return;
@@ -187,11 +195,21 @@ export const BillingScreen = () => {
 
     return (
         <ScreenWrapper>
-            <View style={{ paddingVertical: 10 }}>
+            <View style={styles.container}>
+                <AppCard style={{ backgroundColor: theme.colors.primaryContainer }}>
+                    <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
+                        Create Bill
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer }}>
+                        Scan or search products, then checkout in one tap.
+                    </Text>
+                </AppCard>
+
                 <Searchbar
                     placeholder={BILLING_TEXT.searchPlaceholder}
                     onChangeText={setSearchQuery}
                     value={searchQuery}
+                    style={styles.searchbar}
                     right={(props) => (
                         <IconButton
                             iconColor={props.color}
@@ -202,79 +220,100 @@ export const BillingScreen = () => {
                         />
                     )}
                 />
-            </View>
 
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-                <AppInput
-                    label={BILLING_TEXT.customerName}
-                    value={customerName}
-                    onChangeText={(value) => setCustomerDetails(value, customerPhone)}
-                    style={{ flex: 1 }}
-                />
-                <AppInput
-                    label={BILLING_TEXT.customerPhone}
-                    value={customerPhone}
-                    onChangeText={(value) => setCustomerDetails(customerName, value)}
-                    keyboardType="phone-pad"
-                    style={{ flex: 1 }}
-                />
-            </View>
-
-            {searchQuery.length > 0 && (
-                <View style={{ maxHeight: 200, backgroundColor: theme.colors.elevation.level1, borderRadius: 8, marginBottom: 10 }}>
-                    <FlatList
-                        data={filteredItems}
-                        keyExtractor={i => i.id}
-                        keyboardShouldPersistTaps="handled"
-                        initialNumToRender={10}
-                        maxToRenderPerBatch={10}
-                        windowSize={5}
-                        renderItem={({ item }) => (
-                            <AppButton
-                                mode="text"
-                                onPress={() => handleAddItem(item)}
-                                contentStyle={{ justifyContent: 'flex-start' }}
-                            >
-                                {item.name} - {formatCurrency(item.price, activeCurrency)} ({item.stock} {BILLING_TEXT.inStockSuffix})
-                            </AppButton>
-                        )}
+                <AppCard>
+                    <Text variant="titleSmall" style={styles.sectionTitle}>
+                        Customer Details
+                    </Text>
+                    <AppInput
+                        label={BILLING_TEXT.customerName}
+                        value={customerName}
+                        onChangeText={(value) => setCustomerDetails(value, customerPhone)}
+                        style={styles.customerInput}
                     />
+                    <AppInput
+                        label={BILLING_TEXT.customerPhone}
+                        value={customerPhone}
+                        onChangeText={(value) => setCustomerDetails(customerName, value)}
+                        keyboardType="phone-pad"
+                    />
+                </AppCard>
+
+                {searchQuery.length > 0 && (
+                    <AppCard style={[styles.searchResultCard, { backgroundColor: theme.colors.elevation.level1 }]}>
+                        <Text variant="labelMedium" style={{ color: theme.colors.outline, marginBottom: 8 }}>
+                            Product matches
+                        </Text>
+                        {filteredItems.length === 0 ? (
+                            <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                {`No matching item for "${searchQuery.trim()}".`}
+                            </Text>
+                        ) : (
+                            <FlatList
+                                data={filteredItems}
+                                keyExtractor={(item) => item.id}
+                                keyboardShouldPersistTaps="handled"
+                                initialNumToRender={10}
+                                maxToRenderPerBatch={10}
+                                windowSize={5}
+                                ItemSeparatorComponent={() => <Divider />}
+                                renderItem={({ item }) => (
+                                    <AppButton
+                                        mode="text"
+                                        onPress={() => handleAddItem(item)}
+                                        contentStyle={styles.searchItemButtonContent}
+                                    >
+                                        {item.name} | {formatCurrency(item.price, activeCurrency)} ({item.stock} {BILLING_TEXT.inStockSuffix})
+                                    </AppButton>
+                                )}
+                            />
+                        )}
+                    </AppCard>
+                )}
+
+                <View style={styles.cartHeader}>
+                    <Text variant="titleMedium" style={styles.sectionTitle}>
+                        {BILLING_TEXT.currentBillTitle}
+                    </Text>
+                    {cart.length > 0 && (
+                        <AppButton mode="text" compact onPress={clearCart}>
+                            Clear
+                        </AppButton>
+                    )}
                 </View>
-            )}
 
-            <Divider style={{ marginVertical: 10 }} />
-
-            <View style={{ flex: 1 }}>
-                <Text variant="titleMedium" style={{ marginBottom: 10 }}>{BILLING_TEXT.currentBillTitle}</Text>
                 <FlatList
                     data={cart}
-                    keyExtractor={i => i.id}
+                    keyExtractor={(item) => item.id}
                     renderItem={renderCartItem}
                     initialNumToRender={12}
                     maxToRenderPerBatch={12}
                     windowSize={7}
                     removeClippedSubviews
-                    contentContainerStyle={{ paddingBottom: 100 }}
+                    contentContainerStyle={styles.cartListContent}
+                    ListEmptyComponent={(
+                        <AppCard style={styles.emptyCard}>
+                            <Text variant="bodyMedium" style={{ color: theme.colors.outline, textAlign: 'center' }}>
+                                Add products to start building the bill.
+                            </Text>
+                        </AppCard>
+                    )}
                 />
             </View>
 
-            <View style={{
-                position: 'absolute',
-                bottom: 80,
-                left: 16,
-                right: 16,
-                backgroundColor: theme.colors.primaryContainer,
-                padding: 16,
-                borderRadius: 16,
-                elevation: 4,
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-            }}>
+            <AppCard
+                style={[styles.checkoutCard, { backgroundColor: theme.colors.primaryContainer }]}
+                contentStyle={styles.checkoutContent}
+            >
                 <View>
-                    <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>{BILLING_TEXT.totalLabel}</Text>
+                    <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>
+                        {BILLING_TEXT.totalLabel}
+                    </Text>
                     <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: theme.colors.onPrimaryContainer }}>
                         {formatCurrency(total, activeCurrency)}
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer }}>
+                        {cart.length} item(s)
                     </Text>
                 </View>
                 <AppButton
@@ -285,7 +324,72 @@ export const BillingScreen = () => {
                 >
                     {BILLING_TEXT.checkoutButton}
                 </AppButton>
-            </View>
+            </AppCard>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    searchbar: {
+        marginBottom: 10,
+    },
+    sectionTitle: {
+        fontWeight: '700',
+    },
+    customerInput: {
+        marginBottom: 8,
+    },
+    searchResultCard: {
+        maxHeight: 220,
+    },
+    searchItemButtonContent: {
+        justifyContent: 'flex-start',
+    },
+    cartHeader: {
+        marginTop: 2,
+        marginBottom: 8,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    cartListContent: {
+        paddingBottom: 12,
+    },
+    cartItemCard: {
+        marginBottom: 8,
+    },
+    cartItemRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    cartItemInfo: {
+        flex: 1,
+        marginRight: 8,
+    },
+    cartItemName: {
+        fontWeight: '700',
+    },
+    qtyControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    qtyValue: {
+        minWidth: 18,
+        textAlign: 'center',
+    },
+    emptyCard: {
+        marginTop: 8,
+    },
+    checkoutCard: {
+        marginBottom: 72,
+    },
+    checkoutContent: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+});

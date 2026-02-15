@@ -6,6 +6,7 @@ import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -56,10 +57,10 @@ export const BalanceSheetScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>Balance Sheet</Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 4 }}>
-                    Assets, liabilities and equity as of a selected date.
-                </Text>
+                <PageHeaderCard
+                    title="Balance Sheet"
+                    subtitle="Assets, liabilities and equity as of a selected date."
+                />
 
                 <AppCard>
                     <AppInput label="As Of Date (YYYY-MM-DD)" value={asOf} onChangeText={setAsOf} />

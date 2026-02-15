@@ -4,8 +4,10 @@ import { ScrollView, Alert } from 'react-native';
 import { Text, useTheme, SegmentedButtons } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
 import { AppButton } from '../../components/common/AppButton';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { usePartyStore } from '../../store';
 import { COMMON_TEXT } from '../../constants/staticText';
 import type { PartyType } from '../../types';
@@ -125,51 +127,62 @@ export const PartyDetailScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 20 }}>
-                <Text variant="headlineSmall" style={{ marginBottom: 20 }}>
-                    {isNew ? 'Add Party' : 'Edit Party'}
-                </Text>
-
-                <SegmentedButtons
-                    value={form.type}
-                    onValueChange={val => setForm({ ...form, type: val as PartyType })}
-                    buttons={[
-                        { value: 'customer', label: 'Customer' },
-                        { value: 'supplier', label: 'Supplier' },
-                    ]}
-                    style={{ marginBottom: 20 }}
+                <PageHeaderCard
+                    title={isNew ? 'Add Party' : 'Edit Party'}
+                    subtitle="Manage customer/supplier details, tax info and contact fields."
                 />
 
-                <AppInput
-                    label="Name"
-                    value={form.name}
-                    onChangeText={t => setForm({ ...form, name: t })}
-                />
-                 <AppInput
-                    label="Phone Number"
-                    value={form.phone}
-                    onChangeText={t => setForm({ ...form, phone: t })}
-                    keyboardType="phone-pad"
-                />
-                 <AppInput
-                    label="Email (Optional)"
-                    value={form.email}
-                    onChangeText={t => setForm({ ...form, email: t })}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                />
-                 <AppInput
-                    label="GST Number (Optional)"
-                    value={form.gstNumber}
-                    onChangeText={t => setForm({ ...form, gstNumber: t })}
-                    autoCapitalize="characters"
-                />
-                 <AppInput
-                    label="Address"
-                    value={form.address}
-                    onChangeText={t => setForm({ ...form, address: t })}
-                    multiline
-                    numberOfLines={3}
-                />
+                <AppCard>
+                    <Text variant="titleSmall" style={{ fontWeight: '700', marginBottom: 10 }}>
+                        Party Type
+                    </Text>
+                    <SegmentedButtons
+                        value={form.type}
+                        onValueChange={(val) => setForm({ ...form, type: val as PartyType })}
+                        buttons={[
+                            { value: 'customer', label: 'Customer' },
+                            { value: 'supplier', label: 'Supplier' },
+                        ]}
+                        style={{ marginBottom: 8 }}
+                    />
+                </AppCard>
+
+                <AppCard>
+                    <Text variant="titleSmall" style={{ fontWeight: '700', marginBottom: 10 }}>
+                        Contact Information
+                    </Text>
+                    <AppInput
+                        label="Name"
+                        value={form.name}
+                        onChangeText={(t) => setForm({ ...form, name: t })}
+                    />
+                    <AppInput
+                        label="Phone Number"
+                        value={form.phone}
+                        onChangeText={(t) => setForm({ ...form, phone: t })}
+                        keyboardType="phone-pad"
+                    />
+                    <AppInput
+                        label="Email (Optional)"
+                        value={form.email}
+                        onChangeText={(t) => setForm({ ...form, email: t })}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                    />
+                    <AppInput
+                        label="GST Number (Optional)"
+                        value={form.gstNumber}
+                        onChangeText={(t) => setForm({ ...form, gstNumber: t })}
+                        autoCapitalize="characters"
+                    />
+                    <AppInput
+                        label="Address"
+                        value={form.address}
+                        onChangeText={(t) => setForm({ ...form, address: t })}
+                        multiline
+                        numberOfLines={3}
+                    />
+                </AppCard>
 
                 <AppButton 
                     mode="contained" 

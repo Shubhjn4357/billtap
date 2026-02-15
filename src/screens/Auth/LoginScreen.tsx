@@ -1,16 +1,25 @@
-import { makeRedirectUri } from 'expo-auth-session';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import React, { useEffect, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
-import { ActivityIndicator, Text, useTheme } from 'react-native-paper';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    Alert,
+    Image,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    View,
+} from 'react-native';
+import { ActivityIndicator, Divider, Text, useTheme, type MD3Theme } from 'react-native-paper';
 import { AppButton } from '../../components/common/AppButton';
 import { AppInput } from '../../components/common/AppInput';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AUTH_TEXT, COMMON_TEXT } from '../../constants/staticText';
 import { useAuth } from '../../hooks/useAuth';
-
-WebBrowser.maybeCompleteAuthSession();
+import {
+    configureNativeGoogleSignIn,
+    getNativeGoogleErrorMessage,
+    signInWithNativeGoogle,
+} from '../../utils/googleNativeSignIn';
+import { useWebGoogleAuth } from '../../utils/googleWebAuth';
 
 export const LoginScreen = () => {
     const { signInWithGoogle, sendPhoneVerification, confirmPhoneVerification, loading: authLoading } = useAuth();
@@ -19,47 +28,74 @@ export const LoginScreen = () => {
     const [verificationCode, setVerificationCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [phoneMode, setPhoneMode] = useState(false);
+    const [androidNativeGoogleReady, setAndroidNativeGoogleReady] = useState(Platform.OS !== 'android');
+    const googleSignInInFlightRef = useRef(false);
+    const sendOtpInFlightRef = useRef(false);
+    const verifyOtpInFlightRef = useRef(false);
 
     const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
     const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
     const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
-    const googleRedirectUri = makeRedirectUri({
-        scheme: 'billtap',
-        path: 'oauthredirect',
-    });
-
-    const [googleRequest, googleResponse, promptAsync] = Google.useAuthRequest({
+    const {
+        requestReady: webGoogleRequestReady,
+        idToken: webGoogleIdToken,
+        prompt: promptWebGoogle,
+    } = useWebGoogleAuth({
         webClientId: googleWebClientId,
         androidClientId: googleAndroidClientId,
         iosClientId: googleIosClientId,
-        redirectUri: googleRedirectUri,
     });
 
     const theme = useTheme();
+    const styles = createStyles(theme);
+    const isBusy = loading || authLoading;
+    const isOtpStep = verificationId.length > 0;
 
-    const googleConfigured = Platform.select({
-        web: !!googleWebClientId,
-        android: !!googleAndroidClientId || !!googleWebClientId,
-        ios: !!googleIosClientId || !!googleWebClientId,
-        default: false,
-    });
+    const useNativeGoogleOnAndroid = Platform.OS === 'android';
+    const googleConfigured = useNativeGoogleOnAndroid
+        ? !!googleWebClientId && androidNativeGoogleReady
+        : Platform.select({
+            web: !!googleWebClientId && webGoogleRequestReady,
+            android: false,
+            ios: (!!googleIosClientId || !!googleWebClientId) && webGoogleRequestReady,
+            default: false,
+        });
+    const googleButtonDisabled = isBusy || !googleConfigured;
 
     useEffect(() => {
-        if (googleResponse?.type === 'success') {
-            const { id_token } = googleResponse.params;
-            signInWithGoogle(id_token).catch((e: unknown) =>
-                Alert.alert(
-                    AUTH_TEXT.login.loginErrorTitle,
-                    e instanceof Error ? e.message : AUTH_TEXT.login.unableToVerifyCode
-                )
-            );
-        }
-    }, [googleResponse, signInWithGoogle]);
+        if (!useNativeGoogleOnAndroid) return;
+
+        setAndroidNativeGoogleReady(false);
+        configureNativeGoogleSignIn({
+            webClientId: googleWebClientId,
+            androidClientId: googleAndroidClientId,
+        })
+            .then(() => setAndroidNativeGoogleReady(true))
+            .catch(() => setAndroidNativeGoogleReady(false));
+    }, [useNativeGoogleOnAndroid, googleWebClientId, googleAndroidClientId]);
+
+    useEffect(() => {
+        if (useNativeGoogleOnAndroid) return;
+        if (!webGoogleIdToken) return;
+
+        signInWithGoogle(webGoogleIdToken).catch((e: unknown) =>
+            Alert.alert(
+                AUTH_TEXT.login.loginErrorTitle,
+                e instanceof Error ? e.message : AUTH_TEXT.login.unableToVerifyCode
+            )
+        );
+    }, [webGoogleIdToken, signInWithGoogle, useNativeGoogleOnAndroid]);
 
     const normalizePhoneNumber = (value: string) => {
-        const digits = value.replace(/[^\d+]/g, '');
-        if (digits.startsWith('+')) return digits;
+        const digits = value.replace(/\D/g, '');
+        if (!digits) return '';
         return `+${digits}`;
+    };
+
+    const handleBackToMethodSelection = () => {
+        setPhoneMode(false);
+        setVerificationId('');
+        setVerificationCode('');
     };
 
     const handleGoogleSignIn = () => {
@@ -70,14 +106,37 @@ export const LoginScreen = () => {
             );
             return;
         }
-        promptAsync();
+        if (isBusy || googleSignInInFlightRef.current) return;
+
+        if (useNativeGoogleOnAndroid) {
+            googleSignInInFlightRef.current = true;
+            setLoading(true);
+            signInWithNativeGoogle()
+                .then(({ idToken }) => signInWithGoogle(idToken))
+                .catch((error: unknown) => {
+                    Alert.alert(AUTH_TEXT.login.loginErrorTitle, getNativeGoogleErrorMessage(error));
+                })
+                .finally(() => {
+                    setLoading(false);
+                    googleSignInInFlightRef.current = false;
+                });
+            return;
+        }
+
+        promptWebGoogle();
     };
 
     const handleSendVerification = async () => {
+        if (isBusy || sendOtpInFlightRef.current) return;
         if (!phoneNumber) return Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterPhoneNumber);
+        sendOtpInFlightRef.current = true;
         setLoading(true);
         try {
             const formattedPhone = normalizePhoneNumber(phoneNumber);
+            if (!formattedPhone || formattedPhone.length < 8) {
+                Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterPhoneNumber);
+                return;
+            }
             const session = await sendPhoneVerification(formattedPhone);
             setVerificationId(session.verificationId);
             const otpMessage = session.testCode
@@ -88,96 +147,196 @@ export const LoginScreen = () => {
             Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : AUTH_TEXT.login.unableToSendOtp);
         } finally {
             setLoading(false);
+            sendOtpInFlightRef.current = false;
         }
     };
 
     const handleConfirmVerification = async () => {
-        if (!verificationCode) return Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterCode);
+        if (isBusy || verifyOtpInFlightRef.current) return;
+        if (!verificationId) return Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.unableToSendOtp);
+        const normalizedCode = verificationCode.replace(/\D/g, '');
+        if (normalizedCode.length !== 6) return Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterCode);
+        verifyOtpInFlightRef.current = true;
         setLoading(true);
         try {
-            await confirmPhoneVerification(verificationId, verificationCode);
+            await confirmPhoneVerification(verificationId, normalizedCode);
+            setVerificationCode('');
+            setVerificationId('');
+            setPhoneMode(false);
         } catch (error: unknown) {
             Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : AUTH_TEXT.login.unableToVerifyCode);
         } finally {
             setLoading(false);
+            verifyOtpInFlightRef.current = false;
         }
     };
 
     return (
-        <ScreenWrapper style={{ justifyContent: 'center' }}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.form}>
-                <View style={styles.logoContainer}>
-                    <Image source={require('@/assets/images/icon.png')} style={styles.logo} />
-                    <Text variant="headlineLarge" style={{ color: theme.colors.primary, fontWeight: 'bold', marginTop: 16 }}>{AUTH_TEXT.login.title}</Text>
-                    <Text variant="bodyMedium" style={{ color: theme.colors.outline }}>{AUTH_TEXT.login.subtitle}</Text>
-                </View>
+        <ScreenWrapper>
+            <View style={styles.container}>
+                <View style={[styles.orbTop, { backgroundColor: theme.colors.primaryContainer }]} pointerEvents="none" />
+                <View style={[styles.orbBottom, { backgroundColor: theme.colors.secondaryContainer }]} pointerEvents="none" />
 
-                {phoneMode ? (
-                    <>
-                        {!verificationId ? (
-                            <>
-                                <AppInput
-                                    label={AUTH_TEXT.login.phoneNumberLabel}
-                                    value={phoneNumber}
-                                    onChangeText={setPhoneNumber}
-                                    keyboardType="phone-pad"
-                                    autoComplete="tel"
-                                />
-                                <AppButton mode="contained" onPress={handleSendVerification} loading={loading}>
-                                    {AUTH_TEXT.login.sendCodeButton}
-                                </AppButton>
-                            </>
-                        ) : (
-                            <>
-                                <AppInput
-                                    label={AUTH_TEXT.login.verificationCodeLabel}
-                                    value={verificationCode}
-                                    onChangeText={setVerificationCode}
-                                    keyboardType="number-pad"
-                                />
-                                <AppButton mode="contained" onPress={handleConfirmVerification} loading={loading}>
-                                    {AUTH_TEXT.login.verifyCodeButton}
-                                </AppButton>
-                            </>
-                        )}
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-                            <AppButton mode="text" onPress={() => { setPhoneMode(false); setVerificationId(''); }}>
-                                {COMMON_TEXT.actions.back}
-                            </AppButton>
-                            {verificationId && (
-                                <ResendTimer onResend={handleSendVerification} />
-                            )}
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboard}>
+                    <ScrollView
+                        contentContainerStyle={styles.scrollContent}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
+                    >
+                        <View style={styles.logoContainer}>
+                            <View
+                                style={[
+                                    styles.logoFrame,
+                                    {
+                                        backgroundColor: theme.colors.surface,
+                                        borderColor: theme.colors.primary,
+                                    },
+                                ]}
+                            >
+                                <Image source={require('../../../assets/images/icon.png')} style={styles.logo} />
+                            </View>
+                            <Text variant="headlineMedium" style={[styles.title, { color: theme.colors.onSurface }]}>
+                                {AUTH_TEXT.login.title}
+                            </Text>
+                            <Text variant="bodyMedium" style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}>
+                                {AUTH_TEXT.login.subtitle}
+                            </Text>
                         </View>
-                    </>
-                ) : (
-                    <>
-                        <AppButton
-                            mode="outlined"
-                            icon="google"
-                            onPress={handleGoogleSignIn}
-                            disabled={!googleRequest || !googleConfigured}
-                        >
-                            {AUTH_TEXT.login.signInWithGoogleButton}
-                        </AppButton>
-                        <AppButton
-                            mode="contained"
-                            icon="phone"
-                            style={{ marginTop: 12 }}
-                            onPress={() => setPhoneMode(true)}
-                        >
-                            {AUTH_TEXT.login.signInWithPhoneButton}
-                        </AppButton>
-                    </>
-                )}
 
-                {(loading || authLoading) && <ActivityIndicator style={{ marginTop: 20 }} />}
-            </KeyboardAvoidingView>
+                        <View
+                            style={[
+                                styles.authCard,
+                                {
+                                    backgroundColor: theme.colors.surface,
+                                    borderColor: theme.colors.outline,
+                                },
+                            ]}
+                        >
+                            {phoneMode ? (
+                                <>
+                                    <View
+                                        style={[
+                                            styles.stepBadge,
+                                            { backgroundColor: theme.colors.primaryContainer },
+                                        ]}
+                                    >
+                                        <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>
+                                            {isOtpStep ? 'Step 2 of 2' : 'Step 1 of 2'}
+                                        </Text>
+                                    </View>
+
+                                    <Text variant="titleMedium" style={{ color: theme.colors.onSurface, marginBottom: 6 }}>
+                                        {isOtpStep ? AUTH_TEXT.login.verificationCodeLabel : AUTH_TEXT.login.phoneNumberLabel}
+                                    </Text>
+                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 16 }}>
+                                        {isOtpStep
+                                            ? 'Enter the 6-digit code sent to your number.'
+                                            : 'Use your country code. Example: +1 555 123 4567'}
+                                    </Text>
+
+                                    {!isOtpStep ? (
+                                        <>
+                                            <AppInput
+                                                label={AUTH_TEXT.login.phoneNumberLabel}
+                                                value={phoneNumber}
+                                                onChangeText={setPhoneNumber}
+                                                keyboardType="phone-pad"
+                                                autoComplete="tel"
+                                                placeholder="+1 555 123 4567"
+                                            />
+                                            <AppButton
+                                                mode="contained"
+                                                icon="message-text-outline"
+                                                onPress={handleSendVerification}
+                                                loading={loading}
+                                                disabled={isBusy}
+                                                contentStyle={styles.primaryButtonContent}
+                                            >
+                                                {AUTH_TEXT.login.sendCodeButton}
+                                            </AppButton>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <AppInput
+                                                label={AUTH_TEXT.login.verificationCodeLabel}
+                                                value={verificationCode}
+                                                onChangeText={(text) => setVerificationCode(text.replace(/\D/g, '').slice(0, 6))}
+                                                keyboardType="number-pad"
+                                                autoComplete="one-time-code"
+                                                textContentType="oneTimeCode"
+                                                placeholder="123456"
+                                                maxLength={6}
+                                            />
+                                            <AppButton
+                                                mode="contained"
+                                                icon="check-circle-outline"
+                                                onPress={handleConfirmVerification}
+                                                loading={loading}
+                                                disabled={isBusy || verificationCode.replace(/\D/g, '').length !== 6}
+                                                contentStyle={styles.primaryButtonContent}
+                                            >
+                                                {AUTH_TEXT.login.verifyCodeButton}
+                                            </AppButton>
+                                        </>
+                                    )}
+
+                                    <View style={styles.footerRow}>
+                                        <AppButton
+                                            mode="text"
+                                            onPress={handleBackToMethodSelection}
+                                            disabled={isBusy}
+                                        >
+                                            {COMMON_TEXT.actions.back}
+                                        </AppButton>
+                                        {isOtpStep && (
+                                            <ResendTimer onResend={handleSendVerification} disabled={isBusy} />
+                                        )}
+                                    </View>
+                                </>
+                            ) : (
+                                <>
+                                    <AppButton
+                                        mode="outlined"
+                                        icon="google"
+                                        onPress={handleGoogleSignIn}
+                                        disabled={googleButtonDisabled}
+                                        contentStyle={styles.primaryButtonContent}
+                                    >
+                                        {AUTH_TEXT.login.signInWithGoogleButton}
+                                    </AppButton>
+
+                                    <View style={styles.separatorRow}>
+                                        <Divider style={styles.separator} />
+                                        <Text variant="labelSmall" style={[styles.separatorLabel, { color: theme.colors.onSurfaceVariant }]}>
+                                            or
+                                        </Text>
+                                        <Divider style={styles.separator} />
+                                    </View>
+
+                                    <AppButton
+                                        mode="contained"
+                                        icon="phone"
+                                        onPress={() => setPhoneMode(true)}
+                                        disabled={isBusy}
+                                        contentStyle={styles.primaryButtonContent}
+                                    >
+                                        {AUTH_TEXT.login.signInWithPhoneButton}
+                                    </AppButton>
+                                </>
+                            )}
+
+                            {isBusy && <ActivityIndicator style={styles.loadingIndicator} />}
+                        </View>
+                    </ScrollView>
+                </KeyboardAvoidingView>
+            </View>
         </ScreenWrapper>
     );
 };
 
-const ResendTimer = ({ onResend }: { onResend: () => void }) => {
+const ResendTimer = ({ onResend, disabled = false }: { onResend: () => void; disabled?: boolean }) => {
     const [seconds, setSeconds] = useState(30);
+    const theme = useTheme();
 
     useEffect(() => {
         if (seconds > 0) {
@@ -187,18 +346,126 @@ const ResendTimer = ({ onResend }: { onResend: () => void }) => {
     }, [seconds]);
 
     if (seconds > 0) {
-        return <Text variant="bodySmall" style={{ alignSelf: 'center', color: 'gray' }}>Resend in {seconds}s</Text>;
+        return (
+            <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                Resend in {seconds}s
+            </Text>
+        );
     }
 
     return (
-        <AppButton mode="text" onPress={() => { setSeconds(30); onResend(); }}>
+        <AppButton
+            mode="text"
+            onPress={() => {
+                setSeconds(30);
+                onResend();
+            }}
+            disabled={disabled}
+        >
             Resend Code
         </AppButton>
     );
 };
 
-const styles = StyleSheet.create({
-    form: { flex: 1, justifyContent: 'center' },
-    logoContainer: { alignItems: 'center', marginBottom: 40 },
-    logo: { width: 100, height: 100, borderRadius: 20 }
-});
+const createStyles = (theme: MD3Theme) =>
+    StyleSheet.create({
+        container: {
+            flex: 1,
+        },
+        keyboard: {
+            flex: 1,
+        },
+        scrollContent: {
+            flexGrow: 1,
+            justifyContent: 'center',
+            paddingVertical: 24,
+        },
+        orbTop: {
+            position: 'absolute',
+            top: -120,
+            right: -80,
+            width: 240,
+            height: 240,
+            borderRadius: 120,
+            opacity: 0.45,
+        },
+        orbBottom: {
+            position: 'absolute',
+            bottom: -140,
+            left: -90,
+            width: 260,
+            height: 260,
+            borderRadius: 130,
+            opacity: 0.3,
+        },
+        logoContainer: {
+            alignItems: 'center',
+            marginBottom: 22,
+        },
+        logoFrame: {
+            width: 96,
+            height: 96,
+            borderRadius: 28,
+            borderWidth: 2,
+            alignItems: 'center',
+            justifyContent: 'center',
+            shadowColor: theme.colors.primary,
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.16,
+            shadowRadius: 18,
+            elevation: 4,
+        },
+        logo: {
+            width: 72,
+            height: 72,
+            borderRadius: 18,
+        },
+        title: {
+            marginTop: 14,
+            fontWeight: '700',
+        },
+        subtitle: {
+            marginTop: 6,
+            textAlign: 'center',
+            paddingHorizontal: 12,
+        },
+        authCard: {
+            borderRadius: 20,
+            borderWidth: 1,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
+        },
+        stepBadge: {
+            alignSelf: 'flex-start',
+            borderRadius: 999,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            marginBottom: 12,
+        },
+        primaryButtonContent: {
+            minHeight: 48,
+        },
+        separatorRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginVertical: 12,
+        },
+        separator: {
+            flex: 1,
+        },
+        separatorLabel: {
+            marginHorizontal: 10,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+        },
+        footerRow: {
+            marginTop: 10,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            minHeight: 36,
+        },
+        loadingIndicator: {
+            marginTop: 14,
+        },
+    });

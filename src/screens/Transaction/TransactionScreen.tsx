@@ -6,6 +6,8 @@ import { useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppInput } from '../../components/common/AppInput';
 import { AppButton } from '../../components/common/AppButton';
+import { AppCard } from '../../components/common/AppCard';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { usePartyStore, useTransactionStore } from '../../store';
 import { useStock } from '../../hooks/useStock';
 import { COMMON_TEXT } from '../../constants/staticText';
@@ -14,6 +16,7 @@ import type { Transaction, TransactionItem, Party, Item } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { transactionService } from '../../api/transactionService';
 import { taskNotificationService } from '../../services/taskNotificationService';
+import { formatCurrency } from '../../utils/formatters';
 
 export const TransactionScreen = () => {
     const router = useRouter();
@@ -174,22 +177,24 @@ export const TransactionScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-                <Text variant="headlineSmall" style={{ marginBottom: 20 }}>
-                    New Transaction
-                </Text>
-
-                <SegmentedButtons
-                    value={type}
-                    onValueChange={val => {
-                        setType(val as 'SALE' | 'PURCHASE');
-                        setItems([]); // Clear items on type switch as prices differ
-                    }}
-                    buttons={[
-                        { value: 'SALE', label: 'Sale' },
-                        { value: 'PURCHASE', label: 'Purchase' },
-                    ]}
-                    style={{ marginBottom: 20 }}
+                <PageHeaderCard
+                    title="New Transaction"
+                    subtitle="Create a sale or purchase with payment and reminder controls."
                 />
+
+                <AppCard>
+                    <SegmentedButtons
+                        value={type}
+                        onValueChange={(val) => {
+                            setType(val as 'SALE' | 'PURCHASE');
+                            setItems([]); // Clear items on type switch as prices differ
+                        }}
+                        buttons={[
+                            { value: 'SALE', label: 'Sale' },
+                            { value: 'PURCHASE', label: 'Purchase' },
+                        ]}
+                    />
+                </AppCard>
 
                 <View style={styles.section}>
                     <Text variant="titleMedium" style={styles.label}>Party</Text>
@@ -295,7 +300,7 @@ export const TransactionScreen = () => {
                             </View>
                             <View style={{ flex: 2, alignItems: 'flex-end' }}>
                                 <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>
-                                    {(item.quantity * item.price).toFixed(2)}
+                                    {formatCurrency(item.quantity * item.price, 'INR')}
                                 </Text>
                                 <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
                                     GST: {item.tax}%
@@ -308,26 +313,26 @@ export const TransactionScreen = () => {
 
                 <Divider style={{ marginVertical: 20 }} />
 
-                <View style={styles.summary}>
+                <View style={[styles.summary, { backgroundColor: theme.colors.surfaceVariant }]}>
                     <View style={styles.summaryRow}>
                         <Text>Subtotal</Text>
-                        <Text>{totals.subtotal.toFixed(2)}</Text>
+                        <Text>{formatCurrency(totals.subtotal, 'INR')}</Text>
                     </View>
                     <View style={styles.summaryRow}>
                         <Text>Tax</Text>
-                        <Text>{totals.taxAmount.toFixed(2)}</Text>
+                        <Text>{formatCurrency(totals.taxAmount, 'INR')}</Text>
                     </View>
                     <View style={[styles.summaryRow, { marginTop: 10 }]}>
                         <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>Total</Text>
                         <Text variant="titleLarge" style={{ fontWeight: 'bold', color: theme.colors.primary }}>
-                            {totals.total.toFixed(2)}
+                            {formatCurrency(totals.total, 'INR')}
                         </Text>
                     </View>
                     {paymentMode === 'CREDIT' && (
                         <View style={[styles.summaryRow, { marginTop: 8 }]}>
                             <Text variant="bodyLarge" style={{ fontWeight: '700' }}>Due</Text>
                             <Text variant="bodyLarge" style={{ fontWeight: '700', color: theme.colors.error }}>
-                                {Math.max(totals.total - Number(paidAmountInput || 0), 0).toFixed(2)}
+                                {formatCurrency(Math.max(totals.total - Number(paidAmountInput || 0), 0), 'INR')}
                             </Text>
                         </View>
                     )}
@@ -366,6 +371,6 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
-    summary: { backgroundColor: '#f9f9f9', padding: 16, borderRadius: 8 },
+    summary: { padding: 16, borderRadius: 12 },
     summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
 });

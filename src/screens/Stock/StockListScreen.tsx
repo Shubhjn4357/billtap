@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, FlatList, RefreshControl, StyleSheet } from 'react-native';
 import { Chip, Text, FAB, Searchbar, useTheme } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useStock } from '../../hooks/useStock';
 import { useAuth } from '../../hooks/useAuth';
 import { AppCard } from '../../components/common/AppCard';
+import { AppButton } from '../../components/common/AppButton';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { Skeleton } from '../../components/feedback/Skeleton';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
@@ -47,6 +48,23 @@ export const StockListScreen = () => {
             setRefreshing(false);
         }
     }, [fetchItems]);
+
+    const inventoryStats = useMemo(() => {
+        let lowStock = 0;
+        let outOfStock = 0;
+        let stockValue = 0;
+
+        for (const item of items) {
+            if (item.stock <= 0) {
+                outOfStock += 1;
+            } else if (item.stock <= 5) {
+                lowStock += 1;
+            }
+            stockValue += item.stock * item.price;
+        }
+
+        return { lowStock, outOfStock, stockValue };
+    }, [items]);
 
     const getStockStatus = useCallback((stock: number) => {
         if (stock <= 0) {
@@ -97,6 +115,11 @@ export const StockListScreen = () => {
                                 {status.label}
                             </Chip>
                         </View>
+                        {!!item.barcode && (
+                            <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 4 }}>
+                                Barcode: {item.barcode}
+                            </Text>
+                        )}
                     </View>
                     <Text variant="titleMedium" style={{ color: theme.colors.primary }}>
                         {formatCurrency(item.price, activeCurrency)}
@@ -108,17 +131,23 @@ export const StockListScreen = () => {
 
     return (
         <ScreenWrapper>
-            <View style={styles.headerRow}>
-                <Text variant="titleMedium" style={{ fontWeight: '700' }}>Inventory</Text>
-                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                    {items.length} item(s)
+            <AppCard style={{ backgroundColor: theme.colors.primaryContainer }}>
+                <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
+                    Inventory
                 </Text>
-            </View>
+                <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer }}>
+                    {items.length} item(s) | {inventoryStats.lowStock} low | {inventoryStats.outOfStock} out
+                </Text>
+                <Text variant="titleSmall" style={{ color: theme.colors.onPrimaryContainer, marginTop: 6, fontWeight: '700' }}>
+                    Stock Value: {formatCurrency(inventoryStats.stockValue, activeCurrency)}
+                </Text>
+            </AppCard>
+
             <Searchbar
-                placeholder="Search Items..."
+                placeholder="Search item by name or barcode"
                 onChangeText={setSearchQuery}
                 value={searchQuery}
-                style={{ marginBottom: 16 }}
+                style={styles.searchbar}
             />
 
             {loading ? (
@@ -139,7 +168,16 @@ export const StockListScreen = () => {
                     windowSize={7}
                     removeClippedSubviews
                     contentContainerStyle={{ paddingBottom: 80 }}
-                    ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20 }}>No items found</Text>}
+                    ListEmptyComponent={(
+                        <AppCard style={styles.emptyCard}>
+                            <Text style={{ textAlign: 'center', color: theme.colors.outline }}>
+                                No items found.
+                            </Text>
+                            <AppButton mode="contained-tonal" onPress={() => router.push('/item/new')} style={styles.emptyAction}>
+                                Add Your First Item
+                            </AppButton>
+                        </AppCard>
+                    )}
                 />
             )}
 
@@ -165,11 +203,14 @@ export const StockListScreen = () => {
 };
 
 const styles = StyleSheet.create({
-    headerRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
+    searchbar: {
+        marginBottom: 16,
+    },
+    emptyCard: {
+        marginTop: 20,
+    },
+    emptyAction: {
+        marginTop: 10,
     },
     fab: {
         position: 'absolute',

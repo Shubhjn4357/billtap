@@ -5,6 +5,7 @@ import { Text, useTheme } from 'react-native-paper';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -87,10 +88,10 @@ export const InventoryInsightsScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>Inventory Insights</Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 4 }}>
-                    Valuation, reorder signals and stock-aging view.
-                </Text>
+                <PageHeaderCard
+                    title="Inventory Insights"
+                    subtitle="Valuation, reorder signals and stock-aging view."
+                />
 
                 <AppCard>
                     <AppButton mode="contained" onPress={() => { void loadData(); }} loading={loading}>

@@ -29,9 +29,19 @@ export const useUserStore = create<UserState>()(
             storage: createJSONStorage(() => AsyncStorage),
             partialize: (state) => ({
                 user: state.user,
-                isAuthenticated: state.isAuthenticated,
-                // Explicitly exclude isLoading from persistence
+                // Explicitly exclude volatile auth/loading flags from persistence.
             }),
+            merge: (persistedState, currentState) => {
+                const persisted = (persistedState ?? {}) as Partial<UserState>;
+                const user = persisted.user ?? null;
+
+                return {
+                    ...currentState,
+                    ...persisted,
+                    user,
+                    isAuthenticated: !!user,
+                };
+            },
         }
     )
 );
