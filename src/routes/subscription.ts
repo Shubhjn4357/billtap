@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { and, asc, desc, eq, lte, or, sql } from 'drizzle-orm';
 import { plans, offers, paymentIntents, analyticsEvents, users } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import { requireAuth, requireAdmin, optionalAuth, type AppEnv } from '../middleware/auth';
 
 const subscriptionRoute = new Hono<AppEnv>();
@@ -157,7 +158,7 @@ subscriptionRoute.post('/webhook', async (c) => {
             return c.json({ ok: true, message: 'Already processed.' });
         }
 
-        await db.transaction(async (tx) => {
+        await withTransaction(db, async (tx) => {
             await tx.update(paymentIntents)
                 .set({
                     status: payload.status,

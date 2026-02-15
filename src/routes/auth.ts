@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { users, phoneVerifications, staffInvites } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import { verifyGoogleIdentityToken } from '../auth/google';
 import { signSessionToken } from '../auth/tokens';
 import { requireAuth, type AppEnv } from '../middleware/auth';
@@ -156,7 +157,7 @@ authRoute.post('/phone/verify', async (c) => {
             return c.json({ ok: false, message: 'Invalid code' }, 400);
         }
 
-        const user = await db.transaction(async (tx) => {
+        const user = await withTransaction(db, async (tx) => {
             const rows = await tx.select().from(phoneVerifications).where(eq(phoneVerifications.id, payload.verificationId)).limit(1);
             const verification = rows[0];
 

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { and, eq, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 import { items, offers, phoneVerifications, transactions, users } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import type { AppEnv } from '../middleware/auth';
 
 const jobsRoute = new Hono<AppEnv>();
@@ -26,7 +27,7 @@ jobsRoute.post('/run-all', async (c) => {
     const otpRetentionHours = Number(c.env.OTP_RETENTION_HOURS || 24);
     const otpCutoff = new Date(now.getTime() - otpRetentionHours * 60 * 60 * 1000);
 
-    const [expiredUsers, deactivatedOffers, activatedOffers, deletedOtps, deletedItems, rotatedReminders] = await db.transaction(async (tx) => {
+    const [expiredUsers, deactivatedOffers, activatedOffers, deletedOtps, deletedItems, rotatedReminders] = await withTransaction(db, async (tx) => {
         const expired = await tx
             .update(users)
             .set({

@@ -3,6 +3,7 @@ import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { SYSTEM_ACCOUNT_DEFINITIONS, ensureSystemAccounts } from '../accounting/systemAccounts';
+import { withTransaction } from '../db/transaction';
 import {
     accounts,
     inventoryMovements,
@@ -90,7 +91,7 @@ accountingRoute.post('/accounts/seed-default', requireAuth, async (c) => {
     if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const db = c.get('db');
-    const map = await db.transaction(async (tx) => ensureSystemAccounts(tx, effectiveUserId, new Date()));
+    const map = await withTransaction(db, async (tx) => ensureSystemAccounts(tx, effectiveUserId, new Date()));
 
     return c.json({
         ok: true,
@@ -142,7 +143,7 @@ accountingRoute.post('/journals', requireAuth, async (c) => {
     const entryId = nanoid();
     const now = new Date();
 
-    await db.transaction(async (tx) => {
+    await withTransaction(db, async (tx) => {
         await tx.insert(journalEntries).values({
             id: entryId,
             userId: effectiveUserId,

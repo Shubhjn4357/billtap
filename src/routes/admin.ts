@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { offers, plans, users } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import { isDeveloperAdminPrincipal, requireAuth, requireDeveloperAdmin, type AppEnv } from '../middleware/auth';
 import { z } from 'zod';
 import { DEFAULT_SERVER_PLANS } from '../constants/defaultPlans';
@@ -492,7 +493,7 @@ adminRoute.post('/seed/default-plans', requireDeveloperAdmin, async (c) => {
     const db = c.get('db');
     const now = new Date();
 
-    await db.transaction(async (tx) => {
+    await withTransaction(db, async (tx) => {
         for (const entry of DEFAULT_SERVER_PLANS) {
             await tx.insert(plans).values({
                 ...entry,

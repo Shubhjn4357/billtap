@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { ensureSystemAccounts, type SystemAccountCode } from '../accounting/systemAccounts';
+import { withTransaction } from '../db/transaction';
 import { inventoryMovements, items, journalEntries, journalLines, transactions } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 
@@ -230,7 +231,7 @@ transactionsRoute.post('/', requireAuth, async (c) => {
             grouped.set(line.id, (grouped.get(line.id) ?? 0) + line.quantity);
         }
 
-        await db.transaction(async (tx) => {
+        await withTransaction(db, async (tx) => {
             const itemIds = [...grouped.keys()];
             const sourceItems = itemIds.length === 0
                 ? []
