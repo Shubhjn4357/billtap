@@ -8,6 +8,20 @@
       "when": 1771059844092,
       "tag": "0000_amused_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771097077118,
+      "tag": "0001_business_suite_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771149000000,
+      "tag": "0002_business_ops_controls",
+      "breakpoints": true
     }
   ]
 }

@@ -1,38 +1,30 @@
 import { OAuth2Client } from 'google-auth-library';
 let oauthClient = null;
-const decodeJwtPayload = (token) => {
-    const parts = token.split('.');
-    if (parts.length < 2) {
-        throw new Error('Invalid token format.');
-    }
-    const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = payloadBase64.padEnd(payloadBase64.length + ((4 - payloadBase64.length % 4) % 4), '=');
-    const json = Buffer.from(padded, 'base64').toString('utf8');
-    const payload = JSON.parse(json);
-    const sub = typeof payload.sub === 'string' ? payload.sub : '';
-    if (!sub) {
-        throw new Error('Identity token is missing subject (sub).');
-    }
-    return {
-        sub,
-        email: typeof payload.email === 'string' ? payload.email : undefined,
-        name: typeof payload.name === 'string' ? payload.name : undefined,
-        picture: typeof payload.picture === 'string' ? payload.picture : undefined,
-    };
+const parseEnvClientIds = (value) => (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+const getGoogleAudiences = (env) => {
+    const source = env ?? process.env;
+    const audiences = new Set([
+        ...parseEnvClientIds(source.GOOGLE_OAUTH_CLIENT_ID),
+        ...parseEnvClientIds(source.GOOGLE_OAUTH_CLIENT_IDS),
+        ...parseEnvClientIds(source.GOOGLE_OAUTH_ANDROID_CLIENT_ID),
+        ...parseEnvClientIds(source.GOOGLE_OAUTH_IOS_CLIENT_ID),
+    ]);
+    return [...audiences];
 };
-export const verifyGoogleIdentityToken = async (idToken) => {
-    const audience = process.env.GOOGLE_OAUTH_CLIENT_ID;
-    if (!audience) {
-        // TODO(auth-security): Require strict Google token verification in production by
-        // setting GOOGLE_OAUTH_CLIENT_ID and rejecting unverifiable tokens.
-        return decodeJwtPayload(idToken);
+export const verifyGoogleIdentityToken = async (idToken, env) => {
+    const audiences = getGoogleAudiences(env);
+    if (audiences.length === 0) {
+        throw new Error('Google OAuth is not configured. Set GOOGLE_OAUTH_CLIENT_ID (or GOOGLE_OAUTH_CLIENT_IDS).');
     }
     if (!oauthClient) {
-        oauthClient = new OAuth2Client(audience);
+        oauthClient = new OAuth2Client();
     }
     const ticket = await oauthClient.verifyIdToken({
         idToken,
-        audience,
+        audience: audiences,
     });
     const payload = ticket.getPayload();
     if (!payload?.sub) {
