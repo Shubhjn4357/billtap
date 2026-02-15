@@ -120,7 +120,7 @@ export const itemService = {
         });
     },
 
-    async updateStock(id: string, qty: number, type: 'IN' | 'OUT'): Promise<void> {
+    async updateStock(id: string, qty: number, type: 'IN' | 'OUT', reason?: string): Promise<void> {
         if (qty <= 0) {
             throw new Error('Quantity must be greater than 0.');
         }
@@ -131,10 +131,38 @@ export const itemService = {
         }
 
         const nextStock = type === 'IN' ? item.stock + qty : item.stock - qty;
-        if (nextStock < 0) {
+        if (type === 'OUT' && nextStock < 0) {
             throw new Error(`Insufficient stock for "${item.name}".`);
         }
 
+        // Optimistic update locally
+        await offlineSyncService.upsertCachedItem({ ...item, stock: nextStock });
+
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.post<{ ok: boolean; message?: string }>(`/items/${id}/adjust`, {
+                    type,
+                    quantity: qty,
+                    reason,
+                });
+
+                if (!response.ok) {
+                    throw new Error(response.message || 'Failed to adjust stock.');
+                }
+                return;
+            } catch (error: unknown) {
+                if (error instanceof ApiError && error.status < 500) {
+                    // Revert on client error
+                    await offlineSyncService.upsertCachedItem({ ...item, stock: item.stock });
+                    throw error;
+                }
+            }
+        }
+
+        // Offline fallback: Use regular item update which queues a full upsert
+        // We lose the "reason" / specific movement record for now, but stock is correct.
         await this.updateItem(id, { stock: nextStock });
     },
 

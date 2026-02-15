@@ -23,7 +23,7 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
     const insets = useSafeAreaInsets();
 
     return (
-        <View style={[styles.container, { paddingBottom: insets.bottom > 0 ? insets.bottom : 10 }]}>
+        <View style={[styles.container, { paddingBottom: insets.bottom > 0 ? insets.bottom : 10, zIndex: 1000 }]}>
             <View style={[styles.content, { backgroundColor: theme.colors.elevation.level2 }]}>
                 {state.routes.map((route, index) => {
                     const options = descriptors[route.key].options as ExtendedOptions;
@@ -93,6 +93,8 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         alignItems: 'center',
+        zIndex: 1000, // Ensure it sits on top of content
+        elevation: 20,
     },
     content: {
         flexDirection: 'row',
@@ -111,7 +113,7 @@ const styles = StyleSheet.create({
     tab: {
         flex: 1,
         marginHorizontal: 4,
-        borderRadius: 16,
+        borderRadius: 32,
         alignItems: 'center',
         justifyContent: 'center',
         height: 56,

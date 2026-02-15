@@ -1,3 +1,5 @@
+// This file handles Google Sign-In for Web environments and Expo Go using `expo-auth-session`.
+// It is distinct from `googleNativeSignIn` which uses the native `@react-native-google-signin` library for Android/iOS builds.
 import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';

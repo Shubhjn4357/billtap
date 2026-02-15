@@ -11,7 +11,7 @@ export default function TabLayout() {
       tabBar={(props) => <CurvedBottomBar {...props} />}
       screenOptions={{
         headerShown: false,
-        lazy: true,
+        lazy: false,
         freezeOnBlur: true,
       }}
     >

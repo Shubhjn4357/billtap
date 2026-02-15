@@ -14,6 +14,7 @@ import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
 import { useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
 import type { Item } from '../../types';
+import { StockAdjustmentDialog } from '../../components/stock/StockAdjustmentDialog';
 
 export const StockListScreen = () => {
     const { items, loading, searchQuery, setSearchQuery, fetchItems } = useStock();
@@ -24,6 +25,19 @@ export const StockListScreen = () => {
     const params = useLocalSearchParams<{ search?: string | string[] }>();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
     const [refreshing, setRefreshing] = useState(false);
+    const [adjustmentItem, setAdjustmentItem] = useState<Item | null>(null);
+    const { adjustStock } = useStock();
+
+    const handleAdjustSubmit = async (qty: number, type: 'IN' | 'OUT', reason: string) => {
+        if (!adjustmentItem) return;
+        try {
+            await adjustStock(adjustmentItem.id, qty, type, reason);
+            setAdjustmentItem(null);
+        } catch (error) {
+            console.error(error);
+            throw error;
+        }
+    };
 
     useEffect(() => {
         const scannedSearch = Array.isArray(params.search) ? params.search[0] : params.search;
@@ -97,19 +111,25 @@ export const StockListScreen = () => {
 
     const renderItem = useCallback(({ item }: { item: Item }) => {
         const status = getStockStatus(item.stock);
+        const isLowStock = item.stock <= 5;
 
         return (
-            <AppCard onPress={() => router.push(`/item/${item.id}`)}>
+            <AppCard
+                onPress={() => router.push(`/item/${item.id}`)}
+                style={{ backgroundColor: isLowStock && item.stock > 0 ? theme.colors.elevation.level2 : undefined }}
+            >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1, marginRight: 10 }}>
-                        <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>{item.name}</Text>
+                        <Text variant="titleMedium" style={{ fontWeight: 'bold', color: isLowStock ? theme.colors.error : theme.colors.onSurface }}>
+                            {item.name}
+                        </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
                             <Text variant="bodySmall" style={{ color: theme.colors.outline, marginRight: 8 }}>
                                 Qty: {item.stock}
                             </Text>
                             <Chip
                                 compact
-                                style={{ backgroundColor: status.backgroundColor, height: 24 }}
+                                style={{ backgroundColor: status.backgroundColor, height: 24, marginRight: 8 }}
                                 textStyle={{ color: status.textColor, marginVertical: -2 }}
                             >
                                 {status.label}
@@ -121,13 +141,22 @@ export const StockListScreen = () => {
                             </Text>
                         )}
                     </View>
-                    <Text variant="titleMedium" style={{ color: theme.colors.primary }}>
-                        {formatCurrency(item.price, activeCurrency)}
-                    </Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                        <Text variant="titleMedium" style={{ color: theme.colors.primary, marginBottom: 8 }}>
+                            {formatCurrency(item.price, activeCurrency)}
+                        </Text>
+                        <AppButton
+                            mode="text"
+                            compact
+                            onPress={() => setAdjustmentItem(item)}
+                        >
+                            Adjust
+                        </AppButton>
+                    </View>
                 </View>
             </AppCard>
         );
-    }, [activeCurrency, getStockStatus, router, theme.colors.outline, theme.colors.primary]);
+    }, [activeCurrency, getStockStatus, router, theme.colors.elevation.level2, theme.colors.error, theme.colors.onSurface, theme.colors.outline, theme.colors.primary]);
 
     return (
         <ScreenWrapper>
@@ -197,6 +226,14 @@ export const StockListScreen = () => {
                 style={[styles.fab, { backgroundColor: theme.colors.primary }]}
                 color={theme.colors.onPrimary}
                 onPress={() => router.push('/item/new')}
+            />
+
+            <StockAdjustmentDialog
+                visible={!!adjustmentItem}
+                onDismiss={() => setAdjustmentItem(null)}
+                onSubmit={handleAdjustSubmit}
+                itemName={adjustmentItem?.name || ''}
+                currentStock={adjustmentItem?.stock || 0}
             />
         </ScreenWrapper>
     );

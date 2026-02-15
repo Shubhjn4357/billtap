@@ -23,7 +23,6 @@
     "android": {
       "package": "com.autoloop.billtap",
       "adaptiveIcon": {
-      
         "backgroundImage": "./assets/images/android-icon-background.png"
       },
       "edgeToEdgeEnabled": true,
@@ -64,7 +63,10 @@
           "color": "#ffffff"
         }
       ],
-      "@react-native-google-signin/google-signin"
+      [
+        "@react-native-google-signin/google-signin"
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

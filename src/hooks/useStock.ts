@@ -155,6 +155,30 @@ export const useStock = () => {
         }
     };
 
+    const adjustStock = async (id: string, qty: number, type: 'IN' | 'OUT', reason?: string) => {
+        if (!user) throw new Error('You must be logged in to update stock.');
+
+        setLoading(true);
+        setError(null);
+        try {
+            // Optimistic update via store
+            const current = items.find(i => i.id === id);
+            if (current) {
+                const nextStock = type === 'IN' ? current.stock + qty : current.stock - qty;
+                updateInStore(id, { stock: nextStock });
+            }
+
+            await itemService.updateStock(id, qty, type, reason);
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            setError(message);
+            void fetchItems(); // Revert/Refresh
+            throw new Error(message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
         items: filteredItems,
         allItems: items,
@@ -166,5 +190,6 @@ export const useStock = () => {
         addItem,
         updateItem,
         deleteItem,
+        adjustStock,
     };
 };

@@ -58,7 +58,20 @@ export const SubscriptionScreen = () => {
                 />
 
                 {loading ? (
-                    <ActivityIndicator style={{ marginTop: 24 }} />
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                        <ActivityIndicator size="large" />
+                        <Text style={{ marginTop: 10, color: theme.colors.outline }}>Loading plans...</Text>
+                    </View>
+                ) : plans.length === 0 ? (
+                    <AppCard style={{ alignItems: 'center', padding: 20 }}>
+                        <Text variant="titleMedium" style={{ marginBottom: 8 }}>Unable to load plans</Text>
+                        <Text variant="bodySmall" style={{ textAlign: 'center', marginBottom: 16, color: theme.colors.outline }}>
+                            This could be a network issue or no plans are currently available.
+                        </Text>
+                        <AppButton mode="contained" onPress={() => void loadPlans()}>
+                            Retry
+                        </AppButton>
+                    </AppCard>
                 ) : (
                     plans.map((plan) => {
                         const isCurrent = currentPlanId === plan.id;

@@ -1,3 +1,2 @@
-
-import { BillingScreen } from '../../../src/screens/Billing/BillingScreen';
+import {BillingScreen} from '../../../src/screens/Billing/BillingScreen';
 export default BillingScreen;

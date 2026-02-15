@@ -199,12 +199,16 @@ export interface BillItem {
 export interface Bill {
     id: string;
     userId: string;
-    customerName?: string;
-    customerPhone?: string;
+    type?: TransactionType; // Defaults to SALE
+    partyId?: string; // Links to Party
+    customerName?: string; // Legacy/Display
+    customerPhone?: string; // Legacy/Display
     businessName?: string;
     businessAddress?: string;
     gstNumber?: string;
     currency?: string;
+    billNumber?: string;
+    billDate?: FirestoreDate;
     items: BillItem[];
     total: number;
     createdAt: FirestoreDate;

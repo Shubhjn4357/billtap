@@ -11,6 +11,7 @@ import { AppButton } from '../../components/common/AppButton';
 import { useAuth } from '../../hooks/useAuth';
 import { useBills } from '../../hooks/useBills';
 import { useOffers } from '../../hooks/useOffers';
+import { useStock } from '../../hooks/useStock';
 import { useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
@@ -22,7 +23,12 @@ export const DashboardScreen = () => {
     const router = useRouter();
     const { stats, loading, fetchBills } = useBills();
     const { primaryOffer, fetchOffers } = useOffers();
+    const { items, fetchItems } = useStock();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
+
+    const lowStockCount = React.useMemo(() => {
+        return items.filter(i => i.stock <= 5).length;
+    }, [items]);
 
     React.useEffect(() => {
         if (!user || !primaryOffer) return;
@@ -38,7 +44,8 @@ export const DashboardScreen = () => {
         React.useCallback(() => {
             void fetchBills();
             void fetchOffers();
-        }, [fetchBills, fetchOffers])
+            void fetchItems();
+        }, [fetchBills, fetchOffers, fetchItems])
     );
 
     const displayName = user?.displayName?.trim() || 'Merchant';
@@ -68,6 +75,32 @@ export const DashboardScreen = () => {
                         Here is your live business snapshot.
                     </Text>
                 </AppCard>
+
+                {lowStockCount > 0 && (
+                    <AppCard
+                        style={{
+                            backgroundColor: theme.colors.errorContainer,
+                            marginBottom: 12,
+                            borderColor: theme.colors.error,
+                            borderLeftWidth: 4
+                        }}
+                        onPress={() => router.push('/stock' as never)}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <View style={{ flex: 1 }}>
+                                <Text variant="titleMedium" style={{ fontWeight: 'bold', color: theme.colors.onErrorContainer }}>
+                                    ⚠️ Low Stock Alert
+                                </Text>
+                                <Text variant="bodyMedium" style={{ color: theme.colors.onErrorContainer }}>
+                                    {lowStockCount} items are running low. Tap to restock.
+                                </Text>
+                            </View>
+                            <Text variant="headlineMedium" style={{ color: theme.colors.onErrorContainer, fontWeight: '800' }}>
+                                {lowStockCount}
+                            </Text>
+                        </View>
+                    </AppCard>
+                )}
 
                 {primaryOffer && (
                     <AppCard

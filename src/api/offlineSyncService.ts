@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient, ApiError } from './httpClient';
 import { isOnline } from '../utils/network';
-import type { AnalyticsEventType, BillItem, Item, UserProfile } from '../types';
+import type { AnalyticsEventType, BillItem, Item, UserProfile, TransactionType } from '../types';
 
 const OFFLINE_QUEUE_KEY = 'billtap_offline_queue_v1';
 const ITEM_CACHE_KEY = 'billtap_item_cache_v1';
@@ -24,12 +24,16 @@ interface OfflineItemPayload {
 
 interface OfflineBillPayload {
     id: string;
+    type?: TransactionType;
+    partyId?: string;
     customerName?: string;
     customerPhone?: string;
     businessName?: string;
     businessAddress?: string;
     gstNumber?: string;
     currency?: string;
+    billNumber?: string;
+    billDate?: string;
     items: BillItem[];
     total: number;
     createdAt: string;
@@ -177,14 +181,16 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
 
             const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/transactions', {
                 id: mutation.payload.id,
-                type: 'SALE',
+                type: mutation.payload.type ?? 'SALE',
+                partyId: mutation.payload.partyId ?? undefined,
                 partyName: mutation.payload.customerName,
                 partyPhone: mutation.payload.customerPhone,
                 businessName: mutation.payload.businessName,
                 businessAddress: mutation.payload.businessAddress,
                 gstNumber: mutation.payload.gstNumber,
                 currency: mutation.payload.currency ?? 'INR',
-                billDate: mutation.payload.createdAt,
+                billNumber: mutation.payload.billNumber,
+                billDate: mutation.payload.billDate ?? mutation.payload.createdAt,
                 items: lineItems,
                 totalAmount: mutation.payload.total,
                 discountAmount: 0,
@@ -270,7 +276,7 @@ export const offlineSyncService = {
         await this.setCachedBills(next);
     },
 
-    async applyLocalBillStock(itemsInBill: BillItem[]): Promise<void> {
+    async applyLocalBillStock(itemsInBill: BillItem[], type: TransactionType = 'SALE'): Promise<void> {
         const currentItems = await this.getCachedItems();
         const grouped = new Map<string, number>();
 
@@ -283,13 +289,26 @@ export const offlineSyncService = {
         for (const [itemId, qty] of grouped.entries()) {
             const index = nextItems.findIndex((entry) => entry.id === itemId);
             if (index < 0) {
+                // If purchasing a new item that doesn't exist locally? 
+                // We should probably skip or handle it. For now, throw or skip.
+                // If it's a purchase, maybe we don't error if it's not found?
+                // But typically we select items from list.
+                // If it's a new item created offline, it should be in cache first.
                 throw new Error(`Item ${itemId} no longer exists.`);
             }
 
             const stock = Number(nextItems[index].stock ?? 0);
-            const nextStock = stock - qty;
-            if (nextStock < 0) {
-                throw new Error(`Insufficient stock for "${nextItems[index].name}".`);
+            let nextStock = stock;
+
+            if (type === 'SALE') {
+                nextStock = stock - qty;
+                if (nextStock < 0) {
+                    // For forced offline sales, maybe we allow negative? 
+                    // But UI blocks it.
+                    throw new Error(`Insufficient stock for "${nextItems[index].name}".`);
+                }
+            } else {
+                nextStock = stock + qty;
             }
 
             nextItems[index] = {

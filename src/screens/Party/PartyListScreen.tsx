@@ -1,22 +1,26 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
-import { Text, FAB, Searchbar, useTheme, Chip } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { Text, FAB, Searchbar, useTheme, Chip, IconButton } from 'react-native-paper';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AppCard } from '../../components/common/AppCard';
 import { AppButton } from '../../components/common/AppButton';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { usePartyStore } from '../../store';
-import { partyService } from '../../api/partyService'; // Need to create this service
+import { useCartStore } from '../../store/cartStore';
+import { partyService } from '../../api/partyService';
 import type { Party } from '../../types';
 
 export const PartyListScreen = () => {
     const router = useRouter();
+    const params = useLocalSearchParams<{ mode?: 'select' }>();
     const theme = useTheme();
     const { parties, setParties } = usePartyStore();
+    const { setCustomer } = useCartStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [refreshing, setRefreshing] = useState(false);
+    const isSelectionMode = params.mode === 'select';
 
     const loadParties = useCallback(async () => {
         setRefreshing(true);
@@ -36,17 +40,34 @@ export const PartyListScreen = () => {
 
     const filteredParties = parties.filter(p => 
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.phone?.includes(searchQuery)
+        (p.phone?.includes(searchQuery))
     );
 
+    const handlePartyPress = (party: Party) => {
+        if (isSelectionMode) {
+            setCustomer(party);
+            router.back();
+        } else {
+            router.push(`/party/${party.id}`);
+        }
+    };
+
     const renderItem = ({ item }: { item: Party }) => (
-        <AppCard onPress={() => router.push(`/party/${item.id}` as never)}>
+        <AppCard onPress={() => handlePartyPress(item)}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View>
                     <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>{item.name}</Text>
                     <Text variant="bodySmall" style={{ color: theme.colors.outline }}>{item.phone}</Text>
                 </View>
-                <Chip mode="outlined" compact>{item.type}</Chip>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Chip mode="outlined" compact style={{ marginRight: 8 }}>{item.type}</Chip>
+                    <IconButton
+                        icon="pencil"
+                        size={20}
+                        onPress={() => router.push(`/party/${item.id}`)}
+                    />
+                    <IconButton icon="chevron-right" size={20} />
+                </View>
             </View>
         </AppCard>
     );

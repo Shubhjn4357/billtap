@@ -1,3 +1,5 @@
+// This file serves as the default/fallback implementation for platforms not handled by specific extensions (e.g., .android.ts).
+// It defines the interface and throws errors if native sign-in is attempted on unsupported platforms (like Web/iOS without specific config).
 export interface NativeGoogleSignInConfig {
     webClientId?: string;
     androidClientId?: string;

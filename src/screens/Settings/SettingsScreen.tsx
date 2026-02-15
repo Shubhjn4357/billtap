@@ -231,7 +231,7 @@ export const SettingsScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+            <ScrollView contentContainerStyle={{ paddingBottom: 42 }}>
                 <PageHeaderCard
                     title={SETTINGS_TEXT.title}
                     subtitle={user?.email || user?.phoneNumber || SETTINGS_TEXT.userFallback}

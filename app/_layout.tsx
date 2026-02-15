@@ -13,6 +13,7 @@ import { offlineSyncService } from '../src/api/offlineSyncService';
 import { paymentReminderService } from '../src/services/paymentReminderService';
 import { userService } from '../src/api/userService';
 import { AppThemeProvider } from '../src/components/providers/AppThemeProvider';
+import { DialogProvider } from '../src/components/providers/DialogProvider';
 import { Config } from '../src/constants/Config';
 import { STACK_ROUTE_TITLES } from '../src/constants/staticText';
 import { toDateSafe } from '../src/utils/date';
@@ -196,17 +197,19 @@ export default function RootLayout() {
 
     return (
         <AppThemeProvider>
-            <Stack>
-                <Stack.Screen name="index" options={{ headerShown: false }} />
-                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                <Stack.Screen name="(main)" options={{ headerShown: false }} />
-                <Stack.Screen name="about" options={{ headerShown: true, title: STACK_ROUTE_TITLES.about }} />
-                <Stack.Screen name="changelog" options={{ headerShown: true, title: STACK_ROUTE_TITLES.changelog }} />
-                <Stack.Screen name="terms" options={{ title: STACK_ROUTE_TITLES.terms }} />
-                <Stack.Screen name="privacy" options={{ title: STACK_ROUTE_TITLES.privacy }} />
-                <Stack.Screen name="sitemap" options={{ title: STACK_ROUTE_TITLES.sitemap }} />
-                <Stack.Screen name="+not-found" />
-            </Stack>
+            <DialogProvider>
+                <Stack>
+                    <Stack.Screen name="index" options={{ headerShown: false }} />
+                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                    <Stack.Screen name="(main)" options={{ headerShown: false }} />
+                    <Stack.Screen name="about" options={{ headerShown: true, title: STACK_ROUTE_TITLES.about }} />
+                    <Stack.Screen name="changelog" options={{ headerShown: true, title: STACK_ROUTE_TITLES.changelog }} />
+                    <Stack.Screen name="terms" options={{ title: STACK_ROUTE_TITLES.terms }} />
+                    <Stack.Screen name="privacy" options={{ title: STACK_ROUTE_TITLES.privacy }} />
+                    <Stack.Screen name="sitemap" options={{ title: STACK_ROUTE_TITLES.sitemap }} />
+                    <Stack.Screen name="+not-found" />
+                </Stack>
+            </DialogProvider>
         </AppThemeProvider>
     );
 }

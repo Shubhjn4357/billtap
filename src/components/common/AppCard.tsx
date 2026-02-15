@@ -42,7 +42,7 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         borderWidth: 1,
         marginBottom: 12,
-        shadowOffset: { width: 0, height: 8 },
+        shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.08,
         shadowRadius: 16,
         elevation: 2,

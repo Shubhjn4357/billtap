@@ -66,14 +66,39 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
-    let response: Response;
+    let response: Response | undefined;
+    let attempt = 0;
+    const maxRetries = 3;
+
     try {
-        response = await fetch(resolveUrl(path), {
-            method,
-            headers: requestHeaders,
-            body: hasBody ? JSON.stringify(body) : undefined,
-            signal: controller.signal,
-        });
+        while (attempt < maxRetries) {
+            try {
+                response = await fetch(resolveUrl(path), {
+                    method,
+                    headers: requestHeaders,
+                    body: hasBody ? JSON.stringify(body) : undefined,
+                    signal: controller.signal,
+                });
+
+                // If 5xx error, throw to trigger retry
+                if (response.status >= 500) {
+                    throw new Error(`Server Error: ${response.status}`);
+                }
+
+                // If success or client error (4xx), break loop
+                break;
+            } catch (err: unknown) {
+                attempt++;
+                const isAbort = err instanceof Error && err.name === 'AbortError';
+                if (isAbort || attempt >= maxRetries) {
+                    throw err;
+                }
+                // Exponential backoff: 500ms, 1000ms, 2000ms
+                const delay = 500 * Math.pow(2, attempt - 1);
+                console.warn(`Request failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`, err);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
     } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AbortError') {
             throw new ApiError(`Request timed out after ${DEFAULT_TIMEOUT_MS}ms.`, 0, error);
@@ -81,6 +106,10 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
         throw new ApiError('Network request failed. Check your internet connection.', 0, error);
     } finally {
         clearTimeout(timeout);
+    }
+
+    if (!response) {
+        throw new ApiError('Network request failed.', 0);
     }
 
     const text = await response.text();

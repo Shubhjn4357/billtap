@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
     Image,
     KeyboardAvoidingView,
     Platform,
@@ -20,6 +19,7 @@ import {
     signInWithNativeGoogle,
 } from '../../utils/googleNativeSignIn';
 import { useWebGoogleAuth } from '../../utils/googleWebAuth';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 
 export const LoginScreen = () => {
     const { signInWithGoogle, sendPhoneVerification, confirmPhoneVerification, loading: authLoading } = useAuth();
@@ -74,17 +74,19 @@ export const LoginScreen = () => {
             .catch(() => setAndroidNativeGoogleReady(false));
     }, [useNativeGoogleOnAndroid, googleWebClientId, googleAndroidClientId]);
 
+    const dialog = useAppDialog();
+
     useEffect(() => {
         if (useNativeGoogleOnAndroid) return;
         if (!webGoogleIdToken) return;
 
         signInWithGoogle(webGoogleIdToken).catch((e: unknown) =>
-            Alert.alert(
+            dialog.alert(
                 AUTH_TEXT.login.loginErrorTitle,
                 e instanceof Error ? e.message : AUTH_TEXT.login.unableToVerifyCode
             )
         );
-    }, [webGoogleIdToken, signInWithGoogle, useNativeGoogleOnAndroid]);
+    }, [webGoogleIdToken, signInWithGoogle, useNativeGoogleOnAndroid, dialog]);
 
     const normalizePhoneNumber = (value: string) => {
         const digits = value.replace(/\D/g, '');
@@ -100,7 +102,7 @@ export const LoginScreen = () => {
 
     const handleGoogleSignIn = () => {
         if (!googleConfigured) {
-            Alert.alert(
+            dialog.alert(
                 AUTH_TEXT.login.googleSignInNotConfiguredTitle,
                 AUTH_TEXT.login.googleSignInNotConfiguredBody
             );
@@ -111,15 +113,45 @@ export const LoginScreen = () => {
         if (useNativeGoogleOnAndroid) {
             googleSignInInFlightRef.current = true;
             setLoading(true);
-            signInWithNativeGoogle()
-                .then(({ idToken }) => signInWithGoogle(idToken))
-                .catch((error: unknown) => {
-                    Alert.alert(AUTH_TEXT.login.loginErrorTitle, getNativeGoogleErrorMessage(error));
-                })
-                .finally(() => {
+
+            // Separate async function to isolate errors
+            (async () => {
+                let idToken: string;
+                try {
+                    console.log('Starting Native Google Sign-In...');
+                    const result = await signInWithNativeGoogle();
+                    console.log('Native Google Sign-In Success:', result ? 'Token received' : 'No result');
+                    idToken = result.idToken;
+                } catch (error: unknown) {
+                    console.error('Native Google Sign-In Failed:', error);
+                    dialog.alert(AUTH_TEXT.login.loginErrorTitle, getNativeGoogleErrorMessage(error));
                     setLoading(false);
                     googleSignInInFlightRef.current = false;
-                });
+                    return;
+                }
+
+                try {
+                    console.log('Starting API Sign-In with Google Token...');
+                    const user = await signInWithGoogle(idToken);
+                    console.log('API Sign-In Success', user);
+
+                    // Unified Auth: If user doesn't have a phone number, prompt for it
+                    if (!user.phoneNumber) {
+                        dialog.alert(
+                            'Add Phone Number',
+                            'Please link your phone number to complete your profile.',
+                            [{ text: 'OK', onPress: () => setPhoneMode(true) }]
+                        );
+                    }
+                } catch (error: unknown) {
+                    console.error('API Google Sign-In Failed:', error);
+                    dialog.alert(AUTH_TEXT.login.loginErrorTitle, error instanceof Error ? error.message : 'API Error');
+                } finally {
+                    setLoading(false);
+                    googleSignInInFlightRef.current = false;
+                }
+            })();
+
             return;
         }
 
@@ -128,13 +160,13 @@ export const LoginScreen = () => {
 
     const handleSendVerification = async () => {
         if (isBusy || sendOtpInFlightRef.current) return;
-        if (!phoneNumber) return Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterPhoneNumber);
+        if (!phoneNumber) return dialog.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterPhoneNumber);
         sendOtpInFlightRef.current = true;
         setLoading(true);
         try {
             const formattedPhone = normalizePhoneNumber(phoneNumber);
             if (!formattedPhone || formattedPhone.length < 8) {
-                Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterPhoneNumber);
+                dialog.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterPhoneNumber);
                 return;
             }
             const session = await sendPhoneVerification(formattedPhone);
@@ -142,9 +174,9 @@ export const LoginScreen = () => {
             const otpMessage = session.testCode
                 ? `${AUTH_TEXT.login.otpSent}\n\nTest OTP: ${session.testCode}`
                 : AUTH_TEXT.login.otpSent;
-            Alert.alert(COMMON_TEXT.alerts.success, otpMessage);
+            dialog.alert(COMMON_TEXT.alerts.success, otpMessage);
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : AUTH_TEXT.login.unableToSendOtp);
+            dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : AUTH_TEXT.login.unableToSendOtp);
         } finally {
             setLoading(false);
             sendOtpInFlightRef.current = false;
@@ -153,9 +185,9 @@ export const LoginScreen = () => {
 
     const handleConfirmVerification = async () => {
         if (isBusy || verifyOtpInFlightRef.current) return;
-        if (!verificationId) return Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.unableToSendOtp);
+        if (!verificationId) return dialog.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.unableToSendOtp);
         const normalizedCode = verificationCode.replace(/\D/g, '');
-        if (normalizedCode.length !== 6) return Alert.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterCode);
+        if (normalizedCode.length !== 6) return dialog.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterCode);
         verifyOtpInFlightRef.current = true;
         setLoading(true);
         try {
@@ -164,7 +196,7 @@ export const LoginScreen = () => {
             setVerificationId('');
             setPhoneMode(false);
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : AUTH_TEXT.login.unableToVerifyCode);
+            dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : AUTH_TEXT.login.unableToVerifyCode);
         } finally {
             setLoading(false);
             verifyOtpInFlightRef.current = false;

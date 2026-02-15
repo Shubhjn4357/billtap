@@ -63,10 +63,12 @@ export const billService = {
 
                 const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/transactions', {
                     id: generatedId,
-                    type: 'SALE',
+                    type: bill.type ?? 'SALE',
+                    partyId: bill.partyId,
                     partyName: bill.customerName,
                     partyPhone: bill.customerPhone,
-                    billDate: createdAt,
+                    billNumber: bill.billNumber,
+                    billDate: bill.billDate ?? createdAt,
                     businessName: bill.businessName,
                     businessAddress: bill.businessAddress,
                     gstNumber: bill.gstNumber,
@@ -91,7 +93,12 @@ export const billService = {
             }
         }
 
-        await offlineSyncService.applyLocalBillStock(bill.items);
+        if (online) {
+            // ... online logic ...
+        }
+
+        await offlineSyncService.applyLocalBillStock(bill.items, bill.type ?? 'SALE');
+
         await offlineSyncService.upsertCachedBill<StoredBill>({
             ...bill,
             id: generatedId,
@@ -101,12 +108,16 @@ export const billService = {
             type: 'create_bill',
             payload: {
                 id: generatedId,
+                type: bill.type,
+                partyId: bill.partyId,
                 customerName: bill.customerName,
                 customerPhone: bill.customerPhone,
                 businessName: bill.businessName,
                 businessAddress: bill.businessAddress,
                 gstNumber: bill.gstNumber,
                 currency: bill.currency,
+                billNumber: bill.billNumber,
+                billDate: bill.billDate as string,
                 items: bill.items,
                 total: bill.total,
                 createdAt,
