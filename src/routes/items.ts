@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
-import { items } from '../db/schema';
+import { items, inventoryMovements } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 
 const itemsRoute = new Hono<AppEnv>();
@@ -214,6 +214,71 @@ itemsRoute.delete('/:id', requireAuth, async (c) => {
     }
 
     return c.json({ ok: true });
+});
+
+// POST /items/:id/adjust - Adjust stock (IN/OUT)
+itemsRoute.post('/:id/adjust', requireAuth, async (c) => {
+    try {
+        const effectiveUserId = c.get('effectiveUserId');
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const body = await c.req.json();
+
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+
+        const payload = z.object({
+            type: z.enum(['IN', 'OUT']),
+            quantity: z.number().int().positive(),
+            reason: z.string().optional(),
+        }).parse(body);
+
+        const now = new Date();
+
+        await db.transaction(async (tx) => {
+            // Get current item
+            const itemRows = await tx
+                .select()
+                .from(items)
+                .where(and(eq(items.id, id), eq(items.userId, effectiveUserId)))
+                .limit(1);
+
+            const item = itemRows[0];
+            if (!item) throw new Error('Item not found.');
+
+            let newStock = item.stock;
+            if (payload.type === 'IN') {
+                newStock += payload.quantity;
+            } else {
+                if (item.stock < payload.quantity) {
+                    throw new Error(`Insufficient stock. Available: ${item.stock}`);
+                }
+                newStock -= payload.quantity;
+            }
+
+            // Update item stock
+            await tx
+                .update(items)
+                .set({ stock: newStock, updatedAt: now })
+                .where(eq(items.id, id));
+
+            // Record movement
+            await tx.insert(inventoryMovements).values({
+                id: nanoid(),
+                userId: effectiveUserId,
+                itemId: id,
+                transactionId: null,
+                movementType: payload.type === 'IN' ? 'ADJUST_IN' : 'ADJUST_OUT',
+                quantity: payload.quantity,
+                balanceAfter: newStock,
+                unitCost: null,
+                createdAt: now,
+            });
+        });
+
+        return c.json({ ok: true });
+    } catch (error: unknown) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Invalid request.' }, 400);
+    }
 });
 
 export default itemsRoute;
