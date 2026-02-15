@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { users, phoneVerifications, staffInvites } from '../db/schema';
 import { verifyGoogleIdentityToken } from '../auth/google';
 import { signSessionToken } from '../auth/tokens';
@@ -36,6 +36,29 @@ const normalizePhoneNumber = (raw: string) => {
     const digits = raw.replace(/[^\d+]/g, '');
     if (!digits) return '';
     return digits.startsWith('+') ? digits : `+${digits}`;
+};
+
+const extractErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) return error.message;
+    if (typeof error === 'string' && error) return error;
+    if (error && typeof error === 'object' && 'message' in error) {
+        const value = (error as { message?: unknown }).message;
+        if (typeof value === 'string' && value) return value;
+    }
+    try {
+        const serialized = JSON.stringify(error);
+        if (serialized && serialized !== '{}') return serialized;
+    } catch {
+        // Ignore serialization errors
+    }
+    return fallback;
+};
+
+const extractErrorCode = (error: unknown) => {
+    if (!error || typeof error !== 'object') return '';
+    if (!('code' in error)) return '';
+    const value = (error as { code?: unknown }).code;
+    return typeof value === 'string' ? value : String(value ?? '');
 };
 
 const upsertUser = async (uid: string, payload: Partial<UserRow>, db: any) => {
@@ -85,7 +108,7 @@ authRoute.post('/google', async (c) => {
         const token = signSessionToken({ uid: user.uid, role: user.role });
         return c.json({ ok: true, token, user: toUserProfile(user) });
     } catch (error: unknown) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Auth failed' }, 400);
+        return c.json({ ok: false, message: extractErrorMessage(error, 'Auth failed') }, 400);
     }
 });
 
@@ -115,7 +138,7 @@ authRoute.post('/phone/send', async (c) => {
         // Return code for now (Development)
         return c.json({ ok: true, verificationId, testCode: code, expiresAt });
     } catch (error: unknown) {
-        return c.json({ ok: false, message: 'Send failed' }, 400);
+        return c.json({ ok: false, message: extractErrorMessage(error, 'Send failed') }, 400);
     }
 });
 
@@ -125,65 +148,115 @@ authRoute.post('/phone/verify', async (c) => {
         const body = await c.req.json();
         const schema = z.object({
             verificationId: z.string().min(8),
-            verificationCode: z.string().length(6),
+            verificationCode: z.string().min(1),
         });
         const payload = schema.parse(body);
-
-        const rows = await db.select().from(phoneVerifications).where(eq(phoneVerifications.id, payload.verificationId)).limit(1);
-        const verification = rows[0];
-
-        if (!verification) return c.json({ ok: false, message: 'Not found' }, 404);
-        if (verification.consumedAt) return c.json({ ok: false, message: 'Already used' }, 400);
-        if (verification.expiresAt < new Date()) return c.json({ ok: false, message: 'Expired' }, 400);
-        if (verification.code !== payload.verificationCode) return c.json({ ok: false, message: 'Invalid code' }, 400);
-
-        await db.update(phoneVerifications).set({ consumedAt: new Date() }).where(eq(phoneVerifications.id, verification.id));
-
-        const normalizedPhone = normalizePhoneNumber(verification.phoneNumber);
-        const uid = `phone_${normalizedPhone.replace(/\D/g, '')}`;
-
-        // Check for pending staff invite
-        const invite = await db
-            .select()
-            .from(staffInvites)
-            .where(
-                and(
-                    eq(staffInvites.phoneNumber, normalizedPhone),
-                    eq(staffInvites.status, 'pending'),
-                    gt(staffInvites.expiresAt, new Date())
-                )
-            )
-            .limit(1);
-
-        const staffInvite = invite[0];
-        let role = 'owner';
-        let ownerId = null;
-
-        const totalUsers = await db.select({ count: sql<number>`count(*)` }).from(users);
-        const isFirstUser = Number(totalUsers[0]?.count ?? 0) === 0;
-
-        if (isFirstUser) {
-            role = 'admin';
-        } else if (staffInvite) {
-            role = 'staff';
-            ownerId = staffInvite.ownerId;
+        const normalizedCode = payload.verificationCode.replace(/\D/g, '');
+        if (normalizedCode.length !== 6) {
+            return c.json({ ok: false, message: 'Invalid code' }, 400);
         }
 
-        const user = await upsertUser(uid, {
-            phoneNumber: normalizedPhone,
-            displayName: normalizedPhone,
-            role,
-            ownerId,
-        }, db);
+        const user = await db.transaction(async (tx) => {
+            const rows = await tx.select().from(phoneVerifications).where(eq(phoneVerifications.id, payload.verificationId)).limit(1);
+            const verification = rows[0];
 
-        if (staffInvite) {
-            await db.update(staffInvites).set({ status: 'accepted' }).where(eq(staffInvites.id, staffInvite.id));
-        }
+            if (!verification) {
+                throw new Error('Not found');
+            }
+            if (verification.consumedAt) {
+                throw new Error('Already used');
+            }
+            if (verification.expiresAt < new Date()) {
+                throw new Error('Expired');
+            }
+
+            if ((verification.code ?? '').trim() !== normalizedCode) {
+                await tx
+                    .update(phoneVerifications)
+                    .set({ attempts: sql`${phoneVerifications.attempts} + 1` })
+                    .where(eq(phoneVerifications.id, verification.id));
+                throw new Error('Invalid code');
+            }
+
+            const normalizedPhone = normalizePhoneNumber(verification.phoneNumber);
+            const uid = `phone_${normalizedPhone.replace(/\D/g, '')}`;
+
+            // Check for pending staff invite
+            let staffInvite: { ownerId: string; id: string } | null = null;
+            try {
+                const invite = await tx
+                    .select()
+                    .from(staffInvites)
+                    .where(
+                        and(
+                            eq(staffInvites.phoneNumber, normalizedPhone),
+                            eq(staffInvites.status, 'pending'),
+                            gt(staffInvites.expiresAt, new Date())
+                        )
+                    )
+                    .limit(1);
+                staffInvite = invite[0];
+            } catch (error: unknown) {
+                const code = extractErrorCode(error);
+                const message = extractErrorMessage(error, '');
+                const isMissingStaffInvites = code === '42P01' || /staff_invites/i.test(message);
+                if (!isMissingStaffInvites) {
+                    throw error;
+                }
+            }
+            let role = 'owner';
+            let ownerId = null;
+
+            const totalUsers = await tx.select({ count: sql<number>`count(*)` }).from(users);
+            const isFirstUser = Number(totalUsers[0]?.count ?? 0) === 0;
+
+            if (isFirstUser) {
+                role = 'admin';
+            } else if (staffInvite) {
+                role = 'staff';
+                ownerId = staffInvite.ownerId;
+            }
+
+            const user = await upsertUser(uid, {
+                phoneNumber: normalizedPhone,
+                displayName: normalizedPhone,
+                role,
+                ownerId,
+            }, tx);
+
+            if (staffInvite) {
+                try {
+                    await tx.update(staffInvites).set({ status: 'accepted' }).where(eq(staffInvites.id, staffInvite.id));
+                } catch (error: unknown) {
+                    const code = extractErrorCode(error);
+                    const message = extractErrorMessage(error, '');
+                    const isMissingStaffInvites = code === '42P01' || /staff_invites/i.test(message);
+                    if (!isMissingStaffInvites) {
+                        throw error;
+                    }
+                }
+            }
+
+            const consumed = await tx
+                .update(phoneVerifications)
+                .set({
+                    consumedAt: new Date(),
+                    attempts: sql`${phoneVerifications.attempts} + 1`,
+                })
+                .where(and(eq(phoneVerifications.id, verification.id), isNull(phoneVerifications.consumedAt)))
+                .returning({ id: phoneVerifications.id });
+
+            if (consumed.length === 0) {
+                throw new Error('Already used');
+            }
+
+            return user;
+        });
 
         const token = signSessionToken({ uid: user.uid, role: user.role });
         return c.json({ ok: true, token, user: toUserProfile(user) });
     } catch (error: unknown) {
-        return c.json({ ok: false, message: 'Verify failed' }, 400);
+        return c.json({ ok: false, message: extractErrorMessage(error, 'Verify failed') }, 400);
     }
 });
 
