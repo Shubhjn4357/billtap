@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { users } from '../db/schema';
+import { toUserProfile } from '../auth/userProfile';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 
 const usersRoute = new Hono<AppEnv>();
@@ -9,7 +10,7 @@ const usersRoute = new Hono<AppEnv>();
 usersRoute.get('/me', requireAuth, async (c) => {
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    return c.json({ ok: true, user: authUser });
+    return c.json({ ok: true, user: toUserProfile(authUser) });
 });
 
 usersRoute.patch('/me', requireAuth, async (c) => {
@@ -35,7 +36,8 @@ usersRoute.patch('/me', requireAuth, async (c) => {
         }).where(eq(users.uid, authUser.uid));
 
         const nextUser = await db.select().from(users).where(eq(users.uid, authUser.uid)).limit(1);
-        return c.json({ ok: true, user: nextUser[0] ?? authUser });
+        const resolvedUser = nextUser[0] ?? authUser;
+        return c.json({ ok: true, user: toUserProfile(resolvedUser) });
     } catch (error: unknown) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Update failed.' }, 400);
     }

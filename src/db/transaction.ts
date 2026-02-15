@@ -13,7 +13,9 @@ const isUnsupportedTransactionError = (error: unknown): boolean => {
     return (
         message.includes('no transaction support') ||
         message.includes('transaction support in neon http driver') ||
-        message.includes('transactions are not supported')
+        message.includes('transactions are not supported') ||
+        message.includes('does not support transactions') ||
+        message.includes('cannot start a transaction')
     );
 };
 
@@ -40,4 +42,3 @@ export const withTransaction = async <TDb, TResult>(
         throw error;
     }
 };
-

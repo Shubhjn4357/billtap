@@ -48,11 +48,15 @@ const parseEnvCsv = (value: string | undefined): string[] =>
         .map((entry) => entry.trim())
         .filter(Boolean);
 
-const getAuthUserFromRequest = async (authorizationHeader: string | undefined, db: DrizzleClient) => {
+const getAuthUserFromRequest = async (
+    authorizationHeader: string | undefined,
+    db: DrizzleClient,
+    jwtSecret?: string
+) => {
     const token = getBearerToken(authorizationHeader);
     if (!token) return null;
 
-    const payload = verifySessionToken(token);
+    const payload = verifySessionToken(token, jwtSecret);
     if (!payload) return null;
 
     const entry = await db.select().from(users).where(eq(users.uid, payload.uid)).limit(1);
@@ -83,7 +87,7 @@ export const isDeveloperAdminPrincipal = (authUser: UserRow, bindings: Bindings)
 export const optionalAuth = async (c: AppContext, next: Next) => {
     const authHeader = c.req.header('Authorization');
     const db = c.get('db');
-    const authUser = await getAuthUserFromRequest(authHeader, db);
+    const authUser = await getAuthUserFromRequest(authHeader, db, c.env.API_JWT_SECRET);
 
     c.set('authUser', authUser ?? null);
     c.set('effectiveUserId', authUser?.role === 'staff' ? authUser.ownerId : authUser?.uid ?? null);
@@ -94,7 +98,7 @@ export const optionalAuth = async (c: AppContext, next: Next) => {
 export const requireAuth = async (c: AppContext, next: Next) => {
     const authHeader = c.req.header('Authorization');
     const db = c.get('db');
-    const authUser = await getAuthUserFromRequest(authHeader, db);
+    const authUser = await getAuthUserFromRequest(authHeader, db, c.env.API_JWT_SECRET);
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
@@ -110,7 +114,7 @@ export const requireAuth = async (c: AppContext, next: Next) => {
 export const requireAdmin = async (c: AppContext, next: Next) => {
     const authHeader = c.req.header('Authorization');
     const db = c.get('db');
-    const authUser = await getAuthUserFromRequest(authHeader, db);
+    const authUser = await getAuthUserFromRequest(authHeader, db, c.env.API_JWT_SECRET);
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
@@ -129,7 +133,7 @@ export const requireAdmin = async (c: AppContext, next: Next) => {
 export const requireDeveloperAdmin = async (c: AppContext, next: Next) => {
     const authHeader = c.req.header('Authorization');
     const db = c.get('db');
-    const authUser = await getAuthUserFromRequest(authHeader, db);
+    const authUser = await getAuthUserFromRequest(authHeader, db, c.env.API_JWT_SECRET);
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);

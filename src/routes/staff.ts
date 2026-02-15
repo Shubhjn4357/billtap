@@ -7,9 +7,9 @@ import { requireAuth, type AppEnv } from '../middleware/auth';
 
 const staffRoute = new Hono<AppEnv>();
 const normalizePhoneNumber = (raw: string) => {
-    const digits = raw.replace(/[^\d+]/g, '');
+    const digits = raw.replace(/\D/g, '');
     if (!digits) return '';
-    return digits.startsWith('+') ? digits : `+${digits}`;
+    return `+${digits}`;
 };
 
 // POST /staff - Invite Staff

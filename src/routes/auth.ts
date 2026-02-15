@@ -6,37 +6,16 @@ import { users, phoneVerifications, staffInvites } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { verifyGoogleIdentityToken } from '../auth/google';
 import { signSessionToken } from '../auth/tokens';
+import { toUserProfile } from '../auth/userProfile';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import type { UserRow } from '../db/schema';
 
 const authRoute = new Hono<AppEnv>();
 
-const toUserProfile = (row: UserRow) => ({
-    uid: row.uid,
-    email: row.email,
-    phoneNumber: row.phoneNumber,
-    displayName: row.displayName,
-    photoURL: row.photoURL,
-    businessName: row.businessName,
-    address: row.address,
-    gstEnabled: row.gstEnabled ?? false,
-    gstNumber: row.gstNumber,
-    currency: row.currency ?? 'INR',
-    role: row.role ?? 'owner',
-    ownerId: row.ownerId,
-    subscriptionStatus: row.subscriptionStatus ?? 'inactive',
-    subscriptionPlanId: row.subscriptionPlanId,
-    subscriptionPlanName: row.subscriptionPlanName,
-    subscriptionAmountMonthly: row.subscriptionAmountMonthly,
-    subscriptionCurrency: row.subscriptionCurrency,
-    subscriptionStartsAt: row.subscriptionStartsAt,
-    subscriptionEndsAt: row.subscriptionEndsAt,
-});
-
 const normalizePhoneNumber = (raw: string) => {
-    const digits = raw.replace(/[^\d+]/g, '');
+    const digits = raw.replace(/\D/g, '');
     if (!digits) return '';
-    return digits.startsWith('+') ? digits : `+${digits}`;
+    return `+${digits}`;
 };
 
 const extractErrorMessage = (error: unknown, fallback: string) => {
@@ -106,7 +85,7 @@ authRoute.post('/google', async (c) => {
             role: isFirstUser ? 'admin' : undefined, // Default to owner/existing role
         }, db);
 
-        const token = signSessionToken({ uid: user.uid, role: user.role });
+        const token = signSessionToken({ uid: user.uid, role: user.role }, c.env.API_JWT_SECRET);
         return c.json({ ok: true, token, user: toUserProfile(user) });
     } catch (error: unknown) {
         return c.json({ ok: false, message: extractErrorMessage(error, 'Auth failed') }, 400);
@@ -125,7 +104,19 @@ authRoute.post('/phone/send', async (c) => {
 
         const code = String(Math.floor(100000 + Math.random() * 900000));
         const verificationId = nanoid(24);
+        const now = new Date();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        // Invalidate any previous active OTPs for this phone so only the latest code remains valid.
+        await db
+            .update(phoneVerifications)
+            .set({ consumedAt: now })
+            .where(
+                and(
+                    eq(phoneVerifications.phoneNumber, phoneNumber),
+                    isNull(phoneVerifications.consumedAt)
+                )
+            );
 
         await db.insert(phoneVerifications).values({
             id: verificationId,
@@ -133,7 +124,7 @@ authRoute.post('/phone/send', async (c) => {
             code,
             expiresAt,
             attempts: 0,
-            createdAt: new Date(),
+            createdAt: now,
         });
 
         // Return code for now (Development)
@@ -170,13 +161,29 @@ authRoute.post('/phone/verify', async (c) => {
             if (verification.expiresAt < new Date()) {
                 throw new Error('Expired');
             }
+            if ((verification.attempts ?? 0) >= 5) {
+                throw new Error('Too many attempts. Request a new code.');
+            }
 
             if ((verification.code ?? '').trim() !== normalizedCode) {
+                const nextAttempts = (verification.attempts ?? 0) + 1;
+
+                if (nextAttempts >= 5) {
+                    await tx
+                        .update(phoneVerifications)
+                        .set({
+                            attempts: sql`${phoneVerifications.attempts} + 1`,
+                            consumedAt: new Date(),
+                        })
+                        .where(eq(phoneVerifications.id, verification.id));
+                    throw new Error('Too many attempts. Request a new code.');
+                }
+
                 await tx
                     .update(phoneVerifications)
                     .set({ attempts: sql`${phoneVerifications.attempts} + 1` })
                     .where(eq(phoneVerifications.id, verification.id));
-                throw new Error('Invalid code');
+                throw new Error('Invalid code.');
             }
 
             const normalizedPhone = normalizePhoneNumber(verification.phoneNumber);
@@ -254,7 +261,7 @@ authRoute.post('/phone/verify', async (c) => {
             return user;
         });
 
-        const token = signSessionToken({ uid: user.uid, role: user.role });
+        const token = signSessionToken({ uid: user.uid, role: user.role }, c.env.API_JWT_SECRET);
         return c.json({ ok: true, token, user: toUserProfile(user) });
     } catch (error: unknown) {
         return c.json({ ok: false, message: extractErrorMessage(error, 'Verify failed') }, 400);
@@ -298,3 +305,4 @@ authRoute.post('/logout', requireAuth, async (c) => {
 });
 
 export default authRoute;
+

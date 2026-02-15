@@ -50,7 +50,7 @@ apiRoutes.use(async (c, next) => {
     c.set('db', getDbClient(c.env.DATABASE_URL));
     await next();
 });
-// Mount Routes
+// Mount routes on both `/` and `/api` so clients using either base path work.
 apiRoutes.route('/auth', authRoute);
 apiRoutes.route('/items', itemsRoute);
 apiRoutes.route('/parties', partiesRoute);
@@ -63,6 +63,7 @@ apiRoutes.route('/jobs', jobsRoute);
 apiRoutes.route('/users', usersRoute);
 apiRoutes.route('/admin', adminRoute);
 apiRoutes.route('/accounting', accountingRoute);
+app.route('/api', apiRoutes);
 app.route('/', apiRoutes);
 app.notFound((c) => c.json({ ok: false, message: 'Route not found.' }, 404));
 app.onError((err, c) => {
