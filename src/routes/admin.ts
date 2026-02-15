@@ -4,7 +4,7 @@ import { offers, plans, users } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { isDeveloperAdminPrincipal, requireAuth, requireDeveloperAdmin, type AppEnv } from '../middleware/auth';
 import { z } from 'zod';
-import { DEFAULT_SERVER_PLANS } from '../constants/defaultPlans';
+import { DEFAULT_PLANS } from '../constants/defaultPlans';
 
 const adminRoute = new Hono<AppEnv>();
 const parseBoolean = (value: string | undefined, fallback = false) => {
@@ -494,7 +494,7 @@ adminRoute.post('/seed/default-plans', requireDeveloperAdmin, async (c) => {
     const now = new Date();
 
     await withTransaction(db, async (tx) => {
-        for (const entry of DEFAULT_SERVER_PLANS) {
+        for (const entry of DEFAULT_PLANS) {
             await tx.insert(plans).values({
                 ...entry,
                 createdAt: now,

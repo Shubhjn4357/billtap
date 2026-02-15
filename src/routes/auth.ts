@@ -141,6 +141,8 @@ authRoute.post('/phone/verify', async (c) => {
         const schema = z.object({
             verificationId: z.string().min(8),
             verificationCode: z.string().min(1),
+            // Optional: Link to existing account if user is already logged in?
+            // For now, we assume this is a fresh login/verify flow.
         });
         const payload = schema.parse(body);
         const normalizedCode = payload.verificationCode.replace(/\D/g, '');
@@ -187,50 +189,74 @@ authRoute.post('/phone/verify', async (c) => {
             }
 
             const normalizedPhone = normalizePhoneNumber(verification.phoneNumber);
-            const uid = `phone_${normalizedPhone.replace(/\D/g, '')}`;
+            // Default UID for phone user
+            const phoneUid = `phone_${normalizedPhone.replace(/\D/g, '')}`;
 
-            // Check for pending staff invite
-            let staffInvite: { ownerId: string; id: string } | null = null;
-            try {
-                const invite = await tx
-                    .select()
-                    .from(staffInvites)
-                    .where(
-                        and(
-                            eq(staffInvites.phoneNumber, normalizedPhone),
-                            eq(staffInvites.status, 'pending'),
-                            gt(staffInvites.expiresAt, new Date())
+            // 1. Check if user already exists with this phone number (could be Google user who added phone)
+            let user = await tx.select().from(users).where(eq(users.phoneNumber, normalizedPhone)).limit(1).then((rows: UserRow[]) => rows[0]);
+
+            // 2. Check if user exists by the generated phone UID
+            if (!user) {
+                user = await tx.select().from(users).where(eq(users.uid, phoneUid)).limit(1).then((rows: UserRow[]) => rows[0]);
+            }
+
+            if (!user) {
+                // Check for pending staff invite
+                let staffInvite: { ownerId: string; id: string } | null = null;
+                try {
+                    const invite = await tx
+                        .select()
+                        .from(staffInvites)
+                        .where(
+                            and(
+                                eq(staffInvites.phoneNumber, normalizedPhone),
+                                eq(staffInvites.status, 'pending'),
+                                gt(staffInvites.expiresAt, new Date())
+                            )
                         )
-                    )
-                    .limit(1);
-                staffInvite = invite[0];
-            } catch (error: unknown) {
-                const code = extractErrorCode(error);
-                const message = extractErrorMessage(error, '');
-                const isMissingStaffInvites = code === '42P01' || /staff_invites/i.test(message);
-                if (!isMissingStaffInvites) {
-                    throw error;
+                        .limit(1);
+                    staffInvite = invite[0];
+                } catch (error: unknown) {
+                    const code = extractErrorCode(error);
+                    const message = extractErrorMessage(error, '');
+                    const isMissingStaffInvites = code === '42P01' || /staff_invites/i.test(message);
+                    if (!isMissingStaffInvites) {
+                        throw error;
+                    }
+                }
+                let role = 'owner';
+                let ownerId = null;
+
+                const totalUsers = await tx.select({ count: sql<number>`count(*)` }).from(users);
+                const isFirstUser = Number(totalUsers[0]?.count ?? 0) === 0;
+
+                if (isFirstUser) {
+                    role = 'admin';
+                } else if (staffInvite) {
+                    role = 'staff';
+                    ownerId = staffInvite.ownerId;
+                }
+
+                user = await upsertUser(phoneUid, {
+                    phoneNumber: normalizedPhone,
+                    displayName: normalizedPhone,
+                    role,
+                    ownerId,
+                }, tx);
+
+                if (staffInvite) {
+                    try {
+                        await tx.update(staffInvites).set({ status: 'accepted' }).where(eq(staffInvites.id, staffInvite.id));
+                    } catch (error: unknown) {
+                        // Ignore if table missing
+                    }
+                }
+            } else {
+                // User exists! Ensure phone is set (though query implies it might be)
+                if (!user.phoneNumber) {
+                    await tx.update(users).set({ phoneNumber: normalizedPhone, updatedAt: new Date() }).where(eq(users.uid, user.uid));
                 }
             }
-            let role = 'owner';
-            let ownerId = null;
-
-            const totalUsers = await tx.select({ count: sql<number>`count(*)` }).from(users);
-            const isFirstUser = Number(totalUsers[0]?.count ?? 0) === 0;
-
-            if (isFirstUser) {
-                role = 'admin';
-            } else if (staffInvite) {
-                role = 'staff';
-                ownerId = staffInvite.ownerId;
-            }
-
-            const user = await upsertUser(uid, {
-                phoneNumber: normalizedPhone,
-                displayName: normalizedPhone,
-                role,
-                ownerId,
-            }, tx);
 
             if (staffInvite) {
                 try {

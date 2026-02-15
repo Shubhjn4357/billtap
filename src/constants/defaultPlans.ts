@@ -1,44 +1,63 @@
-import type { PlanRow } from '../db/schema';
+import { nanoid } from 'nanoid';
 
-export const DEFAULT_SERVER_PLANS: Omit<PlanRow, 'createdAt' | 'updatedAt'>[] = [
+export interface PlanConfig {
+    id: string;
+    name: string;
+    description: string;
+    monthlyPrice: number;
+    currency: string;
+    features: string[];
+    isActive: boolean;
+    displayOrder: number;
+}
+
+export const DEFAULT_PLANS: PlanConfig[] = [
     {
-        id: 'starter',
-        name: 'Starter',
-        description: 'For solo merchants starting digital billing.',
-        monthlyPrice: 199,
+        id: 'plan_free',
+        name: 'Free',
+        description: 'Perfect for small businesses just starting out.',
+        monthlyPrice: 0,
         currency: 'INR',
+        features: [
+            'Unlimited Bills (Watermarked)',
+            'Basic Inventory (Up to 50 items)',
+            'Customer Management',
+            'Basic Reports'
+        ],
         isActive: true,
         displayOrder: 1,
-        features: ['Up to 300 bills / month', 'Basic reports', 'Email support'],
     },
     {
-        id: 'growth',
-        name: 'Growth',
-        description: 'For growing stores with regular billing volume.',
-        monthlyPrice: 499,
+        id: 'plan_pro',
+        name: 'Pro',
+        description: 'For growing businesses needing more power.',
+        monthlyPrice: 299,
         currency: 'INR',
+        features: [
+            'Unlimited Bills (No Watermark)',
+            'Unlimited Inventory',
+            'Expense Tracking',
+            'Staff Management (Up to 3)',
+            'Advanced Reports',
+            'Priority Support'
+        ],
         isActive: true,
         displayOrder: 2,
-        features: ['Up to 2,000 bills / month', 'Advanced reports', 'Priority support'],
     },
     {
-        id: 'pro',
-        name: 'Pro',
-        description: 'For high-volume businesses and teams.',
+        id: 'plan_enterprise',
+        name: 'Enterprise',
+        description: 'Complete solution for established businesses.',
         monthlyPrice: 999,
         currency: 'INR',
+        features: [
+            'Everything in Pro',
+            'Unlimited Staff',
+            'Multi-Device Sync (Real-time)',
+            'Dedicated Account Manager',
+            'Custom Invoicing Templates'
+        ],
         isActive: true,
         displayOrder: 3,
-        features: ['Unlimited bills', 'Team access controls', 'Faster export + sharing'],
-    },
-    {
-        id: 'enterprise',
-        name: 'Enterprise',
-        description: 'For multi-location operations needing premium support.',
-        monthlyPrice: 1999,
-        currency: 'INR',
-        isActive: true,
-        displayOrder: 4,
-        features: ['Multi-store support', 'Dedicated support', 'Custom onboarding'],
-    },
+    }
 ];
