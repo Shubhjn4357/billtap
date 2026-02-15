@@ -63,7 +63,7 @@ jobs:
         run: pnpm run build:web
 
       - name: Prebuild
-        run: pnpm exec expo prebuild --platform android --no-install --non-interactive
+        run: pnpm exec expo prebuild --platform android --no-install
 
       - name: Cache Gradle Wrapper
         uses: actions/cache@v4
@@ -144,12 +144,17 @@ jobs:
       - name: Build Android Debug
         run: |
           cd android
-          ./gradlew assembleDebug
+          ./gradlew --no-parallel assembleDebug
+
+      - name: Stop Gradle Daemons
+        run: |
+          cd android
+          ./gradlew --stop || true
 
       - name: Build Android Release
         run: |
           cd android
-          ./gradlew assembleRelease
+          ./gradlew --no-daemon --no-parallel --stacktrace -Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8' assembleRelease
 
       - name: Upload Artifact (Debug)
         uses: actions/upload-artifact@v4
