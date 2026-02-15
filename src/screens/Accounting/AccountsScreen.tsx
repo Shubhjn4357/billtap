@@ -1,0 +1,167 @@
+import { useCallback, useMemo, useState } from 'react';
+import { ScrollView, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { Chip, Text, useTheme } from 'react-native-paper';
+import { accountingService } from '../../api/accountingService';
+import { AppButton } from '../../components/common/AppButton';
+import { AppCard } from '../../components/common/AppCard';
+import { AppInput } from '../../components/common/AppInput';
+import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import type { Account, AccountType } from '../../types';
+
+const ACCOUNT_TYPES: AccountType[] = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'];
+
+export const AccountsScreen = () => {
+    const theme = useTheme();
+    const [accounts, setAccounts] = useState<Account[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [filter, setFilter] = useState<AccountType | 'ALL'>('ALL');
+    const [saving, setSaving] = useState(false);
+
+    const [code, setCode] = useState('');
+    const [name, setName] = useState('');
+    const [type, setType] = useState<AccountType>('ASSET');
+
+    const loadAccounts = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await accountingService.getAccounts();
+            setAccounts(data);
+        } catch (loadError: unknown) {
+            setError(loadError instanceof Error ? loadError.message : 'Failed to load accounts.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            void loadAccounts();
+        }, [loadAccounts])
+    );
+
+    const filteredAccounts = useMemo(() => {
+        if (filter === 'ALL') return accounts;
+        return accounts.filter((entry) => entry.type === filter);
+    }, [accounts, filter]);
+
+    const handleSeedDefaults = async () => {
+        setSaving(true);
+        try {
+            await accountingService.seedDefaultAccounts();
+            await loadAccounts();
+        } catch (seedError: unknown) {
+            setError(seedError instanceof Error ? seedError.message : 'Failed to seed default accounts.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCreate = async () => {
+        if (!code.trim() || !name.trim()) {
+            setError('Code and name are required.');
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            await accountingService.createAccount({
+                code: code.trim().toUpperCase(),
+                name: name.trim(),
+                type,
+            });
+            setCode('');
+            setName('');
+            await loadAccounts();
+        } catch (createError: unknown) {
+            setError(createError instanceof Error ? createError.message : 'Failed to create account.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <ScreenWrapper>
+            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
+                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>Chart Of Accounts</Text>
+                <Text variant="bodyMedium" style={{ marginTop: 4, color: theme.colors.outline }}>
+                    Create and organize your accounting heads.
+                </Text>
+
+                {error ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>
+                        {error}
+                    </Text>
+                ) : null}
+
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>Setup</Text>
+                    <AppButton mode="contained-tonal" onPress={() => { void handleSeedDefaults(); }} loading={saving}>
+                        Seed Default Accounts
+                    </AppButton>
+                </AppCard>
+
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>Add Account</Text>
+                    <AppInput label="Code" value={code} onChangeText={setCode} autoCapitalize="characters" />
+                    <AppInput label="Name" value={name} onChangeText={setName} />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                        <View style={{ flexDirection: 'row' }}>
+                            {ACCOUNT_TYPES.map((entry) => (
+                                <Chip
+                                    key={entry}
+                                    selected={entry === type}
+                                    onPress={() => setType(entry)}
+                                    style={{ marginRight: 8 }}
+                                >
+                                    {entry}
+                                </Chip>
+                            ))}
+                        </View>
+                    </ScrollView>
+                    <AppButton mode="contained" onPress={() => { void handleCreate(); }} loading={saving}>
+                        Save Account
+                    </AppButton>
+                </AppCard>
+
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
+                        Accounts ({filteredAccounts.length})
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                        <View style={{ flexDirection: 'row' }}>
+                            <Chip selected={filter === 'ALL'} onPress={() => setFilter('ALL')} style={{ marginRight: 8 }}>ALL</Chip>
+                            {ACCOUNT_TYPES.map((entry) => (
+                                <Chip
+                                    key={entry}
+                                    selected={filter === entry}
+                                    onPress={() => setFilter(entry)}
+                                    style={{ marginRight: 8 }}
+                                >
+                                    {entry}
+                                </Chip>
+                            ))}
+                        </View>
+                    </ScrollView>
+
+                    {loading ? (
+                        <Text variant="bodySmall">Loading accounts...</Text>
+                    ) : (
+                        filteredAccounts.map((entry) => (
+                            <View key={entry.id} style={{ marginBottom: 10 }}>
+                                <Text variant="bodyMedium" style={{ fontWeight: '700' }}>
+                                    {entry.code} - {entry.name}
+                                </Text>
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                    {entry.type} | {entry.isSystem ? 'System' : 'Custom'} | {entry.isActive ? 'Active' : 'Inactive'}
+                                </Text>
+                            </View>
+                        ))
+                    )}
+                </AppCard>
+            </ScrollView>
+        </ScreenWrapper>
+    );
+};

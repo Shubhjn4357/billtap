@@ -1,28 +1,81 @@
+import type { Bill, Transaction, TransactionItem } from '../types';
+import { isOnline } from '../utils/network';
 import { apiClient } from './httpClient';
 import { offlineSyncService } from './offlineSyncService';
-import { isOnline } from '../utils/network';
-import type { Bill } from '../types';
 
 export interface StoredBill extends Bill {
-    id: string;
     createdAt: string | Date | number;
 }
 
+type ServerTransaction = Transaction & {
+    billDate?: string | Date;
+    createdAt?: string | Date;
+};
+
+const toTransactionItem = (item: Bill['items'][number]): TransactionItem => {
+    const tax = Number(item.tax ?? 0);
+    const total = Number(item.total ?? item.price * item.quantity);
+    return {
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        tax,
+        total,
+    };
+};
+
+const toStoredBill = (entry: ServerTransaction): StoredBill => ({
+    id: entry.id,
+    userId: entry.userId,
+    customerName: entry.partyName ?? undefined,
+    customerPhone: entry.partyPhone ?? undefined,
+    businessName: undefined,
+    businessAddress: undefined,
+    gstNumber: undefined,
+    currency: entry.currency ?? 'INR',
+    items: (entry.items ?? []).map((line) => ({
+        id: line.id,
+        name: line.name,
+        quantity: line.quantity,
+        price: line.price,
+        tax: line.tax,
+        total: line.total,
+    })),
+    total: Number(entry.totalAmount ?? 0),
+    createdAt: entry.billDate ?? entry.createdAt ?? new Date().toISOString(),
+});
+
 export const billService = {
-    async createBill(bill: Omit<Bill, 'createdAt'>): Promise<string> {
+    async createBill(bill: Omit<Bill, 'createdAt' | 'id'>): Promise<string> {
         const generatedId = offlineSyncService.createLocalId('bill');
         const createdAt = new Date().toISOString();
-        const billPayload = {
-            id: generatedId,
-            ...bill,
-            createdAt,
-        };
 
         const online = await isOnline();
         if (online) {
             try {
                 await offlineSyncService.flushQueue();
-                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/bills', billPayload);
+                const saleItems = bill.items.map(toTransactionItem);
+                const taxAmount = saleItems.reduce((sum, line) => {
+                    const taxable = line.quantity * line.price;
+                    return sum + (taxable * line.tax) / 100;
+                }, 0);
+
+                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/transactions', {
+                    id: generatedId,
+                    type: 'SALE',
+                    partyName: bill.customerName,
+                    partyPhone: bill.customerPhone,
+                    billDate: createdAt,
+                    businessName: bill.businessName,
+                    businessAddress: bill.businessAddress,
+                    gstNumber: bill.gstNumber,
+                    items: saleItems,
+                    totalAmount: bill.total,
+                    discountAmount: 0,
+                    taxAmount,
+                    currency: bill.currency ?? 'INR',
+                });
                 if (!response.ok || !response.id) {
                     throw new Error(response.message || 'Failed to create bill.');
                 }
@@ -63,7 +116,7 @@ export const billService = {
         return generatedId;
     },
 
-    async createBillWithStockValidation(bill: Omit<Bill, 'createdAt'>): Promise<string> {
+    async createBillWithStockValidation(bill: Omit<Bill, 'createdAt' | 'id'>): Promise<string> {
         return await this.createBill(bill);
     },
 
@@ -72,12 +125,17 @@ export const billService = {
         if (online) {
             try {
                 await offlineSyncService.flushQueue();
-                const response = await apiClient.get<{ ok: boolean; bills?: StoredBill[]; message?: string }>(`/bills?limit=${max}`);
-                if (!response.ok || !response.bills) {
+                const response = await apiClient.get<{
+                    ok: boolean;
+                    transactions?: ServerTransaction[];
+                    message?: string;
+                }>(`/transactions?type=SALE&limit=${max}`);
+                if (!response.ok || !response.transactions) {
                     throw new Error(response.message || 'Failed to fetch bills.');
                 }
-                await offlineSyncService.setCachedBills(response.bills);
-                return response.bills;
+                const mapped = response.transactions.map(toStoredBill);
+                await offlineSyncService.setCachedBills(mapped);
+                return mapped;
             } catch {
                 // Fall back to cache.
             }

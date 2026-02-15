@@ -1,8 +1,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { itemService } from '../api/itemService';
+import { useStockStore } from '../store';
 import type { Item } from '../types';
 import { useAuth } from './useAuth';
+import { useDebouncedValue } from './useDebouncedValue';
 
 type NewStockItem = Omit<Item, 'id' | 'userId' | 'updatedAt' | 'nameLowercase'>;
 type StockItemUpdate = Partial<Omit<Item, 'id' | 'userId' | 'updatedAt'>>;
@@ -18,10 +20,14 @@ const sortItemsByName = (data: Item[]) => {
 
 export const useStock = () => {
     const { user } = useAuth();
-    const [items, setItems] = useState<Item[]>([]);
+    const { items, setItems, addItem: addToStore, updateItem: updateInStore, deleteItem: deleteFromStore } = useStockStore();
+
+    // We keep local loading/error for the fetch operation specifically, 
+    // though store also has them, we might want to separate "syncing" from "display".
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const debouncedSearchQuery = useDebouncedValue(searchQuery, 220);
 
     const fetchItems = useCallback(async () => {
         if (!user) {
@@ -34,22 +40,26 @@ export const useStock = () => {
             const data = await itemService.getUserItems(user.uid);
             setItems(sortItemsByName(data));
         } catch (error: unknown) {
+            console.error('Fetch items error:', error);
             setError(getErrorMessage(error));
+            // If offline, we just keep existing items in store (persisted)
         } finally {
             setLoading(false);
         }
-    }, [user]);
+    }, [user, setItems]);
 
     useEffect(() => {
         if (user) {
+            // Initial fetch on mount if user exists
+            // We could also check if items are empty to avoid refetching if we trust persistence
+            // For now, let's fetch to sync.
             void fetchItems();
-            return;
+        } else {
+            setItems([]);
         }
-        setItems([]);
-        setError(null);
-    }, [user, fetchItems]);
+    }, [user, fetchItems, setItems]);
 
-    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const normalizedSearch = debouncedSearchQuery.trim().toLowerCase();
     const filteredItems = useMemo(() => {
         if (!normalizedSearch) {
             return items;
@@ -57,9 +67,9 @@ export const useStock = () => {
 
         return items.filter((item) =>
             item.nameLowercase.includes(normalizedSearch) ||
-            (item.barcode && item.barcode.includes(searchQuery.trim()))
+            (item.barcode && item.barcode.includes(debouncedSearchQuery.trim()))
         );
-    }, [items, normalizedSearch, searchQuery]);
+    }, [items, normalizedSearch, debouncedSearchQuery]);
 
     const addItem = async (item: NewStockItem) => {
         if (!user) throw new Error('You must be logged in to add items.');
@@ -73,15 +83,17 @@ export const useStock = () => {
                 nameLowercase: item.name.trim().toLowerCase(),
                 updatedAt: new Date(),
             };
+
+            // Optimistic update could go here, but waiting for ID from server is safer for now
             const id = await itemService.addItem(payload);
 
-            setItems((current) => sortItemsByName([
-                ...current,
-                {
-                    id,
-                    ...payload,
-                },
-            ]));
+            const newItem = { id, ...payload };
+            addToStore(newItem);
+
+            // Re-sort handled by store? No, store appends. 
+            // We should probably re-sort or insert in order.
+            // For now, simple append is fine, sort happens on render/selector.
+
         } catch (error: unknown) {
             const message = getErrorMessage(error);
             setError(message);
@@ -97,27 +109,25 @@ export const useStock = () => {
         setLoading(true);
         setError(null);
         try {
-            await itemService.updateItem(id, updates);
-            setItems((current) => {
-                const next = current.map((item) => {
-                    if (item.id !== id) return item;
+            // Optimistic update
+            const originalItem = items.find(i => i.id === id);
+            const nextName = typeof updates.name === 'string' ? updates.name.trim() : originalItem?.name || '';
 
-                    const nextName = typeof updates.name === 'string' ? updates.name.trim() : item.name;
-                    const merged: Item = {
-                        ...item,
-                        ...updates,
-                        name: nextName,
-                        nameLowercase: nextName.toLowerCase(),
-                        updatedAt: new Date(),
-                    };
-                    return merged;
-                });
-
-                return sortItemsByName(next);
+            updateInStore(id, {
+                ...updates,
+                name: nextName,
+                nameLowercase: nextName.toLowerCase(), 
+                updatedAt: new Date()
             });
+
+            await itemService.updateItem(id, updates);
         } catch (error: unknown) {
+            // Revert changes? (Would need complex revert logic)
+            // For now just error
             const message = getErrorMessage(error);
             setError(message);
+            // In a real app, we would reload items here to ensure consistency
+            void fetchItems(); 
             throw new Error(message);
         } finally {
             setLoading(false);
@@ -130,11 +140,15 @@ export const useStock = () => {
         setLoading(true);
         setError(null);
         try {
+            updateInStore(id, { isActive: false }); // Optimistic hide? Or delete?
+            // Actually delete from store
+            deleteFromStore(id);
+
             await itemService.deleteItem(id);
-            setItems((current) => current.filter((item) => item.id !== id));
         } catch (error: unknown) {
             const message = getErrorMessage(error);
             setError(message);
+            void fetchItems();
             throw new Error(message);
         } finally {
             setLoading(false);

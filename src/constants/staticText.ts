@@ -259,7 +259,7 @@ export const SUBSCRIPTION_TEXT = {
 
 export const ADMIN_TEXT = {
     accessRequiredTitle: 'Admin Access Required',
-    accessRequiredBody: 'This panel is only available to admin accounts.',
+    accessRequiredBody: 'This panel is restricted to developer/admin principals configured on server.',
     title: 'Admin Control Panel',
     subtitle: 'Manage users, subscription plans, offers, and sales automation settings.',
     refresh: COMMON_TEXT.actions.refresh,

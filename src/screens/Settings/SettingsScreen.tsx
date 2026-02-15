@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { List, Switch, Text, useTheme } from 'react-native-paper';
+import { adminService } from '../../api/adminService';
 import { userService } from '../../api/userService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
@@ -47,12 +48,21 @@ export const SettingsScreen = () => {
     const { setUser } = useUserStore();
     const theme = useTheme();
     const router = useRouter();
-    const { autoTheme, themeMode, setThemeMode, currencySymbol, setCurrency } = useSettingsStore();
+    const {
+        autoTheme,
+        themeMode,
+        setThemeMode,
+        currencySymbol,
+        setCurrency,
+        notificationSoundEnabled,
+        toggleNotificationSound,
+    } = useSettingsStore();
 
     const [updateState, setUpdateState] = useState<UpdateState>('idle');
     const [updateMessage, setUpdateMessage] = useState<string>(SETTINGS_TEXT.updateMessages.initial);
     const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
     const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
+    const [canAccessAdminPanel, setCanAccessAdminPanel] = useState(false);
 
     const effectiveDark = autoTheme ? theme.dark : themeMode === 'dark';
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol);
@@ -154,6 +164,18 @@ export const SettingsScreen = () => {
         void checkForUpdates();
     }, [checkForUpdates]);
 
+    useEffect(() => {
+        const verifyAdminAccess = async () => {
+            try {
+                const access = await adminService.getAccess();
+                setCanAccessAdminPanel(access.canAccess);
+            } catch {
+                setCanAccessAdminPanel(false);
+            }
+        };
+        void verifyAdminAccess();
+    }, []);
+
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
@@ -211,6 +233,17 @@ export const SettingsScreen = () => {
                             />
                         ))}
                     </List.Accordion>
+                    <List.Item
+                        title="Notification Sound"
+                        description="Play system sound for reminders and task alerts"
+                        left={(props) => <List.Icon {...props} icon="volume-high" />}
+                        right={() => (
+                            <Switch
+                                value={notificationSoundEnabled}
+                                onValueChange={toggleNotificationSound}
+                            />
+                        )}
+                    />
                 </List.Section>
 
                 <List.Section>
@@ -221,7 +254,7 @@ export const SettingsScreen = () => {
                         left={(props) => <List.Icon {...props} icon="credit-card-outline" />}
                         onPress={() => router.push('/subscription' as never)}
                     />
-                    {user?.role === 'admin' && (
+                    {canAccessAdminPanel && (
                         <List.Item
                             title={SETTINGS_TEXT.account.adminPanelTitle}
                             description={SETTINGS_TEXT.account.adminPanelDescription}
@@ -229,6 +262,12 @@ export const SettingsScreen = () => {
                             onPress={() => router.push('/admin' as never)}
                         />
                     )}
+                    <List.Item
+                        title="Accounting Suite"
+                        description="Chart of accounts, journals, trial balance and GST."
+                        left={(props) => <List.Icon {...props} icon="book-open-variant" />}
+                        onPress={() => router.push('/accounting' as never)}
+                    />
                     <List.Item
                         title={SETTINGS_TEXT.account.businessProfileTitle}
                         description={SETTINGS_TEXT.account.businessProfileDescription}

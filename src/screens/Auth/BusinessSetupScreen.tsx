@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, ScrollView, Alert } from 'react-native';
 import { TextInput, Button, Text, List, useTheme } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, Href } from 'expo-router';
 import { userService } from '../../api/userService';
 import { Config } from '../../constants/Config';
 import { BUSINESS_SETUP_TEXT, COMMON_TEXT } from '../../constants/staticText';
@@ -18,9 +18,11 @@ export default function BusinessSetupScreen() {
     const [businessName, setBusinessName] = useState(user?.businessName ?? '');
     const [address, setAddress] = useState(user?.address ?? '');
     const [gst, setGst] = useState(user?.gstNumber ?? '');
+
     const [currency, setSelectedCurrency] = useState(
         normalizeCurrencyCode(user?.currency ?? Config.defaultCurrency)
     );
+    const [category, setCategory] = useState(user?.category || '');
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -45,11 +47,15 @@ export default function BusinessSetupScreen() {
                 gstNumber: gst.trim(),
                 gstEnabled: !!gst.trim(),
                 currency,
+                category,
             });
 
             setUser(updatedUser);
             setCurrency(currency);
-            router.replace('/(tabs)/home');
+
+            // ...
+
+            router.replace('/(main)/(tabs)/home' as Href);
         } catch (error: unknown) {
             Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : BUSINESS_SETUP_TEXT.saveFailed);
         } finally {
@@ -91,6 +97,23 @@ export default function BusinessSetupScreen() {
                     style={styles.input}
                     autoCapitalize="characters"
                 />
+
+                <List.Section>
+                    <List.Subheader>Business Category</List.Subheader>
+                    <List.Accordion
+                        title={category || 'Select Category'}
+                        left={props => <List.Icon {...props} icon="shape" />}
+                    >
+                        {['Retail', 'Wholesale', 'Services', 'Manufacturing', 'Other'].map((cat) => (
+                            <List.Item
+                                key={cat}
+                                title={cat}
+                                onPress={() => setCategory(cat)}
+                                right={props => cat === category ? <List.Icon {...props} icon="check" /> : null}
+                            />
+                        ))}
+                    </List.Accordion>
+                </List.Section>
 
                 <List.Section>
                     <List.Subheader>{BUSINESS_SETUP_TEXT.fields.defaultCurrency}</List.Subheader>

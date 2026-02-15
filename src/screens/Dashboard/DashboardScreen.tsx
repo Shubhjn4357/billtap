@@ -112,7 +112,7 @@ export const DashboardScreen = () => {
                             mode="contained"
                             compact
                             style={{ flex: 1, marginRight: 6 }}
-                            onPress={() => router.push('/(tabs)/billing')}
+                            onPress={() => router.push('/(main)/(tabs)/billing')}
                             icon="calculator"
                         >
                             New Bill
@@ -121,7 +121,7 @@ export const DashboardScreen = () => {
                             mode="contained"
                             compact
                             style={{ flex: 1, marginHorizontal: 6 }}
-                            onPress={() => router.push('/(tabs)/stock')}
+                            onPress={() => router.push('/(main)/(tabs)/stock')}
                             icon="package-variant"
                         >
                             Stock
@@ -130,7 +130,7 @@ export const DashboardScreen = () => {
                             mode="contained"
                             compact
                             style={{ flex: 1, marginLeft: 6 }}
-                            onPress={() => router.push('/(tabs)/reports')}
+                            onPress={() => router.push('/(main)/(tabs)/reports')}
                             icon="chart-line"
                         >
                             Reports

@@ -3,8 +3,15 @@ name: Android Build
 on:
   push:
     branches:
-      - main
       - dev
+  pull_request:
+    branches:
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -24,6 +31,7 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -32,7 +40,7 @@ jobs:
           java-version: '17'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Expo Doctor
         run: pnpm run doctor
@@ -50,46 +58,114 @@ jobs:
         run: pnpm run build:web
 
       - name: Prebuild
-        run: pnpm exec expo prebuild --platform android --no-install
+        run: pnpm exec expo prebuild --platform android --no-install --non-interactive
 
       - name: Cache Gradle Wrapper
         uses: actions/cache@v4
         with:
           path: ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Cache Gradle Dependencies
         uses: actions/cache@v4
         with:
           path: ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-caches-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-caches-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-caches-
 
-      - name: Build Android Release
-        if: github.ref == 'refs/heads/main'
+      - name: Prepare Gradle
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease
+
+      - name: Configure release keystore (optional)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+          echo "BILLTAP_UPLOAD_STORE_FILE=release.keystore" >> $GITHUB_ENV
+          echo "BILLTAP_UPLOAD_STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+          echo "BILLTAP_UPLOAD_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> $GITHUB_ENV
+          echo "BILLTAP_UPLOAD_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> $GITHUB_ENV
+
+      - name: Ensure debug keystore
+        run: |
+          if [ ! -f android/app/debug.keystore ]; then
+            keytool -genkeypair -v \
+              -storetype PKCS12 \
+              -keystore android/app/debug.keystore \
+              -alias androiddebugkey \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+          fi
+
+      - name: Export signing fingerprints
+        run: |
+          set -euo pipefail
+          mkdir -p build-metadata
+
+          DEBUG_SHA1=$(keytool -list -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey | awk -F': ' '/SHA1:/{print $2; exit}')
+          DEBUG_SHA256=$(keytool -list -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{print $2; exit}')
+
+          {
+            echo "debug_sha1=$DEBUG_SHA1"
+            echo "debug_sha256=$DEBUG_SHA256"
+          } > build-metadata/signing-fingerprints.txt
+
+          if [ -f android/app/release.keystore ] && [ -n "${BILLTAP_UPLOAD_STORE_PASSWORD:-}" ] && [ -n "${BILLTAP_UPLOAD_KEY_ALIAS:-}" ]; then
+            RELEASE_SHA1=$(keytool -list -v -keystore android/app/release.keystore -storepass "$BILLTAP_UPLOAD_STORE_PASSWORD" -alias "$BILLTAP_UPLOAD_KEY_ALIAS" | awk -F': ' '/SHA1:/{print $2; exit}')
+            RELEASE_SHA256=$(keytool -list -v -keystore android/app/release.keystore -storepass "$BILLTAP_UPLOAD_STORE_PASSWORD" -alias "$BILLTAP_UPLOAD_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')
+            {
+              echo "release_sha1=$RELEASE_SHA1"
+              echo "release_sha256=$RELEASE_SHA256"
+            } >> build-metadata/signing-fingerprints.txt
+          else
+            {
+              echo "release_sha1=not_available"
+              echo "release_sha256=not_available"
+            } >> build-metadata/signing-fingerprints.txt
+          fi
+
+          {
+            echo "### Android Signing Fingerprints"
+            echo ""
+            cat build-metadata/signing-fingerprints.txt
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build Android Debug
-        if: github.ref == 'refs/heads/dev'
         run: |
           cd android
-          chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload Artifact (Release)
-        if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release
-          path: android/app/build/outputs/apk/release/app-release.apk
+      - name: Build Android Release
+        run: |
+          cd android
+          ./gradlew assembleRelease
 
       - name: Upload Artifact (Debug)
-        if: github.ref == 'refs/heads/dev'
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: app-debug-dev
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Artifact (Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-dev
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Artifact (Signing Fingerprints)
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-signing-fingerprints
+          path: build-metadata/signing-fingerprints.txt
+          if-no-files-found: error
+          retention-days: 14

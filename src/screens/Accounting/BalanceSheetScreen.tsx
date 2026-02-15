@@ -1,0 +1,123 @@
+import { useCallback, useState } from 'react';
+import { ScrollView } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { Text, useTheme } from 'react-native-paper';
+import { accountingService } from '../../api/accountingService';
+import { AppButton } from '../../components/common/AppButton';
+import { AppCard } from '../../components/common/AppCard';
+import { AppInput } from '../../components/common/AppInput';
+import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { formatCurrency } from '../../utils/formatters';
+
+interface BalanceSheetData {
+    assets: {
+        rows: { accountId: string; code: string; name: string; balance: number }[];
+        totalAssets: number;
+    };
+    liabilities: {
+        rows: { accountId: string; code: string; name: string; balance: number }[];
+        totalLiabilities: number;
+    };
+    equity: {
+        rows: { accountId: string; code: string; name: string; balance: number }[];
+        retainedEarnings: number;
+        totalEquity: number;
+    };
+    equationDelta: number;
+    isBalanced: boolean;
+}
+
+export const BalanceSheetScreen = () => {
+    const theme = useTheme();
+    const [asOf, setAsOf] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [data, setData] = useState<BalanceSheetData | null>(null);
+
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await accountingService.getBalanceSheet(asOf || undefined);
+            setData(response);
+        } catch (loadError: unknown) {
+            setError(loadError instanceof Error ? loadError.message : 'Failed to load balance sheet.');
+        } finally {
+            setLoading(false);
+        }
+    }, [asOf]);
+
+    useFocusEffect(
+        useCallback(() => {
+            void loadData();
+        }, [loadData])
+    );
+
+    return (
+        <ScreenWrapper>
+            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
+                <Text variant="headlineSmall" style={{ fontWeight: '700' }}>Balance Sheet</Text>
+                <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 4 }}>
+                    Assets, liabilities and equity as of a selected date.
+                </Text>
+
+                <AppCard>
+                    <AppInput label="As Of Date (YYYY-MM-DD)" value={asOf} onChangeText={setAsOf} />
+                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={loading}>
+                        Refresh Balance Sheet
+                    </AppButton>
+                </AppCard>
+
+                {error ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 10 }}>
+                        {error}
+                    </Text>
+                ) : null}
+
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>Summary</Text>
+                    <Text variant="bodySmall">Total Assets: {formatCurrency(data?.assets.totalAssets ?? 0, 'INR')}</Text>
+                    <Text variant="bodySmall">Total Liabilities: {formatCurrency(data?.liabilities.totalLiabilities ?? 0, 'INR')}</Text>
+                    <Text variant="bodySmall">Total Equity: {formatCurrency(data?.equity.totalEquity ?? 0, 'INR')}</Text>
+                    <Text variant="bodySmall">Retained Earnings: {formatCurrency(data?.equity.retainedEarnings ?? 0, 'INR')}</Text>
+                    <Text variant="bodySmall" style={{ color: data?.isBalanced ? theme.colors.primary : theme.colors.error }}>
+                        {data?.isBalanced ? 'Equation Balanced' : `Equation Delta: ${formatCurrency(data?.equationDelta ?? 0, 'INR')}`}
+                    </Text>
+                </AppCard>
+
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
+                        Assets ({data?.assets.rows.length ?? 0})
+                    </Text>
+                    {(data?.assets.rows ?? []).map((row) => (
+                        <Text key={row.accountId} variant="bodySmall" style={{ marginBottom: 6 }}>
+                            {row.code} | {row.name} | {formatCurrency(row.balance, 'INR')}
+                        </Text>
+                    ))}
+                </AppCard>
+
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
+                        Liabilities ({data?.liabilities.rows.length ?? 0})
+                    </Text>
+                    {(data?.liabilities.rows ?? []).map((row) => (
+                        <Text key={row.accountId} variant="bodySmall" style={{ marginBottom: 6 }}>
+                            {row.code} | {row.name} | {formatCurrency(row.balance, 'INR')}
+                        </Text>
+                    ))}
+                </AppCard>
+
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
+                        Equity ({data?.equity.rows.length ?? 0})
+                    </Text>
+                    {(data?.equity.rows ?? []).map((row) => (
+                        <Text key={row.accountId} variant="bodySmall" style={{ marginBottom: 6 }}>
+                            {row.code} | {row.name} | {formatCurrency(row.balance, 'INR')}
+                        </Text>
+                    ))}
+                </AppCard>
+            </ScrollView>
+        </ScreenWrapper>
+    );
+};

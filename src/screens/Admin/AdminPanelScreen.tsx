@@ -9,7 +9,6 @@ import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { ADMIN_TEXT, COMMON_TEXT } from '../../constants/staticText';
 import { DEFAULT_SUBSCRIPTION_PLANS } from '../../constants/subscriptionPlans';
 import { useAnalyticsFunnel } from '../../hooks/useAnalyticsFunnel';
-import { useAuth } from '../../hooks/useAuth';
 import type { MarketingOffer, SubscriptionPlan, SubscriptionStatus, UserProfile, UserRole } from '../../types';
 import { addMonths, toDateSafe } from '../../utils/date';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -22,7 +21,6 @@ const roleLabel = (role: UserRole | undefined) => (role ?? 'owner').toUpperCase(
 
 export const AdminPanelScreen = () => {
     const theme = useTheme();
-    const { user } = useAuth();
     const {
         metrics,
         loading: analyticsLoading,
@@ -32,6 +30,8 @@ export const AdminPanelScreen = () => {
 
     const [tab, setTab] = useState<AdminTab>('users');
     const [loading, setLoading] = useState(false);
+    const [accessLoading, setAccessLoading] = useState(true);
+    const [canAccess, setCanAccess] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -76,8 +76,24 @@ export const AdminPanelScreen = () => {
     }, []);
 
     useEffect(() => {
+        const verifyAccess = async () => {
+            setAccessLoading(true);
+            try {
+                const access = await adminService.getAccess();
+                setCanAccess(access.canAccess);
+            } catch {
+                setCanAccess(false);
+            } finally {
+                setAccessLoading(false);
+            }
+        };
+        void verifyAccess();
+    }, []);
+
+    useEffect(() => {
+        if (!canAccess) return;
         void loadData();
-    }, [loadData]);
+    }, [canAccess, loadData]);
 
     const filteredUsers = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
@@ -206,6 +222,21 @@ export const AdminPanelScreen = () => {
         }
     };
 
+    const handleDeletePlan = async (planId: string) => {
+        try {
+            await adminService.deletePlan(planId);
+            setPlans((current) => current.filter((plan) => plan.id !== planId));
+            setPlanDrafts((current) => {
+                const copy = { ...current };
+                delete copy[planId];
+                return copy;
+            });
+            Alert.alert(COMMON_TEXT.alerts.saved, 'Plan deleted.');
+        } catch (error: unknown) {
+            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete plan.');
+        }
+    };
+
     const handleCreateOffer = async () => {
         if (!offerForm.title.trim() || !offerForm.message.trim()) {
             Alert.alert(COMMON_TEXT.alerts.validation, ADMIN_TEXT.alerts.offerTitleMessageRequired);
@@ -266,7 +297,35 @@ export const AdminPanelScreen = () => {
         }
     };
 
-    if (user?.role !== 'admin') {
+    const handleDeleteOffer = async (offerId: string) => {
+        try {
+            await adminService.deleteOffer(offerId);
+            setOffers((current) => current.filter((entry) => entry.id !== offerId));
+        } catch (error: unknown) {
+            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete offer.');
+        }
+    };
+
+    const handleDeleteUser = async (uid: string) => {
+        try {
+            await adminService.deleteUser(uid);
+            setUsers((current) => current.filter((entry) => entry.uid !== uid));
+        } catch (error: unknown) {
+            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete user.');
+        }
+    };
+
+    if (accessLoading) {
+        return (
+            <ScreenWrapper>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <Text variant="bodyLarge">Verifying admin access...</Text>
+                </View>
+            </ScreenWrapper>
+        );
+    }
+
+    if (!canAccess) {
         return (
             <ScreenWrapper>
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -401,6 +460,9 @@ export const AdminPanelScreen = () => {
                                         <AppButton mode="outlined" compact style={{ marginBottom: 8 }} onPress={() => { void handleSetSubscriptionStatus(entry, 'expired'); }}>
                                             {ADMIN_TEXT.users.expire}
                                         </AppButton>
+                                        <AppButton mode="outlined" compact style={{ marginLeft: 8, marginBottom: 8 }} onPress={() => { void handleDeleteUser(entry.uid); }}>
+                                            Delete User
+                                        </AppButton>
                                     </View>
                                 </AppCard>
                             );
@@ -462,6 +524,9 @@ export const AdminPanelScreen = () => {
                                     </View>
                                     <AppButton mode="contained" style={{ marginTop: 10 }} onPress={() => { void handleSavePlan(plan.id); }}>
                                         {ADMIN_TEXT.plans.savePlan}
+                                    </AppButton>
+                                    <AppButton mode="outlined" style={{ marginTop: 8 }} onPress={() => { void handleDeletePlan(plan.id); }}>
+                                        Delete Plan
                                     </AppButton>
                                 </AppCard>
                             );
@@ -567,6 +632,9 @@ export const AdminPanelScreen = () => {
                                         onValueChange={(enabled) => { void handleToggleOffer(offer, enabled); }}
                                     />
                                 </View>
+                                <AppButton mode="outlined" style={{ marginTop: 10 }} onPress={() => { void handleDeleteOffer(offer.id); }}>
+                                    Delete Offer
+                                </AppButton>
                             </AppCard>
                         ))}
                     </View>

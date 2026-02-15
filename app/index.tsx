@@ -28,7 +28,7 @@ export default function Index() {
                 router.replace('/(auth)/login' as any);
             }
         }
-    }, [isAuthenticated, isLoading, hasSeenOnboarding, user?.businessName, router]);
+    }, [isAuthenticated, hasSeenOnboarding, user?.businessName, isLoading, router]); // Only react to auth/onboarding/user changes
 
     return <LoadingScreen message="Getting started..." />;
 }

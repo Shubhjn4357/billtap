@@ -1,3 +1,4 @@
+import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useState } from 'react';
@@ -22,11 +23,16 @@ export const LoginScreen = () => {
     const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
     const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
     const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+    const googleRedirectUri = makeRedirectUri({
+        scheme: 'billtap',
+        path: 'oauthredirect',
+    });
 
     const [googleRequest, googleResponse, promptAsync] = Google.useAuthRequest({
         webClientId: googleWebClientId,
         androidClientId: googleAndroidClientId,
         iosClientId: googleIosClientId,
+        redirectUri: googleRedirectUri,
     });
 
     const theme = useTheme();
@@ -134,9 +140,14 @@ export const LoginScreen = () => {
                                 </AppButton>
                             </>
                         )}
-                        <AppButton mode="text" onPress={() => { setPhoneMode(false); setVerificationId(''); }}>
-                            {COMMON_TEXT.actions.back}
-                        </AppButton>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
+                            <AppButton mode="text" onPress={() => { setPhoneMode(false); setVerificationId(''); }}>
+                                {COMMON_TEXT.actions.back}
+                            </AppButton>
+                            {verificationId && (
+                                <ResendTimer onResend={handleSendVerification} />
+                            )}
+                        </View>
                     </>
                 ) : (
                     <>
@@ -162,6 +173,27 @@ export const LoginScreen = () => {
                 {(loading || authLoading) && <ActivityIndicator style={{ marginTop: 20 }} />}
             </KeyboardAvoidingView>
         </ScreenWrapper>
+    );
+};
+
+const ResendTimer = ({ onResend }: { onResend: () => void }) => {
+    const [seconds, setSeconds] = useState(30);
+
+    useEffect(() => {
+        if (seconds > 0) {
+            const timer = setTimeout(() => setSeconds(seconds - 1), 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [seconds]);
+
+    if (seconds > 0) {
+        return <Text variant="bodySmall" style={{ alignSelf: 'center', color: 'gray' }}>Resend in {seconds}s</Text>;
+    }
+
+    return (
+        <AppButton mode="text" onPress={() => { setSeconds(30); onResend(); }}>
+            Resend Code
+        </AppButton>
     );
 };
 

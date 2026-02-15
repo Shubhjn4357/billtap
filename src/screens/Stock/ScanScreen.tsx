@@ -11,7 +11,7 @@ export default function ScanScreen() {
     const [scanned, setScanned] = useState(false);
     const [lastCode, setLastCode] = useState('');
     const router = useRouter();
-    const params = useLocalSearchParams<{ target?: string | string[] }>();
+    const params = useLocalSearchParams<{ target?: string | string[]; returnPath?: string | string[] }>();
     const haptics = useHaptics();
 
     useEffect(() => {
@@ -26,8 +26,20 @@ export default function ScanScreen() {
         setScanned(true);
         setLastCode(data);
         void haptics.triggerNotification();
+
         const targetParam = Array.isArray(params.target) ? params.target[0] : params.target;
-        const target = targetParam === 'billing' ? '/(tabs)/billing' : '/(tabs)/stock';
+        const returnPathParam = Array.isArray(params.returnPath) ? params.returnPath[0] : params.returnPath;
+
+        if (targetParam === 'item_detail') {
+            if (returnPathParam === '/(main)/(tabs)/billing') {
+                router.replace({ pathname: '/(main)/(tabs)/billing', params: { search: data } });
+            } else {
+                router.replace({ pathname: '/(main)/(tabs)/stock', params: { search: data } });
+            }
+            return;
+        }
+
+        const target = targetParam === 'billing' ? '/(main)/(tabs)/billing' : '/(main)/(tabs)/stock';
         router.replace({ pathname: target, params: { search: data } });
     };
 

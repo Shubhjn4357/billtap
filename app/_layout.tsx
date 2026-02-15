@@ -2,11 +2,14 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import * as Updates from 'expo-updates';
 import 'react-native-reanimated';
 
 import { authService } from '../src/api/authService';
 import { offlineSyncService } from '../src/api/offlineSyncService';
+import { paymentReminderService } from '../src/services/paymentReminderService';
 import { userService } from '../src/api/userService';
 import { AppThemeProvider } from '../src/components/providers/AppThemeProvider';
 import { Config } from '../src/constants/Config';
@@ -21,17 +24,29 @@ SplashScreen.preventAutoHideAsync().catch(() => {
     // Ignore splash race conditions during fast refresh.
 });
 
+// Module-level variable to ensure bootstrap only runs once per app lifecycle
+let hasBootstrapped = false;
+
 export default function RootLayout() {
     const [loaded] = useFonts({
         SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     });
 
-    const { user, isLoading, setLoading, setUser } = useUserStore();
+    const user = useUserStore((state) => state.user);
+    const isLoading = useUserStore((state) => state.isLoading);
+    const setLoading = useUserStore((state) => state.setLoading);
+    const setUser = useUserStore((state) => state.setUser);
     const { setCurrency } = useSettingsStore();
     const { setNetworkState } = useNetworkStore();
+    const userId = user?.uid;
+    const userSubscriptionStatus = user?.subscriptionStatus;
 
     // Bootstrap: Load user profile on mount
     useEffect(() => {
+        // Only bootstrap once per app lifecycle
+        if (hasBootstrapped) return;
+        hasBootstrapped = true;
+
         let isMounted = true;
 
         const bootstrap = async () => {
@@ -74,7 +89,7 @@ export default function RootLayout() {
         return () => {
             isMounted = false;
         };
-    }, [setCurrency, setLoading, setUser]);
+    }, [setCurrency, setLoading, setUser]); // Empty dependency array - only run once on mount
 
     // Handle subscription expiration
     useEffect(() => {
@@ -100,6 +115,13 @@ export default function RootLayout() {
         void expireSubscription();
     }, [user, setUser]);
 
+    // Schedule local pending-payment reminders for credit sales.
+    useEffect(() => {
+        if (!userId) return;
+        if (Platform.OS === 'web') return;
+        void paymentReminderService.syncPendingPaymentReminders();
+    }, [userId, userSubscriptionStatus]);
+
     // Monitor network state
     useEffect(() => {
         let wasOnline = false;
@@ -112,6 +134,9 @@ export default function RootLayout() {
 
             if (isNowOnline && !wasOnline) {
                 void offlineSyncService.flushQueue();
+                if (Platform.OS !== 'web') {
+                    void paymentReminderService.syncPendingPaymentReminders();
+                }
             }
 
             wasOnline = isNowOnline;
@@ -126,6 +151,22 @@ export default function RootLayout() {
             SplashScreen.hideAsync();
         }
     }, [loaded, isLoading]);
+
+    useEffect(() => {
+        if (__DEV__ || Platform.OS === 'web' || !Updates.isEnabled) return;
+
+        const runAutoUpdateCheck = async () => {
+            try {
+                const update = await Updates.checkForUpdateAsync();
+                if (!update.isAvailable) return;
+                await Updates.fetchUpdateAsync();
+            } catch {
+                // Silent auto-update checks should not block app startup.
+            }
+        };
+
+        void runAutoUpdateCheck();
+    }, []);
 
     // Show loading screen while fonts load or auth is bootstrapping
     if (!loaded || isLoading) {

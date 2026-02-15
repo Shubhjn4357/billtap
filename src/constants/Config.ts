@@ -14,4 +14,5 @@ export const Config = {
     units: ['pcs', 'kg', 'ltr', 'box', 'mts'],
     companyName: `${BRAND.companyName} Merchant`,
     companyAddress: 'Set your business address in Profile',
+    apiUrl: (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/$/, ''),
 };

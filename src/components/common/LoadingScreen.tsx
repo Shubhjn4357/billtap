@@ -25,5 +25,6 @@ const styles = StyleSheet.create({
     message: {
         marginTop: 8,
         opacity: 0.7,
+        color: '#fff',
     },
 });

@@ -11,7 +11,7 @@ interface CheckoutSessionResponse {
 
 export const paymentService = {
     async createSubscriptionCheckout(plan: SubscriptionPlan): Promise<CheckoutSessionResponse> {
-        const response = await apiClient.post<CheckoutSessionResponse>('/payments/subscription-checkout', {
+        const response = await apiClient.post<CheckoutSessionResponse>('/subscription/checkout', {
             planId: plan.id,
             planName: plan.name,
             amount: plan.monthlyPrice,
@@ -41,7 +41,7 @@ export const paymentService = {
             const response = await apiClient.get<{
                 ok: boolean;
                 status?: PaymentIntent['status'];
-            }>(`/payments/intents/${encodeURIComponent(intentId)}/status`);
+            }>(`/subscription/intents/${encodeURIComponent(intentId)}/status`);
 
             if (!response.ok) return null;
             return response.status ?? null;

@@ -98,9 +98,11 @@ const sortBills = <T extends { createdAt?: string | number | Date }>(entries: T[
     });
 };
 
-const shouldDropMutation = (error: unknown) => {
+const shouldDropMutation = (error: unknown, mutation: OfflineMutation) => {
     if (!(error instanceof ApiError)) return false;
-    return error.status === 400 || error.status === 404;
+    if (mutation.type === 'delete_item' && error.status === 404) return true;
+    if (mutation.type === 'analytics_event' && error.status === 400) return true;
+    return false;
 };
 
 const shouldStopFlush = (error: unknown) => {
@@ -160,17 +162,33 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
             return;
         }
         case 'create_bill': {
-            const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/bills', {
+            const lineItems = mutation.payload.items.map((line) => ({
+                id: line.id,
+                name: line.name,
+                quantity: line.quantity,
+                price: line.price,
+                tax: Number(line.tax ?? 0),
+                total: Number(line.total ?? line.quantity * line.price),
+            }));
+            const taxAmount = lineItems.reduce((sum, line) => {
+                const taxable = line.quantity * line.price;
+                return sum + (taxable * line.tax) / 100;
+            }, 0);
+
+            const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/transactions', {
                 id: mutation.payload.id,
-                customerName: mutation.payload.customerName,
-                customerPhone: mutation.payload.customerPhone,
+                type: 'SALE',
+                partyName: mutation.payload.customerName,
+                partyPhone: mutation.payload.customerPhone,
                 businessName: mutation.payload.businessName,
                 businessAddress: mutation.payload.businessAddress,
                 gstNumber: mutation.payload.gstNumber,
-                currency: mutation.payload.currency,
-                items: mutation.payload.items,
-                total: mutation.payload.total,
-                createdAt: mutation.payload.createdAt,
+                currency: mutation.payload.currency ?? 'INR',
+                billDate: mutation.payload.createdAt,
+                items: lineItems,
+                totalAmount: mutation.payload.total,
+                discountAmount: 0,
+                taxAmount,
             });
 
             if (!response.ok) {
@@ -338,7 +356,7 @@ export const offlineSyncService = {
                 await applyMutation(mutation);
                 processed += 1;
             } catch (error: unknown) {
-                if (shouldDropMutation(error)) {
+                if (shouldDropMutation(error, mutation)) {
                     processed += 1;
                     continue;
                 }

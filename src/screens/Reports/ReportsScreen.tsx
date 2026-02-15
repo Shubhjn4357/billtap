@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, RefreshControl, View } from 'react-native';
+import { Alert, FlatList, RefreshControl, Share, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import { ActivityIndicator, SegmentedButtons, Text, useTheme } from 'react-native-paper';
 import type { StoredBill } from '../../api/billService';
 import { AppButton } from '../../components/common/AppButton';
@@ -10,6 +11,7 @@ import { Config } from '../../constants/Config';
 import { COMMON_TEXT, REPORTS_TEXT } from '../../constants/staticText';
 import { useAuth } from '../../hooks/useAuth';
 import { useBills } from '../../hooks/useBills';
+import { reportingService } from '../../api/reportingService';
 import { useSettingsStore } from '../../store';
 import { toDateSafe } from '../../utils/date';
 import { formatCurrency, formatDate, normalizeCurrencyCode } from '../../utils/formatters';
@@ -62,6 +64,7 @@ const buildTopItems = (bills: StoredBill[]) => {
 
 export const ReportsScreen = () => {
     const theme = useTheme();
+    const router = useRouter();
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
     const { bills, loading, error, fetchBills } = useBills();
@@ -133,6 +136,40 @@ export const ReportsScreen = () => {
         }
     }, [activeCurrency]);
 
+    const handleExportJson = useCallback(async () => {
+        try {
+            const start = getRangeStart(range);
+            const exportPayload = await reportingService.exportTransactions('json', {
+                type: 'SALE',
+                start: start ? start.toISOString() : undefined,
+            });
+
+            await Share.share({
+                title: 'BillTap Transactions JSON Export',
+                message: JSON.stringify(exportPayload, null, 2),
+            });
+        } catch (error: unknown) {
+            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to export JSON.');
+        }
+    }, [range]);
+
+    const handleExportExcel = useCallback(async () => {
+        try {
+            const start = getRangeStart(range);
+            const csvText = await reportingService.exportTransactions('csv', {
+                type: 'SALE',
+                start: start ? start.toISOString() : undefined,
+            });
+
+            await Share.share({
+                title: 'BillTap Transactions CSV Export',
+                message: typeof csvText === 'string' ? csvText : JSON.stringify(csvText),
+            });
+        } catch (error: unknown) {
+            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to export CSV.');
+        }
+    }, [range]);
+
     const renderBill = useCallback(({ item }: { item: StoredBill }) => (
         <AppCard>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -198,6 +235,22 @@ export const ReportsScreen = () => {
 
             <AppCard>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1, marginRight: 12 }}>
+                        <Text variant="titleSmall" style={{ fontWeight: '700' }}>
+                            Accounting Suite
+                        </Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                            Trial balance, GST summary and journal entries.
+                        </Text>
+                    </View>
+                    <AppButton mode="contained-tonal" onPress={() => router.push('/accounting' as never)}>
+                        Open
+                    </AppButton>
+                </View>
+            </AppCard>
+
+            <AppCard>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
                         <Text variant="labelMedium" style={{ color: theme.colors.outline }}>{REPORTS_TEXT.metrics.topProducts}</Text>
                         {summary.topItems.length === 0 ? (
@@ -214,6 +267,14 @@ export const ReportsScreen = () => {
                     </View>
                     <AppButton mode="outlined" onPress={() => { void handleShareSummary(); }} compact icon="file-pdf-box">
                         {COMMON_TEXT.actions.share}
+                    </AppButton>
+                </View>
+                <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                    <AppButton mode="contained-tonal" compact icon="code-json" onPress={() => { void handleExportJson(); }}>
+                        Export JSON
+                    </AppButton>
+                    <AppButton mode="contained-tonal" compact icon="microsoft-excel" onPress={() => { void handleExportExcel(); }}>
+                        Export Excel
                     </AppButton>
                 </View>
             </AppCard>
