@@ -1,0 +1,163 @@
+name: Android Release Build
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: android-release-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Expo Doctor
+        run: pnpm run doctor
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Web Export Smoke Test
+        run: pnpm run build:web
+
+      - name: Prebuild
+        run: pnpm exec expo prebuild --platform android --no-install
+
+      - name: Cache Gradle Wrapper
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Cache Gradle Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-caches-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-caches-
+
+      - name: Prepare Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+
+      - name: Configure release keystore (optional)
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' && env.ANDROID_KEYSTORE_PASSWORD != '' && env.ANDROID_KEY_ALIAS != '' && env.ANDROID_KEY_PASSWORD != '' }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          echo "BILLTAP_UPLOAD_STORE_FILE=release.keystore" >> $GITHUB_ENV
+          echo "BILLTAP_UPLOAD_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> $GITHUB_ENV
+          echo "BILLTAP_UPLOAD_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> $GITHUB_ENV
+          echo "BILLTAP_UPLOAD_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> $GITHUB_ENV
+
+      - name: Ensure debug keystore
+        run: |
+          if [ ! -f android/app/debug.keystore ]; then
+            keytool -genkeypair -v \
+              -storetype PKCS12 \
+              -keystore android/app/debug.keystore \
+              -alias androiddebugkey \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+          fi
+
+      - name: Export signing fingerprints
+        run: |
+          set -euo pipefail
+          mkdir -p build-metadata
+
+          DEBUG_SHA1=$(keytool -list -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey | awk -F': ' '/SHA1:/{print $2; exit}')
+          DEBUG_SHA256=$(keytool -list -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{print $2; exit}')
+
+          {
+            echo "debug_sha1=$DEBUG_SHA1"
+            echo "debug_sha256=$DEBUG_SHA256"
+          } > build-metadata/signing-fingerprints.txt
+
+          if [ -f android/app/release.keystore ] && [ -n "${BILLTAP_UPLOAD_STORE_PASSWORD:-}" ] && [ -n "${BILLTAP_UPLOAD_KEY_ALIAS:-}" ]; then
+            RELEASE_SHA1=$(keytool -list -v -keystore android/app/release.keystore -storepass "$BILLTAP_UPLOAD_STORE_PASSWORD" -alias "$BILLTAP_UPLOAD_KEY_ALIAS" | awk -F': ' '/SHA1:/{print $2; exit}')
+            RELEASE_SHA256=$(keytool -list -v -keystore android/app/release.keystore -storepass "$BILLTAP_UPLOAD_STORE_PASSWORD" -alias "$BILLTAP_UPLOAD_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')
+            {
+              echo "release_sha1=$RELEASE_SHA1"
+              echo "release_sha256=$RELEASE_SHA256"
+            } >> build-metadata/signing-fingerprints.txt
+          else
+            {
+              echo "release_sha1=not_available"
+              echo "release_sha256=not_available"
+            } >> build-metadata/signing-fingerprints.txt
+          fi
+
+          {
+            echo "### Android Signing Fingerprints"
+            echo ""
+            cat build-metadata/signing-fingerprints.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build Android Release
+        run: |
+          cd android
+          ./gradlew --no-daemon --no-parallel --stacktrace -Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8' assembleRelease
+
+      - name: Upload Artifact (Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-dev
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Artifact (Signing Fingerprints)
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-signing-fingerprints
+          path: build-metadata/signing-fingerprints.txt
+          if-no-files-found: error
+          retention-days: 14
