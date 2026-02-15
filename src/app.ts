@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
+import { Pool } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
 import * as schema from './db/schema';
 import type { AppEnv } from './middleware/auth';
 import type { DrizzleClient } from './db/client';
@@ -23,14 +23,22 @@ const apiRoutes = new Hono<AppEnv>();
 
 let cachedDatabaseUrl: string | null = null;
 let cachedDb: DrizzleClient | null = null;
+let cachedPool: Pool | null = null;
 
 const getDbClient = (databaseUrl: string): DrizzleClient => {
     if (cachedDb && cachedDatabaseUrl === databaseUrl) {
         return cachedDb;
     }
 
-    const sql = neon(databaseUrl);
-    cachedDb = drizzle(sql, { schema }) as unknown as DrizzleClient;
+    // Close previous pool if it exists and URL changed (rare in serverless but good practice)
+    if (cachedPool && cachedDatabaseUrl !== databaseUrl) {
+        // In serverless, we might not want to await this or it might cause overhead, but it's cleaner.
+        // cachedPool.end(); 
+    }
+
+    const pool = new Pool({ connectionString: databaseUrl });
+    cachedPool = pool;
+    cachedDb = drizzle(pool, { schema }) as unknown as DrizzleClient;
     cachedDatabaseUrl = databaseUrl;
     return cachedDb;
 };
