@@ -31,39 +31,40 @@ import mediaRoute from './routes/media';
 const app = new Hono<AppEnv>();
 const apiRoutes = new Hono<AppEnv>();
 
-let cachedDatabaseUrl: string | null = null;
-let cachedDb: DrizzleClient | null = null;
-let cachedPool: Pool | null = null;
-
 const getDbClient = (databaseUrl: string): DrizzleClient => {
-    if (cachedDb && cachedDatabaseUrl === databaseUrl) {
-        return cachedDb;
-    }
-
-    // Close previous pool if it exists and URL changed (rare in serverless but good practice)
-    if (cachedPool && cachedDatabaseUrl !== databaseUrl) {
-        // In serverless, we might not want to await this or it might cause overhead, but it's cleaner.
-        // cachedPool.end(); 
-    }
-
     const pool = new Pool({ connectionString: databaseUrl });
-    cachedPool = pool;
-    cachedDb = drizzle(pool, { schema }) as unknown as DrizzleClient;
-    cachedDatabaseUrl = databaseUrl;
-    return cachedDb;
+    return drizzle(pool, { schema }) as unknown as DrizzleClient;
 };
 
 app.use('*', async (c, next) => {
-    const origins = c.env.CORS_ORIGINS?.split(',').map((entry) => entry.trim()).filter(Boolean) ?? [];
+    const configuredOrigins = c.env.CORS_ORIGINS?.split(',').map((entry) => entry.trim()).filter(Boolean) ?? [];
+    const localhostOriginPattern = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i;
+
     const corsMiddleware = cors({
-        origin: origins.length > 0 ? origins : '*',
+        origin: (origin) => {
+            if (!origin) return '*';
+            if (configuredOrigins.length === 0 || configuredOrigins.includes('*')) return '*';
+            if (configuredOrigins.includes(origin) || localhostOriginPattern.test(origin)) {
+                return origin;
+            }
+            return null;
+        },
         allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowHeaders: ['Content-Type', 'Authorization', 'X-Cron-Secret', 'X-Webhook-Secret'],
+        allowHeaders: [
+            'Content-Type',
+            'Authorization',
+            'X-Cron-Secret',
+            'X-Webhook-Secret',
+            'X-Organization-Id',
+            'x-organization-id',
+            'X-Requested-With',
+        ],
     });
     return corsMiddleware(c, next);
 });
 
 app.get('/', (c) => c.json({ ok: true, service: 'billtap-api', now: new Date().toISOString() }));
+app.get('/health', (c) => c.json({ ok: true, service: 'billtap-api', now: new Date().toISOString() }));
 
 // Database Middleware for all API business routes.
 apiRoutes.use(async (c, next) => {
@@ -81,6 +82,7 @@ apiRoutes.use(async (c, next) => {
 });
 
 // Mount routes on both `/` and `/api` so clients using either base path work.
+apiRoutes.get('/health', (c) => c.json({ ok: true, service: 'billtap-api', now: new Date().toISOString() }));
 apiRoutes.route('/auth', authRoute);
 apiRoutes.route('/items', itemsRoute);
 apiRoutes.route('/parties', partiesRoute);

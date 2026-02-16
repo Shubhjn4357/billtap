@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { users, phoneVerifications, staffInvites } from '../db/schema';
-import { withTransaction } from '../db/transaction';
 import { verifyGoogleIdentityToken } from '../auth/google';
 import { signSessionToken } from '../auth/tokens';
 import { toUserProfile } from '../auth/userProfile';
@@ -107,17 +106,6 @@ authRoute.post('/phone/send', async (c) => {
         const now = new Date();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-        // Invalidate any previous active OTPs for this phone so only the latest code remains valid.
-        await db
-            .update(phoneVerifications)
-            .set({ consumedAt: now })
-            .where(
-                and(
-                    eq(phoneVerifications.phoneNumber, phoneNumber),
-                    isNull(phoneVerifications.consumedAt)
-                )
-            );
-
         await db.insert(phoneVerifications).values({
             id: verificationId,
             phoneNumber,
@@ -150,142 +138,113 @@ authRoute.post('/phone/verify', async (c) => {
             return c.json({ ok: false, message: 'Invalid code' }, 400);
         }
 
-        const user = await withTransaction(db, async (tx) => {
-            const rows = await tx.select().from(phoneVerifications).where(eq(phoneVerifications.id, payload.verificationId)).limit(1);
-            const verification = rows[0];
+        const rows = await db.select().from(phoneVerifications).where(eq(phoneVerifications.id, payload.verificationId)).limit(1);
+        const verification = rows[0];
+        if (!verification) {
+            return c.json({ ok: false, message: 'Not found' }, 404);
+        }
+        if (verification.consumedAt) {
+            return c.json({ ok: false, message: 'Already used' }, 400);
+        }
+        if (verification.expiresAt < new Date()) {
+            return c.json({ ok: false, message: 'Expired' }, 400);
+        }
+        if ((verification.attempts ?? 0) >= 5) {
+            return c.json({ ok: false, message: 'Too many attempts. Request a new code.' }, 400);
+        }
 
-            if (!verification) {
-                throw new Error('Not found');
-            }
-            if (verification.consumedAt) {
-                throw new Error('Already used');
-            }
-            if (verification.expiresAt < new Date()) {
-                throw new Error('Expired');
-            }
-            if ((verification.attempts ?? 0) >= 5) {
-                throw new Error('Too many attempts. Request a new code.');
-            }
-
-            if ((verification.code ?? '').trim() !== normalizedCode) {
-                const nextAttempts = (verification.attempts ?? 0) + 1;
-
-                if (nextAttempts >= 5) {
-                    await tx
-                        .update(phoneVerifications)
-                        .set({
-                            attempts: sql`${phoneVerifications.attempts} + 1`,
-                            consumedAt: new Date(),
-                        })
-                        .where(eq(phoneVerifications.id, verification.id));
-                    throw new Error('Too many attempts. Request a new code.');
-                }
-
-                await tx
-                    .update(phoneVerifications)
-                    .set({ attempts: sql`${phoneVerifications.attempts} + 1` })
-                    .where(eq(phoneVerifications.id, verification.id));
-                throw new Error('Invalid code.');
-            }
-
-            const normalizedPhone = normalizePhoneNumber(verification.phoneNumber);
-            // Default UID for phone user
-            const phoneUid = `phone_${normalizedPhone.replace(/\D/g, '')}`;
-
-            // 1. Check if user already exists with this phone number (could be Google user who added phone)
-            let user = await tx.select().from(users).where(eq(users.phoneNumber, normalizedPhone)).limit(1).then((rows: UserRow[]) => rows[0]);
-
-            // 2. Check if user exists by the generated phone UID
-            if (!user) {
-                user = await tx.select().from(users).where(eq(users.uid, phoneUid)).limit(1).then((rows: UserRow[]) => rows[0]);
-            }
-
-            let staffInvite: { ownerId: string; id: string } | null = null;
-            if (!user) {
-                // Check for pending staff invite
-                try {
-                    const invite = await tx
-                        .select()
-                        .from(staffInvites)
-                        .where(
-                            and(
-                                eq(staffInvites.phoneNumber, normalizedPhone),
-                                eq(staffInvites.status, 'pending'),
-                                gt(staffInvites.expiresAt, new Date())
-                            )
-                        )
-                        .limit(1);
-                    staffInvite = invite[0];
-                } catch (error: unknown) {
-                    const code = extractErrorCode(error);
-                    const message = extractErrorMessage(error, '');
-                    const isMissingStaffInvites = code === '42P01' || /staff_invites/i.test(message);
-                    if (!isMissingStaffInvites) {
-                        throw error;
-                    }
-                }
-                let role = 'owner';
-                let ownerId = null;
-
-                const totalUsers = await tx.select({ count: sql<number>`count(*)` }).from(users);
-                const isFirstUser = Number(totalUsers[0]?.count ?? 0) === 0;
-
-                if (isFirstUser) {
-                    role = 'admin';
-                } else if (staffInvite) {
-                    role = 'staff';
-                    ownerId = staffInvite.ownerId;
-                }
-
-                user = await upsertUser(phoneUid, {
-                    phoneNumber: normalizedPhone,
-                    displayName: normalizedPhone,
-                    role,
-                    ownerId,
-                }, tx);
-
-                if (staffInvite) {
-                    try {
-                        await tx.update(staffInvites).set({ status: 'accepted' }).where(eq(staffInvites.id, staffInvite.id));
-                    } catch (error: unknown) {
-                        // Ignore if table missing
-                    }
-                }
-            } else {
-                // User exists! Ensure phone is set (though query implies it might be)
-                if (!user.phoneNumber) {
-                    await tx.update(users).set({ phoneNumber: normalizedPhone, updatedAt: new Date() }).where(eq(users.uid, user.uid));
-                }
-            }
-
-            if (staffInvite) {
-                try {
-                    await tx.update(staffInvites).set({ status: 'accepted' }).where(eq(staffInvites.id, staffInvite.id));
-                } catch (error: unknown) {
-                    const code = extractErrorCode(error);
-                    const message = extractErrorMessage(error, '');
-                    const isMissingStaffInvites = code === '42P01' || /staff_invites/i.test(message);
-                    if (!isMissingStaffInvites) {
-                        throw error;
-                    }
-                }
-            }
-
-            const consumed = await tx
+        if ((verification.code ?? '').trim() !== normalizedCode) {
+            const nextAttempts = (verification.attempts ?? 0) + 1;
+            await db
                 .update(phoneVerifications)
                 .set({
-                    consumedAt: new Date(),
-                    attempts: sql`${phoneVerifications.attempts} + 1`,
+                    attempts: nextAttempts,
+                    consumedAt: nextAttempts >= 5 ? new Date() : verification.consumedAt,
                 })
-                .where(and(eq(phoneVerifications.id, verification.id), isNull(phoneVerifications.consumedAt)))
-                .returning({ id: phoneVerifications.id });
+                .where(eq(phoneVerifications.id, verification.id));
+            return c.json({
+                ok: false,
+                message: nextAttempts >= 5 ? 'Too many attempts. Request a new code.' : 'Invalid code.',
+            }, 400);
+        }
 
-            if (consumed.length === 0) {
-                throw new Error('Already used');
+        const normalizedPhone = normalizePhoneNumber(verification.phoneNumber);
+        const phoneUid = `phone_${normalizedPhone.replace(/\D/g, '')}`;
+
+        let user = await db.select().from(users).where(eq(users.phoneNumber, normalizedPhone)).limit(1).then((entries: UserRow[]) => entries[0]);
+        if (!user) {
+            user = await db.select().from(users).where(eq(users.uid, phoneUid)).limit(1).then((entries: UserRow[]) => entries[0]);
+        }
+
+        let staffInvite: { ownerId: string; id: string } | null = null;
+        if (!user) {
+            try {
+                const invite = await db
+                    .select()
+                    .from(staffInvites)
+                    .where(
+                        and(
+                            eq(staffInvites.phoneNumber, normalizedPhone),
+                            eq(staffInvites.status, 'pending'),
+                            gt(staffInvites.expiresAt, new Date())
+                        )
+                    )
+                    .limit(1);
+                staffInvite = invite[0];
+            } catch (error: unknown) {
+                const code = extractErrorCode(error);
+                const message = extractErrorMessage(error, '');
+                const isMissingStaffInvites = code === '42P01' || /staff_invites/i.test(message);
+                if (!isMissingStaffInvites) throw error;
             }
 
-            return user;
-        });
+            let role: UserRow['role'] = 'owner';
+            let ownerId: string | null = null;
+            const totalUsers = await db.select({ count: sql<number>`count(*)` }).from(users);
+            const isFirstUser = Number(totalUsers[0]?.count ?? 0) === 0;
+            if (isFirstUser) {
+                role = 'admin';
+            } else if (staffInvite) {
+                role = 'staff';
+                ownerId = staffInvite.ownerId;
+            }
+
+            user = await upsertUser(phoneUid, {
+                phoneNumber: normalizedPhone,
+                displayName: normalizedPhone,
+                role,
+                ownerId,
+            }, db);
+        } else if (!user.phoneNumber) {
+            await db.update(users).set({ phoneNumber: normalizedPhone, updatedAt: new Date() }).where(eq(users.uid, user.uid));
+        }
+
+        if (staffInvite) {
+            try {
+                await db.update(staffInvites).set({ status: 'accepted' }).where(eq(staffInvites.id, staffInvite.id));
+            } catch (error: unknown) {
+                const code = extractErrorCode(error);
+                const message = extractErrorMessage(error, '');
+                const isMissingStaffInvites = code === '42P01' || /staff_invites/i.test(message);
+                if (!isMissingStaffInvites) throw error;
+            }
+        }
+
+        const consumed = await db
+            .update(phoneVerifications)
+            .set({
+                consumedAt: new Date(),
+                attempts: (verification.attempts ?? 0) + 1,
+            })
+            .where(and(eq(phoneVerifications.id, verification.id), isNull(phoneVerifications.consumedAt)))
+            .returning({ id: phoneVerifications.id });
+        if (consumed.length === 0) {
+            return c.json({ ok: false, message: 'Already used' }, 400);
+        }
+
+        if (!user) {
+            return c.json({ ok: false, message: 'Unable to create user session.' }, 500);
+        }
 
         const token = signSessionToken({ uid: user.uid, role: user.role }, c.env.API_JWT_SECRET);
         return c.json({ ok: true, token, user: toUserProfile(user) });

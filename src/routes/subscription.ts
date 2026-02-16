@@ -5,12 +5,57 @@ import { and, asc, desc, eq, lte, or, sql } from 'drizzle-orm';
 import { plans, offers, paymentIntents, analyticsEvents, users } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { requireAuth, requireAdmin, optionalAuth, type AppEnv } from '../middleware/auth';
+import { DEFAULT_PLANS } from '../constants/defaultPlans';
 
 const subscriptionRoute = new Hono<AppEnv>();
+let defaultPlansSeeded = false;
 
 const parseBoolean = (value: string | undefined, fallback = false) => {
     if (value === undefined) return fallback;
     return value.toLowerCase() === 'true';
+};
+
+const asFallbackPlanRows = () => {
+    const now = new Date();
+    return DEFAULT_PLANS.map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        description: entry.description,
+        monthlyPrice: entry.monthlyPrice,
+        currency: entry.currency,
+        isActive: entry.isActive,
+        displayOrder: entry.displayOrder,
+        features: entry.features,
+        createdAt: now,
+        updatedAt: now,
+    }));
+};
+
+const ensureDefaultPlans = async (db: AppEnv['Variables']['db']) => {
+    if (defaultPlansSeeded) return;
+
+    const now = new Date();
+    for (const entry of DEFAULT_PLANS) {
+        await db.insert(plans).values({
+            ...entry,
+            createdAt: now,
+            updatedAt: now,
+        }).onConflictDoUpdate({
+            target: plans.id,
+            set: {
+                name: entry.name,
+                description: entry.description,
+                monthlyPrice: entry.monthlyPrice,
+                currency: entry.currency,
+                isActive: entry.isActive,
+                displayOrder: entry.displayOrder,
+                features: entry.features,
+                updatedAt: now,
+            },
+        });
+    }
+
+    defaultPlansSeeded = true;
 };
 
 // GET /plans - List Plans
@@ -23,13 +68,21 @@ subscriptionRoute.get('/plans', optionalAuth, async (c) => {
         return c.json({ ok: false, message: 'Admin access required.' }, 403);
     }
 
-    const data = await db
-        .select()
-        .from(plans)
-        .where(includeInactive ? sql`true` : eq(plans.isActive, true))
-        .orderBy(asc(plans.displayOrder));
+    try {
+        await ensureDefaultPlans(db);
 
-    return c.json({ ok: true, plans: data });
+        const data = await db
+            .select()
+            .from(plans)
+            .where(includeInactive ? sql`true` : eq(plans.isActive, true))
+            .orderBy(asc(plans.displayOrder));
+
+        return c.json({ ok: true, plans: data });
+    } catch (error) {
+        console.error('Failed to load plans from database. Falling back to static defaults.', error);
+        const fallback = includeInactive ? asFallbackPlanRows() : asFallbackPlanRows().filter((entry) => entry.isActive);
+        return c.json({ ok: true, plans: fallback });
+    }
 });
 
 // GET /offers/active - List Active Offers
@@ -38,29 +91,34 @@ subscriptionRoute.get('/offers/active', optionalAuth, async (c) => {
     const db = c.get('db');
     const now = new Date();
 
-    const data = await db
-        .select()
-        .from(offers)
-        .where(
-            and(
-                eq(offers.isActive, true),
-                sql`(${offers.startsAt} is null or ${offers.startsAt} <= ${now})`,
-                sql`(${offers.endsAt} is null or ${offers.endsAt} >= ${now})`
+    try {
+        const data = await db
+            .select()
+            .from(offers)
+            .where(
+                and(
+                    eq(offers.isActive, true),
+                    sql`(${offers.startsAt} is null or ${offers.startsAt} <= ${now})`,
+                    sql`(${offers.endsAt} is null or ${offers.endsAt} >= ${now})`
+                )
             )
-        )
-        .orderBy(desc(offers.priority));
+            .orderBy(desc(offers.priority));
 
-    // Filter audience logic...
-    const filtered = data.filter((entry) => {
-        const audience = entry.audience;
-        const subStatus = authUser?.subscriptionStatus || 'inactive';
-        if (audience === 'all') return true;
-        if (audience === 'active_subscribers') return subStatus === 'active';
-        if (audience === 'inactive_subscribers') return subStatus !== 'active';
-        return false;
-    });
+        // Filter audience logic...
+        const filtered = data.filter((entry) => {
+            const audience = entry.audience;
+            const subStatus = authUser?.subscriptionStatus || 'inactive';
+            if (audience === 'all') return true;
+            if (audience === 'active_subscribers') return subStatus === 'active';
+            if (audience === 'inactive_subscribers') return subStatus !== 'active';
+            return false;
+        });
 
-    return c.json({ ok: true, offers: filtered });
+        return c.json({ ok: true, offers: filtered });
+    } catch (error) {
+        console.error('Failed to load offers from database. Returning empty list.', error);
+        return c.json({ ok: true, offers: [] });
+    }
 });
 
 // POST /checkout - Create Checkout Session
