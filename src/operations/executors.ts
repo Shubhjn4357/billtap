@@ -27,6 +27,7 @@ export interface JournalEntryInput {
 }
 
 export interface StockAdjustmentInput {
+    organizationId?: string;
     itemId: string;
     type: 'IN' | 'OUT';
     quantity: number;
@@ -106,10 +107,15 @@ export const applyStockAdjustmentInTx = async (
         throw new Error('Quantity must be greater than 0.');
     }
 
+    const itemScope = [eq(items.id, payload.itemId), eq(items.userId, userId)];
+    if (payload.organizationId) {
+        itemScope.push(eq(items.organizationId, payload.organizationId));
+    }
+
     const itemRows = await tx
         .select()
         .from(items)
-        .where(and(eq(items.id, payload.itemId), eq(items.userId, userId)))
+        .where(and(...itemScope))
         .limit(1);
 
     const item = itemRows[0];
@@ -127,6 +133,9 @@ export const applyStockAdjustmentInTx = async (
     }
 
     const updateConditions = [eq(items.id, payload.itemId), eq(items.userId, userId)];
+    if (payload.organizationId) {
+        updateConditions.push(eq(items.organizationId, payload.organizationId));
+    }
     if (payload.type === 'OUT') {
         updateConditions.push(gte(items.stock, payload.quantity));
     }

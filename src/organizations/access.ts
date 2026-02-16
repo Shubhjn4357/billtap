@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type { DrizzleClient } from '../db/client';
+import { DEFAULT_PLAN_LIMITS } from '../constants/defaultPlans';
 import {
     organizationMembers,
     organizations,
@@ -13,9 +14,14 @@ import {
 
 export type StaffPermissionKey =
     | 'can_create_bill'
+    | 'can_create_sale'
+    | 'can_create_purchase'
     | 'can_back_date'
     | 'can_delete_bill'
     | 'can_view_cost_price'
+    | 'can_view_dashboard'
+    | 'can_view_reports'
+    | 'can_manage_parties'
     | 'can_access_settings'
     | 'can_manage_staff'
     | 'can_manage_subscription'
@@ -39,19 +45,27 @@ export interface OrganizationContext {
 
 type FeatureGate = 'bills_per_month' | 'stores' | 'staff' | 'premium_template';
 
+export type SubscriptionTier = 'free' | 'pro' | 'enterprise';
+
 type LimitSet = {
     billsPerMonth: number;
     stores: number;
     staff: number;
     premiumTemplates: boolean;
+    maxUploadMb: number;
 };
 
 const DEFAULT_ROLE_PERMISSIONS: Record<MembershipRole, PermissionMap> = {
     owner: {
         can_create_bill: true,
+        can_create_sale: true,
+        can_create_purchase: true,
         can_back_date: true,
         can_delete_bill: true,
         can_view_cost_price: true,
+        can_view_dashboard: true,
+        can_view_reports: true,
+        can_manage_parties: true,
         can_access_settings: true,
         can_manage_staff: true,
         can_manage_subscription: true,
@@ -63,9 +77,14 @@ const DEFAULT_ROLE_PERMISSIONS: Record<MembershipRole, PermissionMap> = {
     },
     manager: {
         can_create_bill: true,
+        can_create_sale: true,
+        can_create_purchase: true,
         can_back_date: true,
         can_delete_bill: false,
         can_view_cost_price: true,
+        can_view_dashboard: true,
+        can_view_reports: true,
+        can_manage_parties: true,
         can_access_settings: false,
         can_manage_staff: false,
         can_manage_subscription: false,
@@ -77,9 +96,14 @@ const DEFAULT_ROLE_PERMISSIONS: Record<MembershipRole, PermissionMap> = {
     },
     salesman: {
         can_create_bill: true,
+        can_create_sale: true,
+        can_create_purchase: false,
         can_back_date: false,
         can_delete_bill: false,
         can_view_cost_price: false,
+        can_view_dashboard: true,
+        can_view_reports: false,
+        can_manage_parties: false,
         can_access_settings: false,
         can_manage_staff: false,
         can_manage_subscription: false,
@@ -117,18 +141,9 @@ const DEFAULT_ORGANIZATION_SETTINGS: Record<string, unknown> = {
         whatsappEnabled: false,
     },
     subscriptionLimits: {
-        free: {
-            billsPerMonth: 50,
-            stores: 1,
-            staff: 1,
-            premiumTemplates: false,
-        },
-        pro: {
-            billsPerMonth: 1000000,
-            stores: 5,
-            staff: 5,
-            premiumTemplates: true,
-        },
+        free: { ...DEFAULT_PLAN_LIMITS.free },
+        pro: { ...DEFAULT_PLAN_LIMITS.pro },
+        enterprise: { ...DEFAULT_PLAN_LIMITS.enterprise },
     },
 };
 
@@ -377,36 +392,76 @@ export const resolveOrganizationContext = async (
     throw new Error('No organization membership found for this account.');
 };
 
-const toLimitSet = (settings: Record<string, unknown>, subscriptionStatus: string | null | undefined): LimitSet => {
+const parseNumberLimit = (value: unknown, fallback: number) => {
+    const next = Number(value);
+    if (!Number.isFinite(next) || next < 0) return fallback;
+    return Math.floor(next);
+};
+
+const parseBooleanLimit = (value: unknown, fallback: boolean) => {
+    if (typeof value === 'boolean') return value;
+    return fallback;
+};
+
+const parseTierFromPlan = (
+    subscriptionPlanId?: string | null,
+    subscriptionPlanName?: string | null
+): SubscriptionTier | null => {
+    const text = `${subscriptionPlanId ?? ''} ${subscriptionPlanName ?? ''}`.trim().toLowerCase();
+    if (!text) return null;
+    if (text.includes('enterprise')) return 'enterprise';
+    if (text.includes('pro')) return 'pro';
+    if (text.includes('free') || text.includes('basic') || text.includes('starter')) return 'free';
+    return null;
+};
+
+export const resolveSubscriptionTier = (
+    subscriptionStatus?: string | null,
+    subscriptionPlanId?: string | null,
+    subscriptionPlanName?: string | null
+): SubscriptionTier => {
+    if (subscriptionStatus !== 'active') return 'free';
+    return parseTierFromPlan(subscriptionPlanId, subscriptionPlanName) ?? 'pro';
+};
+
+export const resolveLimitSet = (
+    settings: Record<string, unknown>,
+    subscriptionStatus?: string | null,
+    subscriptionPlanId?: string | null,
+    subscriptionPlanName?: string | null
+): LimitSet => {
     const subscriptionLimits = (settings.subscriptionLimits ?? {}) as Record<string, unknown>;
-    const freeLimits = (subscriptionLimits.free ?? {}) as Record<string, unknown>;
-    const proLimits = (subscriptionLimits.pro ?? {}) as Record<string, unknown>;
 
-    const parseNumberLimit = (value: unknown, fallback: number) => {
-        const next = Number(value);
-        if (!Number.isFinite(next) || next < 0) return fallback;
-        return Math.floor(next);
+    const readTier = (tier: SubscriptionTier): LimitSet => {
+        const configured = (subscriptionLimits[tier] ?? {}) as Record<string, unknown>;
+        const fallback = DEFAULT_PLAN_LIMITS[tier];
+        return {
+            billsPerMonth: parseNumberLimit(configured.billsPerMonth, fallback.billsPerMonth),
+            stores: parseNumberLimit(configured.stores, fallback.stores),
+            staff: parseNumberLimit(configured.staff, fallback.staff),
+            premiumTemplates: parseBooleanLimit(configured.premiumTemplates, fallback.premiumTemplates),
+            maxUploadMb: parseNumberLimit(configured.maxUploadMb, fallback.maxUploadMb),
+        };
     };
 
-    const parseBooleanLimit = (value: unknown, fallback: boolean) => {
-        if (typeof value === 'boolean') return value;
-        return fallback;
+    const tiers: Record<SubscriptionTier, LimitSet> = {
+        free: readTier('free'),
+        pro: readTier('pro'),
+        enterprise: readTier('enterprise'),
     };
 
-    const free: LimitSet = {
-        billsPerMonth: parseNumberLimit(freeLimits.billsPerMonth, 50),
-        stores: parseNumberLimit(freeLimits.stores, 1),
-        staff: parseNumberLimit(freeLimits.staff, 1),
-        premiumTemplates: parseBooleanLimit(freeLimits.premiumTemplates, false),
-    };
-    const pro: LimitSet = {
-        billsPerMonth: parseNumberLimit(proLimits.billsPerMonth, 1000000),
-        stores: parseNumberLimit(proLimits.stores, 5),
-        staff: parseNumberLimit(proLimits.staff, 5),
-        premiumTemplates: parseBooleanLimit(proLimits.premiumTemplates, true),
-    };
+    const tier = resolveSubscriptionTier(subscriptionStatus, subscriptionPlanId, subscriptionPlanName);
+    return tiers[tier];
+};
 
-    return subscriptionStatus === 'active' ? pro : free;
+export const resolveMaxUploadBytesForPlan = (
+    settings: Record<string, unknown>,
+    subscriptionStatus?: string | null,
+    subscriptionPlanId?: string | null,
+    subscriptionPlanName?: string | null
+): number => {
+    const limits = resolveLimitSet(settings, subscriptionStatus, subscriptionPlanId, subscriptionPlanName);
+    return Math.max(1, Math.floor(limits.maxUploadMb * 1024 * 1024));
 };
 
 export const evaluateFeatureGate = async (
@@ -424,7 +479,12 @@ export const evaluateFeatureGate = async (
         return { allowed: false, used: 0, limit: 0, message: 'Owner account not found.' };
     }
 
-    const limits = toLimitSet(context.settings, owner.subscriptionStatus);
+    const limits = resolveLimitSet(
+        context.settings,
+        owner.subscriptionStatus,
+        owner.subscriptionPlanId,
+        owner.subscriptionPlanName
+    );
     const now = new Date();
 
     if (feature === 'premium_template') {

@@ -13,6 +13,7 @@ import {
     transactions,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import { withOrganizationContext } from '../middleware/permissions';
 import {
     createApprovalRequest,
     ensurePeriodUnlockedForDate,
@@ -290,15 +291,16 @@ accountingRoute.get('/trial-balance', requireAuth, async (c) => {
     });
 });
 
-accountingRoute.get('/gst/summary', requireAuth, async (c) => {
+accountingRoute.get('/gst/summary', requireAuth, withOrganizationContext, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const organizationId = c.get('organizationId');
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const start = dateParam.parse(c.req.query('start'));
     const end = dateParam.parse(c.req.query('end'));
     const db = c.get('db');
 
-    const conditions = [eq(transactions.userId, effectiveUserId)];
+    const conditions = [eq(transactions.userId, effectiveUserId), eq(transactions.organizationId, organizationId)];
     if (start) conditions.push(gte(transactions.billDate, start));
     if (end) conditions.push(lte(transactions.billDate, end));
 
@@ -310,7 +312,7 @@ accountingRoute.get('/gst/summary', requireAuth, async (c) => {
     const itemRows = await db
         .select({ id: items.id, hsn: items.hsn })
         .from(items)
-        .where(eq(items.userId, effectiveUserId));
+        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
     const hsnByItem = new Map(itemRows.map((item) => [item.id, item.hsn ?? 'UNSPECIFIED']));
 
     const byHsn = new Map<string, { taxableValue: number; gstAmount: number; qty: number }>();
@@ -569,9 +571,10 @@ accountingRoute.get('/balance-sheet', requireAuth, async (c) => {
     });
 });
 
-accountingRoute.get('/inventory/valuation', requireAuth, async (c) => {
+accountingRoute.get('/inventory/valuation', requireAuth, withOrganizationContext, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const organizationId = c.get('organizationId');
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const db = c.get('db');
     const itemRows = await db
@@ -587,7 +590,7 @@ accountingRoute.get('/inventory/valuation', requireAuth, async (c) => {
             isActive: items.isActive,
         })
         .from(items)
-        .where(eq(items.userId, effectiveUserId));
+        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
 
     const rows = itemRows
         .filter((item) => item.isActive !== false && Number(item.stock) > 0)
@@ -621,9 +624,10 @@ accountingRoute.get('/inventory/valuation', requireAuth, async (c) => {
     });
 });
 
-accountingRoute.get('/inventory/reorder-suggestions', requireAuth, async (c) => {
+accountingRoute.get('/inventory/reorder-suggestions', requireAuth, withOrganizationContext, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const organizationId = c.get('organizationId');
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const db = c.get('db');
     const itemRows = await db
@@ -638,7 +642,7 @@ accountingRoute.get('/inventory/reorder-suggestions', requireAuth, async (c) => 
             isActive: items.isActive,
         })
         .from(items)
-        .where(eq(items.userId, effectiveUserId));
+        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
 
     const suggestions = itemRows
         .filter((item) => item.isActive !== false)
@@ -672,9 +676,10 @@ accountingRoute.get('/inventory/reorder-suggestions', requireAuth, async (c) => 
     });
 });
 
-accountingRoute.get('/inventory/stock-aging', requireAuth, async (c) => {
+accountingRoute.get('/inventory/stock-aging', requireAuth, withOrganizationContext, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const organizationId = c.get('organizationId');
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const db = c.get('db');
     const now = new Date();
@@ -692,16 +697,23 @@ accountingRoute.get('/inventory/stock-aging', requireAuth, async (c) => {
             createdAt: items.createdAt,
         })
         .from(items)
-        .where(eq(items.userId, effectiveUserId));
+        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
 
-    const movementRows = await db
-        .select({
-            itemId: inventoryMovements.itemId,
-            createdAt: inventoryMovements.createdAt,
-        })
-        .from(inventoryMovements)
-        .where(eq(inventoryMovements.userId, effectiveUserId))
-        .orderBy(asc(inventoryMovements.createdAt));
+    const itemIds = itemRows.map((item) => item.id);
+
+    const movementRows = itemIds.length === 0
+        ? []
+        : await db
+            .select({
+                itemId: inventoryMovements.itemId,
+                createdAt: inventoryMovements.createdAt,
+            })
+            .from(inventoryMovements)
+            .where(and(
+                eq(inventoryMovements.userId, effectiveUserId),
+                inArray(inventoryMovements.itemId, itemIds)
+            ))
+            .orderBy(asc(inventoryMovements.createdAt));
 
     const lastMovementByItemId = new Map<string, Date>();
     for (const movement of movementRows) {
@@ -761,13 +773,25 @@ accountingRoute.get('/inventory/stock-aging', requireAuth, async (c) => {
     });
 });
 
-accountingRoute.get('/stock-ledger/:itemId', requireAuth, async (c) => {
+accountingRoute.get('/stock-ledger/:itemId', requireAuth, withOrganizationContext, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const organizationId = c.get('organizationId');
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const itemId = c.req.param('itemId');
     const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
     const db = c.get('db');
+
+    const [item] = await db
+        .select({ id: items.id })
+        .from(items)
+        .where(and(
+            eq(items.id, itemId),
+            eq(items.userId, effectiveUserId),
+            eq(items.organizationId, organizationId),
+        ))
+        .limit(1);
+    if (!item) return c.json({ ok: false, message: 'Item not found.' }, 404);
 
     const rows = await db
         .select()

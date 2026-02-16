@@ -6,7 +6,14 @@ import { ensureSystemAccounts, type SystemAccountCode } from '../accounting/syst
 import { withTransaction } from '../db/transaction';
 import { inventoryMovements, items, journalEntries, journalLines, partyLedgerEntries, transactions } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { hasPermission, requireFeatureGate, requirePermission, withOrganizationContext } from '../middleware/permissions';
+import {
+    hasFeatureEnabled,
+    hasPermission,
+    requireFeatureGate,
+    requireFeatureToggle,
+    requirePermission,
+    withOrganizationContext,
+} from '../middleware/permissions';
 import {
     ensurePeriodUnlockedForDate,
     getBusinessControls,
@@ -263,6 +270,21 @@ transactionsRoute.post(
         }
 
         const payload = transactionSchema.parse(body);
+        if (!hasFeatureEnabled(c, 'billing')) {
+            return c.json({ ok: false, message: 'Billing module is disabled for your role.' }, 403);
+        }
+        if (payload.type === 'SALE' && !hasFeatureEnabled(c, 'billingSale')) {
+            return c.json({ ok: false, message: 'Sales billing is disabled by owner settings.' }, 403);
+        }
+        if (payload.type === 'PURCHASE' && !hasFeatureEnabled(c, 'billingPurchase')) {
+            return c.json({ ok: false, message: 'Purchase entry is disabled by owner settings.' }, 403);
+        }
+        if (payload.type === 'SALE' && !hasPermission(c, 'can_create_sale')) {
+            return c.json({ ok: false, message: 'Sale billing is disabled for your role.' }, 403);
+        }
+        if (payload.type === 'PURCHASE' && !hasPermission(c, 'can_create_purchase')) {
+            return c.json({ ok: false, message: 'Purchase entry is disabled for your role.' }, 403);
+        }
         const id = payload.id ?? nanoid();
         const now = new Date();
         const billDate = payload.billDate ?? now;
@@ -321,6 +343,7 @@ transactionsRoute.post(
                     .from(items)
                     .where(and(
                         eq(items.userId, effectiveUserId),
+                        eq(items.organizationId, organizationId),
                         inArray(items.id, itemIds),
                         ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
                     ));
@@ -335,6 +358,7 @@ transactionsRoute.post(
                     const saleConditions = [
                         eq(items.id, itemId),
                         eq(items.userId, effectiveUserId),
+                        eq(items.organizationId, organizationId),
                         ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
                     ];
                     if (!allowNegativeStock) {
@@ -357,6 +381,7 @@ transactionsRoute.post(
                             .where(and(
                                 eq(items.id, itemId),
                                 eq(items.userId, effectiveUserId),
+                                eq(items.organizationId, organizationId),
                                 ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
                             ))
                             .limit(1);
@@ -388,6 +413,7 @@ transactionsRoute.post(
                         .where(and(
                             eq(items.id, itemId),
                             eq(items.userId, effectiveUserId),
+                            eq(items.organizationId, organizationId),
                             ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
                         ))
                         .returning({ id: items.id, stock: items.stock });
@@ -691,7 +717,8 @@ transactionsRoute.get(
     '/',
     requireAuth,
     withOrganizationContext,
-    requirePermission('can_create_bill'),
+    requirePermission('can_view_reports'),
+    requireFeatureToggle('reports', 'Reports access is disabled by owner settings.'),
     async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
     const organizationId = c.get('organizationId');

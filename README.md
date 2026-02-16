@@ -109,9 +109,15 @@ Configured in `wrangler.json` to run daily at `02:00 UTC` and invoke `/api/jobs/
 - `pnpm dev` - local Worker dev
 - `pnpm deploy` - deploy Worker
 - `pnpm typecheck` - TypeScript checks
+- `pnpm smoke:e2e` - login/store-switch/estimate/reminder smoke flow
 - `pnpm db:push` - push schema
 - `pnpm db:generate` - generate migrations
 - `pnpm db:studio` - open studio
+
+## Media Uploads (R2)
+
+Media APIs use signed upload tokens with Cloudflare R2 bucket binding `MEDIA_BUCKET`.
+Optional envs: `MEDIA_UPLOAD_SECRET`, `MEDIA_PUBLIC_BASE_URL`, `MEDIA_MAX_UPLOAD_MB`.
 
 ## Security
 

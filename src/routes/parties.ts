@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { and, asc, eq, or, sql } from 'drizzle-orm';
 import { parties } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { requirePermission, withOrganizationContext } from '../middleware/permissions';
+import { requireFeatureToggle, requirePermission, withOrganizationContext } from '../middleware/permissions';
 
 const partiesRoute = new Hono<AppEnv>();
 
@@ -20,7 +20,7 @@ const partySchema = z.object({
 });
 
 // GET /parties - List parties
-partiesRoute.get('/', requireAuth, withOrganizationContext, requirePermission('can_create_bill'), async (c) => {
+partiesRoute.get('/', requireAuth, withOrganizationContext, requirePermission('can_manage_parties'), requireFeatureToggle('parties'), async (c) => {
     const effectiveUserId = c.get('organizationOwnerId');
     const organizationId = c.get('organizationId');
     const db = c.get('db');
@@ -59,7 +59,7 @@ partiesRoute.get('/', requireAuth, withOrganizationContext, requirePermission('c
 });
 
 // POST /parties - Create party
-partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('can_create_bill'), async (c) => {
+partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('can_manage_parties'), requireFeatureToggle('parties'), async (c) => {
     try {
         const effectiveUserId = c.get('organizationOwnerId');
         const organizationId = c.get('organizationId');
@@ -95,7 +95,7 @@ partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('
 });
 
 // PATCH /parties/:id - Update party
-partiesRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission('can_create_bill'), async (c) => {
+partiesRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission('can_manage_parties'), requireFeatureToggle('parties'), async (c) => {
     try {
         const effectiveUserId = c.get('organizationOwnerId');
         const organizationId = c.get('organizationId');

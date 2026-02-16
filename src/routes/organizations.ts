@@ -438,9 +438,14 @@ organizationsRoute.post(
                 ...(payload.role === 'manager'
                     ? {
                         can_create_bill: true,
+                        can_create_sale: true,
+                        can_create_purchase: true,
                         can_back_date: true,
                         can_delete_bill: false,
                         can_view_cost_price: true,
+                        can_view_dashboard: true,
+                        can_view_reports: true,
+                        can_manage_parties: true,
                         can_access_settings: false,
                         can_manage_staff: false,
                         can_manage_subscription: false,
@@ -452,9 +457,14 @@ organizationsRoute.post(
                     }
                     : {
                         can_create_bill: true,
+                        can_create_sale: true,
+                        can_create_purchase: false,
                         can_back_date: false,
                         can_delete_bill: false,
                         can_view_cost_price: false,
+                        can_view_dashboard: true,
+                        can_view_reports: false,
+                        can_manage_parties: false,
                         can_access_settings: false,
                         can_manage_staff: false,
                         can_manage_subscription: false,

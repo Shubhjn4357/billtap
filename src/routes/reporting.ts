@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import { transactions, items } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import { requireFeatureToggle, requirePermission, withOrganizationContext } from '../middleware/permissions';
 
 const reportingRoute = new Hono<AppEnv>();
 
@@ -12,16 +13,17 @@ const toCsvSafe = (value: string | number | null | undefined) => {
 };
 
 // GET /reporting/pnl - Profit and Loss
-reportingRoute.get('/pnl', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
+reportingRoute.get('/pnl', requireAuth, withOrganizationContext, requirePermission('can_view_reports'), requireFeatureToggle('reports'), async (c) => {
+    const effectiveUserId = c.get('organizationOwnerId');
+    const organizationId = c.get('organizationId');
     const authUser = c.get('authUser');
     const db = c.get('db');
     const start = c.req.query('start');
     const end = c.req.query('end');
 
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
-    const conditions = [eq(transactions.userId, effectiveUserId)];
+    const conditions = [eq(transactions.userId, effectiveUserId), eq(transactions.organizationId, organizationId)];
     if (start) conditions.push(gte(transactions.billDate, new Date(start)));
     if (end) conditions.push(lte(transactions.billDate, new Date(end)));
 
@@ -52,11 +54,12 @@ reportingRoute.get('/pnl', requireAuth, async (c) => {
 });
 
 // GET /reporting/stock-valuation - Value of current stock
-reportingRoute.get('/stock-valuation', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
+reportingRoute.get('/stock-valuation', requireAuth, withOrganizationContext, requirePermission('can_view_reports'), requireFeatureToggle('reports'), async (c) => {
+    const effectiveUserId = c.get('organizationOwnerId');
+    const organizationId = c.get('organizationId');
     const db = c.get('db');
 
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
     const stockResult = await db
         .select({
@@ -65,7 +68,7 @@ reportingRoute.get('/stock-valuation', requireAuth, async (c) => {
             count: sql<number>`count(*)`
         })
         .from(items)
-        .where(and(eq(items.userId, effectiveUserId), sql`${items.isActive} = true`));
+        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId), sql`${items.isActive} = true`));
 
     return c.json({
         ok: true,
@@ -76,17 +79,18 @@ reportingRoute.get('/stock-valuation', requireAuth, async (c) => {
 });
 
 // GET /reporting/balance-sheet - Basic snapshot
-reportingRoute.get('/balance-sheet', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
+reportingRoute.get('/balance-sheet', requireAuth, withOrganizationContext, requirePermission('can_view_reports'), requireFeatureToggle('reports'), async (c) => {
+    const effectiveUserId = c.get('organizationOwnerId');
+    const organizationId = c.get('organizationId');
     const db = c.get('db');
 
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
     // 1. Stock Value (Asset)
     const stockResult = await db
         .select({ totalValue: sql<number>`sum(${items.stock} * ${items.purchasePrice})` })
         .from(items)
-        .where(and(eq(items.userId, effectiveUserId), sql`${items.isActive} = true`));
+        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId), sql`${items.isActive} = true`));
 
     const stockValue = Number(stockResult[0]?.totalValue || 0);
 
@@ -94,23 +98,39 @@ reportingRoute.get('/balance-sheet', requireAuth, async (c) => {
     const salesResult = await db
         .select({ total: sql<number>`sum(${transactions.totalAmount})` })
         .from(transactions)
-        .where(and(eq(transactions.userId, effectiveUserId), eq(transactions.type, 'SALE')));
+        .where(and(
+            eq(transactions.userId, effectiveUserId),
+            eq(transactions.organizationId, organizationId),
+            eq(transactions.type, 'SALE')
+        ));
 
     const purchasesResult = await db
         .select({ total: sql<number>`sum(${transactions.totalAmount})` })
         .from(transactions)
-        .where(and(eq(transactions.userId, effectiveUserId), eq(transactions.type, 'PURCHASE')));
+        .where(and(
+            eq(transactions.userId, effectiveUserId),
+            eq(transactions.organizationId, organizationId),
+            eq(transactions.type, 'PURCHASE')
+        ));
 
     // 3. Cash approximation from paid flows (excludes unpaid credit movements).
     const salesPaidResult = await db
         .select({ total: sql<number>`sum(${transactions.paidAmount})` })
         .from(transactions)
-        .where(and(eq(transactions.userId, effectiveUserId), eq(transactions.type, 'SALE')));
+        .where(and(
+            eq(transactions.userId, effectiveUserId),
+            eq(transactions.organizationId, organizationId),
+            eq(transactions.type, 'SALE')
+        ));
 
     const purchasesPaidResult = await db
         .select({ total: sql<number>`sum(${transactions.paidAmount})` })
         .from(transactions)
-        .where(and(eq(transactions.userId, effectiveUserId), eq(transactions.type, 'PURCHASE')));
+        .where(and(
+            eq(transactions.userId, effectiveUserId),
+            eq(transactions.organizationId, organizationId),
+            eq(transactions.type, 'PURCHASE')
+        ));
 
     const cashEquivalent = Number(salesPaidResult[0]?.total || 0) - Number(purchasesPaidResult[0]?.total || 0);
 
@@ -126,6 +146,7 @@ reportingRoute.get('/balance-sheet', requireAuth, async (c) => {
         .where(
             and(
                 eq(transactions.userId, effectiveUserId),
+                eq(transactions.organizationId, organizationId),
                 sql`${transactions.paymentStatus} in ('PENDING', 'PARTIAL')`
             )
         );
@@ -169,17 +190,18 @@ reportingRoute.get('/balance-sheet', requireAuth, async (c) => {
 });
 
 // GET /reporting/export/transactions - JSON/CSV export for analysis
-reportingRoute.get('/export/transactions', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
+reportingRoute.get('/export/transactions', requireAuth, withOrganizationContext, requirePermission('can_view_reports'), requireFeatureToggle('reports'), async (c) => {
+    const effectiveUserId = c.get('organizationOwnerId');
+    const organizationId = c.get('organizationId');
     const db = c.get('db');
     const type = c.req.query('type') as 'SALE' | 'PURCHASE' | undefined;
     const start = c.req.query('start');
     const end = c.req.query('end');
     const format = (c.req.query('format') || 'json').toLowerCase();
 
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
-    const conditions = [eq(transactions.userId, effectiveUserId)];
+    const conditions = [eq(transactions.userId, effectiveUserId), eq(transactions.organizationId, organizationId)];
     if (type) conditions.push(eq(transactions.type, type));
     if (start) conditions.push(gte(transactions.billDate, new Date(start)));
     if (end) conditions.push(lte(transactions.billDate, new Date(end)));

@@ -78,6 +78,7 @@ export const offers = pgTable('offers', {
 export const items = pgTable('items', {
     id: text('id').primaryKey(),
     userId: text('userId').notNull(), // Owner's ID
+    organizationId: text('organizationId').notNull(),
     branchId: text('branchId'),
     name: text('name').notNull(),
     nameLowercase: text('nameLowercase').notNull(),
@@ -112,6 +113,8 @@ export const items = pgTable('items', {
     createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 }, (table) => ({
     userIndex: index('items_user_idx').on(table.userId),
+    organizationIndex: index('items_org_idx').on(table.organizationId),
+    organizationBranchIndex: index('items_org_branch_idx').on(table.organizationId, table.branchId),
     branchIndex: index('items_branch_idx').on(table.branchId),
     nameIndex: index('items_name_idx').on(table.nameLowercase),
     barcodeIndex: index('items_barcode_idx').on(table.barcode),

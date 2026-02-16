@@ -1,7 +1,7 @@
 {
   "name": "billtap-backend",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
@@ -9,6 +9,7 @@
     "deploy": "wrangler deploy --minify",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "smoke:e2e": "tsx ./scripts/smoke-e2e.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"

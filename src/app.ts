@@ -26,6 +26,7 @@ import organizationsRoute from './routes/organizations';
 import financeOpsRoute from './routes/financeOps';
 import institutionRoute from './routes/institution';
 import communicationsRoute from './routes/communications';
+import mediaRoute from './routes/media';
 
 const app = new Hono<AppEnv>();
 const apiRoutes = new Hono<AppEnv>();
@@ -101,6 +102,7 @@ apiRoutes.route('/organizations', organizationsRoute);
 apiRoutes.route('/finance', financeOpsRoute);
 apiRoutes.route('/institution', institutionRoute);
 apiRoutes.route('/communications', communicationsRoute);
+apiRoutes.route('/media', mediaRoute);
 app.route('/api', apiRoutes);
 app.route('/', apiRoutes);
 

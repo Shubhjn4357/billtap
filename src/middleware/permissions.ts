@@ -53,6 +53,49 @@ export const hasPermission = (c: AppContext, permission: StaffPermissionKey): bo
     return Boolean(permissions?.[permission]);
 };
 
+const readStaffFeatureAccess = (c: AppContext): Record<string, boolean> => {
+    const settings = c.get('organizationSettings');
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+        return {};
+    }
+    const staffFeatureAccess = (settings as Record<string, unknown>).staffFeatureAccess;
+    if (!staffFeatureAccess || typeof staffFeatureAccess !== 'object' || Array.isArray(staffFeatureAccess)) {
+        return {};
+    }
+
+    const output: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(staffFeatureAccess as Record<string, unknown>)) {
+        if (typeof value === 'boolean') {
+            output[key] = value;
+        }
+    }
+    return output;
+};
+
+export const hasFeatureEnabled = (c: AppContext, featureKey: string): boolean => {
+    const authUser = c.get('authUser');
+    const organizationRole = c.get('organizationRole');
+    if (authUser?.role === 'admin') return true;
+    if (organizationRole === 'owner') return true;
+
+    const featureFlags = readStaffFeatureAccess(c);
+    const value = featureFlags[featureKey];
+    if (typeof value === 'boolean') return value;
+    return true;
+};
+
+export const requireFeatureToggle = (featureKey: string, message?: string) => {
+    return async (c: AppContext, next: Next) => {
+        if (!hasFeatureEnabled(c, featureKey)) {
+            return c.json({
+                ok: false,
+                message: message ?? `Access denied. Feature disabled by owner: ${featureKey}`,
+            }, 403);
+        }
+        await next();
+    };
+};
+
 export const requirePermission = (permission: StaffPermissionKey) => {
     return async (c: AppContext, next: Next) => {
         if (!hasPermission(c, permission)) {

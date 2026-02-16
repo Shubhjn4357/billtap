@@ -48,6 +48,7 @@ const journalApprovalPayloadSchema = z.object({
 });
 
 const stockApprovalPayloadSchema = z.object({
+    organizationId: z.string().optional(),
     itemId: z.string().min(1),
     type: z.enum(['IN', 'OUT']),
     quantity: z.number().positive(),
@@ -211,7 +212,13 @@ operationsRoute.post('/approvals/:id/approve', requireAuth, async (c) => {
                 if (controls.periodLockEnabled) {
                     await ensurePeriodUnlockedForDate(tx, effectiveUserId, new Date());
                 }
-                const stockResult = await applyStockAdjustmentInTx(tx, effectiveUserId, requestPayload, new Date());
+                const stockResult = await applyStockAdjustmentInTx(tx, effectiveUserId, {
+                    organizationId: requestPayload.organizationId,
+                    itemId: requestPayload.itemId,
+                    type: requestPayload.type,
+                    quantity: requestPayload.quantity,
+                    reason: requestPayload.reason,
+                }, new Date());
                 approvalResult = stockResult;
                 await writeAuditLog(tx, {
                     userId: effectiveUserId,

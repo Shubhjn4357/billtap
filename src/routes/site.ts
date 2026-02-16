@@ -151,6 +151,10 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     { group: 'Organizations', method: 'GET', path: '/api/organizations/signatures/current?organizationId=', access: 'Bearer Token', description: 'List uploaded/drawn signatures.' },
     { group: 'Organizations', method: 'POST', path: '/api/organizations/signatures/current?organizationId=', access: 'Bearer Token', description: 'Upload or draw signature.' },
     { group: 'Organizations', method: 'POST', path: '/api/organizations/signatures/current/{id}/default?organizationId=', access: 'Bearer Token', description: 'Set default bill signature.' },
+    { group: 'Media', method: 'POST', path: '/api/media/upload-url?organizationId=', access: 'Bearer Token', description: 'Create short-lived upload URL for media assets.' },
+    { group: 'Media', method: 'PUT', path: '/api/media/upload?token=', access: 'Public', description: 'Upload binary data using signed upload token.' },
+    { group: 'Media', method: 'GET', path: '/api/media/assets?organizationId=&assetType=&entityType=&entityId=&limit=', access: 'Bearer Token', description: 'List media assets for current organization.' },
+    { group: 'Media', method: 'GET', path: '/api/media/files/{key}', access: 'Public', description: 'Serve media object from R2 (when public base URL is not configured).' },
 
     { group: 'Finance Ops', method: 'GET', path: '/api/finance/party-ledger/{partyId}?organizationId=&limit=', access: 'Bearer Token', description: 'Party ledger with running balance.' },
     { group: 'Finance Ops', method: 'GET', path: '/api/finance/party-balances?organizationId=', access: 'Bearer Token', description: 'Party balances with red/green semantics.' },

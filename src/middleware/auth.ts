@@ -8,6 +8,10 @@ import type { UserRow } from '../db/schema';
 // Define App Variables for Hono Context
 export type Bindings = {
     DATABASE_URL: string;
+    MEDIA_BUCKET?: R2Bucket;
+    MEDIA_UPLOAD_SECRET?: string;
+    MEDIA_PUBLIC_BASE_URL?: string;
+    MEDIA_MAX_UPLOAD_MB?: string;
     CRON_SECRET?: string;
     PAYMENT_PROVIDER?: string;
     PAYMENT_WEBHOOK_SECRET?: string;

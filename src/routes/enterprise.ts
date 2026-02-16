@@ -19,6 +19,7 @@ import {
     hasModulePermission,
     writeAuditLog,
 } from '../operations/controls';
+import { withOrganizationContext } from '../middleware/permissions';
 
 const enterpriseRoute = new Hono<AppEnv>();
 
@@ -356,11 +357,12 @@ enterpriseRoute.get('/branch-transfers', requireAuth, async (c) => {
     return c.json({ ok: true, transfers: rows });
 });
 
-enterpriseRoute.post('/branch-transfers', requireAuth, async (c) => {
+enterpriseRoute.post('/branch-transfers', requireAuth, withOrganizationContext, async (c) => {
     try {
         const effectiveUserId = c.get('effectiveUserId');
+        const organizationId = c.get('organizationId');
         const authUser = c.get('authUser');
-        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        if (!effectiveUserId || !organizationId || !authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
         if (!hasModulePermission(authUser, 'inventory', 'create')) {
             return c.json({ ok: false, message: 'Branch transfer create access denied.' }, 403);
         }
@@ -396,6 +398,7 @@ enterpriseRoute.post('/branch-transfers', requireAuth, async (c) => {
                 .where(and(
                     eq(items.id, payload.itemId),
                     eq(items.userId, effectiveUserId),
+                    eq(items.organizationId, organizationId),
                     eq(items.branchId, payload.fromBranchId)
                 ))
                 .limit(1);
@@ -413,7 +416,11 @@ enterpriseRoute.post('/branch-transfers', requireAuth, async (c) => {
                     stock: Number(sourceItem.stock ?? 0) - payload.quantity,
                     updatedAt: now,
                 })
-                .where(and(eq(items.id, sourceItem.id), eq(items.userId, effectiveUserId)))
+                .where(and(
+                    eq(items.id, sourceItem.id),
+                    eq(items.userId, effectiveUserId),
+                    eq(items.organizationId, organizationId)
+                ))
                 .returning({ id: items.id, stock: items.stock });
             const sourceAfter = Number(updatedSourceRows[0]?.stock ?? 0);
 
@@ -422,6 +429,7 @@ enterpriseRoute.post('/branch-transfers', requireAuth, async (c) => {
                 .from(items)
                 .where(and(
                     eq(items.userId, effectiveUserId),
+                    eq(items.organizationId, organizationId),
                     eq(items.branchId, payload.toBranchId),
                     eq(items.nameLowercase, sourceItem.nameLowercase)
                 ))
@@ -433,6 +441,7 @@ enterpriseRoute.post('/branch-transfers', requireAuth, async (c) => {
                 await tx.insert(items).values({
                     id: destinationItemId,
                     userId: effectiveUserId,
+                    organizationId,
                     branchId: payload.toBranchId,
                     name: sourceItem.name,
                     nameLowercase: sourceItem.nameLowercase,
@@ -460,7 +469,11 @@ enterpriseRoute.post('/branch-transfers', requireAuth, async (c) => {
                 const createdDestinationRows = await tx
                     .select()
                     .from(items)
-                    .where(and(eq(items.id, destinationItemId), eq(items.userId, effectiveUserId)))
+                    .where(and(
+                        eq(items.id, destinationItemId),
+                        eq(items.userId, effectiveUserId),
+                        eq(items.organizationId, organizationId)
+                    ))
                     .limit(1);
                 destinationItem = createdDestinationRows[0];
             }
@@ -475,7 +488,11 @@ enterpriseRoute.post('/branch-transfers', requireAuth, async (c) => {
                     stock: Number(destinationItem.stock ?? 0) + payload.quantity,
                     updatedAt: now,
                 })
-                .where(and(eq(items.id, destinationItem.id), eq(items.userId, effectiveUserId)))
+                .where(and(
+                    eq(items.id, destinationItem.id),
+                    eq(items.userId, effectiveUserId),
+                    eq(items.organizationId, organizationId)
+                ))
                 .returning({ id: items.id, stock: items.stock });
             const destinationAfter = Number(updatedDestinationRows[0]?.stock ?? 0);
 
@@ -561,10 +578,11 @@ enterpriseRoute.post('/branch-transfers', requireAuth, async (c) => {
     }
 });
 
-enterpriseRoute.get('/reports/consolidated', requireAuth, async (c) => {
+enterpriseRoute.get('/reports/consolidated', requireAuth, withOrganizationContext, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
+    const organizationId = c.get('organizationId');
     const authUser = c.get('authUser');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     if (!hasModulePermission(authUser, 'accounting', 'view')) {
         return c.json({ ok: false, message: 'Consolidated report access denied.' }, 403);
     }
@@ -579,7 +597,7 @@ enterpriseRoute.get('/reports/consolidated', requireAuth, async (c) => {
         .where(eq(branches.userId, effectiveUserId))
         .orderBy(asc(branches.name));
 
-    const transactionConditions = [eq(transactions.userId, effectiveUserId)];
+    const transactionConditions = [eq(transactions.userId, effectiveUserId), eq(transactions.organizationId, organizationId)];
     if (start) transactionConditions.push(gte(transactions.billDate, start));
     if (end) transactionConditions.push(lte(transactions.billDate, end));
 
@@ -601,7 +619,7 @@ enterpriseRoute.get('/reports/consolidated', requireAuth, async (c) => {
             isActive: items.isActive,
         })
         .from(items)
-        .where(eq(items.userId, effectiveUserId));
+        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
 
     const summaryMap = new Map<string, {
         branchId: string | null;
@@ -693,10 +711,11 @@ enterpriseRoute.get('/reports/consolidated', requireAuth, async (c) => {
     });
 });
 
-enterpriseRoute.get('/reports/branches/:id', requireAuth, async (c) => {
+enterpriseRoute.get('/reports/branches/:id', requireAuth, withOrganizationContext, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
+    const organizationId = c.get('organizationId');
     const authUser = c.get('authUser');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     if (!hasModulePermission(authUser, 'accounting', 'view')) {
         return c.json({ ok: false, message: 'Branch report access denied.' }, 403);
     }
@@ -715,6 +734,7 @@ enterpriseRoute.get('/reports/branches/:id', requireAuth, async (c) => {
 
     const transactionConditions = [
         eq(transactions.userId, effectiveUserId),
+        eq(transactions.organizationId, organizationId),
         eq(transactions.branchId, branchId),
     ];
     if (start) transactionConditions.push(gte(transactions.billDate, start));
@@ -729,7 +749,11 @@ enterpriseRoute.get('/reports/branches/:id', requireAuth, async (c) => {
     const itemRows = await db
         .select()
         .from(items)
-        .where(and(eq(items.userId, effectiveUserId), eq(items.branchId, branchId)));
+        .where(and(
+            eq(items.userId, effectiveUserId),
+            eq(items.organizationId, organizationId),
+            eq(items.branchId, branchId)
+        ));
 
     const totals = transactionRows.reduce((acc, row) => {
         const totalAmount = Number(row.totalAmount ?? 0);
