@@ -3,10 +3,12 @@ import { Alert, FlatList, RefreshControl, Share, StyleSheet, View } from 'react-
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, SegmentedButtons, Text, useTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StoredBill } from '../../api/billService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
 import { Config } from '../../constants/Config';
 import { COMMON_TEXT, REPORTS_TEXT } from '../../constants/staticText';
 import { useAuth } from '../../hooks/useAuth';
@@ -65,11 +67,13 @@ const buildTopItems = (bills: StoredBill[]) => {
 export const ReportsScreen = () => {
     const theme = useTheme();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
     const { bills, loading, error, fetchBills } = useBills();
     const [range, setRange] = useState<RangePreset>('7d');
     const [refreshing, setRefreshing] = useState(false);
+    const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 24);
 
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
 
@@ -314,7 +318,7 @@ export const ReportsScreen = () => {
                     refreshControl={
                         <RefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />
                     }
-                    contentContainerStyle={{ paddingBottom: 100 }}
+                    contentContainerStyle={{ paddingBottom: bottomSpacing }}
                     initialNumToRender={12}
                     maxToRenderPerBatch={12}
                     windowSize={7}

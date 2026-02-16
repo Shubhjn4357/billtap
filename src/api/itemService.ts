@@ -25,9 +25,19 @@ export const itemService = {
                     id: localId,
                     name: item.name,
                     price: item.price,
+                    purchasePrice: item.purchasePrice,
+                    mrp: item.mrp,
                     stock: item.stock,
+                    minimumStock: item.minimumStock,
+                    openingStock: item.openingStock,
+                    unit: item.unit,
+                    hsn: item.hsn,
+                    gstPercentage: item.gstPercentage,
                     category: item.category,
+                    subcategory: item.subcategory,
+                    location: item.location,
                     barcode: item.barcode,
+                    isActive: item.isActive,
                 });
 
                 if (!response.ok || !response.id) {
@@ -55,8 +65,17 @@ export const itemService = {
                 nameLowercase: normalized.nameLowercase,
                 price: normalized.price,
                 stock: normalized.stock,
+                purchasePrice: normalized.purchasePrice ?? null,
+                mrp: normalized.mrp ?? null,
+                minimumStock: normalized.minimumStock ?? null,
+                unit: normalized.unit ?? null,
+                hsn: normalized.hsn ?? null,
+                gstPercentage: normalized.gstPercentage ?? null,
                 category: normalized.category ?? null,
+                subcategory: normalized.subcategory ?? null,
+                location: normalized.location ?? null,
                 barcode: normalized.barcode ?? null,
+                isActive: normalized.isActive ?? true,
             },
         });
 
@@ -89,9 +108,18 @@ export const itemService = {
                 const response = await apiClient.patch<{ ok: boolean; message?: string }>(`/items/${id}`, {
                     name: merged.name,
                     price: merged.price,
+                    purchasePrice: merged.purchasePrice,
+                    mrp: merged.mrp,
                     stock: merged.stock,
+                    minimumStock: merged.minimumStock,
+                    unit: merged.unit,
+                    hsn: merged.hsn,
+                    gstPercentage: merged.gstPercentage,
                     category: merged.category,
+                    subcategory: merged.subcategory,
+                    location: merged.location,
                     barcode: merged.barcode,
+                    isActive: merged.isActive,
                 });
 
                 if (!response.ok) {
@@ -114,8 +142,17 @@ export const itemService = {
                 nameLowercase: merged.nameLowercase,
                 price: merged.price,
                 stock: merged.stock,
+                purchasePrice: merged.purchasePrice ?? null,
+                mrp: merged.mrp ?? null,
+                minimumStock: merged.minimumStock ?? null,
+                unit: merged.unit ?? null,
+                hsn: merged.hsn ?? null,
+                gstPercentage: merged.gstPercentage ?? null,
                 category: merged.category ?? null,
+                subcategory: merged.subcategory ?? null,
+                location: merged.location ?? null,
                 barcode: merged.barcode ?? null,
+                isActive: merged.isActive ?? true,
             },
         });
     },
@@ -208,7 +245,7 @@ export const itemService = {
         if (online) {
             try {
                 await offlineSyncService.flushQueue();
-                const response = await apiClient.get<{ ok: boolean; items?: Item[]; message?: string }>('/items');
+                const response = await apiClient.get<{ ok: boolean; items?: Item[]; message?: string }>('/items?limit=500');
                 if (!response.ok || !response.items) {
                     throw new Error(response.message || 'Failed to fetch items.');
                 }
@@ -256,7 +293,7 @@ export const itemService = {
             try {
                 await offlineSyncService.flushQueue();
                 const encoded = encodeURIComponent(queryText);
-                const response = await apiClient.get<{ ok: boolean; items?: Item[]; message?: string }>(`/items?q=${encoded}`);
+                const response = await apiClient.get<{ ok: boolean; items?: Item[]; message?: string }>(`/items?q=${encoded}&limit=500`);
 
                 if (!response.ok || !response.items) {
                     throw new Error(response.message || 'Failed to search items.');

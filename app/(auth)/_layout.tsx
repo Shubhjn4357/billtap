@@ -1,23 +1,16 @@
-import { Stack, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { Redirect, Stack } from 'expo-router';
 import { useUserStore } from '../../src/store';
 import { LoadingScreen } from '../../src/components/common/LoadingScreen';
 
 export default function AuthLayout() {
-    const { isAuthenticated, isLoading } = useUserStore();
-    const router = useRouter();
+    const { isAuthenticated, isLoading, hasHydrated: userHydrated } = useUserStore();
 
-    useEffect(() => {
-        if (isLoading) return;
-
-        // If user is authenticated, redirect to main app
-        if (isAuthenticated) {
-            router.replace('/(main)/(tabs)/home' as any);
-        }
-    }, [isAuthenticated, isLoading, router]); // Only react to auth changes, not loading state changes
-
-    if (isLoading) {
+    if (!userHydrated || isLoading) {
         return <LoadingScreen message="Checking authentication..." />;
+    }
+
+    if (isAuthenticated) {
+        return <Redirect href="/(main)/(tabs)/home" />;
     }
 
     return (

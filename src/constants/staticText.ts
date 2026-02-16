@@ -473,13 +473,15 @@ export const SITEMAP_TEXT = {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
     {
-        version: '1.1.0',
-        releasedOn: '2026-02-13',
+        version: '1.0.1',
+        releasedOn: '2026-02-16',
         highlights: [
+            'Added company switch and multi-store organization support in Business Suite.',
+            'Added staff permission controls, signature management, and institution reminder tooling.',
             'Added subscription management with test success/failure flows and live checkout scaffold.',
             'Added admin control panel for users, plans, offers, and funnel monitoring.',
             'Added marketing banners, analytics events, and automation jobs for lifecycle management.',
-            'Improved performance by tightening data fetch paths and reducing redundant state updates.',
+            'Improved API organization scoping and reduced redundant state updates.',
         ],
     },
     {

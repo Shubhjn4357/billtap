@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, ScrollView } from 'react-native';
-import { Text, Searchbar, Divider, useTheme, IconButton, SegmentedButtons, Switch, TextInput } from 'react-native-paper';
+import { Text, Searchbar, Divider, useTheme, IconButton, SegmentedButtons, Switch, TextInput, Chip } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -18,7 +18,11 @@ import { BILLING_TEXT, COMMON_TEXT } from '../../constants/staticText';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
 import { billService } from '../../api/billService';
 import { shareBillPDF } from '../../utils/pdfGenerator';
+import { getStockHealth, resolveLowStockThreshold } from '../../utils/stockStatus';
 import { useAppDialog } from '../../components/providers/DialogProvider';
+
+type StockFilter = 'available' | 'low' | 'out' | 'all';
+
 export const BillingScreen = () => {
     const { allItems, fetchItems } = useStock();
     const { user } = useAuth();
@@ -31,7 +35,6 @@ export const BillingScreen = () => {
 
     const {
         items: cart,
-        total,
         addItem,
         updateQuantity,
         removeItem,
@@ -54,6 +57,7 @@ export const BillingScreen = () => {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [barcodeInput, setBarcodeInput] = useState('');
+    const [stockFilter, setStockFilter] = useState<StockFilter>('available');
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -64,26 +68,88 @@ export const BillingScreen = () => {
         }
     }, [params.search]);
 
+    useEffect(() => {
+        setStockFilter(transactionType === 'SALE' ? 'available' : 'all');
+    }, [transactionType]);
+
     useFocusEffect(
         useCallback(() => {
             void fetchItems();
         }, [fetchItems])
     );
 
-    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const searchTerm = searchQuery.trim();
+    const normalizedQuery = searchTerm.toLowerCase();
 
-    const filteredItems = useMemo(() => {
-        if (!normalizedQuery) {
-            return allItems.slice(0, 5);
+    const inventorySummary = useMemo(() => {
+        const summary = {
+            available: 0,
+            low: 0,
+            out: 0,
+        };
+
+        for (const item of allItems) {
+            if (item.isActive === false) continue;
+            const health = getStockHealth(item);
+            if (health === 'out') {
+                summary.out += 1;
+                continue;
+            }
+
+            if (health === 'low') {
+                summary.low += 1;
+            }
+            summary.available += 1;
         }
 
-        return allItems
+        return summary;
+    }, [allItems]);
+
+    const filteredItems = useMemo(() => {
+        const base = allItems
+            .filter((item) => item.isActive !== false)
             .filter((item) =>
+                !normalizedQuery ||
                 item.nameLowercase.includes(normalizedQuery) ||
-                (item.barcode && item.barcode.includes(searchQuery.trim()))
-            )
-            .slice(0, 20);
-    }, [allItems, normalizedQuery, searchQuery]);
+                (item.barcode && item.barcode.includes(searchTerm))
+            );
+
+        const byStockFilter = base.filter((item) => {
+            if (stockFilter === 'all') return true;
+            if (stockFilter === 'available') return item.stock > 0;
+            if (stockFilter === 'low') return getStockHealth(item) === 'low';
+            return getStockHealth(item) === 'out';
+        });
+
+        const ranked = [...byStockFilter].sort((a, b) => {
+            if (transactionType === 'SALE') {
+                const rank = (health: ReturnType<typeof getStockHealth>) => {
+                    if (health === 'in') return 0;
+                    if (health === 'low') return 1;
+                    return 2;
+                };
+                const delta = rank(getStockHealth(a)) - rank(getStockHealth(b));
+                if (delta !== 0) return delta;
+            }
+
+            return a.nameLowercase.localeCompare(b.nameLowercase);
+        });
+
+        return ranked;
+    }, [allItems, normalizedQuery, searchTerm, stockFilter, transactionType]);
+
+    const cartSummary = useMemo(() => {
+        const subtotal = cart.reduce((sum, entry) => sum + (entry.price * entry.quantity), 0);
+        const taxTotal = isGstBill
+            ? cart.reduce((sum, entry) => {
+                const lineTotal = entry.price * entry.quantity;
+                return sum + ((lineTotal * Number(entry.tax ?? 0)) / 100);
+            }, 0)
+            : 0;
+        const grandTotal = subtotal + taxTotal;
+
+        return { subtotal, taxTotal, grandTotal };
+    }, [cart, isGstBill]);
 
     const stockById = useMemo(() => {
         const entries = allItems.map((item) => [item.id, item] as const);
@@ -152,17 +218,14 @@ export const BillingScreen = () => {
                 // total is re-calculated in backend/service usually, but let's be safe
             }));
 
-            // Re-calculate total
-            const adjustedTotal = itemsWithTaxAdjusted.reduce((sum, item) => {
-                const lineTotal = item.price * item.quantity; // Pre-tax subtotal
-                const taxAmount = (lineTotal * (item.tax || 0)) / 100;
-                return sum + lineTotal + taxAmount;
-            }, 0);
+            const adjustedTotal = cartSummary.grandTotal;
+            const billMode: 'GST' | 'ESTIMATE' = isGstBill ? 'GST' : 'ESTIMATE';
 
 
             const billData = {
                 userId: user.uid,
                 type: transactionType,
+                billMode,
                 partyId: partyId,
                 customerName: customerName.trim() || undefined,
                 customerPhone: customerPhone.trim() || undefined,
@@ -203,57 +266,68 @@ export const BillingScreen = () => {
         }
     };
 
-    const renderCartItem = ({ item }: { item: (typeof cart)[number] }) => (
-        <AppCard style={styles.cartItemCard}>
-            <View style={styles.cartItemRow}>
-                <View style={styles.cartItemInfo}>
-                    <Text variant="bodyLarge" style={styles.cartItemName}>
-                        {item.name}
-                    </Text>
-                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                        {formatCurrency(item.price, activeCurrency)} x {item.quantity} ={' '}
-                        {formatCurrency(item.price * item.quantity, activeCurrency)}
-                    </Text>
-                    {!isGstBill && (
-                        <Text variant="labelSmall" style={{ color: theme.colors.secondary }}>
-                            (Tax Exempt)
+    const renderCartItem = ({ item }: { item: (typeof cart)[number] }) => {
+        const stockItem = stockById.get(item.id);
+        const stockHealth = stockItem ? getStockHealth(stockItem) : null;
+        const lowStockThreshold = stockItem ? resolveLowStockThreshold(stockItem) : 0;
+
+        return (
+            <AppCard style={styles.cartItemCard}>
+                <View style={styles.cartItemRow}>
+                    <View style={styles.cartItemInfo}>
+                        <Text variant="bodyLarge" style={styles.cartItemName}>
+                            {item.name}
                         </Text>
-                    )}
+                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                            {formatCurrency(item.price, activeCurrency)} x {item.quantity} ={' '}
+                            {formatCurrency(item.price * item.quantity, activeCurrency)}
+                        </Text>
+                        {!isGstBill && (
+                            <Text variant="labelSmall" style={{ color: theme.colors.secondary }}>
+                                (Tax Exempt)
+                            </Text>
+                        )}
+                        {transactionType === 'SALE' && stockItem && stockHealth === 'low' && (
+                            <Text variant="labelSmall" style={{ color: theme.colors.error, marginTop: 4 }}>
+                                Low stock warning: {stockItem.stock} left (threshold {lowStockThreshold})
+                            </Text>
+                        )}
+                    </View>
+                    <View style={styles.qtyControls}>
+                        <IconButton
+                            icon="minus-circle-outline"
+                            size={24}
+                            onPress={() => updateQuantity(item.id, -1)}
+                            accessibilityLabel="Decrease quantity"
+                        />
+                        <Text variant="titleMedium" style={styles.qtyValue}>
+                            {item.quantity}
+                        </Text>
+                        <IconButton
+                            icon="plus-circle-outline"
+                            size={24}
+                            onPress={() => {
+                                const stockEntry = stockById.get(item.id);
+                                if (transactionType === 'SALE' && stockEntry && item.quantity >= stockEntry.stock) {
+                                    dialog.alert(BILLING_TEXT.outOfStockTitle, BILLING_TEXT.outOfStockBody(item.name, stockEntry.stock));
+                                    return;
+                                }
+                                updateQuantity(item.id, 1);
+                            }}
+                            accessibilityLabel="Increase quantity"
+                        />
+                        <IconButton
+                            icon="trash-can-outline"
+                            size={20}
+                            iconColor={theme.colors.error}
+                            onPress={() => removeItem(item.id)}
+                            accessibilityLabel="Remove item"
+                        />
+                    </View>
                 </View>
-                <View style={styles.qtyControls}>
-                    <IconButton
-                        icon="minus-circle-outline"
-                        size={24}
-                        onPress={() => updateQuantity(item.id, -1)}
-                        accessibilityLabel="Decrease quantity"
-                    />
-                    <Text variant="titleMedium" style={styles.qtyValue}>
-                        {item.quantity}
-                    </Text>
-                    <IconButton
-                        icon="plus-circle-outline"
-                        size={24}
-                        onPress={() => {
-                            const stockItem = stockById.get(item.id);
-                            if (transactionType === 'SALE' && stockItem && item.quantity >= stockItem.stock) {
-                                dialog.alert(BILLING_TEXT.outOfStockTitle, BILLING_TEXT.outOfStockBody(item.name, stockItem.stock));
-                                return;
-                            }
-                            updateQuantity(item.id, 1);
-                        }}
-                        accessibilityLabel="Increase quantity"
-                    />
-                    <IconButton
-                        icon="trash-can-outline"
-                        size={20}
-                        iconColor={theme.colors.error}
-                        onPress={() => removeItem(item.id)}
-                        accessibilityLabel="Remove item"
-                    />
-                </View>
-            </View>
-        </AppCard>
-    );
+            </AppCard>
+        );
+    };
 
     const onDateChange = (event: any, selectedDate?: Date) => {
         setShowDatePicker(false);
@@ -269,14 +343,20 @@ export const BillingScreen = () => {
                 contentContainerStyle={styles.contentContainer}
                 keyboardShouldPersistTaps="handled"
             >
-                <AppCard style={{ backgroundColor: theme.colors.primaryContainer, marginBottom: 16 }}>
-                    <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
-                        Create Bill
-                    </Text>
-                    <Text variant="bodyMedium" style={{ color: theme.colors.onPrimaryContainer }}>
-                        {transactionType === 'SALE' ? 'New Sale' : 'Stock Purchase'}
-                    </Text>
-                </AppCard>
+            <AppCard style={{ backgroundColor: theme.colors.primaryContainer, marginBottom: 16 }}>
+                <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
+                    Create Bill
+                </Text>
+                <Text variant="bodyMedium" style={{ color: theme.colors.onPrimaryContainer }}>
+                    {transactionType === 'SALE' ? 'New Sale' : 'Stock Purchase'}
+                </Text>
+                <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer, marginTop: 2 }}>
+                    {isGstBill ? 'Mode: GST Bill' : 'Mode: Estimate / Rough'}
+                </Text>
+                <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer, marginTop: 6 }}>
+                    Subtotal {formatCurrency(cartSummary.subtotal, activeCurrency)} | Tax {formatCurrency(cartSummary.taxTotal, activeCurrency)} | Total {formatCurrency(cartSummary.grandTotal, activeCurrency)}
+                </Text>
+            </AppCard>
 
 
                 {/* Transaction Type */}
@@ -286,6 +366,16 @@ export const BillingScreen = () => {
                     buttons={[
                         { value: 'SALE', label: 'Sale (Out)' },
                         { value: 'PURCHASE', label: 'Purchase (In)' },
+                    ]}
+                    style={{ marginBottom: 16 }}
+                />
+
+                <SegmentedButtons
+                    value={isGstBill ? 'GST' : 'ESTIMATE'}
+                    onValueChange={(value) => setIsGstBill(value === 'GST')}
+                    buttons={[
+                        { value: 'GST', label: 'GST Bill' },
+                        { value: 'ESTIMATE', label: 'Estimate / Rough' },
                     ]}
                     style={{ marginBottom: 16 }}
                 />
@@ -322,27 +412,96 @@ export const BillingScreen = () => {
                     />
                 </View>
 
-                {/* Search Results */}
-                {searchQuery.length > 0 && (
-                    <AppCard style={[styles.searchResultCard, { backgroundColor: theme.colors.elevation.level2, marginBottom: 16 }]}>
-                        {filteredItems.length === 0 ? (
-                            <Text style={{ padding: 16, textAlign: 'center', color: theme.colors.outline }}>No items found.</Text>
-                        ) : (
-                                filteredItems.map(item => (
-                                    <View key={item.id}>
-                                    <AppButton
-                                        mode="text"
-                                        onPress={() => handleAddItem(item)}
-                                        contentStyle={styles.searchItemButtonContent}
-                                    >
-                                            {item.name} | {formatCurrency(item.price, activeCurrency)} ({item.stock})
-                                    </AppButton>
-                                        <Divider />
+                <AppCard style={[styles.searchResultCard, { backgroundColor: theme.colors.elevation.level2, marginBottom: 16 }]}>
+                    <View style={styles.catalogHeaderRow}>
+                        <Text variant="titleSmall" style={styles.sectionTitle}>
+                            Item Catalog
+                        </Text>
+                        <Text variant="labelSmall" style={{ color: theme.colors.outline }}>
+                            {inventorySummary.available} in stock | {inventorySummary.low} low | {inventorySummary.out} out
+                        </Text>
+                    </View>
+                    <View style={styles.filterRow}>
+                        <Chip
+                            compact
+                            selected={stockFilter === 'available'}
+                            onPress={() => setStockFilter('available')}
+                            mode={stockFilter === 'available' ? 'flat' : 'outlined'}
+                        >
+                            Available ({inventorySummary.available})
+                        </Chip>
+                        <Chip
+                            compact
+                            selected={stockFilter === 'low'}
+                            onPress={() => setStockFilter('low')}
+                            mode={stockFilter === 'low' ? 'flat' : 'outlined'}
+                        >
+                            Low ({inventorySummary.low})
+                        </Chip>
+                        <Chip
+                            compact
+                            selected={stockFilter === 'out'}
+                            onPress={() => setStockFilter('out')}
+                            mode={stockFilter === 'out' ? 'flat' : 'outlined'}
+                        >
+                            Out ({inventorySummary.out})
+                        </Chip>
+                        <Chip
+                            compact
+                            selected={stockFilter === 'all'}
+                            onPress={() => setStockFilter('all')}
+                            mode={stockFilter === 'all' ? 'flat' : 'outlined'}
+                        >
+                            All ({inventorySummary.available + inventorySummary.out})
+                        </Chip>
+                    </View>
+
+                    {filteredItems.length === 0 ? (
+                        <Text style={{ paddingVertical: 12, textAlign: 'center', color: theme.colors.outline }}>
+                            No items match this filter.
+                        </Text>
+                    ) : (
+                        filteredItems.map((item, index) => {
+                            const stockHealth = getStockHealth(item);
+                            const lowStockThreshold = resolveLowStockThreshold(item);
+                            const cannotSell = transactionType === 'SALE' && item.stock <= 0;
+
+                            return (
+                                <View key={item.id}>
+                                    <View style={styles.searchItemRow}>
+                                        <View style={styles.searchItemInfo}>
+                                            <Text variant="titleSmall" style={styles.searchItemName}>
+                                                {item.name}
+                                            </Text>
+                                            <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                                {formatCurrency(item.price, activeCurrency)} | Stock: {item.stock}
+                                            </Text>
+                                            {stockHealth === 'low' && (
+                                                <Text variant="labelSmall" style={{ color: theme.colors.error, marginTop: 2 }}>
+                                                    Low stock warning (threshold {lowStockThreshold})
+                                                </Text>
+                                            )}
+                                            {stockHealth === 'out' && transactionType === 'SALE' && (
+                                                <Text variant="labelSmall" style={{ color: theme.colors.error, marginTop: 2 }}>
+                                                    Out of stock for sale
+                                                </Text>
+                                            )}
+                                        </View>
+                                        <AppButton
+                                            compact
+                                            mode="contained-tonal"
+                                            onPress={() => handleAddItem(item)}
+                                            disabled={cannotSell}
+                                        >
+                                            Add
+                                        </AppButton>
                                     </View>
-                                ))
-                        )}
-                    </AppCard>
-                )}
+                                    {index !== filteredItems.length - 1 && <Divider style={styles.itemDivider} />}
+                                </View>
+                            );
+                        })
+                    )}
+                </AppCard>
 
                 {/* Bill Details */}
                 <AppCard style={{ marginBottom: 16 }}>
@@ -382,6 +541,11 @@ export const BillingScreen = () => {
                         <Text variant="bodyMedium">Apply GST / Tax</Text>
                         <Switch value={isGstBill} onValueChange={setIsGstBill} />
                     </View>
+                    <Text variant="bodySmall" style={{ marginTop: 8, color: theme.colors.outline }}>
+                        {isGstBill
+                            ? 'GST mode includes tax in calculations and reports.'
+                            : 'Estimate mode excludes tax from this bill.'}
+                    </Text>
                 </AppCard>
 
                 {/* Customer Details */}
@@ -466,34 +630,39 @@ export const BillingScreen = () => {
                     </View>
                 )}
 
-                <View style={{ height: 100 }} />
-            </ScrollView>
-
-            {/* Sticky Checkout Footer */}
-            <AppCard
-                style={[styles.checkoutCard, { backgroundColor: theme.colors.primaryContainer, borderColor: theme.colors.primary }]}
-                contentStyle={styles.checkoutContent}
-            >
-                <View>
-                    <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>
-                        Total Amount
-                    </Text>
-                    <Text variant="headlineMedium" style={{ fontWeight: 'bold', color: theme.colors.onPrimaryContainer }}>
-                        {formatCurrency(total, activeCurrency)}
-                    </Text>
-                    {!isGstBill && <Text variant="labelSmall" style={{ color: theme.colors.onPrimaryContainer }}>Tax Excluded</Text>}
-                </View>
-                <AppButton
-                    mode="contained"
-                    onPress={handleCheckout}
-                    loading={checkoutLoading}
-                    disabled={cart.length === 0}
-                    icon="check"
-                    contentStyle={{ paddingHorizontal: 16 }}
+                <AppCard
+                    style={[
+                        styles.checkoutCard,
+                        {
+                            backgroundColor: theme.colors.primaryContainer,
+                            borderColor: theme.colors.primary,
+                        },
+                    ]}
+                    contentStyle={styles.checkoutContent}
                 >
-                    Checkout
-                </AppButton>
-            </AppCard>
+                    <View>
+                        <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>
+                            Total Amount
+                        </Text>
+                        <Text variant="headlineMedium" style={{ fontWeight: 'bold', color: theme.colors.onPrimaryContainer }}>
+                            {formatCurrency(cartSummary.grandTotal, activeCurrency)}
+                        </Text>
+                        <Text variant="labelSmall" style={{ color: theme.colors.onPrimaryContainer }}>
+                            {isGstBill ? `Includes tax ${formatCurrency(cartSummary.taxTotal, activeCurrency)}` : 'Tax excluded'}
+                        </Text>
+                    </View>
+                    <AppButton
+                        mode="contained"
+                        onPress={handleCheckout}
+                        loading={checkoutLoading}
+                        disabled={cart.length === 0}
+                        icon="check"
+                        contentStyle={{ paddingHorizontal: 16 }}
+                    >
+                        Checkout
+                    </AppButton>
+                </AppCard>
+            </ScrollView>
         </ScreenWrapper>
     );
 };
@@ -504,24 +673,41 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     contentContainer: {
-        paddingBottom: 20,
-    },
-    searchbar: {
-        marginBottom: 0,
+        paddingBottom: 24,
     },
     sectionTitle: {
         fontWeight: '700',
     },
-    customerInput: {
-        marginBottom: 8,
-    },
     searchResultCard: {
-        maxHeight: 300,
         overflow: 'hidden',
     },
-    searchItemButtonContent: {
-        justifyContent: 'flex-start',
-        paddingVertical: 4,
+    catalogHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10,
+        gap: 8,
+    },
+    filterRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 10,
+    },
+    searchItemRow: {
+        paddingVertical: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    searchItemInfo: {
+        flex: 1,
+        marginRight: 10,
+    },
+    searchItemName: {
+        fontWeight: '600',
+    },
+    itemDivider: {
+        marginBottom: 2,
     },
     cartHeader: {
         marginBottom: 8,
@@ -562,13 +748,9 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     checkoutCard: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        borderTopWidth: 1,
-        borderRadius: 0,
-        elevation: 8,
+        marginTop: 8,
+        borderWidth: 1,
+        elevation: 3,
     },
     checkoutContent: {
         flexDirection: 'row',

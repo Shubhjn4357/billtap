@@ -4,29 +4,34 @@ import { View, FlatList, RefreshControl, StyleSheet } from 'react-native';
 import { Chip, Text, FAB, Searchbar, useTheme } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStock } from '../../hooks/useStock';
 import { useAuth } from '../../hooks/useAuth';
 import { AppCard } from '../../components/common/AppCard';
 import { AppButton } from '../../components/common/AppButton';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { Skeleton } from '../../components/feedback/Skeleton';
+import { getCurvedTabOverlayOffset, getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
+import { getStockHealth, resolveLowStockThreshold } from '../../utils/stockStatus';
 import { useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
 import type { Item } from '../../types';
 import { StockAdjustmentDialog } from '../../components/stock/StockAdjustmentDialog';
 
 export const StockListScreen = () => {
-    const { items, loading, searchQuery, setSearchQuery, fetchItems } = useStock();
+    const { items, loading, searchQuery, setSearchQuery, fetchItems, adjustStock } = useStock();
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
     const theme = useTheme();
+    const insets = useSafeAreaInsets();
     const router = useRouter();
     const params = useLocalSearchParams<{ search?: string | string[] }>();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
     const [refreshing, setRefreshing] = useState(false);
     const [adjustmentItem, setAdjustmentItem] = useState<Item | null>(null);
-    const { adjustStock } = useStock();
+    const tabOverlayOffset = getCurvedTabOverlayOffset(insets.bottom);
+    const listBottomPadding = getTabAwareBottomSpacing(insets.bottom, 168);
 
     const handleAdjustSubmit = async (qty: number, type: 'IN' | 'OUT', reason: string) => {
         if (!adjustmentItem) return;
@@ -69,9 +74,10 @@ export const StockListScreen = () => {
         let stockValue = 0;
 
         for (const item of items) {
-            if (item.stock <= 0) {
+            const health = getStockHealth(item);
+            if (health === 'out') {
                 outOfStock += 1;
-            } else if (item.stock <= 5) {
+            } else if (health === 'low') {
                 lowStock += 1;
             }
             stockValue += item.stock * item.price;
@@ -80,17 +86,20 @@ export const StockListScreen = () => {
         return { lowStock, outOfStock, stockValue };
     }, [items]);
 
-    const getStockStatus = useCallback((stock: number) => {
-        if (stock <= 0) {
+    const getStockStatus = useCallback((item: Item) => {
+        const health = getStockHealth(item);
+        const lowStockThreshold = resolveLowStockThreshold(item);
+
+        if (health === 'out') {
             return {
                 label: 'Out of stock',
                 backgroundColor: theme.colors.errorContainer,
                 textColor: theme.colors.onErrorContainer,
             };
         }
-        if (stock <= 5) {
+        if (health === 'low') {
             return {
-                label: 'Low stock',
+                label: `Low stock (<= ${lowStockThreshold})`,
                 backgroundColor: theme.colors.secondaryContainer,
                 textColor: theme.colors.onSecondaryContainer,
             };
@@ -110,17 +119,18 @@ export const StockListScreen = () => {
     ]);
 
     const renderItem = useCallback(({ item }: { item: Item }) => {
-        const status = getStockStatus(item.stock);
-        const isLowStock = item.stock <= 5;
+        const status = getStockStatus(item);
+        const stockHealth = getStockHealth(item);
+        const needsAttention = stockHealth !== 'in';
 
         return (
             <AppCard
                 onPress={() => router.push(`/item/${item.id}`)}
-                style={{ backgroundColor: isLowStock && item.stock > 0 ? theme.colors.elevation.level2 : undefined }}
+                style={{ backgroundColor: needsAttention ? theme.colors.elevation.level2 : undefined }}
             >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1, marginRight: 10 }}>
-                        <Text variant="titleMedium" style={{ fontWeight: 'bold', color: isLowStock ? theme.colors.error : theme.colors.onSurface }}>
+                        <Text variant="titleMedium" style={{ fontWeight: 'bold', color: needsAttention ? theme.colors.error : theme.colors.onSurface }}>
                             {item.name}
                         </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
@@ -196,7 +206,7 @@ export const StockListScreen = () => {
                     maxToRenderPerBatch={12}
                     windowSize={7}
                     removeClippedSubviews
-                    contentContainerStyle={{ paddingBottom: 80 }}
+                    contentContainerStyle={{ paddingBottom: listBottomPadding }}
                     ListEmptyComponent={(
                         <AppCard style={styles.emptyCard}>
                             <Text style={{ textAlign: 'center', color: theme.colors.outline }}>
@@ -214,8 +224,7 @@ export const StockListScreen = () => {
                 icon="barcode-scan"
                 style={[
                     styles.fab,
-                    styles.scanFab,
-                    { backgroundColor: theme.colors.secondaryContainer }
+                    { backgroundColor: theme.colors.secondaryContainer, bottom: tabOverlayOffset + 78 }
                 ]}
                 color={theme.colors.onSecondaryContainer}
                 onPress={() => router.push({ pathname: '/scan', params: { target: 'stock' } })}
@@ -223,7 +232,7 @@ export const StockListScreen = () => {
 
             <FAB
                 icon="plus"
-                style={[styles.fab, { backgroundColor: theme.colors.primary }]}
+                style={[styles.fab, { backgroundColor: theme.colors.primary, bottom: tabOverlayOffset + 8 }]}
                 color={theme.colors.onPrimary}
                 onPress={() => router.push('/item/new')}
             />
@@ -253,9 +262,6 @@ const styles = StyleSheet.create({
         position: 'absolute',
         margin: 16,
         right: 0,
-        bottom: 0,
-    },
-    scanFab: {
-        bottom: 72,
+        bottom: 8,
     },
 });

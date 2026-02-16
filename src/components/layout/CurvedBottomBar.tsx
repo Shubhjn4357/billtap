@@ -3,6 +3,7 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CURVED_TAB_BAR_HEIGHT, getCurvedTabBarBottomPadding } from './tabBarMetrics';
 
 interface ExtendedOptions extends BottomTabNavigationOptions {
     tabBarTestID?: string;
@@ -21,9 +22,10 @@ const getTabLabel = (options: ExtendedOptions, routeName: string) => {
 export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation }) => {
     const theme = useTheme();
     const insets = useSafeAreaInsets();
+    const bottomPadding = getCurvedTabBarBottomPadding(insets.bottom);
 
     return (
-        <View style={[styles.container, { paddingBottom: insets.bottom > 0 ? insets.bottom : 10, zIndex: 1000 }]}>
+        <View style={[styles.container, { paddingBottom: bottomPadding }]}>
             <View style={[styles.content, { backgroundColor: theme.colors.elevation.level2 }]}>
                 {state.routes.map((route, index) => {
                     const options = descriptors[route.key].options as ExtendedOptions;
@@ -99,7 +101,7 @@ const styles = StyleSheet.create({
     content: {
         flexDirection: 'row',
         width: '94%',
-        height: 72,
+        height: CURVED_TAB_BAR_HEIGHT,
         borderRadius: 24,
         alignItems: 'center',
         justifyContent: 'space-between',

@@ -1,7 +1,7 @@
 import type { UserProfile } from '../types';
 import { apiClient, ApiError } from './httpClient';
 import { offlineSyncService } from './offlineSyncService';
-import { clearSessionToken, setSessionToken } from './session';
+import { clearSessionToken, getSessionToken, setSessionToken } from './session';
 
 export interface PhoneVerificationSession {
     verificationId: string;
@@ -64,6 +64,12 @@ export const authService = {
     },
 
     async getCurrentUser(): Promise<UserProfile | null> {
+        // Avoid startup network calls when no session exists (common release-build stall case).
+        const token = await getSessionToken();
+        if (!token) {
+            return null;
+        }
+
         try {
             const response = await apiClient.get<{ ok: boolean; user?: UserProfile; message?: string }>('/auth/me');
             if (!response.ok || !response.user) return null;

@@ -18,13 +18,23 @@ interface OfflineItemPayload {
     nameLowercase: string;
     price: number;
     stock: number;
+    purchasePrice?: number | null;
+    mrp?: number | null;
+    minimumStock?: number | null;
+    unit?: string | null;
+    hsn?: string | null;
+    gstPercentage?: number | null;
     category?: string | null;
+    subcategory?: string | null;
+    location?: string | null;
     barcode?: string | null;
+    isActive?: boolean;
 }
 
 interface OfflineBillPayload {
     id: string;
     type?: TransactionType;
+    billMode?: 'GST' | 'ESTIMATE';
     partyId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -120,9 +130,18 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
             const payload = {
                 name: mutation.payload.name,
                 price: mutation.payload.price,
+                purchasePrice: mutation.payload.purchasePrice ?? undefined,
+                mrp: mutation.payload.mrp ?? undefined,
                 stock: mutation.payload.stock,
+                minimumStock: mutation.payload.minimumStock ?? undefined,
+                unit: mutation.payload.unit ?? undefined,
+                hsn: mutation.payload.hsn ?? undefined,
+                gstPercentage: mutation.payload.gstPercentage ?? undefined,
                 category: mutation.payload.category ?? undefined,
+                subcategory: mutation.payload.subcategory ?? undefined,
+                location: mutation.payload.location ?? undefined,
                 barcode: mutation.payload.barcode ?? undefined,
+                isActive: mutation.payload.isActive ?? true,
             };
 
             try {
@@ -174,6 +193,7 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
                 tax: Number(line.tax ?? 0),
                 total: Number(line.total ?? line.quantity * line.price),
             }));
+            const billMode = mutation.payload.billMode ?? 'GST';
             const taxAmount = lineItems.reduce((sum, line) => {
                 const taxable = line.quantity * line.price;
                 return sum + (taxable * line.tax) / 100;
@@ -195,6 +215,8 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
                 totalAmount: mutation.payload.total,
                 discountAmount: 0,
                 taxAmount,
+                billMode,
+                affectsGst: billMode === 'GST',
             });
 
             if (!response.ok) {

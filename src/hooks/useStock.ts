@@ -15,7 +15,9 @@ const getErrorMessage = (error: unknown) => {
 };
 
 const sortItemsByName = (data: Item[]) => {
-    return [...data].sort((a, b) => a.nameLowercase.localeCompare(b.nameLowercase));
+    return [...data]
+        .filter((item) => item.isActive !== false)
+        .sort((a, b) => a.nameLowercase.localeCompare(b.nameLowercase));
 };
 
 export const useStock = () => {

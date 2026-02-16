@@ -1,4 +1,5 @@
 import { API_CONFIG } from '../constants/Api';
+import { useOrganizationStore } from '../store';
 import { getSessionToken } from './session';
 
 export class ApiError extends Error {
@@ -55,6 +56,10 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
         const token = await getSessionToken();
         if (token) {
             requestHeaders.Authorization = `Bearer ${token}`;
+        }
+        const organizationId = useOrganizationStore.getState().selectedOrganizationId;
+        if (organizationId) {
+            requestHeaders['X-Organization-Id'] = organizationId;
         }
     }
 

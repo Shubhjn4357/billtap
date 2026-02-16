@@ -1,9 +1,10 @@
 import { useCallback, useMemo } from 'react';
 import { authService } from '../api/authService';
-import { useUserStore } from '../store';
+import { useOrganizationStore, useUserStore } from '../store';
 
 export const useAuth = () => {
     const { user, isLoading, setUser } = useUserStore();
+    const { setSelectedOrganizationId } = useOrganizationStore();
 
     const signInWithGoogle = useCallback(async (idToken: string) => {
         const profile = await authService.googleSignIn(idToken);
@@ -23,8 +24,9 @@ export const useAuth = () => {
 
     const signOut = useCallback(async () => {
         await authService.signOut();
+        setSelectedOrganizationId(null);
         setUser(null);
-    }, [setUser]);
+    }, [setSelectedOrganizationId, setUser]);
 
     return useMemo(() => ({
         user,

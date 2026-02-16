@@ -4,10 +4,12 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text, useTheme } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { analyticsService } from '../../api/analyticsService';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppCard } from '../../components/common/AppCard';
 import { AppButton } from '../../components/common/AppButton';
+import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
 import { useAuth } from '../../hooks/useAuth';
 import { useBills } from '../../hooks/useBills';
 import { useOffers } from '../../hooks/useOffers';
@@ -15,19 +17,22 @@ import { useStock } from '../../hooks/useStock';
 import { useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
+import { isLowStock } from '../../utils/stockStatus';
 
 export const DashboardScreen = () => {
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
     const theme = useTheme();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { stats, loading, fetchBills } = useBills();
     const { primaryOffer, fetchOffers } = useOffers();
     const { items, fetchItems } = useStock();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
+    const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 24);
 
     const lowStockCount = React.useMemo(() => {
-        return items.filter(i => i.stock <= 5).length;
+        return items.filter((item) => isLowStock(item)).length;
     }, [items]);
 
     React.useEffect(() => {
@@ -53,7 +58,7 @@ export const DashboardScreen = () => {
     return (
         <ScreenWrapper>
             <ScrollView
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomSpacing }]}
                 showsVerticalScrollIndicator={false}
             >
                 <AppCard
@@ -89,7 +94,7 @@ export const DashboardScreen = () => {
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <View style={{ flex: 1 }}>
                                 <Text variant="titleMedium" style={{ fontWeight: 'bold', color: theme.colors.onErrorContainer }}>
-                                    ⚠️ Low Stock Alert
+                                    Low Stock Alert
                                 </Text>
                                 <Text variant="bodyMedium" style={{ color: theme.colors.onErrorContainer }}>
                                     {lowStockCount} items are running low. Tap to restock.
@@ -268,7 +273,6 @@ export const DashboardScreen = () => {
 
 const styles = StyleSheet.create({
     scrollContent: {
-        paddingBottom: 80,
         paddingTop: 18,
     },
     heroCard: {
@@ -312,3 +316,4 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
 });
+

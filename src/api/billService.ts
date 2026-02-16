@@ -56,6 +56,7 @@ export const billService = {
             try {
                 await offlineSyncService.flushQueue();
                 const saleItems = bill.items.map(toTransactionItem);
+                const billMode = bill.billMode ?? 'GST';
                 const taxAmount = saleItems.reduce((sum, line) => {
                     const taxable = line.quantity * line.price;
                     return sum + (taxable * line.tax) / 100;
@@ -76,6 +77,8 @@ export const billService = {
                     totalAmount: bill.total,
                     discountAmount: 0,
                     taxAmount,
+                    billMode,
+                    affectsGst: billMode === 'GST',
                     currency: bill.currency ?? 'INR',
                 });
                 if (!response.ok || !response.id) {
@@ -118,6 +121,7 @@ export const billService = {
                 currency: bill.currency,
                 billNumber: bill.billNumber,
                 billDate: bill.billDate as string,
+                billMode: bill.billMode ?? 'GST',
                 items: bill.items,
                 total: bill.total,
                 createdAt,

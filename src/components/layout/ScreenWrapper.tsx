@@ -1,23 +1,30 @@
 
 import React from 'react';
 import { View, StyleSheet, StatusBar, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+import { useSegments } from 'expo-router';
 import { Text, useTheme } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COMMON_TEXT } from '../../constants/staticText';
 import { useNetworkStore } from '../../store';
+import { getTabAwareBottomSpacing } from './tabBarMetrics';
 
 interface ScreenWrapperProps {
     children: React.ReactNode;
     style?: StyleProp<ViewStyle>;
+    disableTabPadding?: boolean;
 }
 
-export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({ children, style }) => {
+export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({ children, style, disableTabPadding = false }) => {
     const theme = useTheme();
     const { width } = useWindowDimensions();
+    const insets = useSafeAreaInsets();
+    const segments = useSegments() as string[];
     const { isConnected, isInternetReachable } = useNetworkStore();
     const isOffline = isConnected === false || isInternetReachable === false;
     const horizontalPadding = width >= 900 ? 24 : 16;
     const constrainContent = width >= 1100;
+    const insideTabs = segments.includes('(tabs)');
+    const bottomSpacing = !disableTabPadding && insideTabs ? getTabAwareBottomSpacing(insets.bottom) : 0;
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }, style]}>
@@ -46,7 +53,7 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({ children, style })
                     </Text>
                 </View>
             )}
-            <View style={[styles.viewport, { paddingHorizontal: horizontalPadding }]}>
+            <View style={[styles.viewport, { paddingHorizontal: horizontalPadding, paddingBottom: bottomSpacing }]}>
                 <View style={[styles.content, constrainContent && styles.contentConstrained]}>
                     {children}
                 </View>

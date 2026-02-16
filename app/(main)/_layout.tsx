@@ -1,37 +1,22 @@
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect } from 'react';
+import { Redirect, Stack, useSegments } from 'expo-router';
 import { useUserStore } from '../../src/store';
 import { LoadingScreen } from '../../src/components/common/LoadingScreen';
 
 export default function MainLayout() {
-    const { user, isAuthenticated, isLoading } = useUserStore();
+    const { user, isAuthenticated, isLoading, hasHydrated: userHydrated } = useUserStore();
     const segments = useSegments() as string[];
-    const router = useRouter();
+    const currentSegment = segments[1]; // segments[0] is '(main)'
 
-    useEffect(() => {
-        if (isLoading) return;
-
-        // If user is not authenticated, redirect to login
-        if (!isAuthenticated) {
-            router.replace('/(auth)/login' as any);
-            return;
-        }
-
-        // If user doesn't have business setup, redirect to business-setup
-        // unless they're already on that screen
-        const currentSegment = segments[1]; // segments[0] is '(main)'
-        if (!user?.businessName && currentSegment !== 'business-setup') {
-            router.replace('/(main)/business-setup' as any);
-        }
-    }, [isAuthenticated, isLoading, router, segments, user?.businessName]); // Only react to auth and user changes
-
-    if (isLoading) {
+    if (!userHydrated || isLoading) {
         return <LoadingScreen message="Loading application..." />;
     }
 
-    // If not authenticated, show loading while redirecting
     if (!isAuthenticated) {
-        return <LoadingScreen message="Redirecting to login..." />;
+        return <Redirect href="/(auth)/login" />;
+    }
+
+    if (!user?.businessName && currentSegment !== 'business-setup') {
+        return <Redirect href="/(main)/business-setup" />;
     }
 
     return (
@@ -40,6 +25,8 @@ export default function MainLayout() {
             <Stack.Screen name="business-setup" options={{ headerShown: true, title: 'Business Setup' }} />
             <Stack.Screen name="subscription" options={{ headerShown: true, title: 'Subscription' }} />
             <Stack.Screen name="admin" options={{ headerShown: true, title: 'Admin Panel' }} />
+            <Stack.Screen name="operations" options={{ headerShown: true, title: 'Operations Controls' }} />
+            <Stack.Screen name="business-suite" options={{ headerShown: true, title: 'Business Suite' }} />
             <Stack.Screen name="accounting/index" options={{ headerShown: true, title: 'Accounting Suite' }} />
             <Stack.Screen name="accounting/accounts" options={{ headerShown: true, title: 'Chart Of Accounts' }} />
             <Stack.Screen name="accounting/journal" options={{ headerShown: true, title: 'Journal Entry' }} />

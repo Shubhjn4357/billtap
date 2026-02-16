@@ -1,7 +1,7 @@
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Updates from 'expo-updates';
@@ -26,18 +26,18 @@ SplashScreen.preventAutoHideAsync().catch(() => {
     // Ignore splash race conditions during fast refresh.
 });
 
-// Module-level variable to ensure bootstrap only runs once per app lifecycle
-let hasBootstrapped = false;
-
 export default function RootLayout() {
     const [loaded] = useFonts({
         SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     });
 
+    const hasBootstrappedRef = useRef(false);
     const user = useUserStore((state) => state.user);
     const isLoading = useUserStore((state) => state.isLoading);
     const setLoading = useUserStore((state) => state.setLoading);
     const setUser = useUserStore((state) => state.setUser);
+    const userHydrated = useUserStore((state) => state.hasHydrated);
+    const settingsHydrated = useSettingsStore((state) => state.hasHydrated);
     const { setCurrency } = useSettingsStore();
     const { setNetworkState } = useNetworkStore();
     const userId = user?.uid;
@@ -45,9 +45,10 @@ export default function RootLayout() {
 
     // Bootstrap: Load user profile on mount
     useEffect(() => {
-        // Only bootstrap once per app lifecycle
-        if (hasBootstrapped) return;
-        hasBootstrapped = true;
+        // Wait for persisted stores before making startup auth decisions.
+        if (!userHydrated || !settingsHydrated) return;
+        if (hasBootstrappedRef.current) return;
+        hasBootstrappedRef.current = true;
 
         let isMounted = true;
 
@@ -111,7 +112,7 @@ export default function RootLayout() {
         return () => {
             isMounted = false;
         };
-    }, [setCurrency, setLoading, setUser]); // Empty dependency array - only run once on mount
+    }, [setCurrency, setLoading, setUser, settingsHydrated, userHydrated]);
 
     // Handle subscription expiration
     useEffect(() => {
@@ -169,10 +170,10 @@ export default function RootLayout() {
 
     // Hide splash screen when ready
     useEffect(() => {
-        if (loaded && !isLoading) {
+        if (loaded && userHydrated && settingsHydrated && !isLoading) {
             SplashScreen.hideAsync();
         }
-    }, [loaded, isLoading]);
+    }, [isLoading, loaded, settingsHydrated, userHydrated]);
 
     useEffect(() => {
         if (__DEV__ || Platform.OS === 'web' || !Updates.isEnabled) return;
@@ -191,7 +192,7 @@ export default function RootLayout() {
     }, []);
 
     // Show loading screen while fonts load or auth is bootstrapping
-    if (!loaded || isLoading) {
+    if (!loaded || !userHydrated || !settingsHydrated || isLoading) {
         return <LoadingScreen message="Initializing..." />;
     }
 

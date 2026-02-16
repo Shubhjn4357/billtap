@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { List, Switch, Text, useTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { adminService } from '../../api/adminService';
 import { offlineSyncService } from '../../api/offlineSyncService';
 import { userService } from '../../api/userService';
@@ -11,6 +12,7 @@ import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
 import { Config } from '../../constants/Config';
 import { SETTINGS_TEXT } from '../../constants/staticText';
 import { normalizeCurrencyCode } from '../../utils/formatters';
@@ -56,6 +58,7 @@ export const SettingsScreen = () => {
     const { setUser } = useUserStore();
     const theme = useTheme();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const {
         autoTheme,
         themeMode,
@@ -88,6 +91,7 @@ export const SettingsScreen = () => {
     const runtimeVersion = getRuntimeVersion();
     const updateChannel = Updates.channel ?? 'default';
     const canCheckUpdates = Platform.OS !== 'web' && !__DEV__ && Updates.isEnabled;
+    const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 24);
 
     const updateStatusLabel = useMemo(() => {
         return SETTINGS_TEXT.updateStatus[updateState];
@@ -231,7 +235,7 @@ export const SettingsScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingBottom: 42 }}>
+            <ScrollView contentContainerStyle={{ paddingBottom: bottomSpacing }}>
                 <PageHeaderCard
                     title={SETTINGS_TEXT.title}
                     subtitle={user?.email || user?.phoneNumber || SETTINGS_TEXT.userFallback}
@@ -316,6 +320,18 @@ export const SettingsScreen = () => {
                         description="Chart of accounts, journals, trial balance and GST."
                         left={(props) => <List.Icon {...props} icon="book-open-variant" />}
                         onPress={() => router.push('/accounting' as never)}
+                    />
+                    <List.Item
+                        title="Operations Controls"
+                        description="Approvals, audit logs and period lock workflow."
+                        left={(props) => <List.Icon {...props} icon="shield-check-outline" />}
+                        onPress={() => router.push('/operations' as never)}
+                    />
+                    <List.Item
+                        title="Business Suite"
+                        description="Payroll, GST compliance, treasury and enterprise snapshots."
+                        left={(props) => <List.Icon {...props} icon="briefcase-variant-outline" />}
+                        onPress={() => router.push('/business-suite' as never)}
                     />
                     <List.Item
                         title={SETTINGS_TEXT.account.businessProfileTitle}

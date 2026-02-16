@@ -162,6 +162,7 @@ export interface TransactionItem {
 export interface Transaction {
     id: string;
     userId: string;
+    organizationId?: string;
     type: TransactionType;
     partyId?: string;
     partyName?: string;
@@ -175,6 +176,9 @@ export interface Transaction {
     paidAmount?: number;
     paymentMode?: 'CASH' | 'CREDIT';
     paymentStatus?: 'PAID' | 'PARTIAL' | 'PENDING';
+    billMode?: 'GST' | 'ESTIMATE';
+    affectsGst?: boolean;
+    createdByUid?: string;
     dueDate?: FirestoreDate | null;
     reminderEnabled?: boolean;
     reminderFrequencyDays?: number;
@@ -200,6 +204,7 @@ export interface Bill {
     id: string;
     userId: string;
     type?: TransactionType; // Defaults to SALE
+    billMode?: 'GST' | 'ESTIMATE';
     partyId?: string; // Links to Party
     customerName?: string; // Legacy/Display
     customerPhone?: string; // Legacy/Display

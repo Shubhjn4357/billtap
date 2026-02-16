@@ -12,6 +12,8 @@ interface UserState {
     logout: () => void;
     isLoading: boolean;
     setLoading: (loading: boolean) => void;
+    hasHydrated: boolean;
+    setHydrated: (hydrated: boolean) => void;
 }
 
 export const useUserStore = create<UserState>()(
@@ -23,6 +25,8 @@ export const useUserStore = create<UserState>()(
             setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
             logout: () => set({ user: null, isAuthenticated: false, isLoading: false }),
             setLoading: (loading) => set({ isLoading: loading }),
+            hasHydrated: false,
+            setHydrated: (hydrated) => set({ hasHydrated: hydrated }),
         }),
         {
             name: 'user-storage',
@@ -37,10 +41,12 @@ export const useUserStore = create<UserState>()(
 
                 return {
                     ...currentState,
-                    ...persisted,
                     user,
                     isAuthenticated: !!user,
                 };
+            },
+            onRehydrateStorage: () => (state) => {
+                state?.setHydrated(true);
             },
         }
     )
@@ -58,6 +64,8 @@ interface SettingsState {
     setHasSeenOnboarding: (seen: boolean) => void;
     notificationSoundEnabled: boolean;
     toggleNotificationSound: (enabled: boolean) => void;
+    hasHydrated: boolean;
+    setHydrated: (hydrated: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -82,16 +90,29 @@ export const useSettingsStore = create<SettingsState>()(
             setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
             notificationSoundEnabled: true,
             toggleNotificationSound: (enabled) => set({ notificationSoundEnabled: enabled }),
+            hasHydrated: false,
+            setHydrated: (hydrated) => set({ hasHydrated: hydrated }),
         }),
         {
             name: 'settings-storage',
             storage: createJSONStorage(() => AsyncStorage),
             version: 1,
+            partialize: (state) => ({
+                isBiometricEnabled: state.isBiometricEnabled,
+                currencySymbol: state.currencySymbol,
+                autoTheme: state.autoTheme,
+                themeMode: state.themeMode,
+                hasSeenOnboarding: state.hasSeenOnboarding,
+                notificationSoundEnabled: state.notificationSoundEnabled,
+            }),
             migrate: (persistedState: any, version: number) => {
                 if (version === 0) {
                     return { ...persistedState, hasSeenOnboarding: false };
                 }
                 return persistedState;
+            },
+            onRehydrateStorage: () => (state) => {
+                state?.setHydrated(true);
             },
         }
     )
@@ -108,6 +129,27 @@ export const useNetworkStore = create<NetworkState>((set) => ({
     isInternetReachable: true,
     setNetworkState: ({ isConnected, isInternetReachable }) => set({ isConnected, isInternetReachable }),
 }));
+
+interface OrganizationState {
+    selectedOrganizationId: string | null;
+    setSelectedOrganizationId: (organizationId: string | null) => void;
+}
+
+export const useOrganizationStore = create<OrganizationState>()(
+    persist(
+        (set) => ({
+            selectedOrganizationId: null,
+            setSelectedOrganizationId: (organizationId) => set({ selectedOrganizationId: organizationId }),
+        }),
+        {
+            name: 'organization-storage',
+            storage: createJSONStorage(() => AsyncStorage),
+            partialize: (state) => ({
+                selectedOrganizationId: state.selectedOrganizationId,
+            }),
+        }
+    )
+);
 
 interface StockState {
     items: Item[];

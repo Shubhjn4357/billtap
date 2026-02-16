@@ -1,34 +1,25 @@
-import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { Redirect } from 'expo-router';
 import { useUserStore, useSettingsStore } from '../src/store';
 import { LoadingScreen } from '../src/components/common/LoadingScreen';
 
 export default function Index() {
-    const { isAuthenticated, isLoading, user } = useUserStore();
-    const { hasSeenOnboarding } = useSettingsStore();
-    const router = useRouter();
+    const { isAuthenticated, isLoading, user, hasHydrated: userHydrated } = useUserStore();
+    const { hasSeenOnboarding, hasHydrated: settingsHydrated } = useSettingsStore();
 
-    useEffect(() => {
-        // Wait for loading to complete
-        if (isLoading) return;
+    if (!userHydrated || !settingsHydrated || isLoading) {
+        return <LoadingScreen message="Getting started..." />;
+    }
 
-        // Redirect based on authentication state
-        if (isAuthenticated) {
-            // Check if business setup is needed
-            if (!user?.businessName) {
-                router.replace('/(main)/business-setup' as any);
-            } else {
-                router.replace('/(main)/(tabs)/home' as any);
-            }
-        } else {
-            // Redirect to onboarding or login
-            if (!hasSeenOnboarding) {
-                router.replace('/(auth)/onboarding' as any);
-            } else {
-                router.replace('/(auth)/login' as any);
-            }
+    if (isAuthenticated) {
+        if (!user?.businessName) {
+            return <Redirect href="/(main)/business-setup" />;
         }
-    }, [isAuthenticated, hasSeenOnboarding, user?.businessName, isLoading, router]); // Only react to auth/onboarding/user changes
+        return <Redirect href="/(main)/(tabs)/home" />;
+    }
 
-    return <LoadingScreen message="Getting started..." />;
+    if (!hasSeenOnboarding) {
+        return <Redirect href="/(auth)/onboarding" />;
+    }
+
+    return <Redirect href="/(auth)/login" />;
 }
