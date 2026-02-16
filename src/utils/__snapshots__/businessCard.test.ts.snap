@@ -1,0 +1,757 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildBusinessCardHtml > renders stable markup for template: amber_gold 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #d97706;
+        border-radius: 14px;
+        background: #fffbeb;
+        color: #4a3410;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #d97706;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: charcoal_clean 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #52525b;
+        border-radius: 14px;
+        background: #f4f4f5;
+        color: #27272a;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #52525b;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: forest_pro 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #047857;
+        border-radius: 14px;
+        background: #ecfdf5;
+        color: #064e3b;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #047857;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: indigo_modern 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #4f46e5;
+        border-radius: 14px;
+        background: #eef2ff;
+        color: #1e1b4b;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #4f46e5;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: mint_fresh 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #10b981;
+        border-radius: 14px;
+        background: #e8fff7;
+        color: #114737;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #10b981;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: ocean_blue 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #2563eb;
+        border-radius: 14px;
+        background: #e8f2ff;
+        color: #0c2f4f;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #2563eb;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: peach_soft 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #ea580c;
+        border-radius: 14px;
+        background: #fff7ed;
+        color: #7c2d12;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #ea580c;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: rose_modern 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #db2777;
+        border-radius: 14px;
+        background: #fff1f5;
+        color: #831843;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #db2777;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: ruby_classic 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #e11d48;
+        border-radius: 14px;
+        background: #fff1f2;
+        color: #4a0817;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #e11d48;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: slate_business 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #334155;
+        border-radius: 14px;
+        background: #f8fafc;
+        color: #1e293b;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #334155;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: sunrise_orange 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #f97316;
+        border-radius: 14px;
+        background: #fff2e8;
+        color: #4a2207;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #f97316;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;
+
+exports[`buildBusinessCardHtml > renders stable markup for template: teal_minimal 1`] = `
+"
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, sans-serif;
+      }
+      .card {
+        width: 340px;
+        height: 190px;
+        border: 2px solid #0f766e;
+        border-radius: 14px;
+        background: #f0fdfa;
+        color: #134e4a;
+        box-sizing: border-box;
+        padding: 16px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .owner {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #0f766e;
+      }
+      .tagline {
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .row {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .gst {
+        margin-top: 8px;
+        font-size: 10px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">ACME Traders &amp; Sons</div>
+      <div class="owner">Shubh Jain</div>
+      <div class="tagline">Trusted billing partner since 2016</div>
+      <div class="row">Phone: +91 98765 43210</div>
+      <div class="row">Email: hello@acme.test</div>
+      <div class="row">Website: https://acme.test</div>
+      <div class="row">Address: Main Road, Ratlam</div>
+      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    </div>
+  </body>
+</html>"
+`;

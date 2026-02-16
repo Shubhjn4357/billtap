@@ -11,6 +11,7 @@ import { usePartyStore } from '../../store';
 import { useCartStore } from '../../store/cartStore';
 import { partyService } from '../../api/partyService';
 import type { Party } from '../../types';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 export const PartyListScreen = () => {
     const router = useRouter();
@@ -18,11 +19,16 @@ export const PartyListScreen = () => {
     const theme = useTheme();
     const { parties, setParties } = usePartyStore();
     const { setCustomer } = useCartStore();
+    const { canManageParties } = useOrganizationAccess();
     const [searchQuery, setSearchQuery] = useState('');
     const [refreshing, setRefreshing] = useState(false);
     const isSelectionMode = params.mode === 'select';
 
     const loadParties = useCallback(async () => {
+        if (!canManageParties) {
+            setParties([]);
+            return;
+        }
         setRefreshing(true);
         try {
             const data = await partyService.getParties();
@@ -32,7 +38,7 @@ export const PartyListScreen = () => {
         } finally {
             setRefreshing(false);
         }
-    }, [setParties]);
+    }, [canManageParties, setParties]);
 
     useEffect(() => {
         void loadParties();
@@ -74,6 +80,17 @@ export const PartyListScreen = () => {
 
     return (
         <ScreenWrapper>
+            {!canManageParties ? (
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
+                        Party access is disabled
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                        Ask owner/admin to enable party management permissions.
+                    </Text>
+                </AppCard>
+            ) : (
+            <>
             <PageHeaderCard
                 title="Parties"
                 subtitle={`${filteredParties.length} contacts available`}
@@ -109,6 +126,8 @@ export const PartyListScreen = () => {
                 color={theme.colors.onPrimary}
                 onPress={() => router.push('/party/new' as never)}
             />
+            </>
+            )}
         </ScreenWrapper>
     );
 };

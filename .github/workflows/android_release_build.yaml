@@ -63,6 +63,20 @@ jobs:
       - name: Web Export Smoke Test
         run: pnpm run build:web
 
+      - name: API Smoke E2E (real env)
+        env:
+          SMOKE_API_BASE_URL: ${{ secrets.SMOKE_API_BASE_URL }}
+          SMOKE_PHONE_NUMBER: ${{ secrets.SMOKE_PHONE_NUMBER }}
+          SMOKE_OTP_CODE: ${{ secrets.SMOKE_OTP_CODE }}
+          SMOKE_CREATE_SECOND_STORE: ${{ secrets.SMOKE_CREATE_SECOND_STORE }}
+          SMOKE_REMINDER_RECIPIENT: ${{ secrets.SMOKE_REMINDER_RECIPIENT }}
+        run: |
+          if [ -z "${SMOKE_API_BASE_URL}" ] || [ -z "${SMOKE_PHONE_NUMBER}" ]; then
+            echo "SMOKE_API_BASE_URL and SMOKE_PHONE_NUMBER secrets are required for pre-build smoke validation."
+            exit 1
+          fi
+          pnpm run smoke:e2e
+
       - name: Prebuild
         run: pnpm exec expo prebuild --platform android --no-install
 

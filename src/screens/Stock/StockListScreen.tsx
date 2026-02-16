@@ -18,6 +18,7 @@ import { useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
 import type { Item } from '../../types';
 import { StockAdjustmentDialog } from '../../components/stock/StockAdjustmentDialog';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 export const StockListScreen = () => {
     const { items, loading, searchQuery, setSearchQuery, fetchItems, adjustStock } = useStock();
@@ -27,6 +28,7 @@ export const StockListScreen = () => {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const params = useLocalSearchParams<{ search?: string | string[] }>();
+    const { canManageInventory } = useOrganizationAccess();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
     const [refreshing, setRefreshing] = useState(false);
     const [adjustmentItem, setAdjustmentItem] = useState<Item | null>(null);
@@ -53,20 +55,22 @@ export const StockListScreen = () => {
 
     useFocusEffect(
         useCallback(() => {
+            if (!canManageInventory) return;
             if (items.length === 0) {
                 void fetchItems();
             }
-        }, [fetchItems, items.length])
+        }, [canManageInventory, fetchItems, items.length])
     );
 
     const onRefresh = useCallback(async () => {
+        if (!canManageInventory) return;
         setRefreshing(true);
         try {
             await fetchItems();
         } finally {
             setRefreshing(false);
         }
-    }, [fetchItems]);
+    }, [canManageInventory, fetchItems]);
 
     const inventoryStats = useMemo(() => {
         let lowStock = 0;
@@ -170,6 +174,17 @@ export const StockListScreen = () => {
 
     return (
         <ScreenWrapper>
+            {!canManageInventory ? (
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
+                        Inventory access is disabled
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                        Ask owner/admin to enable inventory permissions for your account.
+                    </Text>
+                </AppCard>
+            ) : (
+            <>
             <AppCard style={{ backgroundColor: theme.colors.primaryContainer }}>
                 <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
                     Inventory
@@ -244,6 +259,8 @@ export const StockListScreen = () => {
                 itemName={adjustmentItem?.name || ''}
                 currentStock={adjustmentItem?.stock || 0}
             />
+            </>
+            )}
         </ScreenWrapper>
     );
 };

@@ -239,8 +239,8 @@ export const LoginScreen = () => {
                             style={[
                                 styles.authCard,
                                 {
-                                    backgroundColor: theme.colors.surface,
-                                    borderColor: theme.colors.outline,
+                                    backgroundColor: theme.dark ? 'rgba(17,26,45,0.82)' : 'rgba(255,255,255,0.8)',
+                                    borderColor: theme.dark ? 'rgba(148,163,184,0.18)' : 'rgba(30,41,59,0.14)',
                                 },
                             ]}
                         >
@@ -462,10 +462,15 @@ const createStyles = (theme: MD3Theme) =>
             paddingHorizontal: 12,
         },
         authCard: {
-            borderRadius: 20,
+            borderRadius: 24,
             borderWidth: 1,
             paddingHorizontal: 16,
             paddingVertical: 18,
+            shadowColor: '#020617',
+            shadowOffset: { width: 0, height: 12 },
+            shadowOpacity: 0.14,
+            shadowRadius: 24,
+            elevation: 8,
         },
         stepBadge: {
             alignSelf: 'flex-start',

@@ -18,6 +18,7 @@ import { SETTINGS_TEXT } from '../../constants/staticText';
 import { normalizeCurrencyCode } from '../../utils/formatters';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettingsStore, useUserStore } from '../../store';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 type UpdateState = 'idle' | 'checking' | 'downloading' | 'upToDate' | 'downloaded' | 'disabled' | 'error';
 
@@ -55,6 +56,14 @@ const getRuntimeVersion = (): string => {
 
 export const SettingsScreen = () => {
     const { user, signOut } = useAuth();
+    const {
+        canAccessSettings,
+        canManageSubscription,
+        canManageTemplates,
+        canManagePayments,
+        canManageStaff,
+        isOwnerOrAdmin,
+    } = useOrganizationAccess();
     const { setUser } = useUserStore();
     const theme = useTheme();
     const router = useRouter();
@@ -235,6 +244,27 @@ export const SettingsScreen = () => {
 
     return (
         <ScreenWrapper>
+            {!canAccessSettings ? (
+                <ScrollView contentContainerStyle={{ paddingBottom: bottomSpacing }}>
+                    <PageHeaderCard
+                        title={SETTINGS_TEXT.title}
+                        subtitle="Access restricted"
+                    />
+                    <AppCard>
+                        <Text variant="titleSmall" style={{ fontWeight: '700' }}>
+                            Settings access is disabled
+                        </Text>
+                        <Text variant="bodySmall" style={{ marginTop: 8, color: theme.colors.outline }}>
+                            Ask owner/admin to enable settings permissions for your account.
+                        </Text>
+                    </AppCard>
+                    <View style={{ marginTop: 8, marginBottom: 8 }}>
+                        <AppButton mode="outlined" onPress={signOut} icon="logout">
+                            {SETTINGS_TEXT.actions.signOut}
+                        </AppButton>
+                    </View>
+                </ScrollView>
+            ) : (
             <ScrollView contentContainerStyle={{ paddingBottom: bottomSpacing }}>
                 <PageHeaderCard
                     title={SETTINGS_TEXT.title}
@@ -301,12 +331,14 @@ export const SettingsScreen = () => {
 
                 <List.Section>
                     <List.Subheader>{SETTINGS_TEXT.sections.account}</List.Subheader>
-                    <List.Item
-                        title={SETTINGS_TEXT.account.subscriptionTitle}
-                        description={subscriptionLabel}
-                        left={(props) => <List.Icon {...props} icon="credit-card-outline" />}
-                        onPress={() => router.push('/subscription' as never)}
-                    />
+                    {(isOwnerOrAdmin || canManageSubscription) && (
+                        <List.Item
+                            title={SETTINGS_TEXT.account.subscriptionTitle}
+                            description={subscriptionLabel}
+                            left={(props) => <List.Icon {...props} icon="credit-card-outline" />}
+                            onPress={() => router.push('/subscription' as never)}
+                        />
+                    )}
                     {canAccessAdminPanel && (
                         <List.Item
                             title={SETTINGS_TEXT.account.adminPanelTitle}
@@ -315,24 +347,30 @@ export const SettingsScreen = () => {
                             onPress={() => router.push('/admin' as never)}
                         />
                     )}
-                    <List.Item
-                        title="Accounting Suite"
-                        description="Chart of accounts, journals, trial balance and GST."
-                        left={(props) => <List.Icon {...props} icon="book-open-variant" />}
-                        onPress={() => router.push('/accounting' as never)}
-                    />
-                    <List.Item
-                        title="Operations Controls"
-                        description="Approvals, audit logs and period lock workflow."
-                        left={(props) => <List.Icon {...props} icon="shield-check-outline" />}
-                        onPress={() => router.push('/operations' as never)}
-                    />
-                    <List.Item
-                        title="Business Suite"
-                        description="Payroll, GST compliance, treasury and enterprise snapshots."
-                        left={(props) => <List.Icon {...props} icon="briefcase-variant-outline" />}
-                        onPress={() => router.push('/business-suite' as never)}
-                    />
+                    {(isOwnerOrAdmin || canManagePayments) && (
+                        <List.Item
+                            title="Accounting Suite"
+                            description="Chart of accounts, journals, trial balance and GST."
+                            left={(props) => <List.Icon {...props} icon="book-open-variant" />}
+                            onPress={() => router.push('/accounting' as never)}
+                        />
+                    )}
+                    {(isOwnerOrAdmin || canManageStaff) && (
+                        <List.Item
+                            title="Operations Controls"
+                            description="Approvals, audit logs and period lock workflow."
+                            left={(props) => <List.Icon {...props} icon="shield-check-outline" />}
+                            onPress={() => router.push('/operations' as never)}
+                        />
+                    )}
+                    {(isOwnerOrAdmin || canManageTemplates || canManagePayments || canManageStaff) && (
+                        <List.Item
+                            title="Business Suite"
+                            description="Payroll, GST compliance, treasury and enterprise snapshots."
+                            left={(props) => <List.Icon {...props} icon="briefcase-variant-outline" />}
+                            onPress={() => router.push('/business-suite' as never)}
+                        />
+                    )}
                     <List.Item
                         title={SETTINGS_TEXT.account.businessProfileTitle}
                         description={SETTINGS_TEXT.account.businessProfileDescription}
@@ -458,6 +496,7 @@ export const SettingsScreen = () => {
                     </AppButton>
                 </View>
             </ScrollView>
+            )}
         </ScreenWrapper>
     );
 };

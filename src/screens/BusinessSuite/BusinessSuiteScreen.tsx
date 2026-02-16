@@ -1,12 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, Share, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Chip, Divider, SegmentedButtons, Switch, Text, useTheme } from 'react-native-paper';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { SignatureCaptureModal } from '../../components/signature/SignatureCaptureModal';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import {
     businessSuiteService,
@@ -16,6 +19,7 @@ import {
     type GstComplianceSnapshot,
     type InstitutionStudent,
     type OrganizationMembership,
+    type OrganizationSummary,
     type OrganizationMember,
     type PayrollSnapshot,
     type SignatureEntry,
@@ -24,10 +28,21 @@ import {
     type StaffRole,
     type TreasurySnapshot,
 } from '../../api/businessSuiteService';
+import { mediaService } from '../../api/mediaService';
+import { offlineSyncService } from '../../api/offlineSyncService';
 import { useAuth } from '../../hooks/useAuth';
 import { useOrganizationStore, useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
+import { openWhatsApp } from '../../utils/linking';
+import { isOnline } from '../../utils/network';
+import { BUSINESS_CARD_TEMPLATES, shareBusinessCardPdf } from '../../utils/businessCard';
+import {
+    DEFAULT_STAFF_FEATURE_ACCESS,
+    normalizeStaffFeatureAccess,
+    type StaffFeatureAccessMap,
+    type StaffFeatureKey,
+} from '../../hooks/useOrganizationAccess';
 
 const EmptyPayroll: PayrollSnapshot = {
     attendanceCount: 0,
@@ -60,6 +75,7 @@ const EmptyEnterprise: EnterpriseSnapshot = {
 type NewStaffRole = 'manager' | 'salesman';
 type PrinterType = 'STANDARD' | 'THERMAL';
 type PaperSize = 'A4' | 'A5' | '2INCH' | '3INCH';
+type ReminderDeliveryMode = 'DEVICE' | 'CLOUD';
 
 const TEMPLATE_LIBRARY: { key: string; name: string; premium: boolean }[] = [
     { key: 'modern_minimal', name: 'Modern Minimal', premium: false },
@@ -81,10 +97,15 @@ const PERMISSION_FIELDS: {
     label: string;
     description: string;
 }[] = [
-    { key: 'can_create_bill', label: 'Create Bill', description: 'Can create sale/purchase bills.' },
+    { key: 'can_create_bill', label: 'Create Bill', description: 'Can open bill terminal.' },
+    { key: 'can_create_sale', label: 'Create Sale', description: 'Can create sales invoices.' },
+    { key: 'can_create_purchase', label: 'Create Purchase', description: 'Can create purchase entries.' },
     { key: 'can_back_date', label: 'Back-Date Entry', description: 'Can create bills for past dates.' },
     { key: 'can_delete_bill', label: 'Delete Bill', description: 'Can delete bill records.' },
     { key: 'can_view_cost_price', label: 'View Cost Price', description: 'Can see item purchase prices.' },
+    { key: 'can_view_dashboard', label: 'View Dashboard', description: 'Can view home dashboard tab.' },
+    { key: 'can_view_reports', label: 'View Reports', description: 'Can view reports and exports.' },
+    { key: 'can_manage_parties', label: 'Manage Parties', description: 'Can create/edit customers and suppliers.' },
     { key: 'can_manage_inventory', label: 'Manage Inventory', description: 'Can update stock and items.' },
     { key: 'can_manage_payments', label: 'Manage Payments', description: 'Can record payment in/out and reminders.' },
     { key: 'can_manage_expenses', label: 'Manage Expenses', description: 'Can create and edit expenses.' },
@@ -93,6 +114,28 @@ const PERMISSION_FIELDS: {
     { key: 'can_access_settings', label: 'Access Settings', description: 'Can open business settings.' },
     { key: 'can_manage_staff', label: 'Manage Staff', description: 'Can add/remove staff and roles.' },
     { key: 'can_manage_subscription', label: 'Manage Subscription', description: 'Can buy/renew plans.' },
+];
+
+const STAFF_FEATURE_FIELDS: {
+    key: StaffFeatureKey;
+    label: string;
+    description: string;
+}[] = [
+    { key: 'dashboard', label: 'Dashboard Tab', description: 'Show home dashboard for staff.' },
+    { key: 'billing', label: 'Billing Module', description: 'Show billing tab and bill terminal.' },
+    { key: 'billingSale', label: 'Sale Bills', description: 'Allow sale invoice mode.' },
+    { key: 'billingPurchase', label: 'Purchase Entry', description: 'Allow purchase entry mode.' },
+    { key: 'stock', label: 'Inventory', description: 'Show stock tab and item management.' },
+    { key: 'reports', label: 'Reports', description: 'Show reports tab and exports.' },
+    { key: 'parties', label: 'Parties/Ledger', description: 'Allow customer/supplier management.' },
+    { key: 'payments', label: 'Payments', description: 'Allow reminders and payment workflows.' },
+    { key: 'expenses', label: 'Expenses', description: 'Allow expense management flows.' },
+    { key: 'templates', label: 'Templates', description: 'Allow templates, print and signature.' },
+    { key: 'businessCards', label: 'Business Cards', description: 'Allow visiting card suite access.' },
+    { key: 'staff', label: 'Staff Controls', description: 'Allow manage staff screens.' },
+    { key: 'subscription', label: 'Subscription', description: 'Allow subscription actions.' },
+    { key: 'settings', label: 'Settings Tab', description: 'Show settings tab for staff.' },
+    { key: 'messages', label: 'Messages', description: 'Allow WhatsApp and message actions.' },
 ];
 
 const formatDate = (value?: string | null): string => {
@@ -128,9 +171,14 @@ const getDefaultPermissions = (role: NewStaffRole): StaffPermissions => {
     if (role === 'manager') {
         return {
             can_create_bill: true,
+            can_create_sale: true,
+            can_create_purchase: true,
             can_back_date: true,
             can_delete_bill: false,
             can_view_cost_price: true,
+            can_view_dashboard: true,
+            can_view_reports: true,
+            can_manage_parties: true,
             can_access_settings: false,
             can_manage_staff: false,
             can_manage_subscription: false,
@@ -144,9 +192,14 @@ const getDefaultPermissions = (role: NewStaffRole): StaffPermissions => {
 
     return {
         can_create_bill: true,
+        can_create_sale: true,
+        can_create_purchase: false,
         can_back_date: false,
         can_delete_bill: false,
         can_view_cost_price: false,
+        can_view_dashboard: true,
+        can_view_reports: false,
+        can_manage_parties: false,
         can_access_settings: false,
         can_manage_staff: false,
         can_manage_subscription: false,
@@ -162,11 +215,21 @@ const isPremiumTemplate = (templateKey: string): boolean => {
     return TEMPLATE_LIBRARY.find((entry) => entry.key === templateKey)?.premium ?? false;
 };
 
+const getDefaultReminderMode = (): ReminderDeliveryMode => {
+    const configured = String(process.env.EXPO_PUBLIC_WHATSAPP_DELIVERY_MODE ?? '').trim().toLowerCase();
+    return configured === 'cloud' ? 'CLOUD' : 'DEVICE';
+};
+
 export const BusinessSuiteScreen = () => {
     const theme = useTheme();
     const dialog = useAppDialog();
     const { user } = useAuth();
-    const { selectedOrganizationId, setSelectedOrganizationId } = useOrganizationStore();
+    const {
+        selectedOrganizationId,
+        setSelectedOrganizationId,
+        setOrganizationContext,
+        setOrganizationSettings,
+    } = useOrganizationStore();
     const { currencySymbol } = useSettingsStore();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
     const isPro = user?.subscriptionStatus === 'active';
@@ -212,6 +275,8 @@ export const BusinessSuiteScreen = () => {
     const [signatureName, setSignatureName] = useState('');
     const [signaturePayload, setSignaturePayload] = useState('');
     const [savingSignature, setSavingSignature] = useState(false);
+    const [signatureCaptureVisible, setSignatureCaptureVisible] = useState(false);
+    const [uploadingSignatureMedia, setUploadingSignatureMedia] = useState(false);
 
     const [newStoreName, setNewStoreName] = useState('');
     const [newStoreCode, setNewStoreCode] = useState('');
@@ -219,6 +284,21 @@ export const BusinessSuiteScreen = () => {
 
     const [customReminderMessage, setCustomReminderMessage] = useState('');
     const [mediaUrl, setMediaUrl] = useState('');
+    const [uploadingReminderMedia, setUploadingReminderMedia] = useState(false);
+    const [reminderMode, setReminderMode] = useState<ReminderDeliveryMode>(getDefaultReminderMode());
+    const [staffFeatureAccess, setStaffFeatureAccess] = useState<StaffFeatureAccessMap>(DEFAULT_STAFF_FEATURE_ACCESS);
+    const [savingStaffFeatures, setSavingStaffFeatures] = useState(false);
+    const [businessCardTemplateKey, setBusinessCardTemplateKey] = useState(BUSINESS_CARD_TEMPLATES[0]?.key ?? 'sunrise_orange');
+    const [businessCardOwnerName, setBusinessCardOwnerName] = useState('');
+    const [businessCardPhone, setBusinessCardPhone] = useState('');
+    const [businessCardEmail, setBusinessCardEmail] = useState('');
+    const [businessCardWebsite, setBusinessCardWebsite] = useState('');
+    const [businessCardTagline, setBusinessCardTagline] = useState('');
+    const [businessCardAddress, setBusinessCardAddress] = useState('');
+    const [businessCardGst, setBusinessCardGst] = useState('');
+    const [businessCardCustomImageUrl, setBusinessCardCustomImageUrl] = useState('');
+    const [savingBusinessCardSettings, setSavingBusinessCardSettings] = useState(false);
+    const [uploadingBusinessCardImage, setUploadingBusinessCardImage] = useState(false);
 
     const netBusinessContribution = useMemo(() => {
         return enterprise.consolidatedSales - enterprise.consolidatedPurchases;
@@ -229,6 +309,7 @@ export const BusinessSuiteScreen = () => {
     const canManageTemplates = isOwnerOrAdmin || Boolean(organizationPermissions.can_manage_templates);
     const canManagePayments = isOwnerOrAdmin || Boolean(organizationPermissions.can_manage_payments);
     const canSendMessages = isOwnerOrAdmin || Boolean(organizationPermissions.can_send_messages);
+    const canManageBusinessCards = canManageTemplates;
     const currentOrganizationId = selectedOrganizationId ?? undefined;
 
     const studentById = useMemo(() => {
@@ -247,9 +328,14 @@ export const BusinessSuiteScreen = () => {
         }
         return output;
     }, [templates]);
-    const applySettingsToUi = (settings: Record<string, unknown>) => {
+    const applySettingsToUi = useCallback((
+        settings: Record<string, unknown>,
+        organization?: OrganizationSummary | null
+    ) => {
         const customization = asRecord(settings.customization);
         const print = asRecord(settings.print);
+        const nextStaffFeatureAccess = normalizeStaffFeatureAccess(settings);
+        const businessCard = asRecord(settings.businessCard);
 
         const nextTemplate = typeof customization.templateKey === 'string'
             ? customization.templateKey
@@ -276,7 +362,68 @@ export const BusinessSuiteScreen = () => {
         setPrinterType(nextPrinterType);
         setPaperSize(nextPaperSize);
         setSelectedSignatureId(nextSignatureId);
-    };
+        setStaffFeatureAccess(nextStaffFeatureAccess);
+        setBusinessCardTemplateKey(
+            typeof businessCard.templateKey === 'string'
+                ? businessCard.templateKey
+                : (BUSINESS_CARD_TEMPLATES[0]?.key || 'sunrise_orange')
+        );
+        setBusinessCardOwnerName(
+            typeof businessCard.ownerName === 'string'
+                ? businessCard.ownerName
+                : (user?.displayName || user?.phoneNumber || 'Owner')
+        );
+        setBusinessCardPhone(
+            typeof businessCard.phoneNumber === 'string'
+                ? businessCard.phoneNumber
+                : (
+                    String(organization?.phoneNumber ?? '')
+                    || user?.phoneNumber
+                    || ''
+                )
+        );
+        setBusinessCardEmail(
+            typeof businessCard.email === 'string'
+                ? businessCard.email
+                : (
+                    String(organization?.email ?? '')
+                    || user?.email
+                    || ''
+                )
+        );
+        setBusinessCardWebsite(
+            typeof businessCard.website === 'string'
+                ? businessCard.website
+                : ''
+        );
+        setBusinessCardTagline(
+            typeof businessCard.tagline === 'string'
+                ? businessCard.tagline
+                : ''
+        );
+        setBusinessCardAddress(
+            typeof businessCard.address === 'string'
+                ? businessCard.address
+                : (
+                    String(organization?.address ?? '')
+                    || ''
+                )
+        );
+        setBusinessCardGst(
+            typeof businessCard.gstNumber === 'string'
+                ? businessCard.gstNumber
+                : (
+                    String(organization?.gstNumber ?? '')
+                    || user?.gstNumber
+                    || ''
+                )
+        );
+        setBusinessCardCustomImageUrl(
+            typeof businessCard.customImageUrl === 'string'
+                ? businessCard.customImageUrl
+                : ''
+        );
+    }, [user?.displayName, user?.email, user?.gstNumber, user?.phoneNumber]);
 
     const loadData = useCallback(async (forcedOrganizationId?: string) => {
         setLoading(true);
@@ -294,6 +441,7 @@ export const BusinessSuiteScreen = () => {
                 setOrganizationCode('');
                 setOrganizationRole('owner');
                 setOrganizationPermissions({});
+                setOrganizationContext(null);
                 setMembers([]);
                 setTemplates([]);
                 setSignatures([]);
@@ -323,7 +471,13 @@ export const BusinessSuiteScreen = () => {
             setOrganizationCode(orgPayload.organization.code);
             setOrganizationRole(orgPayload.context.role);
             setOrganizationPermissions(asPermissions(orgPayload.context.permissions));
-            applySettingsToUi(asRecord(orgPayload.context.settings));
+            setOrganizationContext({
+                role: orgPayload.context.role,
+                ownerUserId: orgPayload.context.ownerUserId,
+                permissions: orgPayload.context.permissions as Record<string, boolean>,
+                settings: orgPayload.context.settings,
+            });
+            applySettingsToUi(asRecord(orgPayload.context.settings), orgPayload.organization);
 
             const ownerView = orgPayload.context.role === 'owner' || user?.role === 'admin';
             const permissionMap = asPermissions(orgPayload.context.permissions);
@@ -388,7 +542,7 @@ export const BusinessSuiteScreen = () => {
         } finally {
             setLoading(false);
         }
-    }, [dialog, selectedOrganizationId, setSelectedOrganizationId, user?.role]);
+    }, [applySettingsToUi, dialog, selectedOrganizationId, setOrganizationContext, setSelectedOrganizationId, user?.role]);
 
     useFocusEffect(
         useCallback(() => {
@@ -478,6 +632,34 @@ export const BusinessSuiteScreen = () => {
         }));
     };
 
+    const onToggleStaffFeature = (key: StaffFeatureKey, value: boolean) => {
+        setStaffFeatureAccess((current) => ({
+            ...current,
+            [key]: value,
+        }));
+    };
+
+    const handleSaveStaffFeatureAccess = async () => {
+        if (!isOwnerOrAdmin) {
+            dialog.alert('Access Denied', 'Only owner/admin can update staff feature controls.');
+            return;
+        }
+
+        setSavingStaffFeatures(true);
+        try {
+            const settings = await businessSuiteService.updateOrganizationSettings({
+                staffFeatureAccess,
+            }, currentOrganizationId);
+            applySettingsToUi(asRecord(settings));
+            setOrganizationSettings(settings);
+            dialog.alert('Staff Controls', 'Staff feature controls saved.');
+        } catch (error: unknown) {
+            dialog.alert('Staff Controls', error instanceof Error ? error.message : 'Failed to save staff controls.');
+        } finally {
+            setSavingStaffFeatures(false);
+        }
+    };
+
     const handleSaveMember = async () => {
         if (!editingMemberId) return;
         setStaffActionLoading(true);
@@ -524,6 +706,138 @@ export const BusinessSuiteScreen = () => {
         } catch {
             return false;
         }
+    };
+
+    const pickOptimizedImage = async (): Promise<{ uri: string; fileType: string; fileName: string } | null> => {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+            dialog.alert('Permission Required', 'Media library permission is required to upload images.');
+            return null;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 1,
+        });
+        if (result.canceled || result.assets.length === 0) {
+            return null;
+        }
+
+        const source = result.assets[0];
+        const optimized = await ImageManipulator.manipulateAsync(
+            source.uri,
+            [{ resize: { width: 800 } }],
+            {
+                compress: 0.7,
+                format: ImageManipulator.SaveFormat.JPEG,
+            }
+        );
+
+        return {
+            uri: optimized.uri,
+            fileType: 'image/jpeg',
+            fileName: source.fileName || `media-${Date.now()}.jpg`,
+        };
+    };
+
+    const handlePickSignatureImage = async () => {
+        if (!canManageTemplates) {
+            dialog.alert('Access Denied', 'You do not have permission to manage signatures.');
+            return;
+        }
+
+        try {
+            const picked = await pickOptimizedImage();
+            if (!picked) return;
+            setUploadingSignatureMedia(true);
+            const uploaded = await mediaService.uploadFromUri({
+                uri: picked.uri,
+                fileName: picked.fileName,
+                fileType: picked.fileType,
+                assetType: 'SIGNATURE',
+                entityType: 'signature',
+                organizationId: currentOrganizationId,
+            });
+            setSignaturePayload(uploaded.fileUrl);
+            if (!signatureName.trim()) {
+                setSignatureName('Authorized Signatory');
+            }
+        } catch (error: unknown) {
+            dialog.alert('Signature', error instanceof Error ? error.message : 'Failed to upload signature image.');
+        } finally {
+            setUploadingSignatureMedia(false);
+        }
+    };
+
+    const handleCaptureSignatureSave = async (dataUrl: string) => {
+        if (!canManageTemplates) {
+            setSignatureCaptureVisible(false);
+            return;
+        }
+
+        setSignatureCaptureVisible(false);
+        try {
+            setUploadingSignatureMedia(true);
+            const uploaded = await mediaService.uploadFromDataUrl({
+                dataUrl,
+                fileName: `signature-${Date.now()}.png`,
+                fileType: 'image/png',
+                assetType: 'SIGNATURE',
+                entityType: 'signature',
+                organizationId: currentOrganizationId,
+            });
+            setSignaturePayload(uploaded.fileUrl);
+            if (!signatureName.trim()) {
+                setSignatureName('Authorized Signatory');
+            }
+        } catch (error: unknown) {
+            dialog.alert('Signature', error instanceof Error ? error.message : 'Failed to upload drawn signature.');
+        } finally {
+            setUploadingSignatureMedia(false);
+        }
+    };
+
+    const handlePickReminderMedia = async () => {
+        if (!canManagePayments) {
+            dialog.alert('Access Denied', 'You do not have permission to attach reminder media.');
+            return;
+        }
+
+        try {
+            const picked = await pickOptimizedImage();
+            if (!picked) return;
+            setUploadingReminderMedia(true);
+            const uploaded = await mediaService.uploadFromUri({
+                uri: picked.uri,
+                fileName: picked.fileName,
+                fileType: picked.fileType,
+                assetType: 'BILL_ATTACHMENT',
+                entityType: 'fee_reminder',
+                organizationId: currentOrganizationId,
+            });
+            setMediaUrl(uploaded.fileUrl);
+        } catch (error: unknown) {
+            dialog.alert('Reminder', error instanceof Error ? error.message : 'Failed to upload reminder media.');
+        } finally {
+            setUploadingReminderMedia(false);
+        }
+    };
+
+    const buildReminderMessage = (invoice: FeeReminderInvoice, student?: InstitutionStudent): string => {
+        const dueAmount = formatCurrency(invoice.dueAmount, activeCurrency);
+        const baseMessage = customReminderMessage.trim();
+        if (baseMessage) {
+            return baseMessage;
+        }
+
+        return [
+            `Namaste! Fee reminder for ${student?.name || 'student'}.`,
+            `Invoice: ${invoice.invoiceNumber || invoice.id.slice(0, 8).toUpperCase()}`,
+            `Due Amount: ${dueAmount}`,
+            `Barcode: ${invoice.barcodeValue || '-'}`,
+            'Please clear dues at the earliest. Thank you.',
+        ].join('\n');
     };
 
     const handleSwitchOrganization = async (organizationId: string) => {
@@ -576,7 +890,7 @@ export const BusinessSuiteScreen = () => {
 
         const payload = signaturePayload.trim();
         if (!payload) {
-            dialog.alert('Signature', 'Paste signature URL or base64 data.');
+            dialog.alert('Signature', 'Draw/upload a signature or paste signature URL/base64 data.');
             return;
         }
 
@@ -649,11 +963,106 @@ export const BusinessSuiteScreen = () => {
                 },
             }, currentOrganizationId);
             applySettingsToUi(asRecord(settings));
+            setOrganizationSettings(settings);
             dialog.alert('Template', 'Template and print settings saved.');
         } catch (error: unknown) {
             dialog.alert('Template', error instanceof Error ? error.message : 'Failed to save template settings.');
         } finally {
             setSavingTemplateSettings(false);
+        }
+    };
+
+    const handlePickBusinessCardImage = async () => {
+        if (!canManageBusinessCards) {
+            dialog.alert('Access Denied', 'You do not have permission to manage business cards.');
+            return;
+        }
+
+        try {
+            const picked = await pickOptimizedImage();
+            if (!picked) return;
+            setUploadingBusinessCardImage(true);
+            const uploaded = await mediaService.uploadFromUri({
+                uri: picked.uri,
+                fileName: picked.fileName,
+                fileType: picked.fileType,
+                assetType: 'OTHER',
+                entityType: 'business_card',
+                organizationId: currentOrganizationId,
+            });
+            setBusinessCardCustomImageUrl(uploaded.fileUrl);
+        } catch (error: unknown) {
+            dialog.alert('Business Card', error instanceof Error ? error.message : 'Failed to upload custom business card.');
+        } finally {
+            setUploadingBusinessCardImage(false);
+        }
+    };
+
+    const handleSaveBusinessCardSettings = async () => {
+        if (!canManageBusinessCards) {
+            dialog.alert('Access Denied', 'You do not have permission to manage business cards.');
+            return;
+        }
+
+        const businessName = organizationName.trim() || user?.businessName?.trim() || 'Business Name';
+        const payload = {
+            templateKey: businessCardTemplateKey,
+            businessName,
+            ownerName: businessCardOwnerName.trim(),
+            phoneNumber: businessCardPhone.trim(),
+            email: businessCardEmail.trim(),
+            website: businessCardWebsite.trim(),
+            tagline: businessCardTagline.trim(),
+            address: businessCardAddress.trim(),
+            gstNumber: businessCardGst.trim(),
+            customImageUrl: businessCardCustomImageUrl.trim(),
+        };
+
+        setSavingBusinessCardSettings(true);
+        try {
+            const settings = await businessSuiteService.updateOrganizationSettings({
+                businessCard: payload,
+            }, currentOrganizationId);
+            applySettingsToUi(asRecord(settings));
+            setOrganizationSettings(settings);
+            dialog.alert('Business Card', 'Business card settings saved.');
+        } catch (error: unknown) {
+            dialog.alert('Business Card', error instanceof Error ? error.message : 'Failed to save business card settings.');
+        } finally {
+            setSavingBusinessCardSettings(false);
+        }
+    };
+
+    const handleShareBusinessCard = async () => {
+        if (!canManageBusinessCards) {
+            dialog.alert('Access Denied', 'You do not have permission to share business cards.');
+            return;
+        }
+
+        const businessName = organizationName.trim() || user?.businessName?.trim() || 'Business Name';
+        const payload = {
+            templateKey: businessCardTemplateKey,
+            businessName,
+            ownerName: businessCardOwnerName.trim() || user?.displayName?.trim() || 'Owner',
+            phoneNumber: businessCardPhone.trim(),
+            email: businessCardEmail.trim(),
+            website: businessCardWebsite.trim(),
+            tagline: businessCardTagline.trim(),
+            address: businessCardAddress.trim(),
+            gstNumber: businessCardGst.trim(),
+        };
+
+        try {
+            if (businessCardCustomImageUrl.trim()) {
+                await Share.share({
+                    title: `${businessName} Business Card`,
+                    message: `${businessName}\n${businessCardCustomImageUrl.trim()}`,
+                });
+                return;
+            }
+            await shareBusinessCardPdf(payload);
+        } catch (error: unknown) {
+            dialog.alert('Business Card', error instanceof Error ? error.message : 'Failed to share business card.');
         }
     };
 
@@ -675,16 +1084,51 @@ export const BusinessSuiteScreen = () => {
             return;
         }
 
+        const message = buildReminderMessage(invoice, student);
+        const messageWithMedia = mediaUrl.trim()
+            ? `${message}\nMedia: ${mediaUrl.trim()}`
+            : message;
+
         setSendingReminderForInvoiceId(invoice.id);
         try {
-            await businessSuiteService.sendFeeReminderWhatsApp({
-                invoiceId: invoice.id,
-                recipient,
-                customMessage: customReminderMessage.trim() || undefined,
-                mediaUrl: mediaUrl.trim() || undefined,
-            }, currentOrganizationId);
-            dialog.alert('Reminder', 'WhatsApp reminder sent successfully.');
+            if (reminderMode === 'DEVICE') {
+                await openWhatsApp(recipient, messageWithMedia);
+                dialog.alert('Reminder', 'WhatsApp opened with pre-filled message. Tap send to deliver.');
+            } else {
+                const online = await isOnline();
+                if (!online) {
+                    await offlineSyncService.enqueueMessage({
+                        channel: 'WHATSAPP',
+                        recipient,
+                        message,
+                        mediaUrl: mediaUrl.trim() || undefined,
+                    });
+                    dialog.alert('Reminder', 'You are offline. Reminder has been queued and will sync when online.');
+                    return;
+                }
+                await businessSuiteService.sendFeeReminderWhatsApp({
+                    invoiceId: invoice.id,
+                    recipient,
+                    customMessage: message,
+                    mediaUrl: mediaUrl.trim() || undefined,
+                }, currentOrganizationId);
+                dialog.alert('Reminder', 'WhatsApp reminder sent successfully.');
+            }
         } catch (error: unknown) {
+            if (reminderMode === 'CLOUD') {
+                try {
+                    await offlineSyncService.enqueueMessage({
+                        channel: 'WHATSAPP',
+                        recipient,
+                        message,
+                        mediaUrl: mediaUrl.trim() || undefined,
+                    });
+                    dialog.alert('Reminder', 'Failed to send now. Reminder has been queued for offline sync.');
+                    return;
+                } catch {
+                    // Ignore queue fallback errors and show original error below.
+                }
+            }
             dialog.alert('Reminder', error instanceof Error ? error.message : 'Failed to send reminder.');
         } finally {
             setSendingReminderForInvoiceId(null);
@@ -779,6 +1223,47 @@ export const BusinessSuiteScreen = () => {
                     <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
                         Net Contribution: {formatCurrency(netBusinessContribution, activeCurrency)}
                     </Text>
+                </AppCard>
+
+                <AppCard>
+                    <Text variant="titleMedium" style={styles.sectionTitle}>
+                        Staff App Feature Controls
+                    </Text>
+                    {!isOwnerOrAdmin && (
+                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                            Only owner/admin can update global staff feature controls.
+                        </Text>
+                    )}
+                    {isOwnerOrAdmin && (
+                        <>
+                            <Text variant="bodySmall" style={{ color: theme.colors.outline, marginBottom: 10 }}>
+                                Toggle which modules are visible for all staff users in this store.
+                            </Text>
+                            <View style={styles.permissionContainer}>
+                                {STAFF_FEATURE_FIELDS.map((field) => (
+                                    <View key={`feature-${field.key}`} style={styles.permissionRow}>
+                                        <View style={styles.permissionText}>
+                                            <Text variant="bodyMedium">{field.label}</Text>
+                                            <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                                {field.description}
+                                            </Text>
+                                        </View>
+                                        <Switch
+                                            value={Boolean(staffFeatureAccess[field.key])}
+                                            onValueChange={(value) => onToggleStaffFeature(field.key, value)}
+                                        />
+                                    </View>
+                                ))}
+                            </View>
+                            <AppButton
+                                mode="contained"
+                                onPress={() => { void handleSaveStaffFeatureAccess(); }}
+                                loading={savingStaffFeatures}
+                            >
+                                Save Staff Feature Controls
+                            </AppButton>
+                        </>
+                    )}
                 </AppCard>
 
                 <AppCard>
@@ -1049,14 +1534,34 @@ export const BusinessSuiteScreen = () => {
                                 onChangeText={setSignatureName}
                                 placeholder="Authorized Signatory"
                             />
+                            <View style={styles.memberActionRow}>
+                                <AppButton
+                                    mode="contained-tonal"
+                                    onPress={() => setSignatureCaptureVisible(true)}
+                                >
+                                    Draw Signature
+                                </AppButton>
+                                <AppButton
+                                    mode="outlined"
+                                    onPress={() => { void handlePickSignatureImage(); }}
+                                    loading={uploadingSignatureMedia}
+                                >
+                                    Upload Image
+                                </AppButton>
+                            </View>
                             <AppInput
-                                label="Signature URL or Base64 Data"
+                                label="Signature URL (or base64 fallback)"
                                 value={signaturePayload}
                                 onChangeText={setSignaturePayload}
                                 multiline
                                 numberOfLines={3}
                                 placeholder="https://... or data:image/png;base64,..."
                             />
+                            {uploadingSignatureMedia && (
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline, marginBottom: 8 }}>
+                                    Uploading signature media...
+                                </Text>
+                            )}
                             <AppButton
                                 mode="contained-tonal"
                                 onPress={() => { void handleSaveSignature(); }}
@@ -1076,6 +1581,156 @@ export const BusinessSuiteScreen = () => {
                         </>
                     )}
                 </AppCard>
+
+                <AppCard>
+                    <Text variant="titleMedium" style={styles.sectionTitle}>
+                        Business Card Studio
+                    </Text>
+                    {!canManageBusinessCards && (
+                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                            Access denied. Ask owner/admin to manage business cards.
+                        </Text>
+                    )}
+                    {canManageBusinessCards && (
+                        <>
+                            <Text variant="bodySmall" style={{ color: theme.colors.outline, marginBottom: 8 }}>
+                                Choose a template, auto-fill details, then share. You can also upload your own card image.
+                            </Text>
+                            <View style={styles.templateGrid}>
+                                {BUSINESS_CARD_TEMPLATES.map((template) => (
+                                    <Chip
+                                        key={template.key}
+                                        selected={businessCardTemplateKey === template.key}
+                                        onPress={() => setBusinessCardTemplateKey(template.key)}
+                                        mode={businessCardTemplateKey === template.key ? 'flat' : 'outlined'}
+                                        style={styles.templateChip}
+                                    >
+                                        {template.name}
+                                    </Chip>
+                                ))}
+                            </View>
+
+                            <View
+                                style={{
+                                    borderRadius: 12,
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(148,163,184,0.35)',
+                                    padding: 12,
+                                    marginBottom: 10,
+                                }}
+                            >
+                                <Text variant="titleSmall" style={{ fontWeight: '700' }}>
+                                    {organizationName || user?.businessName || 'Business Name'}
+                                </Text>
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                    {businessCardOwnerName || user?.displayName || 'Owner'}
+                                </Text>
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                    {businessCardPhone || '-'}
+                                </Text>
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                    {businessCardEmail || '-'}
+                                </Text>
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                    {businessCardWebsite || '-'}
+                                </Text>
+                                {!!businessCardTagline && (
+                                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                        {businessCardTagline}
+                                    </Text>
+                                )}
+                            </View>
+
+                            <AppInput
+                                label="Owner Name"
+                                value={businessCardOwnerName}
+                                onChangeText={setBusinessCardOwnerName}
+                                placeholder={user?.displayName || 'Owner Name'}
+                            />
+                            <AppInput
+                                label="Phone Number"
+                                value={businessCardPhone}
+                                onChangeText={setBusinessCardPhone}
+                                keyboardType="phone-pad"
+                                placeholder={user?.phoneNumber || '+91 9876543210'}
+                            />
+                            <AppInput
+                                label="Email"
+                                value={businessCardEmail}
+                                onChangeText={setBusinessCardEmail}
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                                placeholder={user?.email || 'email@example.com'}
+                            />
+                            <AppInput
+                                label="Website"
+                                value={businessCardWebsite}
+                                onChangeText={setBusinessCardWebsite}
+                                autoCapitalize="none"
+                                placeholder="https://yourbusiness.com"
+                            />
+                            <AppInput
+                                label="Tagline"
+                                value={businessCardTagline}
+                                onChangeText={setBusinessCardTagline}
+                                placeholder="Trusted service since 2010"
+                            />
+                            <AppInput
+                                label="Address"
+                                value={businessCardAddress}
+                                onChangeText={setBusinessCardAddress}
+                                multiline
+                                numberOfLines={2}
+                                placeholder="Business address"
+                            />
+                            <AppInput
+                                label="GST Number"
+                                value={businessCardGst}
+                                onChangeText={setBusinessCardGst}
+                                autoCapitalize="characters"
+                                placeholder={user?.gstNumber || 'GSTIN'}
+                            />
+                            <AppInput
+                                label="Custom Card Image URL"
+                                value={businessCardCustomImageUrl}
+                                onChangeText={setBusinessCardCustomImageUrl}
+                                placeholder="https://..."
+                            />
+                            <View style={styles.memberActionRow}>
+                                <AppButton
+                                    mode="contained-tonal"
+                                    onPress={() => { void handlePickBusinessCardImage(); }}
+                                    loading={uploadingBusinessCardImage}
+                                >
+                                    Upload Own Card
+                                </AppButton>
+                                {Boolean(businessCardCustomImageUrl.trim()) && (
+                                    <AppButton
+                                        mode="text"
+                                        onPress={() => setBusinessCardCustomImageUrl('')}
+                                    >
+                                        Clear Image
+                                    </AppButton>
+                                )}
+                            </View>
+                            <View style={styles.memberActionRow}>
+                                <AppButton
+                                    mode="contained"
+                                    onPress={() => { void handleSaveBusinessCardSettings(); }}
+                                    loading={savingBusinessCardSettings}
+                                >
+                                    Save Card Setup
+                                </AppButton>
+                                <AppButton
+                                    mode="outlined"
+                                    onPress={() => { void handleShareBusinessCard(); }}
+                                >
+                                    Share Card
+                                </AppButton>
+                            </View>
+                        </>
+                    )}
+                </AppCard>
                 <AppCard>
                     <Text variant="titleMedium" style={styles.sectionTitle}>
                         Institution Fee Reminders
@@ -1090,6 +1745,15 @@ export const BusinessSuiteScreen = () => {
                             <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
                                 {dueReminders.length} due reminder(s) found.
                             </Text>
+                            <SegmentedButtons
+                                value={reminderMode}
+                                onValueChange={(value) => setReminderMode(value === 'CLOUD' ? 'CLOUD' : 'DEVICE')}
+                                buttons={[
+                                    { value: 'DEVICE', label: 'Device WhatsApp' },
+                                    { value: 'CLOUD', label: 'Cloud API' },
+                                ]}
+                                style={{ marginBottom: 12 }}
+                            />
                             <AppInput
                                 label="Custom Message (optional)"
                                 value={customReminderMessage}
@@ -1104,6 +1768,26 @@ export const BusinessSuiteScreen = () => {
                                 onChangeText={setMediaUrl}
                                 placeholder="https://..."
                             />
+                            <View style={styles.memberActionRow}>
+                                <AppButton
+                                    mode="contained-tonal"
+                                    onPress={() => { void handlePickReminderMedia(); }}
+                                    loading={uploadingReminderMedia}
+                                >
+                                    Attach Image
+                                </AppButton>
+                                {Boolean(mediaUrl.trim()) && (
+                                    <AppButton
+                                        mode="text"
+                                        onPress={() => setMediaUrl('')}
+                                    >
+                                        Clear Media
+                                    </AppButton>
+                                )}
+                            </View>
+                            <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                Device mode is zero-cost and opens WhatsApp with prefilled text. Cloud mode uses server provider flow.
+                            </Text>
                             {dueReminders.length === 0 && (
                                 <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 6 }}>
                                     No dues found up to today.
@@ -1157,6 +1841,11 @@ export const BusinessSuiteScreen = () => {
                     </View>
                 )}
             </ScrollView>
+            <SignatureCaptureModal
+                visible={signatureCaptureVisible}
+                onClose={() => setSignatureCaptureVisible(false)}
+                onSave={(dataUrl) => { void handleCaptureSignatureSave(dataUrl); }}
+            />
         </ScreenWrapper>
     );
 };

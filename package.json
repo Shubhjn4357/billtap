@@ -1,7 +1,7 @@
 {
   "name": "billtap",
   "main": "expo-router/entry",
-  "version": "1.0.1",
+  "version": "2.1.0",
   "scripts": {
     "start": "expo start",
     "prebuild": "expo prebuild",
@@ -15,6 +15,12 @@
     "android:signing-info": "node ./scripts/android-signing-info.js",
     "version:bump": "node ./scripts/bump-version.js",
     "build:web": "expo export --platform web --clear",
+    "routes:check": "node ./scripts/validate-routes.mjs",
+    "api:routes:check": "node ./scripts/validate-api-routes.mjs",
+    "contracts:check": "npm run routes:check && npm run api:routes:check",
+    "smoke:e2e": "node ./scripts/smoke-e2e.mjs",
+    "apk:build:preview": "npm run smoke:e2e && eas build --platform android --profile preview",
+    "apk:build:production": "npm run smoke:e2e && eas build --platform android --profile production",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
@@ -41,6 +47,8 @@
     "expo-font": "~14.0.11",
     "expo-haptics": "~15.0.8",
     "expo-image": "~3.0.11",
+    "expo-image-manipulator": "~14.0.8",
+    "expo-image-picker": "~17.0.10",
     "expo-linking": "~8.0.11",
     "expo-notifications": "^0.32.16",
     "expo-print": "^15.0.8",

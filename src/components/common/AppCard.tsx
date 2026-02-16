@@ -22,8 +22,8 @@ export const AppCard: React.FC<AppCardProps> = ({
             style={[
                 styles.card,
                 {
-                    backgroundColor: theme.colors.surface,
-                    borderColor: theme.dark ? 'rgba(255,255,255,0.08)' : 'rgba(2,6,23,0.06)',
+                    backgroundColor: theme.dark ? 'rgba(17,26,45,0.82)' : 'rgba(255,255,255,0.78)',
+                    borderColor: theme.dark ? 'rgba(148,163,184,0.18)' : 'rgba(2,6,23,0.1)',
                     shadowColor: '#020617',
                 },
                 style,
@@ -39,13 +39,13 @@ export const AppCard: React.FC<AppCardProps> = ({
 
 const styles = StyleSheet.create({
     card: {
-        borderRadius: 20,
+        borderRadius: 22,
         borderWidth: 1,
         marginBottom: 12,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.08,
-        shadowRadius: 16,
-        elevation: 2,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.1,
+        shadowRadius: 18,
+        elevation: 5,
     },
     content: {
         paddingVertical: 16,

@@ -28,6 +28,7 @@ interface OfflineItemPayload {
     subcategory?: string | null;
     location?: string | null;
     barcode?: string | null;
+    imageUrl?: string | null;
     isActive?: boolean;
 }
 
@@ -76,6 +77,16 @@ type OfflineMutation =
             value?: number;
             currency?: string;
             metadata?: Record<string, string | number | boolean>;
+        };
+    })
+    | (QueueMutationBase & {
+        type: 'send_message';
+        payload: {
+            channel: 'WHATSAPP' | 'SMS' | 'EMAIL';
+            recipient: string;
+            message: string;
+            barcode?: string;
+            mediaUrl?: string;
         };
     });
 
@@ -141,6 +152,7 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
                 subcategory: mutation.payload.subcategory ?? undefined,
                 location: mutation.payload.location ?? undefined,
                 barcode: mutation.payload.barcode ?? undefined,
+                imageUrl: mutation.payload.imageUrl ?? undefined,
                 isActive: mutation.payload.isActive ?? true,
             };
 
@@ -238,6 +250,16 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
             const response = await apiClient.post<{ ok: boolean; message?: string }>('/analytics/events', mutation.payload);
             if (!response.ok) {
                 throw new Error(response.message || 'Failed to log analytics event.');
+            }
+            return;
+        }
+        case 'send_message': {
+            const response = await apiClient.post<{ ok: boolean; message?: string }>(
+                '/communications/messages/send',
+                mutation.payload
+            );
+            if (!response.ok) {
+                throw new Error(response.message || 'Failed to send message.');
             }
             return;
         }
@@ -365,6 +387,19 @@ export const offlineSyncService = {
 
         queue.push(nextMutation);
         await writeJson(OFFLINE_QUEUE_KEY, queue);
+    },
+
+    async enqueueMessage(payload: {
+        channel: 'WHATSAPP' | 'SMS' | 'EMAIL';
+        recipient: string;
+        message: string;
+        barcode?: string;
+        mediaUrl?: string;
+    }): Promise<void> {
+        await this.enqueueMutation({
+            type: 'send_message',
+            payload,
+        });
     },
 
     async clearQueue(): Promise<void> {

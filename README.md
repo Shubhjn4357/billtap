@@ -21,6 +21,7 @@ Optional:
 - `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
 - `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
 - `EXPO_PUBLIC_ENABLE_LIVE_PAYMENTS`
+- `EXPO_PUBLIC_WHATSAPP_DELIVERY_MODE` (`device` or `cloud`)
 
 ## Quality Commands
 
@@ -29,11 +30,30 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm doctor
+pnpm smoke:e2e
+```
+
+Smoke E2E requires:
+
+- `SMOKE_API_BASE_URL`
+- `SMOKE_PHONE_NUMBER`
+
+Optional:
+
+- `SMOKE_OTP_CODE`
+- `SMOKE_CREATE_SECOND_STORE`
+- `SMOKE_REMINDER_RECIPIENT`
+
+APK helper scripts:
+
+```bash
+pnpm apk:build:preview
+pnpm apk:build:production
 ```
 
 ## Android CI/CD
 
-Workflow: `.github/workflows/android_build.yml`
+Workflow: `.github/workflows/android_release_build.yaml`
 
 Triggers on `dev` branch push/PR and builds:
 
@@ -64,6 +84,14 @@ pnpm run android:signing-info -- \
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_ALIAS`
 - `ANDROID_KEY_PASSWORD`
+- `SMOKE_API_BASE_URL`
+- `SMOKE_PHONE_NUMBER`
+
+Optional smoke secrets:
+
+- `SMOKE_OTP_CODE`
+- `SMOKE_CREATE_SECOND_STORE`
+- `SMOKE_REMINDER_RECIPIENT`
 
 ## Google OAuth Console Values
 

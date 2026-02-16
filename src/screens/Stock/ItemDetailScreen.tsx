@@ -1,8 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Alert, StyleSheet } from 'react-native';
+import { View, ScrollView, Alert, StyleSheet, Image } from 'react-native';
 import { Text, useTheme, SegmentedButtons, TextInput } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppInput } from '../../components/common/AppInput';
 import { AppButton } from '../../components/common/AppButton';
@@ -10,14 +12,21 @@ import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { COMMON_TEXT, STOCK_TEXT } from '../../constants/staticText';
 import { useStock } from '../../hooks/useStock';
 import { Config } from '../../constants/Config';
+import { mediaService } from '../../api/mediaService';
+import { useOrganizationStore } from '../../store';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 export const ItemDetailScreen = () => {
     const params = useLocalSearchParams<{ id?: string | string[]; barcode?: string | string[]; scanned?: string }>();
     const itemId = Array.isArray(params.id) ? params.id[0] : params.id;
-    const isNew = itemId === 'new';
+    // `/item/new` does not provide `id`, while `/item/[id]` passes `id`.
+    const isNew = !itemId || itemId === 'new';
     const { addItem, updateItem, deleteItem, allItems, loading } = useStock();
+    const { selectedOrganizationId } = useOrganizationStore();
+    const { canManageInventory } = useOrganizationAccess();
     const router = useRouter();
     const theme = useTheme();
+    const [uploadingImage, setUploadingImage] = useState(false);
 
     const [form, setForm] = useState({
         name: '',
@@ -40,6 +49,7 @@ export const ItemDetailScreen = () => {
         location: '',
 
         barcode: '',
+        imageUrl: '',
     });
 
     useEffect(() => {
@@ -60,6 +70,7 @@ export const ItemDetailScreen = () => {
                     unit: item.unit || 'pcs',
                     location: item.location || '',
                     barcode: item.barcode || '',
+                    imageUrl: item.imageUrl || '',
                 });
             }
         }
@@ -71,6 +82,50 @@ export const ItemDetailScreen = () => {
             setForm(prev => ({ ...prev, barcode: code }));
         }
     }, [params.barcode, params.scanned]);
+
+    const handlePickAndUploadImage = async () => {
+        try {
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert(COMMON_TEXT.alerts.error, 'Media library permission is required.');
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 1,
+            });
+            if (result.canceled || result.assets.length === 0) return;
+
+            const source = result.assets[0];
+            const optimized = await ImageManipulator.manipulateAsync(
+                source.uri,
+                [{ resize: { width: 800 } }],
+                { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+            );
+
+            setUploadingImage(true);
+            const uploaded = await mediaService.uploadFromUri({
+                uri: optimized.uri,
+                fileName: source.fileName || `item-${Date.now()}.jpg`,
+                fileType: 'image/jpeg',
+                assetType: 'PRODUCT_IMAGE',
+                entityType: 'item',
+                entityId: isNew ? undefined : itemId,
+                organizationId: selectedOrganizationId ?? undefined,
+            });
+
+            setForm((prev) => ({ ...prev, imageUrl: uploaded.fileUrl }));
+        } catch (error: unknown) {
+            Alert.alert(
+                COMMON_TEXT.alerts.error,
+                error instanceof Error ? error.message : 'Failed to upload product image.'
+            );
+        } finally {
+            setUploadingImage(false);
+        }
+    };
 
     const handleSubmit = async () => {
         if (!form.name || !form.price || !form.stock) {
@@ -101,6 +156,7 @@ export const ItemDetailScreen = () => {
             unit: form.unit,
             location: form.location.trim() || undefined,
             barcode: form.barcode.trim() || undefined,
+            imageUrl: form.imageUrl.trim() || undefined,
         };
 
         try {
@@ -146,6 +202,14 @@ export const ItemDetailScreen = () => {
 
     return (
         <ScreenWrapper>
+            {!canManageInventory ? (
+                <View style={{ paddingTop: 20 }}>
+                    <PageHeaderCard
+                        title="Inventory access disabled"
+                        subtitle="Ask owner/admin to enable inventory permissions."
+                    />
+                </View>
+            ) : (
             <ScrollView contentContainerStyle={{ paddingTop: 20, paddingBottom: 40 }}>
                 <PageHeaderCard
                     title={isNew ? STOCK_TEXT.itemDetail.addTitle : STOCK_TEXT.itemDetail.editTitle}
@@ -171,6 +235,40 @@ export const ItemDetailScreen = () => {
                             onChangeText={t => setForm({ ...form, subcategory: t })}
                             style={styles.halfInput}
                         />
+                    </View>
+                    {Boolean(form.imageUrl) && (
+                        <View style={styles.imagePreviewWrap}>
+                            <Image
+                                source={{ uri: form.imageUrl }}
+                                resizeMode="cover"
+                                style={styles.imagePreview}
+                            />
+                        </View>
+                    )}
+                    <AppInput
+                        label="Product Image URL"
+                        value={form.imageUrl}
+                        onChangeText={t => setForm({ ...form, imageUrl: t })}
+                        placeholder="https://..."
+                    />
+                    <View style={styles.row}>
+                        <AppButton
+                            mode="contained-tonal"
+                            onPress={() => { void handlePickAndUploadImage(); }}
+                            loading={uploadingImage}
+                            style={styles.halfInput}
+                        >
+                            Upload Product Image
+                        </AppButton>
+                        {Boolean(form.imageUrl) && (
+                            <AppButton
+                                mode="outlined"
+                                onPress={() => setForm((prev) => ({ ...prev, imageUrl: '' }))}
+                                style={styles.halfInput}
+                            >
+                                Remove Image
+                            </AppButton>
+                        )}
                     </View>
                 </Section>
 
@@ -290,6 +388,7 @@ export const ItemDetailScreen = () => {
                     </AppButton>
                 )}
             </ScrollView>
+            )}
         </ScreenWrapper>
     );
 };
@@ -306,4 +405,16 @@ const styles = StyleSheet.create({
     sectionTitle: { marginBottom: 12, fontWeight: 'bold' },
     row: { flexDirection: 'row', gap: 12 },
     halfInput: { flex: 1 },
+    imagePreviewWrap: {
+        marginBottom: 12,
+        borderRadius: 12,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(148,163,184,0.35)',
+    },
+    imagePreview: {
+        width: '100%',
+        height: 160,
+        backgroundColor: '#f1f5f9',
+    },
 });

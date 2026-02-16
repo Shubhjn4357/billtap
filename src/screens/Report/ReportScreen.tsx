@@ -6,6 +6,7 @@ import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 type PnlSnapshot = {
     totalSales: number;
@@ -26,13 +27,15 @@ type BalanceSnapshot = {
 
 export const ReportScreen = () => {
     const theme = useTheme();
+    const { canViewReports } = useOrganizationAccess();
     const [loading, setLoading] = useState(false);
     const [pnl, setPnl] = useState<PnlSnapshot | null>(null);
     const [balanceSheet, setBalanceSheet] = useState<BalanceSnapshot | null>(null);
 
     useEffect(() => {
+        if (!canViewReports) return;
         void loadReports();
-    }, []);
+    }, [canViewReports]);
 
     const loadReports = async () => {
         setLoading(true);
@@ -68,6 +71,16 @@ export const ReportScreen = () => {
 
     return (
         <ScreenWrapper>
+            {!canViewReports ? (
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
+                        Reports access is disabled
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                        Ask owner/admin to enable reports permission.
+                    </Text>
+                </AppCard>
+            ) : (
             <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}>
                 <PageHeaderCard
                     title="Reporting & Analytics"
@@ -143,6 +156,7 @@ export const ReportScreen = () => {
                     </AppCard>
                 )}
             </ScrollView>
+            )}
         </ScreenWrapper>
     );
 };

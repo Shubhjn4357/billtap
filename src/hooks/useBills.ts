@@ -5,7 +5,7 @@ import { useAuth } from './useAuth';
 
 const BILL_CACHE_TTL_MS = 30_000;
 
-export const useBills = () => {
+export const useBills = (enabled = true) => {
     const { user } = useAuth();
     const [bills, setBills] = useState<StoredBill[]>([]);
     const [loading, setLoading] = useState(false);
@@ -18,6 +18,11 @@ export const useBills = () => {
             setBills([]);
             setError(null);
             lastFetchAtRef.current = 0;
+            return;
+        }
+        if (!enabled) {
+            setBills([]);
+            setError(null);
             return;
         }
 
@@ -48,11 +53,16 @@ export const useBills = () => {
 
         inFlightRef.current = request;
         await request;
-    }, [bills.length, user]);
+    }, [bills.length, enabled, user]);
 
     useEffect(() => {
+        if (!enabled) {
+            setBills([]);
+            setError(null);
+            return;
+        }
         void fetchBills();
-    }, [fetchBills]);
+    }, [enabled, fetchBills]);
 
     const stats = useMemo(() => calculateBillStats(bills), [bills]);
 

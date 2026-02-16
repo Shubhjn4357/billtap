@@ -18,14 +18,23 @@ import { useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
 import { isLowStock } from '../../utils/stockStatus';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 export const DashboardScreen = () => {
     const { user } = useAuth();
+    const {
+        canViewDashboard,
+        canOpenBilling,
+        canCreateSale,
+        canCreatePurchase,
+        canManageInventory,
+        canViewReports,
+    } = useOrganizationAccess();
     const { currencySymbol } = useSettingsStore();
     const theme = useTheme();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { stats, loading, fetchBills } = useBills();
+    const { stats, loading, fetchBills } = useBills(canViewReports);
     const { primaryOffer, fetchOffers } = useOffers();
     const { items, fetchItems } = useStock();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
@@ -47,16 +56,31 @@ export const DashboardScreen = () => {
 
     useFocusEffect(
         React.useCallback(() => {
-            void fetchBills();
+            if (!canViewDashboard) return;
+            if (canViewReports) {
+                void fetchBills();
+            }
             void fetchOffers();
-            void fetchItems();
-        }, [fetchBills, fetchOffers, fetchItems])
+            if (canManageInventory) {
+                void fetchItems();
+            }
+        }, [canManageInventory, canViewDashboard, canViewReports, fetchBills, fetchItems, fetchOffers])
     );
 
     const displayName = user?.displayName?.trim() || 'Merchant';
 
     return (
         <ScreenWrapper>
+            {!canViewDashboard ? (
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
+                        Dashboard access is disabled
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                        Ask owner/admin to enable dashboard access for your account.
+                    </Text>
+                </AppCard>
+            ) : (
             <ScrollView
                 contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomSpacing }]}
                 showsVerticalScrollIndicator={false}
@@ -170,34 +194,40 @@ export const DashboardScreen = () => {
                         Jump to your most-used workflows.
                     </Text>
                     <View style={styles.quickActionRow}>
-                        <AppButton
-                            mode="contained"
-                            compact
-                            style={styles.quickActionHalf}
-                            onPress={() => router.push('/(main)/(tabs)/billing')}
-                            icon="calculator"
-                        >
-                            New Bill
-                        </AppButton>
-                        <AppButton
-                            mode="contained"
-                            compact
-                            style={[styles.quickActionHalf, styles.quickActionHalfSpacer]}
-                            onPress={() => router.push('/(main)/(tabs)/stock')}
-                            icon="package-variant"
-                        >
-                            Stock
-                        </AppButton>
+                        {(canOpenBilling && (canCreateSale || canCreatePurchase)) && (
+                            <AppButton
+                                mode="contained"
+                                compact
+                                style={styles.quickActionHalf}
+                                onPress={() => router.push('/(main)/(tabs)/billing')}
+                                icon="calculator"
+                            >
+                                New Bill
+                            </AppButton>
+                        )}
+                        {canManageInventory && (
+                            <AppButton
+                                mode="contained"
+                                compact
+                                style={[styles.quickActionHalf, styles.quickActionHalfSpacer]}
+                                onPress={() => router.push('/(main)/(tabs)/stock')}
+                                icon="package-variant"
+                            >
+                                Stock
+                            </AppButton>
+                        )}
                     </View>
-                    <AppButton
-                        mode="contained"
-                        compact
-                        style={styles.quickActionFull}
-                        onPress={() => router.push('/(main)/(tabs)/reports')}
-                        icon="chart-line"
-                    >
-                        Reports
-                    </AppButton>
+                    {canViewReports && (
+                        <AppButton
+                            mode="contained"
+                            compact
+                            style={styles.quickActionFull}
+                            onPress={() => router.push('/(main)/(tabs)/reports')}
+                            icon="chart-line"
+                        >
+                            Reports
+                        </AppButton>
+                    )}
                 </AppCard>
 
                 <View style={styles.metricRow}>
@@ -267,6 +297,7 @@ export const DashboardScreen = () => {
                     </Text>
                 </AppCard>
             </ScrollView>
+            )}
         </ScreenWrapper>
     );
 };

@@ -2,7 +2,7 @@
   "expo": {
     "name": "billtap",
     "slug": "billtap",
-    "version": "1.0.1",
+    "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "billtap",
@@ -19,7 +19,7 @@
     "ios": {
       "bundleIdentifier": "com.autoloop.billtap",
       "supportsTablet": true,
-      "buildNumber": "1"
+      "buildNumber": "3"
     },
     "android": {
       "package": "com.autoloop.billtap",
@@ -32,7 +32,7 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 1
+      "versionCode": 3
     },
     "web": {
       "output": "single",

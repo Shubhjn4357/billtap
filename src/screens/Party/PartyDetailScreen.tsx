@@ -13,6 +13,7 @@ import { COMMON_TEXT } from '../../constants/staticText';
 import type { PartyType } from '../../types';
 import { partyService } from '../../api/partyService';
 import { useAuth } from '../../hooks/useAuth';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 export const PartyDetailScreen = () => {
     const params = useLocalSearchParams<{ id?: string | string[] }>();
@@ -20,6 +21,7 @@ export const PartyDetailScreen = () => {
     const isNew = partyId === 'new';
     const { parties, addParty, updateParty, deleteParty, loading } = usePartyStore();
     const { user } = useAuth();
+    const { canManageParties } = useOrganizationAccess();
     const router = useRouter();
     const theme = useTheme();
 
@@ -126,6 +128,12 @@ export const PartyDetailScreen = () => {
 
     return (
         <ScreenWrapper>
+            {!canManageParties ? (
+                <PageHeaderCard
+                    title="Party access disabled"
+                    subtitle="Ask owner/admin to enable party management."
+                />
+            ) : (
             <ScrollView contentContainerStyle={{ paddingTop: 20 }}>
                 <PageHeaderCard
                     title={isNew ? 'Add Party' : 'Edit Party'}
@@ -206,6 +214,7 @@ export const PartyDetailScreen = () => {
                     </AppButton>
                 )}
             </ScrollView>
+            )}
         </ScreenWrapper>
     );
 };

@@ -37,6 +37,7 @@ export const itemService = {
                     subcategory: item.subcategory,
                     location: item.location,
                     barcode: item.barcode,
+                    imageUrl: item.imageUrl,
                     isActive: item.isActive,
                 });
 
@@ -75,6 +76,7 @@ export const itemService = {
                 subcategory: normalized.subcategory ?? null,
                 location: normalized.location ?? null,
                 barcode: normalized.barcode ?? null,
+                imageUrl: normalized.imageUrl ?? null,
                 isActive: normalized.isActive ?? true,
             },
         });
@@ -119,6 +121,7 @@ export const itemService = {
                     subcategory: merged.subcategory,
                     location: merged.location,
                     barcode: merged.barcode,
+                    imageUrl: merged.imageUrl,
                     isActive: merged.isActive,
                 });
 
@@ -152,6 +155,7 @@ export const itemService = {
                 subcategory: merged.subcategory ?? null,
                 location: merged.location ?? null,
                 barcode: merged.barcode ?? null,
+                imageUrl: merged.imageUrl ?? null,
                 isActive: merged.isActive ?? true,
             },
         });

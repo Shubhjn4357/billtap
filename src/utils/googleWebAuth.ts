@@ -1,9 +1,7 @@
-// This file handles Google Sign-In for Web environments and Expo Go using `expo-auth-session`.
-// It is distinct from `googleNativeSignIn` which uses the native `@react-native-google-signin` library for Android/iOS builds.
 import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useMemo } from 'react';
+import { Platform } from 'react-native';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -19,6 +17,16 @@ export interface UseWebGoogleAuthResult {
     prompt: () => void;
 }
 
+const NOOP_PROMPT = () => {};
+
+const resolveClientId = (input: UseWebGoogleAuthInput): string | undefined =>
+    Platform.select({
+        web: input.webClientId ?? undefined,
+        ios: input.iosClientId || input.webClientId || undefined,
+        android: input.androidClientId || input.webClientId || undefined,
+        default: input.webClientId ?? undefined,
+    });
+
 export const useWebGoogleAuth = ({
     webClientId,
     androidClientId,
@@ -29,28 +37,33 @@ export const useWebGoogleAuth = ({
         path: 'oauthredirect',
     });
 
+    const clientId = resolveClientId({
+        webClientId,
+        androidClientId,
+        iosClientId,
+    });
+    const hasClientId = Boolean(clientId);
+
     const [request, response, promptAsync] = Google.useAuthRequest({
+        clientId: clientId ?? 'missing-google-client-id',
         webClientId,
         androidClientId,
         iosClientId,
         redirectUri,
     });
 
-    const prompt = useCallback(() => {
-        void promptAsync();
-    }, [promptAsync]);
+    const idToken =
+        response?.type === 'success' && response.params?.id_token
+            ? response.params.id_token
+            : null;
 
-    return useMemo(() => {
-        const idToken =
-            response?.type === 'success' && response.params?.id_token
-                ? response.params.id_token
-                : null;
-
-        return {
-            requestReady: !!request,
-            idToken,
-            prompt,
-        };
-    }, [prompt, request, response]);
+    return {
+        requestReady: hasClientId && !!request,
+        idToken,
+        prompt: hasClientId
+            ? () => {
+            void promptAsync();
+            }
+            : NOOP_PROMPT,
+    };
 };
-

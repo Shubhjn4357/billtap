@@ -1,9 +1,12 @@
 
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Config } from '../constants/Config';
 import type { UserProfile, Party, Transaction, Item } from '../types';
+
+// Force CommonJS middleware build so web bundles don't include `import.meta` from ESM devtools code.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createJSONStorage, persist } = require('zustand/middleware') as typeof import('zustand/middleware');
 
 interface UserState {
     user: UserProfile | null;
@@ -130,22 +133,81 @@ export const useNetworkStore = create<NetworkState>((set) => ({
     setNetworkState: ({ isConnected, isInternetReachable }) => set({ isConnected, isInternetReachable }),
 }));
 
+interface OrganizationContextState {
+    role: 'owner' | 'manager' | 'salesman' | null;
+    ownerUserId: string | null;
+    permissions: Record<string, boolean>;
+    settings: Record<string, unknown>;
+}
+
 interface OrganizationState {
     selectedOrganizationId: string | null;
+    context: OrganizationContextState;
     setSelectedOrganizationId: (organizationId: string | null) => void;
+    setOrganizationContext: (context: {
+        role: 'owner' | 'manager' | 'salesman';
+        ownerUserId: string;
+        permissions: Record<string, boolean>;
+        settings: Record<string, unknown>;
+    } | null) => void;
+    setOrganizationSettings: (settings: Record<string, unknown>) => void;
+    clearOrganizationContext: () => void;
 }
 
 export const useOrganizationStore = create<OrganizationState>()(
     persist(
         (set) => ({
             selectedOrganizationId: null,
+            context: {
+                role: null,
+                ownerUserId: null,
+                permissions: {},
+                settings: {},
+            },
             setSelectedOrganizationId: (organizationId) => set({ selectedOrganizationId: organizationId }),
+            setOrganizationContext: (context) => set((state) => {
+                if (!context) {
+                    return {
+                        context: {
+                            role: null,
+                            ownerUserId: null,
+                            permissions: {},
+                            settings: {},
+                        },
+                    };
+                }
+
+                return {
+                    selectedOrganizationId: state.selectedOrganizationId,
+                    context: {
+                        role: context.role,
+                        ownerUserId: context.ownerUserId,
+                        permissions: { ...context.permissions },
+                        settings: { ...context.settings },
+                    },
+                };
+            }),
+            setOrganizationSettings: (settings) => set((state) => ({
+                context: {
+                    ...state.context,
+                    settings: { ...settings },
+                },
+            })),
+            clearOrganizationContext: () => set({
+                context: {
+                    role: null,
+                    ownerUserId: null,
+                    permissions: {},
+                    settings: {},
+                },
+            }),
         }),
         {
             name: 'organization-storage',
             storage: createJSONStorage(() => AsyncStorage),
             partialize: (state) => ({
                 selectedOrganizationId: state.selectedOrganizationId,
+                context: state.context,
             }),
         }
     )

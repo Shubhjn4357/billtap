@@ -47,6 +47,7 @@ interface RequestOptions {
 
 const request = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
     const { method = 'GET', body, headers = {}, skipAuth = false } = options;
+    const retryableMethod = method === 'GET';
 
     const requestHeaders: Record<string, string> = {
         ...headers,
@@ -73,7 +74,7 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
 
     let response: Response | undefined;
     let attempt = 0;
-    const maxRetries = 3;
+    const maxRetries = retryableMethod ? 3 : 1;
 
     try {
         while (attempt < maxRetries) {
@@ -85,14 +86,28 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
                     signal: controller.signal,
                 });
 
-                // If 5xx error, throw to trigger retry
+                // Retry on server-side failures, but preserve the server message on final failure.
                 if (response.status >= 500) {
-                    throw new Error(`Server Error: ${response.status}`);
+                    const serverText = await response.text();
+                    const parsedServer = tryParseJson(serverText) as { message?: string } | null;
+                    const message = parsedServer?.message ?? `Server Error: ${response.status}`;
+                    throw new ApiError(message, response.status, parsedServer ?? serverText);
                 }
 
                 // If success or client error (4xx), break loop
                 break;
             } catch (err: unknown) {
+                if (err instanceof ApiError && err.status >= 500) {
+                    attempt++;
+                    if (attempt >= maxRetries) {
+                        throw err;
+                    }
+                    const delay = 500 * Math.pow(2, attempt - 1);
+                    console.warn(`Request failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`, err);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+
                 attempt++;
                 const isAbort = err instanceof Error && err.name === 'AbortError';
                 if (isAbort || attempt >= maxRetries) {
@@ -105,6 +120,9 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
             }
         }
     } catch (error: unknown) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
         if (error instanceof Error && error.name === 'AbortError') {
             throw new ApiError(`Request timed out after ${DEFAULT_TIMEOUT_MS}ms.`, 0, error);
         }

@@ -18,6 +18,7 @@ import { useSettingsStore } from '../../store';
 import { toDateSafe } from '../../utils/date';
 import { formatCurrency, formatDate, normalizeCurrencyCode } from '../../utils/formatters';
 import { shareBillPDF, shareSalesReportPDF } from '../../utils/pdfGenerator';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 type RangePreset = 'today' | '7d' | '30d' | 'all';
 
@@ -70,7 +71,8 @@ export const ReportsScreen = () => {
     const insets = useSafeAreaInsets();
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
-    const { bills, loading, error, fetchBills } = useBills();
+    const { canViewReports, canAccessSettings } = useOrganizationAccess();
+    const { bills, loading, error, fetchBills } = useBills(canViewReports);
     const [range, setRange] = useState<RangePreset>('7d');
     const [refreshing, setRefreshing] = useState(false);
     const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 24);
@@ -99,18 +101,20 @@ export const ReportsScreen = () => {
 
     useFocusEffect(
         useCallback(() => {
+            if (!canViewReports) return;
             void fetchBills();
-        }, [fetchBills])
+        }, [canViewReports, fetchBills])
     );
 
     const onRefresh = useCallback(async () => {
+        if (!canViewReports) return;
         setRefreshing(true);
         try {
             await fetchBills(true);
         } finally {
             setRefreshing(false);
         }
-    }, [fetchBills]);
+    }, [canViewReports, fetchBills]);
 
     const handleShareSummary = useCallback(async () => {
         if (filteredBills.length === 0) {
@@ -202,6 +206,17 @@ export const ReportsScreen = () => {
 
     return (
         <ScreenWrapper>
+            {!canViewReports ? (
+                <AppCard>
+                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
+                        Reports access is disabled
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                        Ask owner/admin to enable reports permission for your account.
+                    </Text>
+                </AppCard>
+            ) : (
+            <>
             <AppCard style={{ backgroundColor: theme.colors.primaryContainer }}>
                 <Text variant="headlineSmall" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
                     {REPORTS_TEXT.title}
@@ -249,7 +264,11 @@ export const ReportsScreen = () => {
                             Trial balance, GST summary and journal entries.
                         </Text>
                     </View>
-                    <AppButton mode="contained-tonal" onPress={() => router.push('/accounting' as never)}>
+                    <AppButton
+                        mode="contained-tonal"
+                        onPress={() => router.push('/accounting' as never)}
+                        disabled={!canAccessSettings}
+                    >
                         Open
                     </AppButton>
                 </View>
@@ -330,6 +349,8 @@ export const ReportsScreen = () => {
                         </Text>
                     )}
                 />
+            )}
+            </>
             )}
         </ScreenWrapper>
     );

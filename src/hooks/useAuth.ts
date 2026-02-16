@@ -4,13 +4,15 @@ import { useOrganizationStore, useUserStore } from '../store';
 
 export const useAuth = () => {
     const { user, isLoading, setUser } = useUserStore();
-    const { setSelectedOrganizationId } = useOrganizationStore();
+    const { setSelectedOrganizationId, clearOrganizationContext } = useOrganizationStore();
 
     const signInWithGoogle = useCallback(async (idToken: string) => {
         const profile = await authService.googleSignIn(idToken);
+        setSelectedOrganizationId(null);
+        clearOrganizationContext();
         setUser(profile);
         return profile;
-    }, [setUser]);
+    }, [clearOrganizationContext, setSelectedOrganizationId, setUser]);
 
     const sendPhoneVerification = useCallback(async (phoneNumber: string) => {
         return await authService.sendPhoneVerification(phoneNumber);
@@ -18,15 +20,18 @@ export const useAuth = () => {
 
     const confirmPhoneVerification = useCallback(async (verificationId: string, verificationCode: string) => {
         const profile = await authService.confirmPhoneVerification(verificationId, verificationCode);
+        setSelectedOrganizationId(null);
+        clearOrganizationContext();
         setUser(profile);
         return profile;
-    }, [setUser]);
+    }, [clearOrganizationContext, setSelectedOrganizationId, setUser]);
 
     const signOut = useCallback(async () => {
         await authService.signOut();
         setSelectedOrganizationId(null);
+        clearOrganizationContext();
         setUser(null);
-    }, [setSelectedOrganizationId, setUser]);
+    }, [clearOrganizationContext, setSelectedOrganizationId, setUser]);
 
     return useMemo(() => ({
         user,

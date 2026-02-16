@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Updates from 'expo-updates';
-import 'react-native-reanimated';
+import '../src/utils/reanimated';
 
 import { authService } from '../src/api/authService';
 import { ApiError } from '../src/api/httpClient';

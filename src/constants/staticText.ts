@@ -473,6 +473,18 @@ export const SITEMAP_TEXT = {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
     {
+        version: '2.0.0',
+        releasedOn: '2026-02-16',
+        highlights: [
+            'Upgraded staff RBAC with sale/purchase/report/party/dashboard controls and owner-level feature toggles.',
+            'Added Business Card Studio with 12 templates, business auto-fill, custom card upload, and in-app sharing.',
+            'Aligned plan architecture to Free/Pro/Enterprise with Free capped at 50 bills per month and plan-based upload limits.',
+            'Added server-enforced feature toggles for billing modes, reports, party ledger, and inventory write flows.',
+            'Improved tab visibility and screen access handling so staff only see modules enabled by owner permissions.',
+            'Enhanced media pipeline with plan-aware signed upload limits and organization-scoped context sync.',
+        ],
+    },
+    {
         version: '1.0.1',
         releasedOn: '2026-02-16',
         highlights: [

@@ -102,6 +102,7 @@ export interface PaymentIntent {
 export interface Item {
     id: string;
     userId: string;
+    organizationId?: string;
     name: string;
     nameLowercase: string;
 
@@ -125,6 +126,7 @@ export interface Item {
     subcategory?: string;
     location?: string;
     barcode?: string;
+    imageUrl?: string;
     expiresAt?: FirestoreDate | null;
     autoDeleteAt?: FirestoreDate | null;
     autoDeleteEnabled?: boolean;

@@ -36,9 +36,14 @@ export type StaffRole = 'owner' | 'manager' | 'salesman';
 
 export type StaffPermissionKey =
     | 'can_create_bill'
+    | 'can_create_sale'
+    | 'can_create_purchase'
     | 'can_back_date'
     | 'can_delete_bill'
     | 'can_view_cost_price'
+    | 'can_view_dashboard'
+    | 'can_view_reports'
+    | 'can_manage_parties'
     | 'can_access_settings'
     | 'can_manage_staff'
     | 'can_manage_subscription'
@@ -56,6 +61,10 @@ export interface OrganizationSummary {
     name: string;
     code: string;
     currency?: string | null;
+    gstNumber?: string | null;
+    address?: string | null;
+    phoneNumber?: string | null;
+    email?: string | null;
 }
 
 export interface OrganizationMembership {

@@ -20,6 +20,7 @@ import { billService } from '../../api/billService';
 import { shareBillPDF } from '../../utils/pdfGenerator';
 import { getStockHealth, resolveLowStockThreshold } from '../../utils/stockStatus';
 import { useAppDialog } from '../../components/providers/DialogProvider';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 type StockFilter = 'available' | 'low' | 'out' | 'all';
 
@@ -32,6 +33,12 @@ export const BillingScreen = () => {
     const params = useLocalSearchParams<{ search?: string | string[] }>();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
     const dialog = useAppDialog();
+    const {
+        canOpenBilling,
+        canCreateSale,
+        canCreatePurchase,
+        canManageParties,
+    } = useOrganizationAccess();
 
     const {
         items: cart,
@@ -69,8 +76,16 @@ export const BillingScreen = () => {
     }, [params.search]);
 
     useEffect(() => {
+        if (transactionType === 'SALE' && !canCreateSale && canCreatePurchase) {
+            setTransactionType('PURCHASE');
+            return;
+        }
+        if (transactionType === 'PURCHASE' && !canCreatePurchase && canCreateSale) {
+            setTransactionType('SALE');
+            return;
+        }
         setStockFilter(transactionType === 'SALE' ? 'available' : 'all');
-    }, [transactionType]);
+    }, [canCreatePurchase, canCreateSale, setTransactionType, transactionType]);
 
     useFocusEffect(
         useCallback(() => {
@@ -138,6 +153,19 @@ export const BillingScreen = () => {
         return ranked;
     }, [allItems, normalizedQuery, searchTerm, stockFilter, transactionType]);
 
+    const canUseBilling = canOpenBilling && (canCreateSale || canCreatePurchase);
+
+    const transactionTypeButtons = useMemo(() => {
+        const buttons: { value: 'SALE' | 'PURCHASE'; label: string }[] = [];
+        if (canCreateSale) {
+            buttons.push({ value: 'SALE', label: 'Sale (Out)' });
+        }
+        if (canCreatePurchase) {
+            buttons.push({ value: 'PURCHASE', label: 'Purchase (In)' });
+        }
+        return buttons;
+    }, [canCreatePurchase, canCreateSale]);
+
     const cartSummary = useMemo(() => {
         const subtotal = cart.reduce((sum, entry) => sum + (entry.price * entry.quantity), 0);
         const taxTotal = isGstBill
@@ -191,6 +219,14 @@ export const BillingScreen = () => {
     const handleCheckout = async () => {
         if (cart.length === 0) return;
         if (!user) return;
+        if (transactionType === 'SALE' && !canCreateSale) {
+            dialog.alert('Access Denied', 'Sales billing is disabled for your role.');
+            return;
+        }
+        if (transactionType === 'PURCHASE' && !canCreatePurchase) {
+            dialog.alert('Access Denied', 'Purchase entry is disabled for your role.');
+            return;
+        }
 
         for (const line of cart) {
             if (transactionType === 'SALE') {
@@ -338,6 +374,16 @@ export const BillingScreen = () => {
 
     return (
         <ScreenWrapper>
+            {!canUseBilling ? (
+                <AppCard>
+                    <Text variant="titleMedium" style={styles.sectionTitle}>
+                        Billing access is disabled
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                        Ask owner/admin to enable billing permissions for your staff account.
+                    </Text>
+                </AppCard>
+            ) : (
             <ScrollView
                 style={styles.container}
                 contentContainerStyle={styles.contentContainer}
@@ -356,19 +402,28 @@ export const BillingScreen = () => {
                 <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer, marginTop: 6 }}>
                     Subtotal {formatCurrency(cartSummary.subtotal, activeCurrency)} | Tax {formatCurrency(cartSummary.taxTotal, activeCurrency)} | Total {formatCurrency(cartSummary.grandTotal, activeCurrency)}
                 </Text>
-            </AppCard>
+                </AppCard>
 
 
                 {/* Transaction Type */}
-                <SegmentedButtons
-                    value={transactionType}
-                    onValueChange={val => setTransactionType(val as 'SALE' | 'PURCHASE')}
-                    buttons={[
-                        { value: 'SALE', label: 'Sale (Out)' },
-                        { value: 'PURCHASE', label: 'Purchase (In)' },
-                    ]}
-                    style={{ marginBottom: 16 }}
-                />
+                {transactionTypeButtons.length > 1 && (
+                    <SegmentedButtons
+                        value={transactionType}
+                        onValueChange={(value) => {
+                            const next = value as 'SALE' | 'PURCHASE';
+                            if (next === 'SALE' && !canCreateSale) return;
+                            if (next === 'PURCHASE' && !canCreatePurchase) return;
+                            setTransactionType(next);
+                        }}
+                        buttons={transactionTypeButtons}
+                        style={{ marginBottom: 16 }}
+                    />
+                )}
+                {transactionTypeButtons.length === 1 && (
+                    <Text variant="bodySmall" style={{ marginBottom: 12, color: theme.colors.outline }}>
+                        {transactionTypeButtons[0].label} mode active for your account.
+                    </Text>
+                )}
 
                 <SegmentedButtons
                     value={isGstBill ? 'GST' : 'ESTIMATE'}
@@ -558,6 +613,7 @@ export const BillingScreen = () => {
                             mode="text"
                             compact
                             onPress={() => router.push({ pathname: '/party', params: { mode: 'select' } })}
+                            disabled={!canManageParties}
                         >
                             Select
                         </AppButton>
@@ -655,7 +711,7 @@ export const BillingScreen = () => {
                         mode="contained"
                         onPress={handleCheckout}
                         loading={checkoutLoading}
-                        disabled={cart.length === 0}
+                        disabled={cart.length === 0 || (transactionType === 'SALE' ? !canCreateSale : !canCreatePurchase)}
                         icon="check"
                         contentStyle={{ paddingHorizontal: 16 }}
                     >
@@ -663,6 +719,7 @@ export const BillingScreen = () => {
                     </AppButton>
                 </AppCard>
             </ScrollView>
+            )}
         </ScreenWrapper>
     );
 };
