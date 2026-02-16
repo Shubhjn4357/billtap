@@ -17,10 +17,18 @@ jobs:
   build-release:
     runs-on: ubuntu-latest
     env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_KEYSTORE_BASE64_SECRET: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_KEYSTORE_BASE64_VAR: ${{ vars.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD_VAR: ${{ vars.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS_VAR: ${{ vars.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD_VAR: ${{ vars.ANDROID_KEY_PASSWORD }}
+      CI_FALLBACK_UPLOAD_STORE_FILE: ci-release.keystore
+      CI_FALLBACK_UPLOAD_STORE_PASSWORD: androidrelease
+      CI_FALLBACK_UPLOAD_KEY_ALIAS: billtaprelease
+      CI_FALLBACK_UPLOAD_KEY_PASSWORD: androidrelease
       NODE_ENV: production
 
     steps:
@@ -65,16 +73,31 @@ jobs:
 
       - name: API Smoke E2E (real env)
         env:
-          SMOKE_API_BASE_URL: ${{ secrets.SMOKE_API_BASE_URL }}
-          SMOKE_PHONE_NUMBER: ${{ secrets.SMOKE_PHONE_NUMBER }}
-          SMOKE_OTP_CODE: ${{ secrets.SMOKE_OTP_CODE }}
-          SMOKE_CREATE_SECOND_STORE: ${{ secrets.SMOKE_CREATE_SECOND_STORE }}
-          SMOKE_REMINDER_RECIPIENT: ${{ secrets.SMOKE_REMINDER_RECIPIENT }}
+          SMOKE_API_BASE_URL_SECRET: ${{ secrets.SMOKE_API_BASE_URL }}
+          SMOKE_PHONE_NUMBER_SECRET: ${{ secrets.SMOKE_PHONE_NUMBER }}
+          SMOKE_OTP_CODE_SECRET: ${{ secrets.SMOKE_OTP_CODE }}
+          SMOKE_CREATE_SECOND_STORE_SECRET: ${{ secrets.SMOKE_CREATE_SECOND_STORE }}
+          SMOKE_REMINDER_RECIPIENT_SECRET: ${{ secrets.SMOKE_REMINDER_RECIPIENT }}
+          SMOKE_API_BASE_URL_VAR: ${{ vars.SMOKE_API_BASE_URL }}
+          SMOKE_PHONE_NUMBER_VAR: ${{ vars.SMOKE_PHONE_NUMBER }}
+          SMOKE_OTP_CODE_VAR: ${{ vars.SMOKE_OTP_CODE }}
+          SMOKE_CREATE_SECOND_STORE_VAR: ${{ vars.SMOKE_CREATE_SECOND_STORE }}
+          SMOKE_REMINDER_RECIPIENT_VAR: ${{ vars.SMOKE_REMINDER_RECIPIENT }}
         run: |
+          export SMOKE_API_BASE_URL="${SMOKE_API_BASE_URL_SECRET:-$SMOKE_API_BASE_URL_VAR}"
+          export SMOKE_PHONE_NUMBER="${SMOKE_PHONE_NUMBER_SECRET:-$SMOKE_PHONE_NUMBER_VAR}"
+          export SMOKE_OTP_CODE="${SMOKE_OTP_CODE_SECRET:-$SMOKE_OTP_CODE_VAR}"
+          export SMOKE_CREATE_SECOND_STORE="${SMOKE_CREATE_SECOND_STORE_SECRET:-$SMOKE_CREATE_SECOND_STORE_VAR}"
+          export SMOKE_REMINDER_RECIPIENT="${SMOKE_REMINDER_RECIPIENT_SECRET:-$SMOKE_REMINDER_RECIPIENT_VAR}"
+
           if [ -z "${SMOKE_API_BASE_URL}" ] || [ -z "${SMOKE_PHONE_NUMBER}" ]; then
-            echo "SMOKE_API_BASE_URL and SMOKE_PHONE_NUMBER secrets are required for pre-build smoke validation."
+            echo "::error::SMOKE_API_BASE_URL and SMOKE_PHONE_NUMBER are required for pre-build smoke validation."
+            echo "Set them in GitHub Secrets or Variables:"
+            echo "- secrets.SMOKE_API_BASE_URL or vars.SMOKE_API_BASE_URL"
+            echo "- secrets.SMOKE_PHONE_NUMBER or vars.SMOKE_PHONE_NUMBER"
             exit 1
           fi
+
           pnpm run smoke:e2e
 
       - name: Prebuild
@@ -99,14 +122,67 @@ jobs:
           cd android
           chmod +x gradlew
 
-      - name: Configure release keystore (optional)
-        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' && env.ANDROID_KEYSTORE_PASSWORD != '' && env.ANDROID_KEY_ALIAS != '' && env.ANDROID_KEY_PASSWORD != '' }}
+      - name: Restore CI fallback release keystore cache
+        uses: actions/cache@v4
+        with:
+          path: .ci-signing/ci-release.keystore
+          key: ${{ runner.os }}-ci-release-keystore-${{ github.repository }}-v1
+
+      - name: Resolve release signing env (secrets or vars)
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
-          echo "BILLTAP_UPLOAD_STORE_FILE=release.keystore" >> $GITHUB_ENV
-          echo "BILLTAP_UPLOAD_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> $GITHUB_ENV
-          echo "BILLTAP_UPLOAD_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> $GITHUB_ENV
-          echo "BILLTAP_UPLOAD_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> $GITHUB_ENV
+          echo "ANDROID_KEYSTORE_BASE64=${ANDROID_KEYSTORE_BASE64_SECRET:-$ANDROID_KEYSTORE_BASE64_VAR}" >> $GITHUB_ENV
+          echo "ANDROID_KEYSTORE_PASSWORD=${ANDROID_KEYSTORE_PASSWORD_SECRET:-$ANDROID_KEYSTORE_PASSWORD_VAR}" >> $GITHUB_ENV
+          echo "ANDROID_KEY_ALIAS=${ANDROID_KEY_ALIAS_SECRET:-$ANDROID_KEY_ALIAS_VAR}" >> $GITHUB_ENV
+          echo "ANDROID_KEY_PASSWORD=${ANDROID_KEY_PASSWORD_SECRET:-$ANDROID_KEY_PASSWORD_VAR}" >> $GITHUB_ENV
+
+      - name: Configure release keystore (auto)
+        run: |
+          mkdir -p .ci-signing
+
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] && [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ] && [ -n "${ANDROID_KEY_ALIAS:-}" ] && [ -n "${ANDROID_KEY_PASSWORD:-}" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+            echo "BILLTAP_UPLOAD_STORE_FILE=release.keystore" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> $GITHUB_ENV
+            echo "RELEASE_SIGNING_SOURCE=provided_secret_or_var" >> $GITHUB_ENV
+            echo "Release signing configured from GitHub secrets/vars."
+          elif [ -f ".ci-signing/ci-release.keystore" ]; then
+            cp .ci-signing/ci-release.keystore "android/app/${CI_FALLBACK_UPLOAD_STORE_FILE}"
+            echo "BILLTAP_UPLOAD_STORE_FILE=${CI_FALLBACK_UPLOAD_STORE_FILE}" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_STORE_PASSWORD=${CI_FALLBACK_UPLOAD_STORE_PASSWORD}" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_KEY_ALIAS=${CI_FALLBACK_UPLOAD_KEY_ALIAS}" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_KEY_PASSWORD=${CI_FALLBACK_UPLOAD_KEY_PASSWORD}" >> $GITHUB_ENV
+            echo "RELEASE_SIGNING_SOURCE=ci_cached_autogen" >> $GITHUB_ENV
+            echo "::warning::Using cached CI-generated fallback release key."
+          else
+            keytool -genkeypair -v \
+              -storetype PKCS12 \
+              -keystore ".ci-signing/ci-release.keystore" \
+              -alias "${CI_FALLBACK_UPLOAD_KEY_ALIAS}" \
+              -storepass "${CI_FALLBACK_UPLOAD_STORE_PASSWORD}" \
+              -keypass "${CI_FALLBACK_UPLOAD_KEY_PASSWORD}" \
+              -dname "CN=BillTap CI Release,O=BillTap,C=IN" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+
+            cp .ci-signing/ci-release.keystore "android/app/${CI_FALLBACK_UPLOAD_STORE_FILE}"
+            echo "BILLTAP_UPLOAD_STORE_FILE=${CI_FALLBACK_UPLOAD_STORE_FILE}" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_STORE_PASSWORD=${CI_FALLBACK_UPLOAD_STORE_PASSWORD}" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_KEY_ALIAS=${CI_FALLBACK_UPLOAD_KEY_ALIAS}" >> $GITHUB_ENV
+            echo "BILLTAP_UPLOAD_KEY_PASSWORD=${CI_FALLBACK_UPLOAD_KEY_PASSWORD}" >> $GITHUB_ENV
+            echo "RELEASE_SIGNING_SOURCE=ci_new_autogen" >> $GITHUB_ENV
+            echo "::warning::No release signing secrets/vars found. Generated a CI fallback release key."
+            echo "For production Play uploads, set ANDROID_KEYSTORE_* secrets/vars."
+          fi
+
+      - name: Ensure release signing material is ready
+        run: |
+          if [ -z "${BILLTAP_UPLOAD_STORE_FILE:-}" ] || [ -z "${BILLTAP_UPLOAD_STORE_PASSWORD:-}" ] || [ -z "${BILLTAP_UPLOAD_KEY_ALIAS:-}" ] || [ -z "${BILLTAP_UPLOAD_KEY_PASSWORD:-}" ] || [ ! -f "android/app/${BILLTAP_UPLOAD_STORE_FILE}" ]; then
+            echo "::error::Release signing setup failed (keystore/credentials missing)."
+            exit 1
+          fi
 
       - name: Ensure debug keystore
         run: |
@@ -131,22 +207,33 @@ jobs:
           DEBUG_SHA1=$(keytool -list -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey | awk -F': ' '/SHA1:/{print $2; exit}')
           DEBUG_SHA256=$(keytool -list -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{print $2; exit}')
 
+          RELEASE_KEYSTORE_PATH=""
+          if [ -n "${BILLTAP_UPLOAD_STORE_FILE:-}" ] && [ -f "android/app/${BILLTAP_UPLOAD_STORE_FILE}" ]; then
+            RELEASE_KEYSTORE_PATH="android/app/${BILLTAP_UPLOAD_STORE_FILE}"
+          elif [ -f "android/app/release.keystore" ]; then
+            RELEASE_KEYSTORE_PATH="android/app/release.keystore"
+          fi
+
           {
             echo "debug_sha1=$DEBUG_SHA1"
             echo "debug_sha256=$DEBUG_SHA256"
+            echo "release_signing_source=${RELEASE_SIGNING_SOURCE:-unknown}"
           } > build-metadata/signing-fingerprints.txt
 
-          if [ -f android/app/release.keystore ] && [ -n "${BILLTAP_UPLOAD_STORE_PASSWORD:-}" ] && [ -n "${BILLTAP_UPLOAD_KEY_ALIAS:-}" ]; then
-            RELEASE_SHA1=$(keytool -list -v -keystore android/app/release.keystore -storepass "$BILLTAP_UPLOAD_STORE_PASSWORD" -alias "$BILLTAP_UPLOAD_KEY_ALIAS" | awk -F': ' '/SHA1:/{print $2; exit}')
-            RELEASE_SHA256=$(keytool -list -v -keystore android/app/release.keystore -storepass "$BILLTAP_UPLOAD_STORE_PASSWORD" -alias "$BILLTAP_UPLOAD_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')
+          if [ -n "$RELEASE_KEYSTORE_PATH" ] && [ -n "${BILLTAP_UPLOAD_STORE_PASSWORD:-}" ] && [ -n "${BILLTAP_UPLOAD_KEY_ALIAS:-}" ]; then
+            RELEASE_SHA1=$(keytool -list -v -keystore "$RELEASE_KEYSTORE_PATH" -storepass "$BILLTAP_UPLOAD_STORE_PASSWORD" -alias "$BILLTAP_UPLOAD_KEY_ALIAS" | awk -F': ' '/SHA1:/{print $2; exit}')
+            RELEASE_SHA256=$(keytool -list -v -keystore "$RELEASE_KEYSTORE_PATH" -storepass "$BILLTAP_UPLOAD_STORE_PASSWORD" -alias "$BILLTAP_UPLOAD_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')
             {
               echo "release_sha1=$RELEASE_SHA1"
               echo "release_sha256=$RELEASE_SHA256"
+              echo "release_signing_mode=release_keystore"
+              echo "release_keystore_path=$RELEASE_KEYSTORE_PATH"
             } >> build-metadata/signing-fingerprints.txt
           else
             {
               echo "release_sha1=not_available"
               echo "release_sha256=not_available"
+              echo "release_signing_mode=debug_fallback_or_missing_release_keystore"
             } >> build-metadata/signing-fingerprints.txt
           fi
 
