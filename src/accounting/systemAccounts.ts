@@ -8,11 +8,13 @@ export const SYSTEM_ACCOUNT_DEFINITIONS = [
     { code: '1200', name: 'Accounts Receivable', type: 'ASSET' },
     { code: '1300', name: 'Inventory', type: 'ASSET' },
     { code: '2000', name: 'Accounts Payable', type: 'LIABILITY' },
+    { code: '2200', name: 'Salary Payable', type: 'LIABILITY' },
     { code: '2100', name: 'GST Payable', type: 'LIABILITY' },
     { code: '3000', name: 'Owner Equity', type: 'EQUITY' },
     { code: '4000', name: 'Sales', type: 'INCOME' },
     { code: '5000', name: 'COGS', type: 'EXPENSE' },
     { code: '5100', name: 'Purchase', type: 'EXPENSE' },
+    { code: '5200', name: 'Payroll Expense', type: 'EXPENSE' },
 ] as const;
 
 export type SystemAccountCode = (typeof SYSTEM_ACCOUNT_DEFINITIONS)[number]['code'];

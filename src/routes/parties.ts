@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { and, asc, eq, or, sql } from 'drizzle-orm';
 import { parties } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import { requirePermission, withOrganizationContext } from '../middleware/permissions';
 
 const partiesRoute = new Hono<AppEnv>();
 
@@ -19,16 +20,20 @@ const partySchema = z.object({
 });
 
 // GET /parties - List parties
-partiesRoute.get('/', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
+partiesRoute.get('/', requireAuth, withOrganizationContext, requirePermission('can_create_bill'), async (c) => {
+    const effectiveUserId = c.get('organizationOwnerId');
+    const organizationId = c.get('organizationId');
     const db = c.get('db');
     const queryText = c.req.query('q')?.trim();
     const type = c.req.query('type') as 'customer' | 'supplier' | undefined;
     const limit = Math.min(Number(c.req.query('limit') || 100), 500);
 
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
-    const conditions = [eq(parties.userId, effectiveUserId)];
+    const conditions = [
+        eq(parties.userId, effectiveUserId),
+        eq(parties.organizationId, organizationId),
+    ];
 
     if (type) {
         conditions.push(eq(parties.type, type));
@@ -54,13 +59,14 @@ partiesRoute.get('/', requireAuth, async (c) => {
 });
 
 // POST /parties - Create party
-partiesRoute.post('/', requireAuth, async (c) => {
+partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('can_create_bill'), async (c) => {
     try {
-        const effectiveUserId = c.get('effectiveUserId');
+        const effectiveUserId = c.get('organizationOwnerId');
+        const organizationId = c.get('organizationId');
         const db = c.get('db');
         const body = await c.req.json();
 
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
         const payload = partySchema.parse(body);
         const id = payload.id ?? nanoid();
@@ -69,6 +75,7 @@ partiesRoute.post('/', requireAuth, async (c) => {
         await db.insert(parties).values({
             id,
             userId: effectiveUserId,
+            organizationId,
             name: payload.name.trim(),
             nameLowercase: payload.name.trim().toLowerCase(),
             type: payload.type,
@@ -88,14 +95,15 @@ partiesRoute.post('/', requireAuth, async (c) => {
 });
 
 // PATCH /parties/:id - Update party
-partiesRoute.patch('/:id', requireAuth, async (c) => {
+partiesRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission('can_create_bill'), async (c) => {
     try {
-        const effectiveUserId = c.get('effectiveUserId');
+        const effectiveUserId = c.get('organizationOwnerId');
+        const organizationId = c.get('organizationId');
         const db = c.get('db');
         const id = c.req.param('id');
         const body = await c.req.json();
 
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
         const updateSchema = partySchema.partial();
         const payload = updateSchema.parse(body);
@@ -117,7 +125,11 @@ partiesRoute.patch('/:id', requireAuth, async (c) => {
         const updated = await db
             .update(parties)
             .set(updatePayload)
-            .where(and(eq(parties.id, id), eq(parties.userId, effectiveUserId)))
+            .where(and(
+                eq(parties.id, id),
+                eq(parties.userId, effectiveUserId),
+                eq(parties.organizationId, organizationId),
+            ))
             .returning({ id: parties.id });
 
         if (!updated[0]) {

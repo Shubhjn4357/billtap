@@ -200,9 +200,9 @@ authRoute.post('/phone/verify', async (c) => {
                 user = await tx.select().from(users).where(eq(users.uid, phoneUid)).limit(1).then((rows: UserRow[]) => rows[0]);
             }
 
+            let staffInvite: { ownerId: string; id: string } | null = null;
             if (!user) {
                 // Check for pending staff invite
-                let staffInvite: { ownerId: string; id: string } | null = null;
                 try {
                     const invite = await tx
                         .select()
@@ -331,4 +331,3 @@ authRoute.post('/logout', requireAuth, async (c) => {
 });
 
 export default authRoute;
-

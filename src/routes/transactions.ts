@@ -4,8 +4,16 @@ import { nanoid } from 'nanoid';
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { ensureSystemAccounts, type SystemAccountCode } from '../accounting/systemAccounts';
 import { withTransaction } from '../db/transaction';
-import { inventoryMovements, items, journalEntries, journalLines, transactions } from '../db/schema';
+import { inventoryMovements, items, journalEntries, journalLines, partyLedgerEntries, transactions } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import { hasPermission, requireFeatureGate, requirePermission, withOrganizationContext } from '../middleware/permissions';
+import {
+    ensurePeriodUnlockedForDate,
+    getBusinessControls,
+    hasModulePermission,
+    writeAuditLog,
+} from '../operations/controls';
+import { trackMonthlyBillUsage } from '../organizations/access';
 
 const transactionsRoute = new Hono<AppEnv>();
 
@@ -21,6 +29,8 @@ const lineItemSchema = z.object({
 const transactionSchema = z.object({
     id: z.string().optional(),
     type: z.enum(['SALE', 'PURCHASE']),
+    organizationId: z.string().optional(),
+    branchId: z.string().optional(),
     partyId: z.string().optional(),
     partyName: z.string().optional(),
     partyPhone: z.string().optional(),
@@ -36,10 +46,14 @@ const transactionSchema = z.object({
     paidAmount: z.number().nonnegative().optional(),
     paymentMode: z.enum(['CASH', 'CREDIT']).default('CASH'),
     paymentStatus: z.enum(['PAID', 'PARTIAL', 'PENDING']).optional(),
+    billMode: z.enum(['GST', 'ESTIMATE']).default('GST'),
+    affectsGst: z.boolean().optional(),
     dueDate: z.coerce.date().optional(),
     reminderEnabled: z.boolean().default(false),
     reminderFrequencyDays: z.number().int().positive().default(3),
     nextReminderAt: z.coerce.date().optional(),
+    costCenter: z.string().optional(),
+    projectCode: z.string().optional(),
     currency: z.string().default('INR'),
     remark: z.string().optional(),
 });
@@ -53,11 +67,40 @@ const toStatusFromAmounts = (totalAmount: number, paidAmount: number): 'PAID' | 
     return 'PARTIAL';
 };
 
+const resolveSettingBoolean = (value: unknown, fallback = false): boolean => {
+    if (typeof value === 'boolean') return value;
+    return fallback;
+};
+
+const toStartOfDay = (date: Date): Date => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const getPartyRunningBalance = async (params: {
+    tx: any;
+    userId: string;
+    organizationId: string;
+    partyId: string;
+}): Promise<number> => {
+    const rows = await params.tx
+        .select({ runningBalance: partyLedgerEntries.runningBalance })
+        .from(partyLedgerEntries)
+        .where(and(
+            eq(partyLedgerEntries.userId, params.userId),
+            eq(partyLedgerEntries.organizationId, params.organizationId),
+            eq(partyLedgerEntries.partyId, params.partyId),
+        ))
+        .orderBy(desc(partyLedgerEntries.entryDate), desc(partyLedgerEntries.createdAt))
+        .limit(1);
+    return Number(rows[0]?.runningBalance ?? 0);
+};
+
 interface AccountingPostInput {
     userId: string;
     transactionId: string;
     transactionType: 'SALE' | 'PURCHASE';
     transactionDate: Date;
+    branchId?: string | null;
+    costCenter?: string | null;
+    projectCode?: string | null;
     currency: string;
     totalAmount: number;
     taxAmount: number;
@@ -169,6 +212,9 @@ const postTransactionJournal = async (tx: any, input: AccountingPostInput) => {
     await tx.insert(journalEntries).values({
         id: entryId,
         userId: input.userId,
+        branchId: input.branchId ?? null,
+        costCenter: input.costCenter ?? null,
+        projectCode: input.projectCode ?? null,
         entryDate: input.transactionDate,
         batchNumber: null,
         referenceType: 'TRANSACTION',
@@ -196,18 +242,49 @@ const postTransactionJournal = async (tx: any, input: AccountingPostInput) => {
 };
 
 // POST /transactions - Create a Purchase or Sale
-transactionsRoute.post('/', requireAuth, async (c) => {
+transactionsRoute.post(
+    '/',
+    requireAuth,
+    withOrganizationContext,
+    requirePermission('can_create_bill'),
+    requireFeatureGate('bills_per_month'),
+    async (c) => {
     try {
         const effectiveUserId = c.get('effectiveUserId');
+        const organizationId = c.get('organizationId');
+        const organizationSettingsPayload = c.get('organizationSettings') ?? {};
+        const authUser = c.get('authUser');
         const db = c.get('db');
         const body = await c.req.json();
 
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId || !organizationId || !authUser) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!hasModulePermission(authUser, 'billing', 'create')) {
+            return c.json({ ok: false, message: 'Billing create access denied.' }, 403);
+        }
 
         const payload = transactionSchema.parse(body);
         const id = payload.id ?? nanoid();
         const now = new Date();
         const billDate = payload.billDate ?? now;
+        const billingSettings = ((organizationSettingsPayload as Record<string, unknown>).billing ?? {}) as Record<string, unknown>;
+        const inventorySettings = ((organizationSettingsPayload as Record<string, unknown>).inventory ?? {}) as Record<string, unknown>;
+        const allowBackDate = resolveSettingBoolean(billingSettings.allowBackDate, false);
+        const allowNegativeStock = resolveSettingBoolean(
+            inventorySettings.allowNegativeStock ?? billingSettings.allowNegativeStock,
+            false
+        );
+        const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime();
+        if (isBackDate && !allowBackDate && !hasPermission(c, 'can_back_date')) {
+            return c.json({ ok: false, message: 'Back-date entry is disabled for your role/store.' }, 403);
+        }
+
+        const billMode = payload.billMode;
+        const affectsGst = payload.affectsGst ?? billMode !== 'ESTIMATE';
+        const normalizedItems = payload.items.map((line) => ({
+            ...line,
+            tax: affectsGst ? line.tax : 0,
+        }));
+        const effectiveTaxAmount = affectsGst ? payload.taxAmount : 0;
         const initialPaidAmount = roundAmount(
             payload.paidAmount !== undefined
                 ? payload.paidAmount
@@ -224,6 +301,10 @@ transactionsRoute.post('/', requireAuth, async (c) => {
         const nextReminderAt = reminderEnabled
             ? (payload.nextReminderAt ?? dueDate)
             : null;
+        const controls = await getBusinessControls(db, effectiveUserId);
+        if (controls.periodLockEnabled) {
+            await ensurePeriodUnlockedForDate(db, effectiveUserId, billDate);
+        }
 
         // Group items for batch updates
         const grouped = new Map<string, number>();
@@ -236,9 +317,13 @@ transactionsRoute.post('/', requireAuth, async (c) => {
             const sourceItems = itemIds.length === 0
                 ? []
                 : await tx
-                    .select({ id: items.id, purchasePrice: items.purchasePrice })
+                    .select({ id: items.id, purchasePrice: items.purchasePrice, name: items.name, stock: items.stock, branchId: items.branchId })
                     .from(items)
-                    .where(and(eq(items.userId, effectiveUserId), inArray(items.id, itemIds)));
+                    .where(and(
+                        eq(items.userId, effectiveUserId),
+                        inArray(items.id, itemIds),
+                        ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
+                    ));
             const purchasePriceByItemId = new Map(
                 sourceItems.map((item) => [item.id, Number(item.purchasePrice ?? 0)])
             );
@@ -246,14 +331,22 @@ transactionsRoute.post('/', requireAuth, async (c) => {
             // Update Stock
             for (const [itemId, qty] of grouped.entries()) {
                 if (payload.type === 'SALE') {
-                    // Check stock and deduct
+                    // Check stock and deduct (or allow negative stock based on settings).
+                    const saleConditions = [
+                        eq(items.id, itemId),
+                        eq(items.userId, effectiveUserId),
+                        ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
+                    ];
+                    if (!allowNegativeStock) {
+                        saleConditions.push(gte(items.stock, qty));
+                    }
                     const updatedRows = await tx
                         .update(items)
                         .set({
                             stock: sql`${items.stock} - ${qty}`,
                             updatedAt: now,
                         })
-                        .where(and(eq(items.id, itemId), eq(items.userId, effectiveUserId), gte(items.stock, qty)))
+                        .where(and(...saleConditions))
                         .returning({ id: items.id, stock: items.stock });
 
                     if (!updatedRows[0]) {
@@ -261,7 +354,11 @@ transactionsRoute.post('/', requireAuth, async (c) => {
                         const existing = await tx
                             .select({ id: items.id, name: items.name, stock: items.stock })
                             .from(items)
-                            .where(and(eq(items.id, itemId), eq(items.userId, effectiveUserId)))
+                            .where(and(
+                                eq(items.id, itemId),
+                                eq(items.userId, effectiveUserId),
+                                ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
+                            ))
                             .limit(1);
 
                         if (!existing[0]) throw new Error(`Item ${itemId} not found.`);
@@ -271,6 +368,7 @@ transactionsRoute.post('/', requireAuth, async (c) => {
                     await tx.insert(inventoryMovements).values({
                         id: nanoid(),
                         userId: effectiveUserId,
+                        branchId: payload.branchId ?? null,
                         itemId,
                         transactionId: id,
                         movementType: 'OUT',
@@ -287,7 +385,11 @@ transactionsRoute.post('/', requireAuth, async (c) => {
                             stock: sql`${items.stock} + ${qty}`,
                             updatedAt: now,
                         })
-                        .where(and(eq(items.id, itemId), eq(items.userId, effectiveUserId)))
+                        .where(and(
+                            eq(items.id, itemId),
+                            eq(items.userId, effectiveUserId),
+                            ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
+                        ))
                         .returning({ id: items.id, stock: items.stock });
 
                     if (!updatedRows[0]) {
@@ -305,6 +407,7 @@ transactionsRoute.post('/', requireAuth, async (c) => {
                     await tx.insert(inventoryMovements).values({
                         id: nanoid(),
                         userId: effectiveUserId,
+                        branchId: payload.branchId ?? null,
                         itemId,
                         transactionId: id,
                         movementType: 'IN',
@@ -320,28 +423,35 @@ transactionsRoute.post('/', requireAuth, async (c) => {
             await tx.insert(transactions).values({
                 id,
                 userId: effectiveUserId,
+                organizationId,
+                branchId: payload.branchId ?? null,
                 type: payload.type,
                 partyId: payload.partyId ?? null,
                 partyName: payload.partyName ?? null,
                 partyPhone: payload.partyPhone ?? null,
                 billNumber: payload.billNumber ?? null,
                 billDate: billDate,
-                items: payload.items,
                 totalAmount: payload.totalAmount,
                 discountAmount: payload.discountAmount,
-                taxAmount: payload.taxAmount,
+                taxAmount: effectiveTaxAmount,
                 paidAmount: initialPaidAmount,
                 paymentMode: payload.paymentMode,
                 paymentStatus,
+                billMode,
+                affectsGst,
+                createdByUid: authUser.uid,
                 dueDate,
                 reminderEnabled,
                 reminderFrequencyDays,
                 nextReminderAt,
                 lastReminderAt: null,
                 currency: payload.currency,
+                costCenter: payload.costCenter ?? null,
+                projectCode: payload.projectCode ?? null,
                 businessName: payload.businessName ?? null,
                 businessAddress: payload.businessAddress ?? null,
                 gstNumber: payload.gstNumber ?? null,
+                items: normalizedItems,
                 remark: payload.remark ?? null,
                 createdAt: now,
                 updatedAt: now,
@@ -352,33 +462,95 @@ transactionsRoute.post('/', requireAuth, async (c) => {
                 transactionId: id,
                 transactionType: payload.type,
                 transactionDate: billDate,
+                branchId: payload.branchId ?? null,
+                costCenter: payload.costCenter ?? null,
+                projectCode: payload.projectCode ?? null,
                 currency: payload.currency,
                 totalAmount: payload.totalAmount,
-                taxAmount: payload.taxAmount,
+                taxAmount: effectiveTaxAmount,
                 paidAmount: initialPaidAmount,
                 paymentMode: payload.paymentMode,
                 partyId: payload.partyId ?? null,
                 narration: payload.remark ?? null,
-                itemLines: payload.items.map((line) => ({
+                itemLines: normalizedItems.map((line) => ({
                     id: line.id,
                     quantity: line.quantity,
                 })),
                 purchasePriceByItemId,
                 now,
             });
+
+            const dueAmount = roundAmount(Math.max(payload.totalAmount - initialPaidAmount, 0));
+            if (payload.partyId && dueAmount > 0) {
+                const previousBalance = await getPartyRunningBalance({
+                    tx,
+                    userId: effectiveUserId,
+                    organizationId,
+                    partyId: payload.partyId,
+                });
+                const delta = payload.type === 'SALE' ? dueAmount : -dueAmount;
+                const runningBalance = roundAmount(previousBalance + delta);
+
+                await tx.insert(partyLedgerEntries).values({
+                    id: nanoid(),
+                    userId: effectiveUserId,
+                    organizationId,
+                    partyId: payload.partyId,
+                    sourceType: 'BILL',
+                    sourceId: id,
+                    direction: payload.type === 'SALE' ? 'DEBIT' : 'CREDIT',
+                    amount: dueAmount,
+                    runningBalance,
+                    entryDate: billDate,
+                    narration: payload.remark ?? `${payload.type} bill outstanding`,
+                    createdByUid: authUser.uid,
+                    createdAt: now,
+                });
+            }
+        });
+
+        await trackMonthlyBillUsage(db, effectiveUserId, 1);
+
+        await writeAuditLog(db, {
+            userId: effectiveUserId,
+            actorUid: authUser.uid,
+            actorRole: authUser.role,
+            module: 'billing',
+            action: 'transaction.created',
+            entityType: 'transaction',
+            entityId: id,
+            after: {
+                type: payload.type,
+                totalAmount: payload.totalAmount,
+                itemCount: payload.items.length,
+                paymentMode: payload.paymentMode,
+                billMode,
+                affectsGst,
+            },
         });
 
         return c.json({ ok: true, id });
     } catch (error: unknown) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Transaction failed.' }, 400);
     }
-});
+    }
+);
 
 // PATCH /transactions/:id/payment - Update payment status/reminder schedule
-transactionsRoute.patch('/:id/payment', requireAuth, async (c) => {
+transactionsRoute.patch(
+    '/:id/payment',
+    requireAuth,
+    withOrganizationContext,
+    requirePermission('can_manage_payments'),
+    async (c) => {
     try {
         const effectiveUserId = c.get('effectiveUserId');
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        const organizationId = c.get('organizationId');
+        const authUser = c.get('authUser');
+        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!hasModulePermission(authUser, 'billing', 'update')) {
+            return c.json({ ok: false, message: 'Billing update access denied.' }, 403);
+        }
 
         const db = c.get('db');
         const id = c.req.param('id');
@@ -395,7 +567,11 @@ transactionsRoute.patch('/:id/payment', requireAuth, async (c) => {
         const rows = await db
             .select()
             .from(transactions)
-            .where(and(eq(transactions.id, id), eq(transactions.userId, effectiveUserId)))
+            .where(and(
+                eq(transactions.id, id),
+                eq(transactions.userId, effectiveUserId),
+                eq(transactions.organizationId, organizationId),
+            ))
             .limit(1);
         const current = rows[0];
         if (!current) return c.json({ ok: false, message: 'Transaction not found.' }, 404);
@@ -426,7 +602,11 @@ transactionsRoute.patch('/:id/payment', requireAuth, async (c) => {
                 lastReminderAt: payload.nextReminderAt !== undefined ? current.lastReminderAt : current.lastReminderAt,
                 updatedAt: new Date(),
             })
-            .where(and(eq(transactions.id, id), eq(transactions.userId, effectiveUserId)));
+            .where(and(
+                eq(transactions.id, id),
+                eq(transactions.userId, effectiveUserId),
+                eq(transactions.organizationId, organizationId),
+            ));
 
         return c.json({
             ok: true,
@@ -437,12 +617,23 @@ transactionsRoute.patch('/:id/payment', requireAuth, async (c) => {
     } catch (error: unknown) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update payment.' }, 400);
     }
-});
+    }
+);
 
 // GET /transactions/pending-reminders - credit/pending records requiring reminders
-transactionsRoute.get('/pending-reminders', requireAuth, async (c) => {
+transactionsRoute.get(
+    '/pending-reminders',
+    requireAuth,
+    withOrganizationContext,
+    requirePermission('can_manage_payments'),
+    async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    const organizationId = c.get('organizationId');
+    const authUser = c.get('authUser');
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!hasModulePermission(authUser, 'billing', 'view')) {
+        return c.json({ ok: false, message: 'Billing access denied.' }, 403);
+    }
 
     const db = c.get('db');
     const dueBeforeRaw = c.req.query('dueBefore');
@@ -455,6 +646,7 @@ transactionsRoute.get('/pending-reminders', requireAuth, async (c) => {
         .where(
             and(
                 eq(transactions.userId, effectiveUserId),
+                eq(transactions.organizationId, organizationId),
                 eq(transactions.type, 'SALE'),
                 inArray(transactions.paymentStatus, ['PENDING', 'PARTIAL'])
             )
@@ -491,11 +683,19 @@ transactionsRoute.get('/pending-reminders', requireAuth, async (c) => {
         });
 
     return c.json({ ok: true, reminders });
-});
+    }
+);
 
 // GET /transactions - List transactions
-transactionsRoute.get('/', requireAuth, async (c) => {
+transactionsRoute.get(
+    '/',
+    requireAuth,
+    withOrganizationContext,
+    requirePermission('can_create_bill'),
+    async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
+    const organizationId = c.get('organizationId');
+    const authUser = c.get('authUser');
     const db = c.get('db');
     const type = c.req.query('type') as 'SALE' | 'PURCHASE' | undefined;
     const paymentStatus = c.req.query('paymentStatus') as 'PAID' | 'PARTIAL' | 'PENDING' | undefined;
@@ -503,9 +703,15 @@ transactionsRoute.get('/', requireAuth, async (c) => {
     const end = c.req.query('end');
     const limit = Math.min(Number(c.req.query('limit') || 50), 200);
 
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!hasModulePermission(authUser, 'billing', 'view')) {
+        return c.json({ ok: false, message: 'Billing access denied.' }, 403);
+    }
 
-    const conditions = [eq(transactions.userId, effectiveUserId)];
+    const conditions = [
+        eq(transactions.userId, effectiveUserId),
+        eq(transactions.organizationId, organizationId),
+    ];
 
     if (type) conditions.push(eq(transactions.type, type));
     if (paymentStatus) conditions.push(eq(transactions.paymentStatus, paymentStatus));
@@ -520,6 +726,7 @@ transactionsRoute.get('/', requireAuth, async (c) => {
         .limit(limit);
 
     return c.json({ ok: true, transactions: data });
-});
+    }
+);
 
 export default transactionsRoute;

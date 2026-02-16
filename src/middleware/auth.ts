@@ -22,11 +22,18 @@ export type Bindings = {
     DEVELOPER_ADMIN_EMAILS?: string;
     APK_OWNER_UID?: string;
     OTP_RETENTION_HOURS?: string;
+    WHATSAPP_API_URL?: string;
+    WHATSAPP_API_TOKEN?: string;
 };
 
 export type AppVariables = {
     authUser: UserRow | null;
     effectiveUserId: string | null; // Owner ID if staff, Self ID if owner
+    organizationId: string | null;
+    organizationRole: string | null;
+    organizationPermissions: Record<string, boolean> | null;
+    organizationOwnerId: string | null;
+    organizationSettings: Record<string, unknown> | null;
     db: DrizzleClient;
 };
 
@@ -91,6 +98,11 @@ export const optionalAuth = async (c: AppContext, next: Next) => {
 
     c.set('authUser', authUser ?? null);
     c.set('effectiveUserId', authUser?.role === 'staff' ? authUser.ownerId : authUser?.uid ?? null);
+    c.set('organizationId', null);
+    c.set('organizationRole', null);
+    c.set('organizationPermissions', null);
+    c.set('organizationOwnerId', null);
+    c.set('organizationSettings', null);
 
     await next();
 };
@@ -107,6 +119,11 @@ export const requireAuth = async (c: AppContext, next: Next) => {
     c.set('authUser', authUser);
     // If staff, operate on behalf of owner. If owner, operate on self.
     c.set('effectiveUserId', authUser.role === 'staff' && authUser.ownerId ? authUser.ownerId : authUser.uid);
+    c.set('organizationId', null);
+    c.set('organizationRole', null);
+    c.set('organizationPermissions', null);
+    c.set('organizationOwnerId', null);
+    c.set('organizationSettings', null);
 
     await next();
 };
@@ -126,6 +143,11 @@ export const requireAdmin = async (c: AppContext, next: Next) => {
 
     c.set('authUser', authUser);
     c.set('effectiveUserId', authUser.uid);
+    c.set('organizationId', null);
+    c.set('organizationRole', null);
+    c.set('organizationPermissions', null);
+    c.set('organizationOwnerId', null);
+    c.set('organizationSettings', null);
 
     await next();
 };
@@ -145,6 +167,11 @@ export const requireDeveloperAdmin = async (c: AppContext, next: Next) => {
 
     c.set('authUser', authUser);
     c.set('effectiveUserId', authUser.uid);
+    c.set('organizationId', null);
+    c.set('organizationRole', null);
+    c.set('organizationPermissions', null);
+    c.set('organizationOwnerId', null);
+    c.set('organizationSettings', null);
 
     await next();
 };

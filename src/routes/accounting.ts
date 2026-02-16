@@ -13,6 +13,15 @@ import {
     transactions,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import {
+    createApprovalRequest,
+    ensurePeriodUnlockedForDate,
+    getBusinessControls,
+    hasModulePermission,
+    shouldRequireApproval,
+    writeAuditLog,
+} from '../operations/controls';
+import { createJournalEntryInTx } from '../operations/executors';
 
 const accountingRoute = new Hono<AppEnv>();
 
@@ -37,7 +46,11 @@ const getAgeBucket = (ageDays: number): '0-30' | '31-60' | '61-90' | '90+' => {
 
 accountingRoute.get('/accounts', requireAuth, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
+    const authUser = c.get('authUser');
     if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!hasModulePermission(authUser, 'accounting', 'view')) {
+        return c.json({ ok: false, message: 'Accounting access denied.' }, 403);
+    }
 
     const type = c.req.query('type');
     const db = c.get('db');
@@ -56,10 +69,15 @@ accountingRoute.get('/accounts', requireAuth, async (c) => {
 
 accountingRoute.post('/accounts', requireAuth, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
+    const authUser = c.get('authUser');
     if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!hasModulePermission(authUser, 'accounting', 'create')) {
+        return c.json({ ok: false, message: 'Accounting create access denied.' }, 403);
+    }
 
     const body = await c.req.json();
     const payload = z.object({
+        branchId: z.string().optional(),
         code: z.string().min(2).max(20),
         name: z.string().min(2).max(120),
         type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
@@ -73,6 +91,7 @@ accountingRoute.post('/accounts', requireAuth, async (c) => {
     await db.insert(accounts).values({
         id,
         userId: effectiveUserId,
+        branchId: payload.branchId ?? null,
         code: payload.code.trim().toUpperCase(),
         name: payload.name.trim(),
         type: payload.type,
@@ -88,7 +107,11 @@ accountingRoute.post('/accounts', requireAuth, async (c) => {
 
 accountingRoute.post('/accounts/seed-default', requireAuth, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
+    const authUser = c.get('authUser');
     if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!hasModulePermission(authUser, 'accounting', 'create')) {
+        return c.json({ ok: false, message: 'Accounting create access denied.' }, 403);
+    }
 
     const db = c.get('db');
     const map = await withTransaction(db, async (tx) => ensureSystemAccounts(tx, effectiveUserId, new Date()));
@@ -101,79 +124,96 @@ accountingRoute.post('/accounts/seed-default', requireAuth, async (c) => {
 });
 
 accountingRoute.post('/journals', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    try {
+        const effectiveUserId = c.get('effectiveUserId');
+        const authUser = c.get('authUser');
+        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        const canCreateAccounting = hasModulePermission(authUser, 'accounting', 'create');
+        if (!canCreateAccounting && authUser.role !== 'staff') {
+            return c.json({ ok: false, message: 'Accounting create access denied.' }, 403);
+        }
 
-    const body = await c.req.json();
-    const payload = z.object({
-        entryDate: z.coerce.date().optional(),
-        batchNumber: z.string().optional(),
-        referenceType: z.string().optional(),
-        referenceId: z.string().optional(),
-        narration: z.string().optional(),
-        currency: z.string().optional(),
-        lines: z.array(z.object({
-            accountId: z.string().min(1),
-            partyId: z.string().optional(),
-            debit: z.number().nonnegative().default(0),
-            credit: z.number().nonnegative().default(0),
-            hsn: z.string().optional(),
-            gstRate: z.number().nonnegative().optional(),
-            taxType: z.enum(['CGST', 'SGST', 'IGST', 'CESS']).optional(),
-        })).min(2),
-    }).parse(body);
+        const body = await c.req.json();
+        const payload = z.object({
+            branchId: z.string().optional(),
+            costCenter: z.string().optional(),
+            projectCode: z.string().optional(),
+            entryDate: z.coerce.date().optional(),
+            batchNumber: z.string().optional(),
+            referenceType: z.string().optional(),
+            referenceId: z.string().optional(),
+            narration: z.string().optional(),
+            currency: z.string().optional(),
+            lines: z.array(z.object({
+                accountId: z.string().min(1),
+                partyId: z.string().optional(),
+                debit: z.number().nonnegative().default(0),
+                credit: z.number().nonnegative().default(0),
+                hsn: z.string().optional(),
+                gstRate: z.number().nonnegative().optional(),
+                taxType: z.enum(['CGST', 'SGST', 'IGST', 'CESS']).optional(),
+            })).min(2),
+        }).parse(body);
 
-    const totalDebit = payload.lines.reduce((sum, line) => sum + line.debit, 0);
-    const totalCredit = payload.lines.reduce((sum, line) => sum + line.credit, 0);
-    if (Math.abs(totalDebit - totalCredit) > 0.001) {
-        return c.json({ ok: false, message: 'Journal entry is not balanced.' }, 400);
-    }
+        const db = c.get('db');
+        const controls = await getBusinessControls(db, effectiveUserId);
 
-    const db = c.get('db');
-    const uniqueAccountIds = [...new Set(payload.lines.map((line) => line.accountId))];
-    const accountRows = await db
-        .select({ id: accounts.id })
-        .from(accounts)
-        .where(and(eq(accounts.userId, effectiveUserId), inArray(accounts.id, uniqueAccountIds)));
+        if (shouldRequireApproval(authUser, controls, 'JOURNAL_ENTRY')) {
+            const requestId = await createApprovalRequest(db, {
+                userId: effectiveUserId,
+                module: 'accounting',
+                requestType: 'JOURNAL_ENTRY',
+                requestedBy: authUser.uid,
+                requestedByRole: authUser.role,
+                body: JSON.parse(JSON.stringify(payload)) as Record<string, unknown>,
+                reason: payload.narration,
+            });
+            if (requestId) {
+                await writeAuditLog(db, {
+                    userId: effectiveUserId,
+                    actorUid: authUser.uid,
+                    actorRole: authUser.role,
+                    module: 'accounting',
+                    action: 'approval.requested',
+                    entityType: 'approval_request',
+                    entityId: requestId,
+                    after: {
+                        requestType: 'JOURNAL_ENTRY',
+                        status: 'pending',
+                    },
+                });
 
-    if (accountRows.length !== uniqueAccountIds.length) {
-        return c.json({ ok: false, message: 'One or more accounts are invalid for this business.' }, 400);
-    }
+                return c.json({ ok: true, approvalRequired: true, requestId, status: 'pending' });
+            }
+        }
 
-    const entryId = nanoid();
-    const now = new Date();
+        const effectiveDate = payload.entryDate ?? new Date();
+        if (controls.periodLockEnabled) {
+            await ensurePeriodUnlockedForDate(db, effectiveUserId, effectiveDate);
+        }
 
-    await withTransaction(db, async (tx) => {
-        await tx.insert(journalEntries).values({
-            id: entryId,
-            userId: effectiveUserId,
-            entryDate: payload.entryDate ?? now,
-            batchNumber: payload.batchNumber ?? null,
-            referenceType: payload.referenceType ?? null,
-            referenceId: payload.referenceId ?? null,
-            narration: payload.narration ?? null,
-            currency: (payload.currency ?? 'INR').toUpperCase(),
-            createdAt: now,
+        const entryId = await withTransaction(db, async (tx) => {
+            return await createJournalEntryInTx(tx, effectiveUserId, payload, new Date());
         });
 
-        for (const line of payload.lines) {
-            await tx.insert(journalLines).values({
-                id: nanoid(),
-                entryId,
-                userId: effectiveUserId,
-                accountId: line.accountId,
-                partyId: line.partyId ?? null,
-                debit: line.debit,
-                credit: line.credit,
-                hsn: line.hsn ?? null,
-                gstRate: line.gstRate ?? 0,
-                taxType: line.taxType ?? null,
-                createdAt: now,
-            });
-        }
-    });
+        await writeAuditLog(db, {
+            userId: effectiveUserId,
+            actorUid: authUser.uid,
+            actorRole: authUser.role,
+            module: 'accounting',
+            action: 'journal.created',
+            entityType: 'journal_entry',
+            entityId: entryId,
+            after: {
+                referenceType: payload.referenceType ?? null,
+                lineCount: payload.lines.length,
+            },
+        });
 
-    return c.json({ ok: true, entryId });
+        return c.json({ ok: true, entryId });
+    } catch (error: unknown) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create journal entry.' }, 400);
+    }
 });
 
 accountingRoute.get('/trial-balance', requireAuth, async (c) => {
