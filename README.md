@@ -30,6 +30,9 @@ wrangler login
 pnpm deploy
 ```
 
+For Cloudflare Git-integrated builds that execute deploy from repository root,
+use the root `wrangler.jsonc` (already included) or set Worker project root directory to `backend`.
+
 ## CI/CD Deploy (GitHub Actions)
 
 Workflow file:
