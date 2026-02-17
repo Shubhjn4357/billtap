@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Text, Switch, useTheme } from 'react-native-paper';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
@@ -10,6 +10,16 @@ import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { operationsService, type AccountingPeriod, type ApprovalRequest, type AuditLogEntry, type BusinessControls } from '../../api/operationsService';
 import { useAuth } from '../../hooks/useAuth';
+import { isNetworkLikeError } from '../../utils/errorGuards';
+
+interface OperationsControlsPayload {
+    controls: BusinessControls;
+    approvals: ApprovalRequest[];
+    auditLogs: AuditLogEntry[];
+    periods: AccountingPeriod[];
+}
+
+const OPERATIONS_CONTROLS_QUERY_KEY = ['operations-controls'] as const;
 
 const formatDateTime = (value?: string | null) => {
     if (!value) return '-';
@@ -18,58 +28,77 @@ const formatDateTime = (value?: string | null) => {
     return parsed.toLocaleString();
 };
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error) return error.message;
+    return fallback;
+};
+
 export const OperationsControlsScreen = () => {
     const theme = useTheme();
     const { user } = useAuth();
     const dialog = useAppDialog();
+    const queryClient = useQueryClient();
 
-    const [loading, setLoading] = useState(false);
     const [controlsSaving, setControlsSaving] = useState(false);
-    const [controls, setControls] = useState<BusinessControls | null>(null);
-    const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-    const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
-    const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
     const [periodStart, setPeriodStart] = useState('');
     const [periodEnd, setPeriodEnd] = useState('');
     const [periodNotes, setPeriodNotes] = useState('');
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        try {
+    const operationsQuery = useQuery({
+        queryKey: OPERATIONS_CONTROLS_QUERY_KEY,
+        queryFn: async (): Promise<OperationsControlsPayload> => {
             const [controlsData, approvalData, logData, periodData] = await Promise.all([
                 operationsService.getControls(),
                 operationsService.getPendingApprovals(50),
                 operationsService.getAuditLogs(50),
                 operationsService.getPeriods(20),
             ]);
-            setControls(controlsData);
-            setApprovals(approvalData);
-            setAuditLogs(logData);
-            setPeriods(periodData);
-        } catch (error: unknown) {
-            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to load operations controls.');
-        } finally {
-            setLoading(false);
-        }
-    }, [dialog]);
 
-    useFocusEffect(
-        useCallback(() => {
-            void loadData();
-        }, [loadData])
-    );
+            return {
+                controls: controlsData,
+                approvals: approvalData,
+                auditLogs: logData,
+                periods: periodData,
+            };
+        },
+        staleTime: 15_000,
+    });
+
+    const controls = operationsQuery.data?.controls ?? null;
+    const approvals = operationsQuery.data?.approvals ?? [];
+    const auditLogs = operationsQuery.data?.auditLogs ?? [];
+    const periods = operationsQuery.data?.periods ?? [];
+    const loading = operationsQuery.isFetching && !operationsQuery.data;
+    const queryError = operationsQuery.error;
+    const showQueryError = Boolean(queryError) && !isNetworkLikeError(queryError);
+
+    const loadData = useCallback(async () => {
+        await operationsQuery.refetch();
+    }, [operationsQuery]);
 
     const updateControl = async (field: keyof BusinessControls, value: boolean) => {
-        if (!controls) return;
-        const next = { ...controls, [field]: value };
-        setControls(next);
+        const currentPayload = operationsQuery.data;
+        if (!currentPayload) return;
+
+        const optimisticPayload: OperationsControlsPayload = {
+            ...currentPayload,
+            controls: {
+                ...currentPayload.controls,
+                [field]: value,
+            },
+        };
+
+        queryClient.setQueryData<OperationsControlsPayload>(OPERATIONS_CONTROLS_QUERY_KEY, optimisticPayload);
         setControlsSaving(true);
         try {
-            const updated = await operationsService.updateControls({ [field]: value });
-            setControls(updated);
+            const updatedControls = await operationsService.updateControls({ [field]: value });
+            queryClient.setQueryData<OperationsControlsPayload>(OPERATIONS_CONTROLS_QUERY_KEY, {
+                ...optimisticPayload,
+                controls: updatedControls,
+            });
         } catch (error: unknown) {
-            setControls(controls);
-            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to update controls.');
+            queryClient.setQueryData<OperationsControlsPayload>(OPERATIONS_CONTROLS_QUERY_KEY, currentPayload);
+            dialog.alert('Error', getErrorMessage(error, 'Failed to update controls.'));
         } finally {
             setControlsSaving(false);
         }
@@ -80,7 +109,7 @@ export const OperationsControlsScreen = () => {
             await operationsService.approveRequest(id);
             await loadData();
         } catch (error: unknown) {
-            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to approve request.');
+            dialog.alert('Error', getErrorMessage(error, 'Failed to approve request.'));
         }
     };
 
@@ -89,7 +118,7 @@ export const OperationsControlsScreen = () => {
             await operationsService.rejectRequest(id);
             await loadData();
         } catch (error: unknown) {
-            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to reject request.');
+            dialog.alert('Error', getErrorMessage(error, 'Failed to reject request.'));
         }
     };
 
@@ -103,7 +132,7 @@ export const OperationsControlsScreen = () => {
             setPeriodNotes('');
             await loadData();
         } catch (error: unknown) {
-            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to lock period.');
+            dialog.alert('Error', getErrorMessage(error, 'Failed to lock period.'));
         }
     };
 
@@ -112,7 +141,7 @@ export const OperationsControlsScreen = () => {
             await operationsService.closePeriod(id);
             await loadData();
         } catch (error: unknown) {
-            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to close period.');
+            dialog.alert('Error', getErrorMessage(error, 'Failed to close period.'));
         }
     };
 
@@ -121,7 +150,7 @@ export const OperationsControlsScreen = () => {
             await operationsService.reopenPeriod(id);
             await loadData();
         } catch (error: unknown) {
-            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to reopen period.');
+            dialog.alert('Error', getErrorMessage(error, 'Failed to reopen period.'));
         }
     };
 
@@ -132,6 +161,12 @@ export const OperationsControlsScreen = () => {
                     title="Operations Controls"
                     subtitle={`Role: ${(user?.role ?? 'owner').toUpperCase()}`}
                 />
+
+                {showQueryError && (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 10 }}>
+                        {getErrorMessage(queryError, 'Failed to load operations controls.')}
+                    </Text>
+                )}
 
                 <AppCard>
                     <Text variant="titleMedium" style={{ fontWeight: '700' }}>
@@ -280,7 +315,7 @@ export const OperationsControlsScreen = () => {
                     ))}
                 </AppCard>
 
-                {loading && (
+                {(loading || operationsQuery.isRefetching) && (
                     <Text variant="bodySmall" style={{ color: theme.colors.outline, textAlign: 'center' }}>
                         Refreshing operations data...
                     </Text>

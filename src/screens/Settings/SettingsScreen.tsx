@@ -1,10 +1,11 @@
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { List, Switch, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import { adminService } from '../../api/adminService';
 import { offlineSyncService } from '../../api/offlineSyncService';
 import { userService } from '../../api/userService';
@@ -13,12 +14,14 @@ import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 import { Config } from '../../constants/Config';
 import { SETTINGS_TEXT } from '../../constants/staticText';
 import { normalizeCurrencyCode } from '../../utils/formatters';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettingsStore, useUserStore } from '../../store';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 type UpdateState = 'idle' | 'checking' | 'downloading' | 'upToDate' | 'downloaded' | 'disabled' | 'error';
 
@@ -67,6 +70,7 @@ export const SettingsScreen = () => {
     const { setUser } = useUserStore();
     const theme = useTheme();
     const router = useRouter();
+    const dialog = useAppDialog();
     const insets = useSafeAreaInsets();
     const {
         autoTheme,
@@ -82,10 +86,10 @@ export const SettingsScreen = () => {
     const [updateMessage, setUpdateMessage] = useState<string>(SETTINGS_TEXT.updateMessages.initial);
     const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
     const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
-    const [canAccessAdminPanel, setCanAccessAdminPanel] = useState(false);
     const [pendingSyncCount, setPendingSyncCount] = useState(0);
     const [oldestPendingAt, setOldestPendingAt] = useState<Date | null>(null);
     const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+    const [storageBackend, setStorageBackend] = useState<'sqlite-drizzle' | 'async-storage'>('async-storage');
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState<string>(SETTINGS_TEXT.dataSync.idleMessage);
 
@@ -106,6 +110,17 @@ export const SettingsScreen = () => {
         return SETTINGS_TEXT.updateStatus[updateState];
     }, [updateState]);
 
+    const adminAccessQuery = useQuery({
+        queryKey: ['settings-admin-access'] as const,
+        queryFn: async () => {
+            return await adminService.getAccess();
+        },
+        staleTime: 60_000,
+        retry: false,
+    });
+
+    const canAccessAdminPanel = adminAccessQuery.data?.canAccess ?? false;
+
     const handleCurrencyChange = async (currency: string) => {
         const normalized = normalizeCurrencyCode(currency);
         const previousCurrency = activeCurrency;
@@ -125,10 +140,12 @@ export const SettingsScreen = () => {
             if (user) {
                 setUser({ ...user, currency: previousCurrency });
             }
-            Alert.alert(
-                SETTINGS_TEXT.errors.generic,
-                error instanceof Error ? error.message : SETTINGS_TEXT.errors.currencySaveFailed
-            );
+            if (!isNetworkLikeError(error)) {
+                dialog.alert(
+                    SETTINGS_TEXT.errors.generic,
+                    error instanceof Error ? error.message : SETTINGS_TEXT.errors.currencySaveFailed
+                );
+            }
         }
     };
 
@@ -177,10 +194,12 @@ export const SettingsScreen = () => {
         try {
             await Updates.reloadAsync();
         } catch (error: unknown) {
-            Alert.alert(
-                SETTINGS_TEXT.errors.updateError,
-                error instanceof Error ? error.message : SETTINGS_TEXT.updateMessages.applyFailed
-            );
+            if (!isNetworkLikeError(error)) {
+                dialog.alert(
+                    SETTINGS_TEXT.errors.updateError,
+                    error instanceof Error ? error.message : SETTINGS_TEXT.updateMessages.applyFailed
+                );
+            }
         } finally {
             setIsApplyingUpdate(false);
         }
@@ -227,19 +246,8 @@ export const SettingsScreen = () => {
     }, [checkForUpdates]);
 
     useEffect(() => {
-        const verifyAdminAccess = async () => {
-            try {
-                const access = await adminService.getAccess();
-                setCanAccessAdminPanel(access.canAccess);
-            } catch {
-                setCanAccessAdminPanel(false);
-            }
-        };
-        void verifyAdminAccess();
-    }, []);
-
-    useEffect(() => {
         void refreshQueueStats();
+        setStorageBackend(offlineSyncService.getStorageBackend());
     }, [refreshQueueStats]);
 
     return (
@@ -250,7 +258,7 @@ export const SettingsScreen = () => {
                         title={SETTINGS_TEXT.title}
                         subtitle="Access restricted"
                     />
-                    <AppCard>
+                    <AppCard animationDelay={40}>
                         <Text variant="titleSmall" style={{ fontWeight: '700' }}>
                             Settings access is disabled
                         </Text>
@@ -270,6 +278,11 @@ export const SettingsScreen = () => {
                     title={SETTINGS_TEXT.title}
                     subtitle={user?.email || user?.phoneNumber || SETTINGS_TEXT.userFallback}
                 />
+                {adminAccessQuery.error && !isNetworkLikeError(adminAccessQuery.error) ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 8 }}>
+                        {adminAccessQuery.error instanceof Error ? adminAccessQuery.error.message : 'Failed to verify admin access.'}
+                    </Text>
+                ) : null}
 
                 <List.Section>
                     <List.Subheader>{SETTINGS_TEXT.sections.appearance}</List.Subheader>
@@ -331,6 +344,12 @@ export const SettingsScreen = () => {
 
                 <List.Section>
                     <List.Subheader>{SETTINGS_TEXT.sections.account}</List.Subheader>
+                    <List.Item
+                        title="Profile Setup"
+                        description="Manage account details and link mobile number."
+                        left={(props) => <List.Icon {...props} icon="account-circle-outline" />}
+                        onPress={() => router.push('/profile' as never)}
+                    />
                     {(isOwnerOrAdmin || canManageSubscription) && (
                         <List.Item
                             title={SETTINGS_TEXT.account.subscriptionTitle}
@@ -381,7 +400,7 @@ export const SettingsScreen = () => {
 
                 <List.Section>
                     <List.Subheader>{SETTINGS_TEXT.sections.dataSync}</List.Subheader>
-                    <AppCard>
+                    <AppCard animationDelay={70}>
                         <Text variant="titleSmall" style={{ fontWeight: '700' }}>
                             {SETTINGS_TEXT.dataSync.title}
                         </Text>
@@ -393,6 +412,9 @@ export const SettingsScreen = () => {
                         </Text>
                         <Text variant="bodySmall" style={{ marginTop: 2 }}>
                             {SETTINGS_TEXT.dataSync.lastSyncLabel}: {formatTimestamp(lastSyncAt)}
+                        </Text>
+                        <Text variant="bodySmall" style={{ marginTop: 2 }}>
+                            Storage backend: {storageBackend}
                         </Text>
                         <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 6 }}>
                             {syncMessage}
@@ -442,7 +464,7 @@ export const SettingsScreen = () => {
                     />
                 </List.Section>
 
-                <AppCard>
+                <AppCard animationDelay={95}>
                     <Text variant="titleSmall" style={{ fontWeight: '700' }}>
                         {SETTINGS_TEXT.updateCard.title}
                     </Text>

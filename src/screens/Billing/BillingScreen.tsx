@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useReducer, useState, useTransition } from 'react';
 import { StyleSheet, View, ScrollView } from 'react-native';
 import { Text, Searchbar, Divider, useTheme, IconButton, SegmentedButtons, Switch, TextInput, Chip } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,8 +21,44 @@ import { shareBillPDF } from '../../utils/pdfGenerator';
 import { getStockHealth, resolveLowStockThreshold } from '../../utils/stockStatus';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import type { BillItem } from '../../types';
 
 type StockFilter = 'available' | 'low' | 'out' | 'all';
+
+interface CartSummaryState {
+    subtotal: number;
+    taxTotal: number;
+    grandTotal: number;
+}
+
+type CartSummaryAction = {
+    type: 'recalculate';
+    cart: BillItem[];
+    isGstBill: boolean;
+};
+
+const computeCartSummary = (cart: BillItem[], isGstBill: boolean): CartSummaryState => {
+    const subtotal = cart.reduce((sum, entry) => sum + (entry.price * entry.quantity), 0);
+    const taxTotal = isGstBill
+        ? cart.reduce((sum, entry) => {
+            const lineTotal = entry.price * entry.quantity;
+            return sum + ((lineTotal * Number(entry.tax ?? 0)) / 100);
+        }, 0)
+        : 0;
+
+    return {
+        subtotal,
+        taxTotal,
+        grandTotal: subtotal + taxTotal,
+    };
+};
+
+const cartSummaryReducer = (_state: CartSummaryState, action: CartSummaryAction): CartSummaryState => {
+    if (action.type === 'recalculate') {
+        return computeCartSummary(action.cart, action.isGstBill);
+    }
+    return _state;
+};
 
 export const BillingScreen = () => {
     const { allItems, fetchItems } = useStock();
@@ -67,6 +103,12 @@ export const BillingScreen = () => {
     const [stockFilter, setStockFilter] = useState<StockFilter>('available');
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [searchPending, startSearchTransition] = useTransition();
+    const deferredSearchQuery = useDeferredValue(searchQuery);
+    const [cartSummary, dispatchCartSummary] = useReducer(
+        cartSummaryReducer,
+        computeCartSummary(cart, isGstBill)
+    );
 
     useEffect(() => {
         const scannedSearch = Array.isArray(params.search) ? params.search[0] : params.search;
@@ -93,7 +135,21 @@ export const BillingScreen = () => {
         }, [fetchItems])
     );
 
-    const searchTerm = searchQuery.trim();
+    const handleSearchChange = useCallback((value: string) => {
+        startSearchTransition(() => {
+            setSearchQuery(value);
+        });
+    }, [startSearchTransition]);
+
+    useEffect(() => {
+        dispatchCartSummary({
+            type: 'recalculate',
+            cart,
+            isGstBill,
+        });
+    }, [cart, isGstBill]);
+
+    const searchTerm = deferredSearchQuery.trim();
     const normalizedQuery = searchTerm.toLowerCase();
 
     const inventorySummary = useMemo(() => {
@@ -165,19 +221,6 @@ export const BillingScreen = () => {
         }
         return buttons;
     }, [canCreatePurchase, canCreateSale]);
-
-    const cartSummary = useMemo(() => {
-        const subtotal = cart.reduce((sum, entry) => sum + (entry.price * entry.quantity), 0);
-        const taxTotal = isGstBill
-            ? cart.reduce((sum, entry) => {
-                const lineTotal = entry.price * entry.quantity;
-                return sum + ((lineTotal * Number(entry.tax ?? 0)) / 100);
-            }, 0)
-            : 0;
-        const grandTotal = subtotal + taxTotal;
-
-        return { subtotal, taxTotal, grandTotal };
-    }, [cart, isGstBill]);
 
     const stockById = useMemo(() => {
         const entries = allItems.map((item) => [item.id, item] as const);
@@ -302,13 +345,13 @@ export const BillingScreen = () => {
         }
     };
 
-    const renderCartItem = ({ item }: { item: (typeof cart)[number] }) => {
+    const renderCartItem = ({ item, index }: { item: (typeof cart)[number]; index: number }) => {
         const stockItem = stockById.get(item.id);
         const stockHealth = stockItem ? getStockHealth(stockItem) : null;
         const lowStockThreshold = stockItem ? resolveLowStockThreshold(stockItem) : 0;
 
         return (
-            <AppCard style={styles.cartItemCard}>
+            <AppCard style={styles.cartItemCard} animationDelay={Math.min(index * 18, 180)}>
                 <View style={styles.cartItemRow}>
                     <View style={styles.cartItemInfo}>
                         <Text variant="bodyLarge" style={styles.cartItemName}>
@@ -375,7 +418,7 @@ export const BillingScreen = () => {
     return (
         <ScreenWrapper>
             {!canUseBilling ? (
-                <AppCard>
+                <AppCard animationDelay={40}>
                     <Text variant="titleMedium" style={styles.sectionTitle}>
                         Billing access is disabled
                     </Text>
@@ -389,7 +432,7 @@ export const BillingScreen = () => {
                 contentContainerStyle={styles.contentContainer}
                 keyboardShouldPersistTaps="handled"
             >
-            <AppCard style={{ backgroundColor: theme.colors.primaryContainer, marginBottom: 16 }}>
+            <AppCard animationDelay={40} style={{ backgroundColor: theme.colors.primaryContainer, marginBottom: 16 }}>
                 <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
                     Create Bill
                 </Text>
@@ -438,11 +481,16 @@ export const BillingScreen = () => {
                     <View style={{ flex: 1 }}>
                         <Searchbar
                             placeholder={BILLING_TEXT.searchPlaceholder}
-                            onChangeText={setSearchQuery}
+                            onChangeText={handleSearchChange}
                             value={searchQuery}
                             elevation={1}
                             style={{ backgroundColor: theme.colors.elevation.level1 }}
                         />
+                        {searchPending && (
+                            <Text variant="labelSmall" style={{ marginTop: 4, color: theme.colors.outline }}>
+                                Updating search...
+                            </Text>
+                        )}
                     </View>
                     <View style={{ width: 60 }}>
                         <IconButton
@@ -467,7 +515,7 @@ export const BillingScreen = () => {
                     />
                 </View>
 
-                <AppCard style={[styles.searchResultCard, { backgroundColor: theme.colors.elevation.level2, marginBottom: 16 }]}>
+                <AppCard animationDelay={70} style={[styles.searchResultCard, { backgroundColor: theme.colors.elevation.level2, marginBottom: 16 }]}>
                     <View style={styles.catalogHeaderRow}>
                         <Text variant="titleSmall" style={styles.sectionTitle}>
                             Item Catalog
@@ -559,7 +607,7 @@ export const BillingScreen = () => {
                 </AppCard>
 
                 {/* Bill Details */}
-                <AppCard style={{ marginBottom: 16 }}>
+                <AppCard animationDelay={95} style={{ marginBottom: 16 }}>
                     <Text variant="titleSmall" style={[styles.sectionTitle, { marginBottom: 12 }]}>Bill Details</Text>
 
                     <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
@@ -604,7 +652,7 @@ export const BillingScreen = () => {
                 </AppCard>
 
                 {/* Customer Details */}
-                <AppCard style={{ marginBottom: 16 }}>
+                <AppCard animationDelay={120} style={{ marginBottom: 16 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                         <Text variant="titleSmall" style={styles.sectionTitle}>
                             {transactionType === 'PURCHASE' ? 'Supplier' : 'Customer'}
@@ -668,7 +716,7 @@ export const BillingScreen = () => {
                 </View>
 
                 {cart.length === 0 ? (
-                    <AppCard style={styles.emptyCard}>
+                    <AppCard animationDelay={145} style={styles.emptyCard}>
                         <View style={{ alignItems: 'center', padding: 20 }}>
                             <IconButton icon="cart-outline" size={48} iconColor={theme.colors.outline} />
                             <Text variant="bodyMedium" style={{ color: theme.colors.outline, textAlign: 'center' }}>
@@ -678,15 +726,16 @@ export const BillingScreen = () => {
                     </AppCard>
                 ) : (
                     <View>
-                        {cart.map((item) => (
+                        {cart.map((item, index) => (
                             <View key={item.id} style={{ marginBottom: 8 }}>
-                                {renderCartItem({ item })}
+                                {renderCartItem({ item, index })}
                             </View>
                         ))}
                     </View>
                 )}
 
                 <AppCard
+                    animationDelay={170}
                     style={[
                         styles.checkoutCard,
                         {

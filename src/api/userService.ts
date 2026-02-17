@@ -1,8 +1,9 @@
 import { useUserStore } from '../store';
 import type { UserProfile } from '../types';
 import { isOnline } from '../utils/network';
-import { apiClient, ApiError } from './httpClient';
+import { apiClient } from './httpClient';
 import { offlineSyncService } from './offlineSyncService';
+import { shouldThrowClientApiError } from '../utils/errorGuards';
 
 const getLocalMergedUser = (payload: Partial<UserProfile>): UserProfile | null => {
     const localUser = useUserStore.getState().user;
@@ -16,6 +17,14 @@ const getLocalMergedUser = (payload: Partial<UserProfile>): UserProfile | null =
 };
 
 export const userService = {
+    async getCurrentUser(): Promise<UserProfile> {
+        const response = await apiClient.get<{ ok: boolean; user?: UserProfile; message?: string }>('/users/me');
+        if (!response.ok || !response.user) {
+            throw new Error(response.message || 'Failed to load profile.');
+        }
+        return response.user;
+    },
+
     async updateCurrentUser(payload: Partial<UserProfile>): Promise<UserProfile> {
         const fallbackUser = getLocalMergedUser(payload);
         if (!fallbackUser) {
@@ -32,7 +41,7 @@ export const userService = {
                 }
                 return response.user;
             } catch (error: unknown) {
-                if (error instanceof ApiError && error.status < 500 && error.status !== 408) {
+                if (shouldThrowClientApiError(error)) {
                     throw error;
                 }
             }
@@ -44,5 +53,18 @@ export const userService = {
         });
 
         return fallbackUser;
+    },
+
+    async linkPhoneNumber(verificationId: string, verificationCode: string): Promise<UserProfile> {
+        const response = await apiClient.post<{ ok: boolean; user?: UserProfile; message?: string }>(
+            '/users/me/phone/link',
+            { verificationId, verificationCode }
+        );
+
+        if (!response.ok || !response.user) {
+            throw new Error(response.message || 'Failed to link phone number.');
+        }
+
+        return response.user;
     },
 };

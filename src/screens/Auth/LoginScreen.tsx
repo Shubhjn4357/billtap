@@ -7,6 +7,7 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
+import { MotiView } from 'moti';
 import { ActivityIndicator, Divider, Text, useTheme, type MD3Theme } from 'react-native-paper';
 import { AppButton } from '../../components/common/AppButton';
 import { AppInput } from '../../components/common/AppInput';
@@ -118,12 +119,9 @@ export const LoginScreen = () => {
             (async () => {
                 let idToken: string;
                 try {
-                    console.log('Starting Native Google Sign-In...');
                     const result = await signInWithNativeGoogle();
-                    console.log('Native Google Sign-In Success:', result ? 'Token received' : 'No result');
                     idToken = result.idToken;
                 } catch (error: unknown) {
-                    console.error('Native Google Sign-In Failed:', error);
                     dialog.alert(AUTH_TEXT.login.loginErrorTitle, getNativeGoogleErrorMessage(error));
                     setLoading(false);
                     googleSignInInFlightRef.current = false;
@@ -131,9 +129,7 @@ export const LoginScreen = () => {
                 }
 
                 try {
-                    console.log('Starting API Sign-In with Google Token...');
                     const user = await signInWithGoogle(idToken);
-                    console.log('API Sign-In Success', user);
 
                     // Unified Auth: If user doesn't have a phone number, prompt for it
                     if (!user.phoneNumber) {
@@ -144,7 +140,6 @@ export const LoginScreen = () => {
                         );
                     }
                 } catch (error: unknown) {
-                    console.error('API Google Sign-In Failed:', error);
                     dialog.alert(AUTH_TEXT.login.loginErrorTitle, error instanceof Error ? error.message : 'API Error');
                 } finally {
                     setLoading(false);
@@ -215,27 +210,57 @@ export const LoginScreen = () => {
                         keyboardShouldPersistTaps="handled"
                         showsVerticalScrollIndicator={false}
                     >
-                        <View style={styles.logoContainer}>
-                            <View
-                                style={[
-                                    styles.logoFrame,
-                                    {
-                                        backgroundColor: theme.colors.surface,
-                                        borderColor: theme.colors.primary,
-                                    },
-                                ]}
-                            >
-                                <Image source={require('../../../assets/images/icon.png')} style={styles.logo} />
+                        <MotiView
+                            style={styles.heroPanel}
+                            from={{ opacity: 0, translateY: 12 }}
+                            animate={{ opacity: 1, translateY: 0 }}
+                            transition={{ type: 'timing', duration: 260 }}
+                        >
+                            <View style={styles.brandRow}>
+                                <View
+                                    style={[
+                                        styles.logoFrame,
+                                        {
+                                            backgroundColor: theme.colors.surface,
+                                            borderColor: theme.colors.primary,
+                                        },
+                                    ]}
+                                >
+                                    <Image source={require('../../../assets/images/icon.png')} style={styles.logo} />
+                                </View>
+                                <View style={styles.brandTextWrap}>
+                                    <Text variant="labelLarge" style={[styles.brandLabel, { color: theme.colors.primary }]}>
+                                        BillTap OS 2026
+                                    </Text>
+                                    <Text variant="headlineSmall" style={[styles.title, { color: theme.colors.onSurface }]}>
+                                        {AUTH_TEXT.login.title}
+                                    </Text>
+                                </View>
                             </View>
-                            <Text variant="headlineMedium" style={[styles.title, { color: theme.colors.onSurface }]}>
-                                {AUTH_TEXT.login.title}
-                            </Text>
                             <Text variant="bodyMedium" style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}>
                                 {AUTH_TEXT.login.subtitle}
                             </Text>
-                        </View>
+                            <View style={styles.capabilityRow}>
+                                {['GST + Estimate', 'Offline Safe', 'Multi-Store'].map((badge) => (
+                                    <View
+                                        key={badge}
+                                        style={[
+                                            styles.capabilityBadge,
+                                            {
+                                                backgroundColor: theme.dark ? 'rgba(51,65,85,0.52)' : 'rgba(226,232,240,0.68)',
+                                                borderColor: theme.dark ? 'rgba(148,163,184,0.28)' : 'rgba(30,41,59,0.12)',
+                                            },
+                                        ]}
+                                    >
+                                        <Text variant="labelSmall" style={{ color: theme.colors.onSurface }}>
+                                            {badge}
+                                        </Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </MotiView>
 
-                        <View
+                        <MotiView
                             style={[
                                 styles.authCard,
                                 {
@@ -243,7 +268,30 @@ export const LoginScreen = () => {
                                     borderColor: theme.dark ? 'rgba(148,163,184,0.18)' : 'rgba(30,41,59,0.14)',
                                 },
                             ]}
+                            from={{ opacity: 0, translateY: 18, scale: 0.98 }}
+                            animate={{ opacity: 1, translateY: 0, scale: 1 }}
+                            transition={{ type: 'timing', duration: 280, delay: 80 }}
                         >
+                            <View style={styles.modeRow}>
+                                <View
+                                    style={[
+                                        styles.modeChip,
+                                        {
+                                            backgroundColor: theme.colors.primaryContainer,
+                                            borderColor: theme.colors.primary,
+                                        },
+                                    ]}
+                                >
+                                    <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>
+                                        {phoneMode ? (isOtpStep ? 'Phone OTP' : 'Phone Login') : 'Google Login'}
+                                    </Text>
+                                </View>
+                                {phoneMode && (
+                                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                        {isOtpStep ? 'Verification code step' : 'Phone number step'}
+                                    </Text>
+                                )}
+                            </View>
                             {phoneMode ? (
                                 <>
                                     <View
@@ -358,7 +406,7 @@ export const LoginScreen = () => {
                             )}
 
                             {isBusy && <ActivityIndicator style={styles.loadingIndicator} />}
-                        </View>
+                        </MotiView>
                     </ScrollView>
                 </KeyboardAvoidingView>
             </View>
@@ -412,6 +460,21 @@ const createStyles = (theme: MD3Theme) =>
             justifyContent: 'center',
             paddingVertical: 24,
         },
+        heroPanel: {
+            marginBottom: 16,
+        },
+        brandRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+        },
+        brandTextWrap: {
+            flex: 1,
+            marginLeft: 10,
+        },
+        brandLabel: {
+            fontWeight: '700',
+            letterSpacing: 0.4,
+        },
         orbTop: {
             position: 'absolute',
             top: -120,
@@ -430,14 +493,10 @@ const createStyles = (theme: MD3Theme) =>
             borderRadius: 130,
             opacity: 0.3,
         },
-        logoContainer: {
-            alignItems: 'center',
-            marginBottom: 22,
-        },
         logoFrame: {
-            width: 96,
-            height: 96,
-            borderRadius: 28,
+            width: 72,
+            height: 72,
+            borderRadius: 22,
             borderWidth: 2,
             alignItems: 'center',
             justifyContent: 'center',
@@ -448,18 +507,27 @@ const createStyles = (theme: MD3Theme) =>
             elevation: 4,
         },
         logo: {
-            width: 72,
-            height: 72,
-            borderRadius: 18,
+            width: 52,
+            height: 52,
+            borderRadius: 14,
         },
         title: {
-            marginTop: 14,
             fontWeight: '700',
         },
         subtitle: {
-            marginTop: 6,
-            textAlign: 'center',
-            paddingHorizontal: 12,
+            marginTop: 8,
+        },
+        capabilityRow: {
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            marginTop: 10,
+            gap: 8,
+        },
+        capabilityBadge: {
+            borderRadius: 999,
+            borderWidth: 1,
+            paddingHorizontal: 10,
+            paddingVertical: 5,
         },
         authCard: {
             borderRadius: 24,
@@ -471,6 +539,19 @@ const createStyles = (theme: MD3Theme) =>
             shadowOpacity: 0.14,
             shadowRadius: 24,
             elevation: 8,
+        },
+        modeRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 10,
+            gap: 8,
+        },
+        modeChip: {
+            borderRadius: 999,
+            borderWidth: 1,
+            paddingHorizontal: 10,
+            paddingVertical: 5,
         },
         stepBadge: {
             alignSelf: 'flex-start',

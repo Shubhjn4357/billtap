@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { ScrollView, View } from 'react-native';
 import { ActivityIndicator, Divider, Text, useTheme } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { reportingService } from '../../api/reportingService';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 type PnlSnapshot = {
     totalSales: number;
@@ -28,31 +30,44 @@ type BalanceSnapshot = {
 export const ReportScreen = () => {
     const theme = useTheme();
     const { canViewReports } = useOrganizationAccess();
-    const [loading, setLoading] = useState(false);
-    const [pnl, setPnl] = useState<PnlSnapshot | null>(null);
-    const [balanceSheet, setBalanceSheet] = useState<BalanceSnapshot | null>(null);
-
-    useEffect(() => {
-        if (!canViewReports) return;
-        void loadReports();
-    }, [canViewReports]);
-
-    const loadReports = async () => {
-        setLoading(true);
-        try {
+    const reportsQuery = useQuery({
+        queryKey: ['reporting-snapshot'] as const,
+        queryFn: async (): Promise<{ pnl: PnlSnapshot; balanceSheet: BalanceSnapshot }> => {
             const [pnlData, balanceData] = await Promise.all([
                 reportingService.getPnL(),
                 reportingService.getBalanceSheet(),
             ]);
+            return {
+                pnl: {
+                    totalSales: pnlData.totalSales,
+                    totalPurchases: pnlData.totalPurchases,
+                    netProfit: pnlData.netProfit,
+                },
+                balanceSheet: {
+                    assets: {
+                        stockValue: balanceData.assets?.stockValue,
+                        cashEquivalent: balanceData.assets?.cashEquivalent,
+                        totalAssets: balanceData.assets?.totalAssets,
+                    },
+                    liabilities: {
+                        totalLiabilities: balanceData.liabilities?.totalLiabilities,
+                    },
+                },
+            };
+        },
+        enabled: canViewReports,
+        staleTime: 30_000,
+    });
 
-            setPnl(pnlData);
-            setBalanceSheet(balanceData);
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
+    const loading = reportsQuery.isFetching && !reportsQuery.data;
+    const pnl = reportsQuery.data?.pnl ?? null;
+    const balanceSheet = reportsQuery.data?.balanceSheet ?? null;
+    const queryError = useMemo(() => {
+        if (!reportsQuery.error || isNetworkLikeError(reportsQuery.error)) {
+            return null;
         }
-    };
+        return reportsQuery.error instanceof Error ? reportsQuery.error.message : 'Failed to load reports.';
+    }, [reportsQuery.error]);
 
     if (loading) {
         return (
@@ -86,6 +101,11 @@ export const ReportScreen = () => {
                     title="Reporting & Analytics"
                     subtitle="Snapshot of profitability and balance position."
                 />
+                {queryError ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 10 }}>
+                        {queryError}
+                    </Text>
+                ) : null}
 
                 {pnl && (
                     <AppCard>

@@ -1,14 +1,16 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { Text, useTheme } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 interface AccountingSnapshot {
     totalDebit: number;
@@ -25,14 +27,9 @@ interface AccountingSnapshot {
 export const AccountingHomeScreen = () => {
     const router = useRouter();
     const theme = useTheme();
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [snapshot, setSnapshot] = useState<AccountingSnapshot | null>(null);
-
-    const loadSnapshot = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
+    const snapshotQuery = useQuery({
+        queryKey: ['accounting-home-snapshot'] as const,
+        queryFn: async (): Promise<AccountingSnapshot> => {
             const [trialBalance, pnl, gstSummary, inventoryValuation] = await Promise.all([
                 accountingService.getTrialBalance(),
                 accountingService.getProfitLoss(),
@@ -40,7 +37,7 @@ export const AccountingHomeScreen = () => {
                 accountingService.getInventoryValuation(),
             ]);
 
-            setSnapshot({
+            return {
                 totalDebit: trialBalance.summary.totalDebit,
                 totalCredit: trialBalance.summary.totalCredit,
                 isBalanced: trialBalance.summary.isBalanced,
@@ -50,18 +47,24 @@ export const AccountingHomeScreen = () => {
                 netGstPayable: gstSummary.netGstPayable,
                 stockCostValue: inventoryValuation.totalCostValue,
                 lowStockCount: inventoryValuation.lowStockCount,
-            });
-        } catch (loadError: unknown) {
-            setError(loadError instanceof Error ? loadError.message : 'Failed to load accounting summary.');
-        } finally {
-            setLoading(false);
+            };
+        },
+        staleTime: 30_000,
+    });
+
+    const snapshot = snapshotQuery.data ?? null;
+    const loading = snapshotQuery.isFetching && !snapshot;
+    const error = useMemo(() => {
+        if (!snapshotQuery.error || isNetworkLikeError(snapshotQuery.error)) {
+            return null;
         }
-    }, []);
+        return snapshotQuery.error instanceof Error ? snapshotQuery.error.message : 'Failed to load accounting summary.';
+    }, [snapshotQuery.error]);
 
     useFocusEffect(
         useCallback(() => {
-            void loadSnapshot();
-        }, [loadSnapshot])
+            void snapshotQuery.refetch();
+        }, [snapshotQuery])
     );
 
     return (
@@ -146,7 +149,7 @@ export const AccountingHomeScreen = () => {
                     <AppButton mode="outlined" onPress={() => router.push('/accounting/inventory' as never)}>
                         Inventory Insights
                     </AppButton>
-                    <AppButton mode="text" onPress={() => { void loadSnapshot(); }} loading={loading}>
+                    <AppButton mode="text" onPress={() => { void snapshotQuery.refetch(); }} loading={loading}>
                         Refresh
                     </AppButton>
                 </AppCard>

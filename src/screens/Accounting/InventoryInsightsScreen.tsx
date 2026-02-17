@@ -1,13 +1,15 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Text, useTheme } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 interface InventoryInsightsData {
     valuation: {
@@ -35,21 +37,16 @@ interface InventoryInsightsData {
 
 export const InventoryInsightsScreen = () => {
     const theme = useTheme();
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [data, setData] = useState<InventoryInsightsData | null>(null);
-
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
+    const insightsQuery = useQuery({
+        queryKey: ['accounting-inventory-insights'] as const,
+        queryFn: async (): Promise<InventoryInsightsData> => {
             const [valuation, reorder, aging] = await Promise.all([
                 accountingService.getInventoryValuation(),
                 accountingService.getReorderSuggestions(),
                 accountingService.getStockAging(),
             ]);
 
-            setData({
+            return {
                 valuation: {
                     totalCostValue: valuation.totalCostValue,
                     totalRetailValue: valuation.totalRetailValue,
@@ -71,13 +68,19 @@ export const InventoryInsightsScreen = () => {
                         unit: row.unit,
                     })),
                 },
-            });
-        } catch (loadError: unknown) {
-            setError(loadError instanceof Error ? loadError.message : 'Failed to load inventory insights.');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+            };
+        },
+        staleTime: 30_000,
+    });
+
+    const data = insightsQuery.data ?? null;
+    const error = insightsQuery.error && !isNetworkLikeError(insightsQuery.error)
+        ? (insightsQuery.error instanceof Error ? insightsQuery.error.message : 'Failed to load inventory insights.')
+        : null;
+
+    const loadData = useCallback(async () => {
+        await insightsQuery.refetch();
+    }, [insightsQuery]);
 
     useFocusEffect(
         useCallback(() => {
@@ -94,7 +97,7 @@ export const InventoryInsightsScreen = () => {
                 />
 
                 <AppCard>
-                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={loading}>
+                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={insightsQuery.isFetching}>
                         Refresh Inventory Insights
                     </AppButton>
                 </AppCard>

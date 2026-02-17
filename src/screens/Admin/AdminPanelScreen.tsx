@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { Chip, SegmentedButtons, Switch, Text, useTheme } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { adminService } from '../../api/adminService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
@@ -13,6 +14,7 @@ import { useAnalyticsFunnel } from '../../hooks/useAnalyticsFunnel';
 import type { MarketingOffer, SubscriptionPlan, SubscriptionStatus, UserProfile, UserRole } from '../../types';
 import { addMonths, toDateSafe } from '../../utils/date';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 type AdminTab = 'users' | 'plans' | 'offers';
 
@@ -30,9 +32,6 @@ export const AdminPanelScreen = () => {
     } = useAnalyticsFunnel(30);
 
     const [tab, setTab] = useState<AdminTab>('users');
-    const [loading, setLoading] = useState(false);
-    const [accessLoading, setAccessLoading] = useState(true);
-    const [canAccess, setCanAccess] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -53,9 +52,21 @@ export const AdminPanelScreen = () => {
 
     const [planDrafts, setPlanDrafts] = useState<Record<string, SubscriptionPlan>>({});
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        try {
+    const accessQuery = useQuery({
+        queryKey: ['admin-access'] as const,
+        queryFn: async () => {
+            return await adminService.getAccess();
+        },
+        staleTime: 60_000,
+        retry: false,
+    });
+
+    const canAccess = accessQuery.data?.canAccess ?? false;
+    const accessLoading = accessQuery.isFetching && !accessQuery.data;
+
+    const adminDataQuery = useQuery({
+        queryKey: ['admin-data'] as const,
+        queryFn: async () => {
             const [fetchedUsers, fetchedPlans, fetchedOffers] = await Promise.all([
                 adminService.getUsers(500),
                 adminService.getPlans(true),
@@ -63,38 +74,33 @@ export const AdminPanelScreen = () => {
             ]);
 
             const mergedPlans = fetchedPlans.length > 0 ? fetchedPlans : DEFAULT_SUBSCRIPTION_PLANS;
-            setUsers(fetchedUsers);
-            setPlans(mergedPlans);
-            setOffers(fetchedOffers);
-            setPlanDrafts(
-                Object.fromEntries(mergedPlans.map((plan) => [plan.id, { ...plan }]))
-            );
-        } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.loadAdminFailed);
-        } finally {
-            setLoading(false);
+            return {
+                users: fetchedUsers,
+                plans: mergedPlans,
+                offers: fetchedOffers,
+            };
+        },
+        enabled: canAccess,
+        staleTime: 30_000,
+    });
+
+    useEffect(() => {
+        if (!adminDataQuery.data) return;
+
+        setUsers(adminDataQuery.data.users);
+        setPlans(adminDataQuery.data.plans);
+        setOffers(adminDataQuery.data.offers);
+        setPlanDrafts(
+            Object.fromEntries(adminDataQuery.data.plans.map((plan) => [plan.id, { ...plan }]))
+        );
+    }, [adminDataQuery.data]);
+
+    const adminDataError = useMemo(() => {
+        if (!adminDataQuery.error || isNetworkLikeError(adminDataQuery.error)) {
+            return null;
         }
-    }, []);
-
-    useEffect(() => {
-        const verifyAccess = async () => {
-            setAccessLoading(true);
-            try {
-                const access = await adminService.getAccess();
-                setCanAccess(access.canAccess);
-            } catch {
-                setCanAccess(false);
-            } finally {
-                setAccessLoading(false);
-            }
-        };
-        void verifyAccess();
-    }, []);
-
-    useEffect(() => {
-        if (!canAccess) return;
-        void loadData();
-    }, [canAccess, loadData]);
+        return adminDataQuery.error instanceof Error ? adminDataQuery.error.message : ADMIN_TEXT.alerts.loadAdminFailed;
+    }, [adminDataQuery.error]);
 
     const filteredUsers = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
@@ -352,15 +358,20 @@ export const AdminPanelScreen = () => {
                             mode="outlined"
                             compact
                             onPress={() => {
-                                void loadData();
+                                void adminDataQuery.refetch();
                                 void fetchFunnelData();
                             }}
-                            loading={loading || analyticsLoading}
+                            loading={adminDataQuery.isFetching || analyticsLoading}
                         >
                             {ADMIN_TEXT.refresh}
                         </AppButton>
                     )}
                 />
+                {adminDataError ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 8 }}>
+                        {adminDataError}
+                    </Text>
+                ) : null}
 
                 <AppCard>
                     <Text variant="titleMedium" style={{ fontWeight: '700' }}>

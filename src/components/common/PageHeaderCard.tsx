@@ -1,5 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
+import { MotiView } from 'moti';
 import { Text, useTheme } from 'react-native-paper';
 import { AppCard } from './AppCard';
 
@@ -15,25 +16,32 @@ export const PageHeaderCard: React.FC<PageHeaderCardProps> = ({ title, subtitle,
     const textColor = theme.dark ? theme.colors.onSurface : theme.colors.onPrimaryContainer;
 
     return (
-        <AppCard
-            style={{
-                backgroundColor,
-                borderColor: theme.dark ? 'rgba(103,212,234,0.22)' : 'rgba(14,116,144,0.18)',
-            }}
+        <MotiView
+            from={{ opacity: 0.85, translateY: 10 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'timing', duration: 280 }}
         >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <View style={{ flex: 1, marginRight: right ? 12 : 0 }}>
-                    <Text variant="headlineSmall" style={{ fontWeight: '800', color: textColor }}>
-                        {title}
-                    </Text>
-                    {!!subtitle && (
-                        <Text variant="bodySmall" style={{ color: textColor, marginTop: 4, opacity: 0.86 }}>
-                            {subtitle}
+            <AppCard
+                disableMotion
+                style={{
+                    backgroundColor,
+                    borderColor: theme.dark ? 'rgba(103,212,234,0.22)' : 'rgba(14,116,144,0.18)',
+                }}
+            >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1, marginRight: right ? 12 : 0 }}>
+                        <Text variant="titleLarge" style={{ fontWeight: '700', color: textColor }}>
+                            {title}
                         </Text>
-                    )}
+                        {!!subtitle && (
+                            <Text variant="labelMedium" style={{ color: textColor, marginTop: 3, opacity: 0.82 }}>
+                                {subtitle}
+                            </Text>
+                        )}
+                    </View>
+                    {right}
                 </View>
-                {right}
-            </View>
-        </AppCard>
+            </AppCard>
+        </MotiView>
     );
 };

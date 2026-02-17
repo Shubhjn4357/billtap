@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Chip, Text, useTheme } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
@@ -9,13 +10,12 @@ import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import type { Account, AccountType } from '../../types';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 const ACCOUNT_TYPES: AccountType[] = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'];
 
 export const AccountsScreen = () => {
     const theme = useTheme();
-    const [accounts, setAccounts] = useState<Account[]>([]);
-    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [filter, setFilter] = useState<AccountType | 'ALL'>('ALL');
     const [saving, setSaving] = useState(false);
@@ -24,23 +24,26 @@ export const AccountsScreen = () => {
     const [name, setName] = useState('');
     const [type, setType] = useState<AccountType>('ASSET');
 
-    const loadAccounts = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const data = await accountingService.getAccounts();
-            setAccounts(data);
-        } catch (loadError: unknown) {
-            setError(loadError instanceof Error ? loadError.message : 'Failed to load accounts.');
-        } finally {
-            setLoading(false);
+    const accountsQuery = useQuery({
+        queryKey: ['accounting-accounts'] as const,
+        queryFn: async (): Promise<Account[]> => {
+            return await accountingService.getAccounts();
+        },
+        staleTime: 30_000,
+    });
+
+    const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
+    const queryError = useMemo(() => {
+        if (!accountsQuery.error || isNetworkLikeError(accountsQuery.error)) {
+            return null;
         }
-    }, []);
+        return accountsQuery.error instanceof Error ? accountsQuery.error.message : 'Failed to load accounts.';
+    }, [accountsQuery.error]);
 
     useFocusEffect(
         useCallback(() => {
-            void loadAccounts();
-        }, [loadAccounts])
+            void accountsQuery.refetch();
+        }, [accountsQuery])
     );
 
     const filteredAccounts = useMemo(() => {
@@ -50,9 +53,10 @@ export const AccountsScreen = () => {
 
     const handleSeedDefaults = async () => {
         setSaving(true);
+        setError(null);
         try {
             await accountingService.seedDefaultAccounts();
-            await loadAccounts();
+            await accountsQuery.refetch();
         } catch (seedError: unknown) {
             setError(seedError instanceof Error ? seedError.message : 'Failed to seed default accounts.');
         } finally {
@@ -75,7 +79,7 @@ export const AccountsScreen = () => {
             });
             setCode('');
             setName('');
-            await loadAccounts();
+            await accountsQuery.refetch();
         } catch (createError: unknown) {
             setError(createError instanceof Error ? createError.message : 'Failed to create account.');
         } finally {
@@ -94,6 +98,11 @@ export const AccountsScreen = () => {
                 {error ? (
                     <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>
                         {error}
+                    </Text>
+                ) : null}
+                {!error && queryError ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>
+                        {queryError}
                     </Text>
                 ) : null}
 
@@ -147,7 +156,7 @@ export const AccountsScreen = () => {
                         </View>
                     </ScrollView>
 
-                    {loading ? (
+                    {accountsQuery.isFetching && accounts.length === 0 ? (
                         <Text variant="bodySmall">Loading accounts...</Text>
                     ) : (
                         filteredAccounts.map((entry) => (

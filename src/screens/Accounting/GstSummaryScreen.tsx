@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Text, useTheme } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
@@ -9,6 +10,7 @@ import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 interface GstSummaryResponse {
     taxableTurnover: number;
@@ -27,28 +29,30 @@ export const GstSummaryScreen = () => {
     const theme = useTheme();
     const [start, setStart] = useState('');
     const [end, setEnd] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [data, setData] = useState<GstSummaryResponse | null>(null);
-
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
+    const gstSummaryQuery = useQuery({
+        queryKey: ['accounting-gst-summary', start.trim(), end.trim()] as const,
+        queryFn: async (): Promise<GstSummaryResponse> => {
             const response = await accountingService.getGstSummary(start || undefined, end || undefined);
-            setData({
+            return {
                 taxableTurnover: response.taxableTurnover,
                 outputTax: response.outputTax,
                 inputTax: response.inputTax,
                 netGstPayable: response.netGstPayable,
                 byHsn: response.byHsn,
-            });
-        } catch (loadError: unknown) {
-            setError(loadError instanceof Error ? loadError.message : 'Failed to load GST summary.');
-        } finally {
-            setLoading(false);
-        }
-    }, [end, start]);
+            };
+        },
+        enabled: false,
+        staleTime: 30_000,
+    });
+
+    const data = gstSummaryQuery.data ?? null;
+    const error = gstSummaryQuery.error && !isNetworkLikeError(gstSummaryQuery.error)
+        ? (gstSummaryQuery.error instanceof Error ? gstSummaryQuery.error.message : 'Failed to load GST summary.')
+        : null;
+
+    const loadData = useCallback(async () => {
+        await gstSummaryQuery.refetch();
+    }, [gstSummaryQuery]);
 
     useFocusEffect(
         useCallback(() => {
@@ -67,7 +71,7 @@ export const GstSummaryScreen = () => {
                 <AppCard>
                     <AppInput label="Start Date (YYYY-MM-DD)" value={start} onChangeText={setStart} />
                     <AppInput label="End Date (YYYY-MM-DD)" value={end} onChangeText={setEnd} />
-                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={loading}>
+                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={gstSummaryQuery.isFetching}>
                         Refresh GST Summary
                     </AppButton>
                 </AppCard>

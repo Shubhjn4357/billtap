@@ -1,7 +1,8 @@
 import type { BillItem, Item } from '../types';
-import { apiClient, ApiError } from './httpClient';
+import { apiClient } from './httpClient';
 import { offlineSyncService } from './offlineSyncService';
 import { isOnline } from '../utils/network';
+import { shouldThrowClientApiError } from '../utils/errorGuards';
 
 const toItem = (raw: Item): Item => ({
     ...raw,
@@ -51,7 +52,7 @@ export const itemService = {
                 });
                 return response.id;
             } catch (error: unknown) {
-                if (error instanceof ApiError) {
+                if (shouldThrowClientApiError(error)) {
                     throw error;
                 }
             }
@@ -131,7 +132,7 @@ export const itemService = {
 
                 return;
             } catch (error: unknown) {
-                if (error instanceof ApiError && error.status < 500) {
+                if (shouldThrowClientApiError(error)) {
                     throw error;
                 }
             }
@@ -194,7 +195,7 @@ export const itemService = {
                 }
                 return;
             } catch (error: unknown) {
-                if (error instanceof ApiError && error.status < 500) {
+                if (shouldThrowClientApiError(error)) {
                     // Revert on client error
                     await offlineSyncService.upsertCachedItem({ ...item, stock: item.stock });
                     throw error;
@@ -232,7 +233,7 @@ export const itemService = {
                 }
                 return;
             } catch (error: unknown) {
-                if (error instanceof ApiError && error.status < 500 && error.status !== 404) {
+                if (shouldThrowClientApiError(error) && error.status !== 404) {
                     throw error;
                 }
             }
@@ -258,7 +259,7 @@ export const itemService = {
                 await offlineSyncService.setCachedItems(normalized);
                 return normalized;
             } catch (error: unknown) {
-                if (error instanceof ApiError && error.status < 500) {
+                if (shouldThrowClientApiError(error)) {
                     throw error;
                 }
             }
@@ -307,7 +308,7 @@ export const itemService = {
                 await offlineSyncService.setCachedItems(normalized);
                 return normalized;
             } catch (error: unknown) {
-                if (error instanceof ApiError && error.status < 500) {
+                if (shouldThrowClientApiError(error)) {
                     throw error;
                 }
             }

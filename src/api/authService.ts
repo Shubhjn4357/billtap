@@ -16,6 +16,18 @@ interface AuthResponse {
     message?: string;
 }
 
+const withTimeout = async <T>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+        const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new ApiError(message, 0)), ms);
+        });
+        return await Promise.race([promise, timeout]);
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+};
+
 export const authService = {
     async googleSignIn(idToken: string): Promise<UserProfile> {
         const response = await apiClient.post<AuthResponse>('/auth/google', { idToken }, { skipAuth: true });
@@ -71,7 +83,11 @@ export const authService = {
         }
 
         try {
-            const response = await apiClient.get<{ ok: boolean; user?: UserProfile; message?: string }>('/auth/me');
+            const response = await withTimeout(
+                apiClient.get<{ ok: boolean; user?: UserProfile; message?: string }>('/auth/me'),
+                7000,
+                'Profile request timed out.'
+            );
             if (!response.ok || !response.user) return null;
             return response.user;
         } catch (error: unknown) {

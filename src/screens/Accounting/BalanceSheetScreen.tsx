@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Text, useTheme } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
@@ -9,6 +10,7 @@ import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { formatCurrency } from '../../utils/formatters';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 interface BalanceSheetData {
     assets: {
@@ -31,22 +33,23 @@ interface BalanceSheetData {
 export const BalanceSheetScreen = () => {
     const theme = useTheme();
     const [asOf, setAsOf] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [data, setData] = useState<BalanceSheetData | null>(null);
+    const balanceSheetQuery = useQuery({
+        queryKey: ['accounting-balance-sheet', asOf.trim()] as const,
+        queryFn: async (): Promise<BalanceSheetData> => {
+            return await accountingService.getBalanceSheet(asOf || undefined);
+        },
+        enabled: false,
+        staleTime: 30_000,
+    });
+
+    const data = balanceSheetQuery.data ?? null;
+    const error = balanceSheetQuery.error && !isNetworkLikeError(balanceSheetQuery.error)
+        ? (balanceSheetQuery.error instanceof Error ? balanceSheetQuery.error.message : 'Failed to load balance sheet.')
+        : null;
 
     const loadData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const response = await accountingService.getBalanceSheet(asOf || undefined);
-            setData(response);
-        } catch (loadError: unknown) {
-            setError(loadError instanceof Error ? loadError.message : 'Failed to load balance sheet.');
-        } finally {
-            setLoading(false);
-        }
-    }, [asOf]);
+        await balanceSheetQuery.refetch();
+    }, [balanceSheetQuery]);
 
     useFocusEffect(
         useCallback(() => {
@@ -64,7 +67,7 @@ export const BalanceSheetScreen = () => {
 
                 <AppCard>
                     <AppInput label="As Of Date (YYYY-MM-DD)" value={asOf} onChangeText={setAsOf} />
-                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={loading}>
+                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={balanceSheetQuery.isFetching}>
                         Refresh Balance Sheet
                     </AppButton>
                 </AppCard>

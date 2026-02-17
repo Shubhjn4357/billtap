@@ -1,45 +1,39 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { View, FlatList } from 'react-native';
 import { Text, FAB, List, Chip, useTheme, ActivityIndicator } from 'react-native-paper';
 import { useRouter, Href } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { useUserStore } from '../../store';
 import { staffService } from '../../api/staffService';
 import type { UserProfile, StaffInvite } from '../../types';
-
-// Mock service for now, or use axios directly
-// We should prefer creating a service file
-// import axios from 'axios';
-// import { Config } from '../../constants/Config';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 export const StaffListScreen = () => {
     const theme = useTheme();
     const router = useRouter();
     const { user } = useUserStore();
-    const [staff, setStaff] = useState<UserProfile[]>([]);
-    const [invites, setInvites] = useState<StaffInvite[]>([]);
-    const [loading, setLoading] = useState(false);
+    const staffQuery = useQuery({
+        queryKey: ['staff-list', user?.uid ?? 'guest'] as const,
+        queryFn: async (): Promise<{ staff: UserProfile[]; invites: StaffInvite[] }> => {
+            return await staffService.getStaff();
+        },
+        enabled: user?.role === 'owner',
+        staleTime: 30_000,
+    });
 
-    useEffect(() => {
-        const loadStaff = async () => {
-            if (!user || user.role !== 'owner') return;
-            setLoading(true);
-            try {
-                const data = await staffService.getStaff();
-                setStaff(data.staff);
-                setInvites(data.invites);
-            } catch (error) {
-                console.error(error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        loadStaff();
-    }, [user]);
+    const staff = staffQuery.data?.staff ?? [];
+    const invites = staffQuery.data?.invites ?? [];
+    const loading = staffQuery.isFetching && !staffQuery.data;
+    const queryError = useMemo(() => {
+        if (!staffQuery.error || isNetworkLikeError(staffQuery.error)) {
+            return null;
+        }
+        return staffQuery.error instanceof Error ? staffQuery.error.message : 'Failed to load staff.';
+    }, [staffQuery.error]);
 
     const renderStaffItem = ({ item }: { item: UserProfile }) => (
         <AppCard>
@@ -79,6 +73,11 @@ export const StaffListScreen = () => {
                     title="Staff Management"
                     subtitle={`${staff.length} active staff | ${invites.length} pending invite(s)`}
                 />
+                {queryError ? (
+                    <Text variant="bodySmall" style={{ marginBottom: 10, color: theme.colors.error }}>
+                        {queryError}
+                    </Text>
+                ) : null}
 
                 {loading ? (
                     <ActivityIndicator style={{ marginTop: 20 }} />

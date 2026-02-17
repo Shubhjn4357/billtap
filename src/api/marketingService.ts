@@ -1,5 +1,24 @@
 import type { MarketingOffer, UserProfile } from '../types';
+import { isNetworkLikeError } from '../utils/errorGuards';
+import { offlineKeyValueStore } from '../offline/db/offlineKeyValueStore';
 import { adminService } from './adminService';
+
+const OFFERS_CACHE_KEY = 'billtap_offer_cache_v1';
+
+const readOffersCache = async (): Promise<MarketingOffer[]> => {
+    const raw = await offlineKeyValueStore.getItem(OFFERS_CACHE_KEY);
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw) as MarketingOffer[];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+};
+
+const writeOffersCache = async (offers: MarketingOffer[]) => {
+    await offlineKeyValueStore.setItem(OFFERS_CACHE_KEY, JSON.stringify(offers));
+};
 
 const toDate = (value: unknown): Date | null => {
     if (!value) return null;
@@ -30,9 +49,21 @@ const withinActiveWindow = (offer: MarketingOffer, now: Date) => {
 
 export const marketingService = {
     async getActiveOffersForUser(user: UserProfile | null): Promise<MarketingOffer[]> {
-        const allOffers = await adminService.getOffers(false);
-        const now = new Date();
+        let allOffers: MarketingOffer[] = [];
 
+        try {
+            allOffers = await adminService.getOffers(false);
+            await writeOffersCache(allOffers);
+        } catch (error: unknown) {
+            const cachedOffers = await readOffersCache();
+            if (cachedOffers.length > 0 || isNetworkLikeError(error)) {
+                allOffers = cachedOffers;
+            } else {
+                throw error;
+            }
+        }
+
+        const now = new Date();
         return allOffers
             .filter((offer) => offer.isActive && withinActiveWindow(offer, now) && matchesAudience(offer, user))
             .sort((a, b) => b.priority - a.priority);

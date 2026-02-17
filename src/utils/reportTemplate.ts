@@ -36,7 +36,7 @@ export const generateSalesReportHTML = (payload: SalesReportPayload) => {
       </head>
       <body>
         <h1>Sales Report</h1>
-        <p class="muted">Range: ${payload.rangeLabel} • Generated: ${generatedAt}</p>
+        <p class="muted">Range: ${payload.rangeLabel} | Generated: ${generatedAt}</p>
 
         <div class="grid">
           <div class="card">

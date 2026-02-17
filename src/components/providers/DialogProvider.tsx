@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react';
 import { useTheme, Button, Dialog, Paragraph, Portal } from 'react-native-paper';
+import { isNetworkLikeMessage } from '../../utils/errorGuards';
 
 interface DialogAction {
     text: string;
@@ -22,6 +23,7 @@ interface DialogContextType {
 }
 
 const DialogContext = createContext<DialogContextType | undefined>(undefined);
+const DUPLICATE_ALERT_WINDOW_MS = 1400;
 
 export const useAppDialog = () => {
     const context = useContext(DialogContext);
@@ -40,6 +42,7 @@ export const DialogProvider = ({ children }: DialogProviderProps) => {
     const [visible, setVisible] = useState(false);
     const [options, setOptions] = useState<DialogOptions>({});
     const [loading, setLoading] = useState(false);
+    const lastAlertRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
 
     const hide = useCallback(() => {
         setVisible(false);
@@ -51,6 +54,21 @@ export const DialogProvider = ({ children }: DialogProviderProps) => {
     }, []);
 
     const alert = useCallback((title: string, message?: string, actions?: DialogAction[]) => {
+        const normalizedTitle = title?.trim() ?? '';
+        const normalizedMessage = message?.trim() ?? '';
+
+        // Connectivity failures are surfaced via the global online/offline avatar indicator.
+        if (isNetworkLikeMessage(normalizedTitle) || isNetworkLikeMessage(normalizedMessage)) {
+            return;
+        }
+
+        const dedupeKey = `${normalizedTitle}::${normalizedMessage}`;
+        const now = Date.now();
+        if (lastAlertRef.current.key === dedupeKey && now - lastAlertRef.current.at < DUPLICATE_ALERT_WINDOW_MS) {
+            return;
+        }
+        lastAlertRef.current = { key: dedupeKey, at: now };
+
         show({
             title,
             message,

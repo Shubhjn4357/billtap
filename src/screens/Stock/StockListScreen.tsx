@@ -21,7 +21,7 @@ import { StockAdjustmentDialog } from '../../components/stock/StockAdjustmentDia
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 export const StockListScreen = () => {
-    const { items, loading, searchQuery, setSearchQuery, fetchItems, adjustStock } = useStock();
+    const { items, loading, searchQuery, setSearchQuery, searchPending, fetchItems, adjustStock } = useStock();
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
     const theme = useTheme();
@@ -41,7 +41,6 @@ export const StockListScreen = () => {
             await adjustStock(adjustmentItem.id, qty, type, reason);
             setAdjustmentItem(null);
         } catch (error) {
-            console.error(error);
             throw error;
         }
     };
@@ -122,13 +121,14 @@ export const StockListScreen = () => {
         theme.colors.onPrimaryContainer,
     ]);
 
-    const renderItem = useCallback(({ item }: { item: Item }) => {
+    const renderItem = useCallback(({ item, index }: { item: Item; index: number }) => {
         const status = getStockStatus(item);
         const stockHealth = getStockHealth(item);
         const needsAttention = stockHealth !== 'in';
 
         return (
             <AppCard
+                animationDelay={Math.min(index * 24, 220)}
                 onPress={() => router.push(`/item/${item.id}`)}
                 style={{ backgroundColor: needsAttention ? theme.colors.elevation.level2 : undefined }}
             >
@@ -175,7 +175,7 @@ export const StockListScreen = () => {
     return (
         <ScreenWrapper>
             {!canManageInventory ? (
-                <AppCard>
+                <AppCard animationDelay={40}>
                     <Text variant="titleMedium" style={{ fontWeight: '700' }}>
                         Inventory access is disabled
                     </Text>
@@ -185,7 +185,7 @@ export const StockListScreen = () => {
                 </AppCard>
             ) : (
             <>
-            <AppCard style={{ backgroundColor: theme.colors.primaryContainer }}>
+            <AppCard animationDelay={40} style={{ backgroundColor: theme.colors.primaryContainer }}>
                 <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
                     Inventory
                 </Text>
@@ -203,6 +203,11 @@ export const StockListScreen = () => {
                 value={searchQuery}
                 style={styles.searchbar}
             />
+            {searchPending && (
+                <Text variant="labelSmall" style={{ marginBottom: 8, color: theme.colors.outline }}>
+                    Updating search...
+                </Text>
+            )}
 
             {loading ? (
                 <View>
@@ -223,7 +228,7 @@ export const StockListScreen = () => {
                     removeClippedSubviews
                     contentContainerStyle={{ paddingBottom: listBottomPadding }}
                     ListEmptyComponent={(
-                        <AppCard style={styles.emptyCard}>
+                        <AppCard animationDelay={80} style={styles.emptyCard}>
                             <Text style={{ textAlign: 'center', color: theme.colors.outline }}>
                                 No items found.
                             </Text>

@@ -1,7 +1,8 @@
 import type { AnalyticsEvent, AnalyticsEventType } from '../types';
 import { isOnline } from '../utils/network';
-import { apiClient, ApiError } from './httpClient';
+import { apiClient } from './httpClient';
 import { offlineSyncService } from './offlineSyncService';
+import { shouldThrowClientApiError } from '../utils/errorGuards';
 
 type AnalyticsPayload = {
     userId: string;
@@ -61,7 +62,7 @@ export const analyticsService = {
                 await sendEvent(payload);
                 return;
             } catch (error: unknown) {
-                if (error instanceof ApiError && error.status < 500 && error.status !== 408) {
+                if (shouldThrowClientApiError(error)) {
                     throw error;
                 }
             }

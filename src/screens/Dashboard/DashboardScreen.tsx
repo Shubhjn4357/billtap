@@ -68,11 +68,34 @@ export const DashboardScreen = () => {
     );
 
     const displayName = user?.displayName?.trim() || 'Merchant';
+    const quickKpis = React.useMemo(
+        () => [
+            {
+                key: 'sales',
+                label: 'Today Sales',
+                value: loading ? '...' : formatCurrency(stats.todaySales, activeCurrency),
+                tone: 'primary' as const,
+            },
+            {
+                key: 'orders',
+                label: 'Today Orders',
+                value: loading ? '...' : String(stats.todayOrders),
+                tone: 'secondary' as const,
+            },
+            {
+                key: 'stock',
+                label: 'Low Stock',
+                value: String(lowStockCount),
+                tone: lowStockCount > 0 ? ('error' as const) : ('neutral' as const),
+            },
+        ],
+        [activeCurrency, loading, lowStockCount, stats.todayOrders, stats.todaySales]
+    );
 
     return (
         <ScreenWrapper>
             {!canViewDashboard ? (
-                <AppCard>
+                <AppCard animationDelay={40}>
                     <Text variant="titleMedium" style={{ fontWeight: '700' }}>
                         Dashboard access is disabled
                     </Text>
@@ -86,6 +109,7 @@ export const DashboardScreen = () => {
                 showsVerticalScrollIndicator={false}
             >
                 <AppCard
+                    animationDelay={40}
                     style={[
                         styles.heroCard,
                         { backgroundColor: theme.colors.primaryContainer },
@@ -101,12 +125,35 @@ export const DashboardScreen = () => {
                         variant="bodyMedium"
                         style={[styles.heroSubtitle, { color: theme.colors.onPrimaryContainer }]}
                     >
-                        Here is your live business snapshot.
+                        Monitor sales, stock and growth in one command center.
                     </Text>
+                    <View style={styles.heroKpiRow}>
+                        {quickKpis.map((entry) => {
+                            const palette = entry.tone === 'primary'
+                                ? { bg: 'rgba(14,116,144,0.16)', fg: theme.colors.onPrimaryContainer }
+                                : entry.tone === 'secondary'
+                                    ? { bg: 'rgba(15,118,110,0.16)', fg: theme.colors.onPrimaryContainer }
+                                    : entry.tone === 'error'
+                                        ? { bg: 'rgba(185,28,28,0.18)', fg: theme.colors.onPrimaryContainer }
+                                        : { bg: 'rgba(148,163,184,0.22)', fg: theme.colors.onPrimaryContainer };
+
+                            return (
+                                <View key={entry.key} style={[styles.heroKpiCard, { backgroundColor: palette.bg }]}>
+                                    <Text variant="labelSmall" style={{ color: palette.fg }}>
+                                        {entry.label}
+                                    </Text>
+                                    <Text variant="titleSmall" style={[styles.heroKpiValue, { color: palette.fg }]}>
+                                        {entry.value}
+                                    </Text>
+                                </View>
+                            );
+                        })}
+                    </View>
                 </AppCard>
 
                 {lowStockCount > 0 && (
                     <AppCard
+                        animationDelay={70}
                         style={{
                             backgroundColor: theme.colors.errorContainer,
                             marginBottom: 12,
@@ -133,6 +180,7 @@ export const DashboardScreen = () => {
 
                 {primaryOffer && (
                     <AppCard
+                        animationDelay={95}
                         style={{
                             backgroundColor: primaryOffer.bannerBackground || theme.colors.secondaryContainer,
                         }}
@@ -167,7 +215,7 @@ export const DashboardScreen = () => {
                 )}
 
                 {user?.subscriptionStatus !== 'active' && (
-                    <AppCard style={{ borderWidth: 1, borderColor: theme.colors.primary }}>
+                    <AppCard animationDelay={120} style={{ borderWidth: 1, borderColor: theme.colors.primary }}>
                         <Text variant="titleMedium" style={{ fontWeight: '700' }}>
                             Unlock More Sales Tools
                         </Text>
@@ -180,18 +228,18 @@ export const DashboardScreen = () => {
                     </AppCard>
                 )}
 
-                <AppCard style={{ backgroundColor: theme.colors.tertiaryContainer }}>
+                <AppCard animationDelay={145} style={{ backgroundColor: theme.colors.tertiaryContainer }}>
                     <Text
                         variant="titleMedium"
                         style={{ fontWeight: '700', color: theme.colors.onTertiaryContainer }}
                     >
-                        Quick Actions
+                        Launch Pad
                     </Text>
                     <Text
                         variant="bodySmall"
                         style={{ color: theme.colors.onTertiaryContainer, marginBottom: 10 }}
                     >
-                        Jump to your most-used workflows.
+                        Fast entry points for your daily operations.
                     </Text>
                     <View style={styles.quickActionRow}>
                         {(canOpenBilling && (canCreateSale || canCreatePurchase)) && (
@@ -202,7 +250,7 @@ export const DashboardScreen = () => {
                                 onPress={() => router.push('/(main)/(tabs)/billing')}
                                 icon="calculator"
                             >
-                                New Bill
+                                Billing
                             </AppButton>
                         )}
                         {canManageInventory && (
@@ -213,7 +261,7 @@ export const DashboardScreen = () => {
                                 onPress={() => router.push('/(main)/(tabs)/stock')}
                                 icon="package-variant"
                             >
-                                Stock
+                                Inventory
                             </AppButton>
                         )}
                     </View>
@@ -225,13 +273,14 @@ export const DashboardScreen = () => {
                             onPress={() => router.push('/(main)/(tabs)/reports')}
                             icon="chart-line"
                         >
-                            Reports
+                            Analytics
                         </AppButton>
                     )}
                 </AppCard>
 
                 <View style={styles.metricRow}>
                     <AppCard
+                        animationDelay={170}
                         style={[
                             styles.metricCard,
                             styles.metricCardLeft,
@@ -249,6 +298,7 @@ export const DashboardScreen = () => {
                         </Text>
                     </AppCard>
                     <AppCard
+                        animationDelay={195}
                         style={[
                             styles.metricCard,
                             { backgroundColor: theme.colors.secondaryContainer },
@@ -267,7 +317,7 @@ export const DashboardScreen = () => {
                 </View>
 
                 <View style={styles.metricRow}>
-                    <AppCard style={[styles.metricCard, styles.metricCardLeft]}>
+                    <AppCard animationDelay={220} style={[styles.metricCard, styles.metricCardLeft]}>
                         <Text variant="labelMedium" style={{ color: theme.colors.outline }}>
                             7-Day Sales
                         </Text>
@@ -275,7 +325,7 @@ export const DashboardScreen = () => {
                             {loading ? '...' : formatCurrency(stats.weeklySales, activeCurrency)}
                         </Text>
                     </AppCard>
-                    <AppCard style={styles.metricCard}>
+                    <AppCard animationDelay={245} style={styles.metricCard}>
                         <Text variant="labelMedium" style={{ color: theme.colors.outline }}>
                             Average Order
                         </Text>
@@ -285,7 +335,7 @@ export const DashboardScreen = () => {
                     </AppCard>
                 </View>
 
-                <AppCard>
+                <AppCard animationDelay={270}>
                     <Text variant="labelMedium" style={{ color: theme.colors.outline }}>
                         Lifetime Revenue
                     </Text>
@@ -315,6 +365,21 @@ const styles = StyleSheet.create({
     heroSubtitle: {
         marginTop: 6,
         opacity: 0.92,
+    },
+    heroKpiRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 12,
+    },
+    heroKpiCard: {
+        flex: 1,
+        borderRadius: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 9,
+    },
+    heroKpiValue: {
+        marginTop: 4,
+        fontWeight: '700',
     },
     offerButton: {
         marginTop: 10,

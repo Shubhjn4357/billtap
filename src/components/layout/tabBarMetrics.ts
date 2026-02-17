@@ -1,6 +1,6 @@
-export const CURVED_TAB_BAR_HEIGHT = 72;
+export const CURVED_TAB_BAR_HEIGHT = 66;
 export const CURVED_TAB_BAR_FALLBACK_BOTTOM_GUTTER = 10;
-export const CURVED_TAB_CONTENT_GAP = 12;
+export const CURVED_TAB_CONTENT_GAP = 10;
 
 export const getCurvedTabBarBottomPadding = (safeBottomInset: number) => {
     return safeBottomInset > 0 ? safeBottomInset : CURVED_TAB_BAR_FALLBACK_BOTTOM_GUTTER;

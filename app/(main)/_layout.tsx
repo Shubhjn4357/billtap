@@ -76,10 +76,13 @@ export default function MainLayout() {
         <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="business-setup" options={{ headerShown: true, title: 'Business Setup' }} />
-            <Stack.Screen name="business-suite" options={{ headerShown: true, title: 'Business Suite' }} />
             <Stack.Screen name="subscription" options={{ headerShown: true, title: 'Subscription' }} />
             <Stack.Screen name="admin" options={{ headerShown: true, title: 'Admin Panel' }} />
             <Stack.Screen name="operations" options={{ headerShown: true, title: 'Operations Controls' }} />
+            <Stack.Screen name="profile" options={{ headerShown: true, title: 'Profile Setup' }} />
+            <Stack.Screen name="business-suite" options={{ headerShown: true, title: 'Business Suite' }} />
+            <Stack.Screen name="business-suite-template" options={{ headerShown: true, title: 'Template Studio' }} />
+            <Stack.Screen name="business-suite-business-card" options={{ headerShown: true, title: 'Business Card Studio' }} />
             <Stack.Screen name="accounting/index" options={{ headerShown: true, title: 'Accounting Suite' }} />
             <Stack.Screen name="accounting/accounts" options={{ headerShown: true, title: 'Chart Of Accounts' }} />
             <Stack.Screen name="accounting/journal" options={{ headerShown: true, title: 'Journal Entry' }} />
@@ -88,8 +91,8 @@ export default function MainLayout() {
             <Stack.Screen name="accounting/balance-sheet" options={{ headerShown: true, title: 'Balance Sheet' }} />
             <Stack.Screen name="accounting/gst" options={{ headerShown: true, title: 'GST Summary' }} />
             <Stack.Screen name="accounting/inventory" options={{ headerShown: true, title: 'Inventory Insights' }} />
-            <Stack.Screen name="item/new" options={{ headerShown: true, title: 'Add Item' }} />
             <Stack.Screen name="item/[id]" options={{ headerShown: true, title: 'Item Details' }} />
+            <Stack.Screen name="item/new" options={{ headerShown: true, title: 'Add Item' }} />
             <Stack.Screen name="scan" options={{ title: 'Scan Barcode' }} />
         </Stack>
     );

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { analyticsService } from '../api/analyticsService';
 import type { AnalyticsEvent, AnalyticsEventType } from '../types';
+import { isNetworkLikeError } from '../utils/errorGuards';
 
 export interface FunnelMetrics {
     views: number;
@@ -39,29 +41,26 @@ const safeRate = (numerator: number, denominator: number) => {
 };
 
 export const useAnalyticsFunnel = (days = 30) => {
-    const [events, setEvents] = useState<AnalyticsEvent[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const normalizedDays = Math.max(1, days);
+
+    const query = useQuery({
+        queryKey: ['analytics-funnel', normalizedDays] as const,
+        queryFn: async (): Promise<AnalyticsEvent[]> => {
+            const start = new Date();
+            start.setDate(start.getDate() - normalizedDays);
+            return await analyticsService.getEventsInRange(start, 5000);
+        },
+        staleTime: 30_000,
+    });
+
+    const events = useMemo(() => query.data ?? [], [query.data]);
+    const error = query.error && !isNetworkLikeError(query.error)
+        ? (query.error instanceof Error ? query.error.message : 'Failed to load analytics.')
+        : null;
 
     const fetchFunnelData = useCallback(async () => {
-        const start = new Date();
-        start.setDate(start.getDate() - Math.max(days, 1));
-
-        setLoading(true);
-        setError(null);
-        try {
-            const data = await analyticsService.getEventsInRange(start, 5000);
-            setEvents(data);
-        } catch (fetchError: unknown) {
-            setError(fetchError instanceof Error ? fetchError.message : 'Failed to load analytics.');
-        } finally {
-            setLoading(false);
-        }
-    }, [days]);
-
-    useEffect(() => {
-        void fetchFunnelData();
-    }, [fetchFunnelData]);
+        await query.refetch();
+    }, [query]);
 
     const metrics = useMemo<FunnelMetrics>(() => {
         const counts = buildCounts(events);
@@ -88,7 +87,7 @@ export const useAnalyticsFunnel = (days = 30) => {
 
     return {
         events,
-        loading,
+        loading: query.isFetching && events.length === 0,
         error,
         metrics,
         fetchFunnelData,

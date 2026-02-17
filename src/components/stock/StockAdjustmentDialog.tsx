@@ -87,7 +87,7 @@ export const StockAdjustmentDialog = ({ visible, onDismiss, onSubmit, itemName, 
                     />
 
                     <Text variant="bodySmall" style={{ marginTop: 8, color: theme.colors.outline }}>
-                        Current Stock: {currentStock} → New Stock: {type === 'IN' ? currentStock + (parseInt(quantity) || 0) : currentStock - (parseInt(quantity) || 0)}
+                        Current Stock: {currentStock}{' -> '}New Stock: {type === 'IN' ? currentStock + (parseInt(quantity) || 0) : currentStock - (parseInt(quantity) || 0)}
                     </Text>
 
                     <HelperText type="error" visible={!!error}>

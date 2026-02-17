@@ -1,7 +1,7 @@
-
 import React from 'react';
 import { StyleSheet, type GestureResponderEvent } from 'react-native';
 import { Button, ButtonProps } from 'react-native-paper';
+import { MotiView } from 'moti';
 import { useHaptics } from '../../hooks/useHaptics';
 
 interface AppButtonProps extends ButtonProps {
@@ -10,6 +10,8 @@ interface AppButtonProps extends ButtonProps {
 
 export const AppButton: React.FC<AppButtonProps> = ({ 
     onPress, 
+    onPressIn,
+    onPressOut,
     haptic = true, 
     style, 
     contentStyle,
@@ -18,35 +20,53 @@ export const AppButton: React.FC<AppButtonProps> = ({
     ...props 
 }) => {
     const { triggerSelection } = useHaptics();
+    const [isPressed, setIsPressed] = React.useState(false);
 
     const handlePress = (e: GestureResponderEvent) => {
         if (haptic) triggerSelection();
         onPress && onPress(e);
     };
 
+    const handlePressIn: NonNullable<ButtonProps['onPressIn']> = (event) => {
+        setIsPressed(true);
+        onPressIn?.(event);
+    };
+
+    const handlePressOut: NonNullable<ButtonProps['onPressOut']> = (event) => {
+        setIsPressed(false);
+        onPressOut?.(event);
+    };
+
     return (
-        <Button 
-            onPress={handlePress} 
-            style={[styles.button, style]}
-            contentStyle={[styles.content, contentStyle]}
-            labelStyle={[styles.label, labelStyle]}
-            {...props}
+        <MotiView
+            animate={{ scale: isPressed ? 0.97 : 1, translateY: isPressed ? 1 : 0 }}
+            transition={{ type: 'timing', duration: 120 }}
         >
-            {children}
-        </Button>
+            <Button
+                onPress={handlePress}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+                style={[styles.button, style]}
+                contentStyle={[styles.content, contentStyle]}
+                labelStyle={[styles.label, labelStyle]}
+                {...props}
+            >
+                {children}
+            </Button>
+        </MotiView>
     );
 };
 
 const styles = StyleSheet.create({
     button: {
-        borderRadius: 14,
+        borderRadius: 12,
     },
     content: {
-        minHeight: 48,
-        paddingVertical: 5,
+        minHeight: 42,
+        paddingVertical: 2,
     },
     label: {
-        fontWeight: '700',
-        letterSpacing: 0.15,
+        fontWeight: '600',
+        letterSpacing: 0.1,
     },
 });

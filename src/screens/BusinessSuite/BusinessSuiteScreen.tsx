@@ -1,7 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Share, StyleSheet, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Chip, Divider, SegmentedButtons, Switch, Text, useTheme } from 'react-native-paper';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { AppButton } from '../../components/common/AppButton';
@@ -36,6 +38,7 @@ import { Config } from '../../constants/Config';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
 import { openWhatsApp } from '../../utils/linking';
 import { isOnline } from '../../utils/network';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 import { BUSINESS_CARD_TEMPLATES, shareBusinessCardPdf } from '../../utils/businessCard';
 import {
     DEFAULT_STAFF_FEATURE_ACCESS,
@@ -220,9 +223,32 @@ const getDefaultReminderMode = (): ReminderDeliveryMode => {
     return configured === 'cloud' ? 'CLOUD' : 'DEVICE';
 };
 
+interface BusinessSuiteBootstrapPayload {
+    organizations: OrganizationMembership[];
+    requestedOrganizationId: string | null;
+    organization: OrganizationSummary | null;
+    context: {
+        role: StaffRole;
+        ownerUserId: string;
+        permissions: StaffPermissions;
+        settings: Record<string, unknown>;
+    } | null;
+    payroll: PayrollSnapshot;
+    gst: GstComplianceSnapshot;
+    treasury: TreasurySnapshot;
+    enterprise: EnterpriseSnapshot;
+    members: OrganizationMember[];
+    templates: BillTemplateEntry[];
+    signatures: SignatureEntry[];
+    students: InstitutionStudent[];
+    dueReminders: FeeReminderInvoice[];
+}
+
 export const BusinessSuiteScreen = () => {
+    const router = useRouter();
     const theme = useTheme();
     const dialog = useAppDialog();
+    const queryClient = useQueryClient();
     const { user } = useAuth();
     const {
         selectedOrganizationId,
@@ -234,7 +260,6 @@ export const BusinessSuiteScreen = () => {
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
     const isPro = user?.subscriptionStatus === 'active';
 
-    const [loading, setLoading] = useState(false);
     const [savingTemplateSettings, setSavingTemplateSettings] = useState(false);
     const [staffActionLoading, setStaffActionLoading] = useState(false);
     const [sendingReminderForInvoiceId, setSendingReminderForInvoiceId] = useState<string | null>(null);
@@ -424,37 +449,35 @@ export const BusinessSuiteScreen = () => {
                 : ''
         );
     }, [user?.displayName, user?.email, user?.gstNumber, user?.phoneNumber]);
-
-    const loadData = useCallback(async (forcedOrganizationId?: string) => {
-        setLoading(true);
-        try {
-            const myOrganizations = await businessSuiteService.getMyOrganizations();
-            setOrganizations(myOrganizations);
-            const requestedOrganizationId = forcedOrganizationId && myOrganizations.some((entry) => entry.id === forcedOrganizationId)
-                ? forcedOrganizationId
-                : myOrganizations.some((entry) => entry.id === selectedOrganizationId)
-                    ? selectedOrganizationId
-                : (myOrganizations[0]?.id ?? null);
+    const businessSuiteQuery = useQuery({
+        queryKey: ['business-suite-bootstrap', selectedOrganizationId ?? 'auto', user?.uid ?? 'guest'] as const,
+        enabled: Boolean(user),
+        staleTime: 30_000,
+        queryFn: async (): Promise<BusinessSuiteBootstrapPayload> => {
+            const organizations = await businessSuiteService.getMyOrganizations();
+            const requestedOrganizationId = organizations.some((entry) => entry.id === selectedOrganizationId)
+                ? (selectedOrganizationId ?? null)
+                : (organizations[0]?.id ?? null);
 
             if (!requestedOrganizationId) {
-                setOrganizationName('Current Store');
-                setOrganizationCode('');
-                setOrganizationRole('owner');
-                setOrganizationPermissions({});
-                setOrganizationContext(null);
-                setMembers([]);
-                setTemplates([]);
-                setSignatures([]);
-                setStudents([]);
-                setDueReminders([]);
-                return;
+                return {
+                    organizations,
+                    requestedOrganizationId: null,
+                    organization: null,
+                    context: null,
+                    payroll: EmptyPayroll,
+                    gst: EmptyGst,
+                    treasury: EmptyTreasury,
+                    enterprise: EmptyEnterprise,
+                    members: [],
+                    templates: [],
+                    signatures: [],
+                    students: [],
+                    dueReminders: [],
+                };
             }
 
-            if (requestedOrganizationId !== selectedOrganizationId) {
-                setSelectedOrganizationId(requestedOrganizationId);
-            }
-
-            const [payrollSnapshot, gstSnapshot, treasurySnapshot, enterpriseSnapshot, orgPayload] = await Promise.all([
+            const [payroll, gst, treasury, enterprise, orgPayload] = await Promise.all([
                 businessSuiteService.getPayrollSnapshot(),
                 businessSuiteService.getGstComplianceSnapshot(),
                 businessSuiteService.getTreasurySnapshot(),
@@ -462,92 +485,116 @@ export const BusinessSuiteScreen = () => {
                 businessSuiteService.getCurrentOrganization(requestedOrganizationId),
             ]);
 
-            setPayroll(payrollSnapshot);
-            setGst(gstSnapshot);
-            setTreasury(treasurySnapshot);
-            setEnterprise(enterpriseSnapshot);
-
-            setOrganizationName(orgPayload.organization.name);
-            setOrganizationCode(orgPayload.organization.code);
-            setOrganizationRole(orgPayload.context.role);
-            setOrganizationPermissions(asPermissions(orgPayload.context.permissions));
-            setOrganizationContext({
-                role: orgPayload.context.role,
-                ownerUserId: orgPayload.context.ownerUserId,
-                permissions: orgPayload.context.permissions as Record<string, boolean>,
-                settings: orgPayload.context.settings,
-            });
-            applySettingsToUi(asRecord(orgPayload.context.settings), orgPayload.organization);
-
-            const ownerView = orgPayload.context.role === 'owner' || user?.role === 'admin';
             const permissionMap = asPermissions(orgPayload.context.permissions);
-
+            const ownerView = orgPayload.context.role === 'owner' || user?.role === 'admin';
             const nextCanManageStaff = ownerView || Boolean(permissionMap.can_manage_staff);
             const nextCanManageTemplates = ownerView || Boolean(permissionMap.can_manage_templates);
             const nextCanManagePayments = ownerView || Boolean(permissionMap.can_manage_payments);
 
-            const tasks: Promise<void>[] = [];
-
-            if (nextCanManageStaff) {
-                tasks.push(
-                    businessSuiteService.getOrganizationMembers(requestedOrganizationId).then(setMembers).catch(() => setMembers([]))
-                );
-            } else {
-                setMembers([]);
-            }
-
-            if (nextCanManageTemplates) {
-                tasks.push(
-                    Promise.all([
+            const [members, templatePack, paymentPack] = await Promise.all([
+                nextCanManageStaff
+                    ? businessSuiteService.getOrganizationMembers(requestedOrganizationId).catch(() => [])
+                    : Promise.resolve([] as OrganizationMember[]),
+                nextCanManageTemplates
+                    ? Promise.all([
                         businessSuiteService.getTemplates(requestedOrganizationId),
                         businessSuiteService.getSignatures(requestedOrganizationId),
-                    ])
-                        .then(([templateRows, signatureRows]) => {
-                            setTemplates(templateRows);
-                            setSignatures(signatureRows);
-                        })
-                        .catch(() => {
-                            setTemplates([]);
-                            setSignatures([]);
-                        })
-                );
-            } else {
-                setTemplates([]);
-                setSignatures([]);
-            }
-
-            if (nextCanManagePayments) {
-                tasks.push(
-                    Promise.all([
+                    ]).catch(() => [[], []] as [BillTemplateEntry[], SignatureEntry[]])
+                    : Promise.resolve([[], []] as [BillTemplateEntry[], SignatureEntry[]]),
+                nextCanManagePayments
+                    ? Promise.all([
                         businessSuiteService.getInstitutionStudents(requestedOrganizationId),
                         businessSuiteService.getDueFeeReminders(new Date().toISOString(), requestedOrganizationId),
-                    ])
-                        .then(([studentRows, reminderRows]) => {
-                            setStudents(studentRows);
-                            setDueReminders(reminderRows);
-                        })
-                        .catch(() => {
-                            setStudents([]);
-                            setDueReminders([]);
-                        })
-                );
-            } else {
-                setStudents([]);
-                setDueReminders([]);
-            }
+                    ]).catch(() => [[], []] as [InstitutionStudent[], FeeReminderInvoice[]])
+                    : Promise.resolve([[], []] as [InstitutionStudent[], FeeReminderInvoice[]]),
+            ]);
 
-            await Promise.all(tasks);
-        } catch (error: unknown) {
-            dialog.alert('Business Suite', error instanceof Error ? error.message : 'Failed to load business suite data.');
-        } finally {
-            setLoading(false);
+            return {
+                organizations,
+                requestedOrganizationId,
+                organization: orgPayload.organization,
+                context: {
+                    role: orgPayload.context.role,
+                    ownerUserId: orgPayload.context.ownerUserId,
+                    permissions: permissionMap,
+                    settings: asRecord(orgPayload.context.settings),
+                },
+                payroll,
+                gst,
+                treasury,
+                enterprise,
+                members,
+                templates: templatePack[0],
+                signatures: templatePack[1],
+                students: paymentPack[0],
+                dueReminders: paymentPack[1],
+            };
+        },
+    });
+
+    const loading = businessSuiteQuery.isFetching && !businessSuiteQuery.data;
+    const queryError = businessSuiteQuery.error && !isNetworkLikeError(businessSuiteQuery.error)
+        ? (businessSuiteQuery.error instanceof Error ? businessSuiteQuery.error.message : 'Failed to load business suite data.')
+        : null;
+
+    const refreshBusinessSuite = useCallback(async () => {
+        await businessSuiteQuery.refetch();
+    }, [businessSuiteQuery]);
+
+    useEffect(() => {
+        const payload = businessSuiteQuery.data;
+        if (!payload) return;
+
+        setOrganizations(payload.organizations);
+        if (payload.requestedOrganizationId !== selectedOrganizationId) {
+            setSelectedOrganizationId(payload.requestedOrganizationId);
         }
-    }, [applySettingsToUi, dialog, selectedOrganizationId, setOrganizationContext, setSelectedOrganizationId, user?.role]);
+
+        setPayroll(payload.payroll);
+        setGst(payload.gst);
+        setTreasury(payload.treasury);
+        setEnterprise(payload.enterprise);
+        setMembers(payload.members);
+        setTemplates(payload.templates);
+        setSignatures(payload.signatures);
+        setStudents(payload.students);
+        setDueReminders(payload.dueReminders);
+
+        if (!payload.organization || !payload.context) {
+            setOrganizationName('Current Store');
+            setOrganizationCode('');
+            setOrganizationRole('owner');
+            setOrganizationPermissions({});
+            setOrganizationContext(null);
+            return;
+        }
+
+        setOrganizationName(payload.organization.name);
+        setOrganizationCode(payload.organization.code);
+        setOrganizationRole(payload.context.role);
+        setOrganizationPermissions(payload.context.permissions);
+        setOrganizationContext({
+            role: payload.context.role,
+            ownerUserId: payload.context.ownerUserId,
+            permissions: payload.context.permissions as Record<string, boolean>,
+            settings: payload.context.settings,
+        });
+        setOrganizationSettings(payload.context.settings);
+        applySettingsToUi(payload.context.settings, payload.organization);
+    }, [
+        applySettingsToUi,
+        businessSuiteQuery.data,
+        selectedOrganizationId,
+        setOrganizationContext,
+        setOrganizationSettings,
+        setSelectedOrganizationId,
+    ]);
 
     useFocusEffect(
         useCallback(() => {
-            void loadData();
-        }, [loadData])
+            if (!user) return;
+            void refreshBusinessSuite();
+        }, [refreshBusinessSuite, user])
     );
 
     const resetNewStaffForm = () => {
@@ -843,7 +890,7 @@ export const BusinessSuiteScreen = () => {
     const handleSwitchOrganization = async (organizationId: string) => {
         if (!organizationId || organizationId === selectedOrganizationId) return;
         setSelectedOrganizationId(organizationId);
-        await loadData(organizationId);
+        await queryClient.invalidateQueries({ queryKey: ['business-suite-bootstrap'] });
     };
 
     const handleCreateStore = async () => {
@@ -873,7 +920,7 @@ export const BusinessSuiteScreen = () => {
             setNewStoreName('');
             setNewStoreCode('');
             setSelectedOrganizationId(createdId);
-            await loadData(createdId);
+            await queryClient.invalidateQueries({ queryKey: ['business-suite-bootstrap'] });
             dialog.alert('Store', 'Store created successfully.');
         } catch (error: unknown) {
             dialog.alert('Store', error instanceof Error ? error.message : 'Failed to create store.');
@@ -1103,7 +1150,6 @@ export const BusinessSuiteScreen = () => {
                         message,
                         mediaUrl: mediaUrl.trim() || undefined,
                     });
-                    dialog.alert('Reminder', 'You are offline. Reminder has been queued and will sync when online.');
                     return;
                 }
                 await businessSuiteService.sendFeeReminderWhatsApp({
@@ -1123,13 +1169,14 @@ export const BusinessSuiteScreen = () => {
                         message,
                         mediaUrl: mediaUrl.trim() || undefined,
                     });
-                    dialog.alert('Reminder', 'Failed to send now. Reminder has been queued for offline sync.');
                     return;
                 } catch {
                     // Ignore queue fallback errors and show original error below.
                 }
             }
-            dialog.alert('Reminder', error instanceof Error ? error.message : 'Failed to send reminder.');
+            if (!isNetworkLikeError(error)) {
+                dialog.alert('Reminder', error instanceof Error ? error.message : 'Failed to send reminder.');
+            }
         } finally {
             setSendingReminderForInvoiceId(null);
         }
@@ -1142,15 +1189,37 @@ export const BusinessSuiteScreen = () => {
                     title="Business Suite"
                     subtitle={`${organizationName}${organizationCode ? ` (${organizationCode})` : ''}`}
                 />
+                {queryError ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 8 }}>
+                        {queryError}
+                    </Text>
+                ) : null}
 
                 <View style={styles.refreshRow}>
                     <Chip icon="account-tie" compact>
                         Role: {organizationRole.toUpperCase()}
                     </Chip>
-                    <AppButton mode="contained-tonal" compact onPress={() => { void loadData(); }} loading={loading}>
+                    <AppButton mode="contained-tonal" compact onPress={() => { void refreshBusinessSuite(); }} loading={businessSuiteQuery.isFetching}>
                         Refresh
                     </AppButton>
                 </View>
+
+                <AppCard>
+                    <Text variant="titleMedium" style={styles.sectionTitle}>
+                        Customization Suites
+                    </Text>
+                    <Text variant="bodySmall" style={{ color: theme.colors.outline, marginBottom: 10 }}>
+                        Open dedicated pages for live template and business card customization.
+                    </Text>
+                    <View style={styles.actionGrid}>
+                        <AppButton mode="contained" onPress={() => router.push('/business-suite-template' as never)}>
+                            Template Studio
+                        </AppButton>
+                        <AppButton mode="contained-tonal" onPress={() => router.push('/business-suite-business-card' as never)}>
+                            Business Card Studio
+                        </AppButton>
+                    </View>
+                </AppCard>
 
                 <AppCard>
                     <Text variant="titleMedium" style={styles.sectionTitle}>
@@ -1864,6 +1933,9 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontWeight: '700',
         marginBottom: 8,
+    },
+    actionGrid: {
+        gap: 8,
     },
     subHeading: {
         fontWeight: '700',

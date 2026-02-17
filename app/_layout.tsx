@@ -2,7 +2,7 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Updates from 'expo-updates';
 import '../src/utils/reanimated';
@@ -13,10 +13,12 @@ import { offlineSyncService } from '../src/api/offlineSyncService';
 import { paymentReminderService } from '../src/services/paymentReminderService';
 import { userService } from '../src/api/userService';
 import { AppThemeProvider } from '../src/components/providers/AppThemeProvider';
+import { AppQueryProvider } from '../src/components/providers/AppQueryProvider';
 import { DialogProvider } from '../src/components/providers/DialogProvider';
 import { Config } from '../src/constants/Config';
 import { STACK_ROUTE_TITLES } from '../src/constants/staticText';
 import { toDateSafe } from '../src/utils/date';
+import { isNetworkLikeMessage } from '../src/utils/errorGuards';
 import { normalizeCurrencyCode } from '../src/utils/formatters';
 import { useNetworkStore, useSettingsStore, useUserStore } from '../src/store';
 import { LoadingScreen } from '../src/components/common/LoadingScreen';
@@ -42,6 +44,30 @@ export default function RootLayout() {
     const { setNetworkState } = useNetworkStore();
     const userId = user?.uid;
     const userSubscriptionStatus = user?.subscriptionStatus;
+
+    useEffect(() => {
+        NetInfo.configure({
+            // Prevent noisy web reachability probes like HEAD http://localhost:8082/.
+            // Native platforms keep reachability checks enabled.
+            reachabilityShouldRun: () => Platform.OS !== 'web',
+        });
+    }, []);
+
+    useEffect(() => {
+        const originalAlert = Alert.alert;
+        Alert.alert = (title, message, buttons, options) => {
+            const normalizedTitle = typeof title === 'string' ? title : '';
+            const normalizedMessage = typeof message === 'string' ? message : '';
+            if (isNetworkLikeMessage(normalizedTitle) || isNetworkLikeMessage(normalizedMessage)) {
+                return;
+            }
+            return originalAlert(title, message, buttons, options);
+        };
+
+        return () => {
+            Alert.alert = originalAlert;
+        };
+    }, []);
 
     // Bootstrap: Load user profile on mount
     useEffect(() => {
@@ -149,14 +175,16 @@ export default function RootLayout() {
     useEffect(() => {
         let wasOnline = false;
         const unsubscribe = NetInfo.addEventListener((state) => {
-            const isNowOnline = Boolean(state.isConnected) && state.isInternetReachable !== false;
+            const isNowOnline = Platform.OS === 'web'
+                ? state.isConnected !== false
+                : Boolean(state.isConnected) && state.isInternetReachable !== false;
             setNetworkState({
                 isConnected: state.isConnected,
                 isInternetReachable: state.isInternetReachable,
             });
 
             if (isNowOnline && !wasOnline && userId) {
-                void offlineSyncService.flushQueue();
+                offlineSyncService.onNetworkStateChange(true);
                 if (Platform.OS !== 'web') {
                     void paymentReminderService.syncPendingPaymentReminders();
                 }
@@ -167,6 +195,13 @@ export default function RootLayout() {
 
         return unsubscribe;
     }, [setNetworkState, userId]);
+
+    useEffect(() => {
+        offlineSyncService.startAutoSync();
+        return () => {
+            offlineSyncService.stopAutoSync();
+        };
+    }, []);
 
     // Hide splash screen when ready
     useEffect(() => {
@@ -198,19 +233,21 @@ export default function RootLayout() {
 
     return (
         <AppThemeProvider>
-            <DialogProvider>
-                <Stack>
-                    <Stack.Screen name="index" options={{ headerShown: false }} />
-                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                    <Stack.Screen name="(main)" options={{ headerShown: false }} />
-                    <Stack.Screen name="about" options={{ headerShown: true, title: STACK_ROUTE_TITLES.about }} />
-                    <Stack.Screen name="changelog" options={{ headerShown: true, title: STACK_ROUTE_TITLES.changelog }} />
-                    <Stack.Screen name="terms" options={{ title: STACK_ROUTE_TITLES.terms }} />
-                    <Stack.Screen name="privacy" options={{ title: STACK_ROUTE_TITLES.privacy }} />
-                    <Stack.Screen name="sitemap" options={{ title: STACK_ROUTE_TITLES.sitemap }} />
-                    <Stack.Screen name="+not-found" />
-                </Stack>
-            </DialogProvider>
+            <AppQueryProvider>
+                <DialogProvider>
+                    <Stack>
+                        <Stack.Screen name="index" options={{ headerShown: false }} />
+                        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                        <Stack.Screen name="(main)" options={{ headerShown: false }} />
+                        <Stack.Screen name="about" options={{ headerShown: true, title: STACK_ROUTE_TITLES.about }} />
+                        <Stack.Screen name="changelog" options={{ headerShown: true, title: STACK_ROUTE_TITLES.changelog }} />
+                        <Stack.Screen name="terms" options={{ title: STACK_ROUTE_TITLES.terms }} />
+                        <Stack.Screen name="privacy" options={{ title: STACK_ROUTE_TITLES.privacy }} />
+                        <Stack.Screen name="sitemap" options={{ title: STACK_ROUTE_TITLES.sitemap }} />
+                        <Stack.Screen name="+not-found" />
+                    </Stack>
+                </DialogProvider>
+            </AppQueryProvider>
         </AppThemeProvider>
     );
 }

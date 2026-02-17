@@ -1,5 +1,7 @@
+import axios, { AxiosError, isAxiosError, type AxiosResponse } from 'axios';
 import { API_CONFIG } from '../constants/Api';
 import { useOrganizationStore } from '../store';
+import { isOnline } from '../utils/network';
 import { getSessionToken } from './session';
 
 export class ApiError extends Error {
@@ -38,12 +40,75 @@ const DEFAULT_TIMEOUT_MS = (() => {
     return Math.floor(raw);
 })();
 
+const RETRY_BASE_DELAY_MS = (() => {
+    const raw = Number(process.env.EXPO_PUBLIC_API_RETRY_BASE_MS ?? 350);
+    if (!Number.isFinite(raw) || raw <= 0) return 350;
+    return Math.floor(raw);
+})();
+
+const RETRY_MAX_DELAY_MS = (() => {
+    const raw = Number(process.env.EXPO_PUBLIC_API_RETRY_MAX_MS ?? 2400);
+    if (!Number.isFinite(raw) || raw <= 0) return 2400;
+    return Math.floor(raw);
+})();
+
 interface RequestOptions {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body?: unknown;
     headers?: Record<string, string>;
     skipAuth?: boolean;
 }
+
+const asServerMessage = (response: AxiosResponse<unknown>): string => {
+    const payload = response.data;
+    if (payload && typeof payload === 'object' && 'message' in payload) {
+        const message = (payload as { message?: unknown }).message;
+        if (typeof message === 'string' && message.trim()) {
+            return message;
+        }
+    }
+    return `Request failed (${response.status})`;
+};
+
+const isRetryableStatus = (status: number): boolean => status >= 500;
+
+const isRetryableNetworkError = (error: AxiosError): boolean => {
+    if (error.code === 'ECONNABORTED') return true;
+    if (error.response) return false;
+    return true;
+};
+
+const isRetryableError = (error: unknown): boolean => {
+    if (!(error instanceof ApiError)) return false;
+    if (error.status === 0) return true;
+    return isRetryableStatus(error.status);
+};
+
+const createApiErrorFromAxios = (error: AxiosError): ApiError => {
+    if (error.code === 'ECONNABORTED') {
+        return new ApiError(`Request timed out after ${DEFAULT_TIMEOUT_MS}ms.`, 0, error);
+    }
+
+    if (error.response) {
+        return new ApiError(
+            asServerMessage(error.response),
+            error.response.status,
+            error.response.data
+        );
+    }
+
+    return new ApiError('Network request failed. Check your internet connection.', 0, error);
+};
+
+const getRetryDelayMs = (attemptNumber: number): number => {
+    const exponential = RETRY_BASE_DELAY_MS * Math.pow(2, Math.max(0, attemptNumber - 1));
+    const jitter = Math.floor(Math.random() * 120);
+    return Math.min(RETRY_MAX_DELAY_MS, exponential + jitter);
+};
+
+const wait = async (ms: number) => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+};
 
 const request = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
     const { method = 'GET', body, headers = {}, skipAuth = false } = options;
@@ -65,85 +130,71 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
     }
 
     const hasBody = body !== undefined;
-    if (hasBody && !requestHeaders['Content-Type']) {
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+    if (hasBody && !isFormData && !requestHeaders['Content-Type']) {
         requestHeaders['Content-Type'] = 'application/json';
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-
-    let response: Response | undefined;
     let attempt = 0;
-    const maxRetries = retryableMethod ? 3 : 1;
+    const maxRetries = retryableMethod ? 2 : 1;
 
-    try {
-        while (attempt < maxRetries) {
-            try {
-                response = await fetch(resolveUrl(path), {
-                    method,
-                    headers: requestHeaders,
-                    body: hasBody ? JSON.stringify(body) : undefined,
-                    signal: controller.signal,
-                });
+    const online = await isOnline();
+    // For GET requests, attempt anyway to avoid false negatives from flaky reachability probes.
+    if (!online && !retryableMethod) {
+        throw new ApiError('Network request failed. Check your internet connection.', 0);
+    }
 
-                // Retry on server-side failures, but preserve the server message on final failure.
-                if (response.status >= 500) {
-                    const serverText = await response.text();
-                    const parsedServer = tryParseJson(serverText) as { message?: string } | null;
-                    const message = parsedServer?.message ?? `Server Error: ${response.status}`;
-                    throw new ApiError(message, response.status, parsedServer ?? serverText);
-                }
+    while (attempt < maxRetries) {
+        try {
+            const response = await axios.request<unknown>({
+                method,
+                url: resolveUrl(path),
+                timeout: DEFAULT_TIMEOUT_MS,
+                headers: requestHeaders,
+                data: hasBody ? body : undefined,
+                validateStatus: () => true,
+            });
 
-                // If success or client error (4xx), break loop
-                break;
-            } catch (err: unknown) {
-                if (err instanceof ApiError && err.status >= 500) {
-                    attempt++;
-                    if (attempt >= maxRetries) {
-                        throw err;
-                    }
-                    const delay = 500 * Math.pow(2, attempt - 1);
-                    console.warn(`Request failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`, err);
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    continue;
-                }
-
-                attempt++;
-                const isAbort = err instanceof Error && err.name === 'AbortError';
-                if (isAbort || attempt >= maxRetries) {
-                    throw err;
-                }
-                // Exponential backoff: 500ms, 1000ms, 2000ms
-                const delay = 500 * Math.pow(2, attempt - 1);
-                console.warn(`Request failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`, err);
-                await new Promise(resolve => setTimeout(resolve, delay));
+            if (response.status >= 400) {
+                throw new ApiError(asServerMessage(response), response.status, response.data);
             }
+
+            const payload = response.data;
+            if (payload === undefined || payload === null) {
+                return {} as T;
+            }
+
+            if (typeof payload === 'string') {
+                const parsed = tryParseJson(payload);
+                return (parsed ?? payload) as T;
+            }
+
+            return payload as T;
+        } catch (error: unknown) {
+            let normalizedError: ApiError;
+
+            if (error instanceof ApiError) {
+                normalizedError = error;
+            } else if (isAxiosError(error)) {
+                normalizedError = createApiErrorFromAxios(error);
+                if (!isRetryableNetworkError(error) && normalizedError.status >= 400 && normalizedError.status < 500) {
+                    throw normalizedError;
+                }
+            } else {
+                normalizedError = new ApiError('Network request failed. Check your internet connection.', 0, error);
+            }
+
+            attempt += 1;
+            const shouldRetry = retryableMethod && attempt < maxRetries && isRetryableError(normalizedError);
+            if (!shouldRetry) {
+                throw normalizedError;
+            }
+
+            await wait(getRetryDelayMs(attempt));
         }
-    } catch (error: unknown) {
-        if (error instanceof ApiError) {
-            throw error;
-        }
-        if (error instanceof Error && error.name === 'AbortError') {
-            throw new ApiError(`Request timed out after ${DEFAULT_TIMEOUT_MS}ms.`, 0, error);
-        }
-        throw new ApiError('Network request failed. Check your internet connection.', 0, error);
-    } finally {
-        clearTimeout(timeout);
     }
 
-    if (!response) {
-        throw new ApiError('Network request failed.', 0);
-    }
-
-    const text = await response.text();
-    const parsed = tryParseJson(text) as { message?: string } | null;
-
-    if (!response.ok) {
-        const message = parsed?.message ?? `Request failed (${response.status})`;
-        throw new ApiError(message, response.status, parsed ?? text);
-    }
-
-    return (parsed as T) ?? ({} as T);
+    throw new ApiError('Network request failed. Check your internet connection.', 0);
 };
 
 export const apiClient = {

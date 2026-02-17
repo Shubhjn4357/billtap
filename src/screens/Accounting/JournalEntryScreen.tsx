@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { Text, useTheme, Menu, Button } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
@@ -8,6 +9,7 @@ import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import type { Account } from '../../types';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 interface DraftLine {
     id: string;
@@ -23,7 +25,20 @@ const toNumber = (value: string) => {
 
 export const JournalEntryScreen = () => {
     const theme = useTheme();
-    const [accounts, setAccounts] = useState<Account[]>([]);
+    const accountsQuery = useQuery({
+        queryKey: ['accounting-journal-accounts'] as const,
+        queryFn: async (): Promise<Account[]> => {
+            const data = await accountingService.getAccounts();
+            return data.filter((entry) => entry.isActive);
+        },
+        staleTime: 60_000,
+    });
+
+    const accounts = accountsQuery.data ?? [];
+    const queryError = accountsQuery.error && !isNetworkLikeError(accountsQuery.error)
+        ? (accountsQuery.error instanceof Error ? accountsQuery.error.message : 'Failed to load accounts.')
+        : null;
+
     const [lines, setLines] = useState<DraftLine[]>([
         { id: 'line-1', accountId: '', debit: '', credit: '' },
         { id: 'line-2', accountId: '', debit: '', credit: '' },
@@ -33,19 +48,6 @@ export const JournalEntryScreen = () => {
     const [entryDate, setEntryDate] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
-    const loadAccounts = useCallback(async () => {
-        try {
-            const data = await accountingService.getAccounts();
-            setAccounts(data.filter((entry) => entry.isActive));
-        } catch (loadError: unknown) {
-            setError(loadError instanceof Error ? loadError.message : 'Failed to load accounts.');
-        }
-    }, []);
-
-    useEffect(() => {
-        void loadAccounts();
-    }, [loadAccounts]);
 
     const totals = useMemo(() => {
         const totalDebit = lines.reduce((sum, line) => sum + toNumber(line.debit), 0);
@@ -120,6 +122,10 @@ export const JournalEntryScreen = () => {
                     <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>
                         {error}
                     </Text>
+                ) : queryError ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>
+                        {queryError}
+                    </Text>
                 ) : null}
 
                 <AppCard>
@@ -139,6 +145,11 @@ export const JournalEntryScreen = () => {
 
                 <AppCard>
                     <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>Lines</Text>
+                    {accountsQuery.isFetching && accounts.length === 0 ? (
+                        <Text variant="bodySmall" style={{ marginBottom: 8, color: theme.colors.outline }}>
+                            Loading accounts...
+                        </Text>
+                    ) : null}
                     {lines.map((line, index) => {
                         const selectedAccount = accounts.find((entry) => entry.id === line.accountId);
                         return (

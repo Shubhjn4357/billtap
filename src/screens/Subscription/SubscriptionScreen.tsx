@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { ActivityIndicator, Chip, Text, useTheme } from 'react-native-paper';
+import { useQuery } from '@tanstack/react-query';
 import { subscriptionService } from '../../api/subscriptionService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
@@ -9,29 +10,30 @@ import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { useUserStore } from '../../store';
 import type { SubscriptionPlan } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 export const SubscriptionScreen = () => {
     const theme = useTheme();
     const { user } = useUserStore();
-    const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-    const [loading, setLoading] = useState(false);
     const [processing, setProcessing] = useState<string | null>(null);
 
-    useEffect(() => {
-        void loadPlans();
-    }, []);
-
-    const loadPlans = async () => {
-        setLoading(true);
-        try {
+    const plansQuery = useQuery({
+        queryKey: ['subscription-plans'] as const,
+        queryFn: async (): Promise<SubscriptionPlan[]> => {
             const data = await subscriptionService.getPlans();
-            setPlans(data.plans);
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
+            return data.plans;
+        },
+        staleTime: 60_000,
+    });
+
+    const plans = plansQuery.data ?? [];
+    const loading = plansQuery.isFetching && !plansQuery.data;
+    const queryError = useMemo(() => {
+        if (!plansQuery.error || isNetworkLikeError(plansQuery.error)) {
+            return null;
         }
-    };
+        return plansQuery.error instanceof Error ? plansQuery.error.message : 'Unable to load subscription plans.';
+    }, [plansQuery.error]);
 
     const handleSubscribe = async (plan: SubscriptionPlan) => {
         setProcessing(plan.id);
@@ -66,9 +68,9 @@ export const SubscriptionScreen = () => {
                     <AppCard style={{ alignItems: 'center', padding: 20 }}>
                         <Text variant="titleMedium" style={{ marginBottom: 8 }}>Unable to load plans</Text>
                         <Text variant="bodySmall" style={{ textAlign: 'center', marginBottom: 16, color: theme.colors.outline }}>
-                            This could be a network issue or no plans are currently available.
+                            {queryError ?? 'This could be a network issue or no plans are currently available.'}
                         </Text>
-                        <AppButton mode="contained" onPress={() => void loadPlans()}>
+                        <AppButton mode="contained" onPress={() => { void plansQuery.refetch(); }}>
                             Retry
                         </AppButton>
                     </AppCard>

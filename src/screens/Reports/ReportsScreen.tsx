@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, RefreshControl, Share, StyleSheet, View } from 'react-native';
+import { FlatList, RefreshControl, Share, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, SegmentedButtons, Text, useTheme } from 'react-native-paper';
@@ -15,10 +15,12 @@ import { useAuth } from '../../hooks/useAuth';
 import { useBills } from '../../hooks/useBills';
 import { reportingService } from '../../api/reportingService';
 import { useSettingsStore } from '../../store';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 import { toDateSafe } from '../../utils/date';
 import { formatCurrency, formatDate, normalizeCurrencyCode } from '../../utils/formatters';
 import { shareBillPDF, shareSalesReportPDF } from '../../utils/pdfGenerator';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 type RangePreset = 'today' | '7d' | '30d' | 'all';
 
@@ -68,6 +70,7 @@ const buildTopItems = (bills: StoredBill[]) => {
 export const ReportsScreen = () => {
     const theme = useTheme();
     const router = useRouter();
+    const dialog = useAppDialog();
     const insets = useSafeAreaInsets();
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
@@ -110,7 +113,7 @@ export const ReportsScreen = () => {
         if (!canViewReports) return;
         setRefreshing(true);
         try {
-            await fetchBills(true);
+            await fetchBills();
         } finally {
             setRefreshing(false);
         }
@@ -118,7 +121,7 @@ export const ReportsScreen = () => {
 
     const handleShareSummary = useCallback(async () => {
         if (filteredBills.length === 0) {
-            Alert.alert(COMMON_TEXT.alerts.noData, REPORTS_TEXT.noDataBody);
+            dialog.alert(COMMON_TEXT.alerts.noData, REPORTS_TEXT.noDataBody);
             return;
         }
 
@@ -132,17 +135,21 @@ export const ReportsScreen = () => {
                 topItems: summary.topItems,
             });
         } catch (shareError: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, shareError instanceof Error ? shareError.message : REPORTS_TEXT.shareSummaryFailed);
+            if (!isNetworkLikeError(shareError)) {
+                dialog.alert(COMMON_TEXT.alerts.error, shareError instanceof Error ? shareError.message : REPORTS_TEXT.shareSummaryFailed);
+            }
         }
-    }, [activeCurrency, filteredBills, range, summary.topItems, summary.totalOrders, summary.totalRevenue]);
+    }, [activeCurrency, dialog, filteredBills, range, summary.topItems, summary.totalOrders, summary.totalRevenue]);
 
     const handleShareBill = useCallback(async (bill: StoredBill) => {
         try {
             await shareBillPDF({ ...bill, currency: bill.currency ?? activeCurrency });
         } catch (shareError: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, shareError instanceof Error ? shareError.message : REPORTS_TEXT.shareBillFailed);
+            if (!isNetworkLikeError(shareError)) {
+                dialog.alert(COMMON_TEXT.alerts.error, shareError instanceof Error ? shareError.message : REPORTS_TEXT.shareBillFailed);
+            }
         }
-    }, [activeCurrency]);
+    }, [activeCurrency, dialog]);
 
     const handleExportJson = useCallback(async () => {
         try {
@@ -157,9 +164,11 @@ export const ReportsScreen = () => {
                 message: JSON.stringify(exportPayload, null, 2),
             });
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to export JSON.');
+            if (!isNetworkLikeError(error)) {
+                dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to export JSON.');
+            }
         }
-    }, [range]);
+    }, [dialog, range]);
 
     const handleExportExcel = useCallback(async () => {
         try {
@@ -174,12 +183,14 @@ export const ReportsScreen = () => {
                 message: typeof csvText === 'string' ? csvText : JSON.stringify(csvText),
             });
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to export CSV.');
+            if (!isNetworkLikeError(error)) {
+                dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to export CSV.');
+            }
         }
-    }, [range]);
+    }, [dialog, range]);
 
-    const renderBill = useCallback(({ item }: { item: StoredBill }) => (
-        <AppCard>
+    const renderBill = useCallback(({ item, index }: { item: StoredBill; index: number }) => (
+        <AppCard animationDelay={index * 28}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <View style={{ flex: 1 }}>
                     <Text variant="titleSmall" style={{ fontWeight: 'bold' }}>
@@ -207,7 +218,7 @@ export const ReportsScreen = () => {
     return (
         <ScreenWrapper>
             {!canViewReports ? (
-                <AppCard>
+                <AppCard animationDelay={40}>
                     <Text variant="titleMedium" style={{ fontWeight: '700' }}>
                         Reports access is disabled
                     </Text>
@@ -217,7 +228,7 @@ export const ReportsScreen = () => {
                 </AppCard>
             ) : (
             <>
-            <AppCard style={{ backgroundColor: theme.colors.primaryContainer }}>
+            <AppCard animationDelay={40} style={{ backgroundColor: theme.colors.primaryContainer }}>
                 <Text variant="headlineSmall" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
                     {REPORTS_TEXT.title}
                 </Text>
@@ -242,19 +253,19 @@ export const ReportsScreen = () => {
             />
 
             <View style={styles.metricRow}>
-                <AppCard style={[styles.metricCard, styles.metricCardLeft]}>
+                <AppCard animationDelay={70} style={[styles.metricCard, styles.metricCardLeft]}>
                     <Text variant="labelMedium" style={{ color: theme.colors.outline }}>{REPORTS_TEXT.metrics.revenue}</Text>
                     <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>
                         {formatCurrency(summary.totalRevenue, activeCurrency)}
                     </Text>
                 </AppCard>
-                <AppCard style={styles.metricCard}>
+                <AppCard animationDelay={70} style={styles.metricCard}>
                     <Text variant="labelMedium" style={{ color: theme.colors.outline }}>{REPORTS_TEXT.metrics.orders}</Text>
                     <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>{summary.totalOrders}</Text>
                 </AppCard>
             </View>
 
-            <AppCard>
+            <AppCard animationDelay={95}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1, marginRight: 12 }}>
                         <Text variant="titleSmall" style={{ fontWeight: '700' }}>
@@ -274,7 +285,7 @@ export const ReportsScreen = () => {
                 </View>
             </AppCard>
 
-            <AppCard>
+            <AppCard animationDelay={120}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
                         <Text variant="labelMedium" style={{ color: theme.colors.outline }}>{REPORTS_TEXT.metrics.topProducts}</Text>

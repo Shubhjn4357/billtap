@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { Text, FAB, Searchbar, useTheme, Chip, IconButton } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { AppCard } from '../../components/common/AppCard';
 import { AppButton } from '../../components/common/AppButton';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
@@ -12,6 +13,7 @@ import { useCartStore } from '../../store/cartStore';
 import { partyService } from '../../api/partyService';
 import type { Party } from '../../types';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import { isNetworkLikeError } from '../../utils/errorGuards';
 
 export const PartyListScreen = () => {
     const router = useRouter();
@@ -21,28 +23,36 @@ export const PartyListScreen = () => {
     const { setCustomer } = useCartStore();
     const { canManageParties } = useOrganizationAccess();
     const [searchQuery, setSearchQuery] = useState('');
-    const [refreshing, setRefreshing] = useState(false);
     const isSelectionMode = params.mode === 'select';
 
-    const loadParties = useCallback(async () => {
+    const partiesQuery = useQuery({
+        queryKey: ['parties', canManageParties] as const,
+        queryFn: async (): Promise<Party[]> => {
+            if (!canManageParties) return [];
+            const data = await partyService.getParties();
+            return data.filter((entry) => entry.isActive !== false);
+        },
+        enabled: canManageParties,
+        staleTime: 30_000,
+    });
+
+    useEffect(() => {
         if (!canManageParties) {
             setParties([]);
             return;
         }
-        setRefreshing(true);
-        try {
-            const data = await partyService.getParties();
-            setParties(data.filter((entry) => entry.isActive !== false));
-        } catch (error: unknown) {
-            console.error(error);
-        } finally {
-            setRefreshing(false);
-        }
-    }, [canManageParties, setParties]);
 
-    useEffect(() => {
-        void loadParties();
-    }, [loadParties]);
+        if (partiesQuery.data) {
+            setParties(partiesQuery.data);
+        }
+    }, [canManageParties, partiesQuery.data, setParties]);
+
+    const queryError = useMemo(() => {
+        if (!partiesQuery.error || isNetworkLikeError(partiesQuery.error)) {
+            return null;
+        }
+        return partiesQuery.error instanceof Error ? partiesQuery.error.message : 'Failed to load parties.';
+    }, [partiesQuery.error]);
 
     const filteredParties = parties.filter(p => 
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -95,6 +105,11 @@ export const PartyListScreen = () => {
                 title="Parties"
                 subtitle={`${filteredParties.length} contacts available`}
             />
+            {queryError ? (
+                <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 8 }}>
+                    {queryError}
+                </Text>
+            ) : null}
             <Searchbar
                 placeholder="Search Parties..."
                 onChangeText={setSearchQuery}
@@ -105,8 +120,10 @@ export const PartyListScreen = () => {
                 data={filteredParties}
                 keyExtractor={item => item.id}
                 renderItem={renderItem}
-                refreshing={refreshing}
-                onRefresh={loadParties}
+                refreshing={partiesQuery.isRefetching}
+                onRefresh={() => {
+                    void partiesQuery.refetch();
+                }}
                 contentContainerStyle={{ paddingBottom: 80 }}
                 ListEmptyComponent={(
                     <AppCard style={{ marginTop: 20 }}>

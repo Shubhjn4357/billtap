@@ -1,15 +1,24 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient, ApiError } from './httpClient';
 import { isOnline } from '../utils/network';
 import type { AnalyticsEventType, BillItem, Item, UserProfile, TransactionType } from '../types';
+import { offlineKeyValueStore } from '../offline/db/offlineKeyValueStore';
 
 const OFFLINE_QUEUE_KEY = 'billtap_offline_queue_v1';
 const ITEM_CACHE_KEY = 'billtap_item_cache_v1';
 const BILL_CACHE_KEY = 'billtap_bill_cache_v1';
 
+const MAX_MUTATIONS_PER_FLUSH = 24;
+const AUTO_SYNC_INTERVAL_MS = 15000;
+const RETRY_BASE_DELAY_MS = 4000;
+const RETRY_MAX_DELAY_MS = 5 * 60 * 1000;
+
 interface QueueMutationBase {
     id: string;
     createdAt: string;
+    attemptCount?: number;
+    nextRetryAt?: number;
+    lastAttemptAt?: string;
+    lastError?: string;
 }
 
 interface OfflineItemPayload {
@@ -90,8 +99,15 @@ type OfflineMutation =
         };
     });
 
+type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never;
+type EnqueueMutation = DistributiveOmit<OfflineMutation, 'id' | 'createdAt'>;
+
+let flushInFlight: Promise<{ processed: number; remaining: number }> | null = null;
+let autoSyncIntervalHandle: ReturnType<typeof setInterval> | null = null;
+let queuedFlushTimeout: ReturnType<typeof setTimeout> | null = null;
+
 const readJson = async <T>(key: string, fallback: T): Promise<T> => {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = await offlineKeyValueStore.getItem(key);
     if (!raw) return fallback;
 
     try {
@@ -102,7 +118,7 @@ const readJson = async <T>(key: string, fallback: T): Promise<T> => {
 };
 
 const writeJson = async <T>(key: string, value: T) => {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
+    await offlineKeyValueStore.setItem(key, JSON.stringify(value));
 };
 
 const normalizeItem = (item: Item): Item => ({
@@ -132,7 +148,87 @@ const shouldDropMutation = (error: unknown, mutation: OfflineMutation) => {
 
 const shouldStopFlush = (error: unknown) => {
     if (!(error instanceof ApiError)) return true;
-    return error.status === 401 || error.status === 403 || error.status >= 500;
+    if (error.status === 0) return true;
+    return error.status === 401 || error.status === 403 || error.status === 429 || error.status >= 500;
+};
+
+const toErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    return 'Unknown sync error';
+};
+
+const getRetryDelayMs = (attemptCount: number, error: unknown): number => {
+    if (error instanceof ApiError && error.status === 429) {
+        return Math.min(RETRY_MAX_DELAY_MS, 60_000 * Math.max(1, attemptCount));
+    }
+
+    const exponential = RETRY_BASE_DELAY_MS * Math.pow(2, Math.max(0, attemptCount - 1));
+    const jitter = Math.floor(Math.random() * 250);
+    return Math.min(RETRY_MAX_DELAY_MS, exponential + jitter);
+};
+
+const normalizeMutation = (raw: OfflineMutation): OfflineMutation => {
+    const attemptCount = Number.isFinite(raw.attemptCount) ? Math.max(0, Math.floor(raw.attemptCount ?? 0)) : 0;
+    const nextRetryAt = Number.isFinite(raw.nextRetryAt) ? Math.max(0, Math.floor(raw.nextRetryAt ?? 0)) : 0;
+
+    return {
+        ...raw,
+        id: raw.id || generateLocalId('queue'),
+        createdAt: raw.createdAt || new Date().toISOString(),
+        attemptCount,
+        nextRetryAt,
+        lastAttemptAt: typeof raw.lastAttemptAt === 'string' ? raw.lastAttemptAt : undefined,
+        lastError: typeof raw.lastError === 'string' ? raw.lastError : undefined,
+    };
+};
+
+const compactQueueForEnqueue = (
+    queue: OfflineMutation[],
+    mutation: EnqueueMutation
+): OfflineMutation[] => {
+    let nextQueue = [...queue];
+    let nextMutation = mutation;
+
+    if (mutation.type === 'upsert_item') {
+        nextQueue = nextQueue.filter((entry) => {
+            if (entry.type === 'upsert_item' && entry.payload.id === mutation.payload.id) return false;
+            if (entry.type === 'delete_item' && entry.payload.id === mutation.payload.id) return false;
+            return true;
+        });
+    }
+
+    if (mutation.type === 'delete_item') {
+        nextQueue = nextQueue.filter((entry) => {
+            if (entry.type === 'upsert_item' && entry.payload.id === mutation.payload.id) return false;
+            if (entry.type === 'delete_item' && entry.payload.id === mutation.payload.id) return false;
+            return true;
+        });
+    }
+
+    if (mutation.type === 'update_user_me') {
+        const mergedPayload = nextQueue
+            .filter((entry): entry is Extract<OfflineMutation, { type: 'update_user_me' }> => entry.type === 'update_user_me')
+            .reduce<Partial<UserProfile>>((acc, entry) => ({ ...acc, ...entry.payload }), {});
+
+        nextQueue = nextQueue.filter((entry) => entry.type !== 'update_user_me');
+        nextMutation = {
+            ...mutation,
+            payload: {
+                ...mergedPayload,
+                ...mutation.payload,
+            },
+        };
+    }
+
+    nextQueue.push({
+        ...nextMutation,
+        id: generateLocalId('queue'),
+        createdAt: new Date().toISOString(),
+        attemptCount: 0,
+        nextRetryAt: 0,
+    } as OfflineMutation);
+
+    return nextQueue;
 };
 
 const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
@@ -274,6 +370,16 @@ const generateLocalId = (prefix: string) => {
     return `local_${prefix}_${stamp}_${random}`;
 };
 
+const scheduleFlushSoon = (delayMs = 280) => {
+    if (queuedFlushTimeout) {
+        clearTimeout(queuedFlushTimeout);
+    }
+    queuedFlushTimeout = setTimeout(() => {
+        queuedFlushTimeout = null;
+        void offlineSyncService.flushQueue();
+    }, delayMs);
+};
+
 export const offlineSyncService = {
     createLocalId(prefix: string) {
         return generateLocalId(prefix);
@@ -333,11 +439,6 @@ export const offlineSyncService = {
         for (const [itemId, qty] of grouped.entries()) {
             const index = nextItems.findIndex((entry) => entry.id === itemId);
             if (index < 0) {
-                // If purchasing a new item that doesn't exist locally? 
-                // We should probably skip or handle it. For now, throw or skip.
-                // If it's a purchase, maybe we don't error if it's not found?
-                // But typically we select items from list.
-                // If it's a new item created offline, it should be in cache first.
                 throw new Error(`Item ${itemId} no longer exists.`);
             }
 
@@ -347,8 +448,6 @@ export const offlineSyncService = {
             if (type === 'SALE') {
                 nextStock = stock - qty;
                 if (nextStock < 0) {
-                    // For forced offline sales, maybe we allow negative? 
-                    // But UI blocks it.
                     throw new Error(`Insufficient stock for "${nextItems[index].name}".`);
                 }
             } else {
@@ -366,27 +465,30 @@ export const offlineSyncService = {
     },
 
     async getQueue(): Promise<OfflineMutation[]> {
-        return await readJson<OfflineMutation[]>(OFFLINE_QUEUE_KEY, []);
+        const queue = await readJson<OfflineMutation[]>(OFFLINE_QUEUE_KEY, []);
+        return queue.map((entry) => normalizeMutation(entry));
     },
 
-    async getQueueStats(): Promise<{ pendingCount: number; oldestCreatedAt: string | null }> {
+    async getQueueStats(): Promise<{
+        pendingCount: number;
+        oldestCreatedAt: string | null;
+        readyToSyncCount: number;
+    }> {
         const queue = await this.getQueue();
+        const now = Date.now();
+        const readyToSyncCount = queue.filter((entry) => (entry.nextRetryAt ?? 0) <= now).length;
         return {
             pendingCount: queue.length,
             oldestCreatedAt: queue.length > 0 ? queue[0].createdAt : null,
+            readyToSyncCount,
         };
     },
 
-    async enqueueMutation(mutation: Omit<OfflineMutation, 'id' | 'createdAt'>): Promise<void> {
+    async enqueueMutation(mutation: EnqueueMutation): Promise<void> {
         const queue = await this.getQueue();
-        const nextMutation = {
-            ...mutation,
-            id: generateLocalId('queue'),
-            createdAt: new Date().toISOString(),
-        } as OfflineMutation;
-
-        queue.push(nextMutation);
-        await writeJson(OFFLINE_QUEUE_KEY, queue);
+        const nextQueue = compactQueueForEnqueue(queue, mutation);
+        await writeJson(OFFLINE_QUEUE_KEY, nextQueue);
+        scheduleFlushSoon();
     },
 
     async enqueueMessage(payload: {
@@ -403,14 +505,15 @@ export const offlineSyncService = {
     },
 
     async clearQueue(): Promise<void> {
-        await AsyncStorage.removeItem(OFFLINE_QUEUE_KEY);
+        if (queuedFlushTimeout) {
+            clearTimeout(queuedFlushTimeout);
+            queuedFlushTimeout = null;
+        }
+        await offlineKeyValueStore.removeItem(OFFLINE_QUEUE_KEY);
     },
 
     async clearCaches(): Promise<void> {
-        await Promise.all([
-            AsyncStorage.removeItem(ITEM_CACHE_KEY),
-            AsyncStorage.removeItem(BILL_CACHE_KEY),
-        ]);
+        await offlineKeyValueStore.multiRemove([ITEM_CACHE_KEY, BILL_CACHE_KEY]);
     },
 
     async clearAllLocalData(): Promise<void> {
@@ -420,42 +523,107 @@ export const offlineSyncService = {
         ]);
     },
 
+    getStorageBackend(): 'sqlite-drizzle' | 'async-storage' {
+        return offlineKeyValueStore.getBackendName();
+    },
+
+    startAutoSync(): void {
+        if (autoSyncIntervalHandle) return;
+        autoSyncIntervalHandle = setInterval(() => {
+            void this.flushQueue();
+        }, AUTO_SYNC_INTERVAL_MS);
+    },
+
+    stopAutoSync(): void {
+        if (autoSyncIntervalHandle) {
+            clearInterval(autoSyncIntervalHandle);
+            autoSyncIntervalHandle = null;
+        }
+        if (queuedFlushTimeout) {
+            clearTimeout(queuedFlushTimeout);
+            queuedFlushTimeout = null;
+        }
+    },
+
+    onNetworkStateChange(isNowOnline: boolean): void {
+        if (!isNowOnline) return;
+        scheduleFlushSoon();
+    },
+
     async flushQueue(): Promise<{ processed: number; remaining: number }> {
-        if (!(await isOnline())) {
-            const queued = await this.getQueue();
-            return { processed: 0, remaining: queued.length };
+        if (flushInFlight) {
+            return await flushInFlight;
         }
 
-        const queue = await this.getQueue();
-        if (queue.length === 0) {
-            return { processed: 0, remaining: 0 };
-        }
+        flushInFlight = (async () => {
+            if (!(await isOnline())) {
+                const queued = await this.getQueue();
+                return { processed: 0, remaining: queued.length };
+            }
 
-        const nextQueue: OfflineMutation[] = [];
-        let processed = 0;
+            const queue = await this.getQueue();
+            if (queue.length === 0) {
+                return { processed: 0, remaining: 0 };
+            }
 
-        for (let i = 0; i < queue.length; i += 1) {
-            const mutation = queue[i];
-            try {
-                await applyMutation(mutation);
-                processed += 1;
-            } catch (error: unknown) {
-                if (shouldDropMutation(error, mutation)) {
-                    processed += 1;
+            const nextQueue: OfflineMutation[] = [];
+            let processed = 0;
+            let attempted = 0;
+            const now = Date.now();
+
+            for (let i = 0; i < queue.length; i += 1) {
+                const mutation = queue[i];
+
+                if (attempted >= MAX_MUTATIONS_PER_FLUSH) {
+                    nextQueue.push(mutation, ...queue.slice(i + 1));
+                    break;
+                }
+
+                if ((mutation.nextRetryAt ?? 0) > now) {
+                    nextQueue.push(mutation);
                     continue;
                 }
 
-                nextQueue.push(mutation, ...queue.slice(i + 1));
-                if (shouldStopFlush(error)) {
-                    break;
+                attempted += 1;
+
+                try {
+                    await applyMutation(mutation);
+                    processed += 1;
+                } catch (error: unknown) {
+                    if (shouldDropMutation(error, mutation)) {
+                        processed += 1;
+                        continue;
+                    }
+
+                    const attemptCount = (mutation.attemptCount ?? 0) + 1;
+                    const nextRetryAt = Date.now() + getRetryDelayMs(attemptCount, error);
+
+                    nextQueue.push({
+                        ...mutation,
+                        attemptCount,
+                        nextRetryAt,
+                        lastAttemptAt: new Date().toISOString(),
+                        lastError: toErrorMessage(error),
+                    });
+
+                    if (shouldStopFlush(error)) {
+                        nextQueue.push(...queue.slice(i + 1));
+                        break;
+                    }
                 }
             }
-        }
 
-        await writeJson(OFFLINE_QUEUE_KEY, nextQueue);
-        return {
-            processed,
-            remaining: nextQueue.length,
-        };
+            await writeJson(OFFLINE_QUEUE_KEY, nextQueue);
+            return {
+                processed,
+                remaining: nextQueue.length,
+            };
+        })();
+
+        try {
+            return await flushInFlight;
+        } finally {
+            flushInFlight = null;
+        }
     },
 };
