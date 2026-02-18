@@ -12,6 +12,19 @@ type ServerTransaction = Transaction & {
     createdAt?: string | Date;
 };
 
+const toIso = (value: unknown, fallback: string): string => {
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string') {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+    }
+    if (typeof value === 'number') {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+    }
+    return fallback;
+};
+
 const toTransactionItem = (item: Bill['items'][number]): TransactionItem => {
     const tax = Number(item.tax ?? 0);
     const total = Number(item.total ?? item.price * item.quantity);
@@ -28,6 +41,7 @@ const toTransactionItem = (item: Bill['items'][number]): TransactionItem => {
 const toStoredBill = (entry: ServerTransaction): StoredBill => ({
     id: entry.id,
     userId: entry.userId,
+    billNumber: entry.billNumber,
     customerName: entry.partyName ?? undefined,
     customerPhone: entry.partyPhone ?? undefined,
     businessName: undefined,
@@ -50,6 +64,13 @@ export const billService = {
     async createBill(bill: Omit<Bill, 'createdAt' | 'id'>): Promise<string> {
         const generatedId = offlineSyncService.createLocalId('bill');
         const createdAt = new Date().toISOString();
+        const billDate = toIso(bill.billDate, createdAt);
+        const totalAmount = Number(bill.total ?? 0);
+        const paymentMode: 'CASH' | 'CREDIT' = bill.paymentMode ?? 'CASH';
+        const paidAmount = paymentMode === 'CREDIT' ? 0 : totalAmount;
+        const paymentStatus: 'PAID' | 'PARTIAL' | 'PENDING' = paidAmount >= totalAmount
+            ? 'PAID'
+            : (paidAmount > 0 ? 'PARTIAL' : 'PENDING');
 
         const online = await isOnline();
         if (online) {
@@ -61,6 +82,7 @@ export const billService = {
                     const taxable = line.quantity * line.price;
                     return sum + (taxable * line.tax) / 100;
                 }, 0);
+                const resolvedTaxAmount = Number(bill.taxAmount ?? taxAmount);
 
                 const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/transactions', {
                     id: generatedId,
@@ -69,14 +91,17 @@ export const billService = {
                     partyName: bill.customerName,
                     partyPhone: bill.customerPhone,
                     billNumber: bill.billNumber,
-                    billDate: bill.billDate ?? createdAt,
+                    billDate,
                     businessName: bill.businessName,
                     businessAddress: bill.businessAddress,
                     gstNumber: bill.gstNumber,
                     items: saleItems,
-                    totalAmount: bill.total,
+                    totalAmount,
                     discountAmount: 0,
-                    taxAmount,
+                    taxAmount: resolvedTaxAmount,
+                    paidAmount,
+                    paymentMode,
+                    paymentStatus,
                     billMode,
                     affectsGst: billMode === 'GST',
                     currency: bill.currency ?? 'INR',
@@ -85,9 +110,16 @@ export const billService = {
                     throw new Error(response.message || 'Failed to create bill.');
                 }
 
-                await offlineSyncService.upsertCachedBill<StoredBill>({
+                await offlineSyncService.upsertCachedBill({
                     ...bill,
                     id: response.id,
+                    total: totalAmount,
+                    paidAmount,
+                    dueAmount: Math.max(0, totalAmount - paidAmount),
+                    paymentStatus,
+                    paymentMode,
+                    taxAmount: resolvedTaxAmount,
+                    billDate,
                     createdAt,
                 });
                 return response.id;
@@ -96,15 +128,17 @@ export const billService = {
             }
         }
 
-        if (online) {
-            // ... online logic ...
-        }
-
         await offlineSyncService.applyLocalBillStock(bill.items, bill.type ?? 'SALE');
 
-        await offlineSyncService.upsertCachedBill<StoredBill>({
+        await offlineSyncService.upsertCachedBill({
             ...bill,
             id: generatedId,
+            total: totalAmount,
+            billDate,
+            paidAmount,
+            dueAmount: Math.max(0, totalAmount - paidAmount),
+            paymentStatus,
+            paymentMode,
             createdAt,
         });
         await offlineSyncService.enqueueMutation({
@@ -120,10 +154,16 @@ export const billService = {
                 gstNumber: bill.gstNumber,
                 currency: bill.currency,
                 billNumber: bill.billNumber,
-                billDate: bill.billDate as string,
+                billDate,
                 billMode: bill.billMode ?? 'GST',
                 items: bill.items,
-                total: bill.total,
+                total: totalAmount,
+                taxAmount: Number(bill.taxAmount ?? 0),
+                paidAmount,
+                paymentMode,
+                paymentStatus,
+                dueDate: null,
+                reminderEnabled: false,
                 createdAt,
             },
         });

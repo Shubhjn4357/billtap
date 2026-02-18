@@ -4,10 +4,36 @@ import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const clientRoot = path.resolve(scriptDir, '..');
-const backendRoot = path.resolve(clientRoot, '..', 'backend');
-const backendAppPath = path.join(backendRoot, 'src', 'app.ts');
+const workspaceRoot = path.resolve(clientRoot, '..');
+
+const resolveBackendRoot = () => {
+    const candidates = ['backend', 'billtap'];
+    for (const candidate of candidates) {
+        const root = path.join(workspaceRoot, candidate);
+        const srcDir = path.join(root, 'src');
+        if (fs.existsSync(srcDir) && fs.statSync(srcDir).isDirectory()) {
+            return root;
+        }
+    }
+    return path.join(workspaceRoot, 'backend');
+};
+
+const backendRoot = resolveBackendRoot();
 const backendRoutesDir = path.join(backendRoot, 'src', 'routes');
 const clientApiDir = path.join(clientRoot, 'src', 'api');
+
+const resolveBackendEntryPath = () => {
+    const candidates = ['app.ts', 'server.ts', 'index.ts'];
+    for (const fileName of candidates) {
+        const candidate = path.join(backendRoot, 'src', fileName);
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+    return path.join(backendRoot, 'src', 'app.ts');
+};
+
+const backendEntryPath = resolveBackendEntryPath();
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const normalizedPath = (value) => {
@@ -162,7 +188,7 @@ const extractClientApiCalls = () => {
 };
 
 const extractBackendRoutes = () => {
-    const appSource = fs.readFileSync(backendAppPath, 'utf8');
+    const appSource = fs.readFileSync(backendEntryPath, 'utf8');
     const routeMounts = new Map();
 
     for (const match of appSource.matchAll(/apiRoutes\.route\(\s*['"]([^'"]+)['"]\s*,\s*([A-Za-z0-9_]+)\s*\)/g)) {
@@ -200,7 +226,7 @@ const extractBackendRoutes = () => {
         routes.push({
             method: String(match[1]).toUpperCase(),
             path: normalizedPath(match[2]),
-            source: 'src/app.ts',
+            source: path.relative(backendRoot, backendEntryPath).replace(/\\/g, '/'),
         });
     }
 

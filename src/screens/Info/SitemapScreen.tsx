@@ -1,11 +1,12 @@
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Chip, Text, useTheme } from 'react-native-paper';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { APP_SITEMAP, SITEMAP_TEXT, type SitemapEntry } from '../../constants/staticText';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -17,10 +18,16 @@ export const SitemapScreen = () => {
     const theme = useTheme();
     const router = useRouter();
     const { user } = useAuth();
+    const { width } = useWindowDimensions();
+    const isWide = width >= 1120;
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
                     title={SITEMAP_TEXT.title}
                     subtitle={SITEMAP_TEXT.subtitle}
@@ -58,7 +65,22 @@ export const SitemapScreen = () => {
                         </AppCard>
                     );
                 })}
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.pageMaxWidth,
+    },
+});

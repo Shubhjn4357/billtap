@@ -52,6 +52,7 @@ export const useAnalyticsFunnel = (days = 30) => {
         },
         staleTime: 30_000,
     });
+    const { refetch: refetchFunnel } = query;
 
     const events = useMemo(() => query.data ?? [], [query.data]);
     const error = query.error && !isNetworkLikeError(query.error)
@@ -59,8 +60,8 @@ export const useAnalyticsFunnel = (days = 30) => {
         : null;
 
     const fetchFunnelData = useCallback(async () => {
-        await query.refetch();
-    }, [query]);
+        await refetchFunnel();
+    }, [refetchFunnel]);
 
     const metrics = useMemo<FunnelMetrics>(() => {
         const counts = buildCounts(events);

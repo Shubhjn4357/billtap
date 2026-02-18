@@ -15,10 +15,14 @@ export const useOffers = () => {
     const query = useQuery({
         queryKey: ['offers', userKey, subscriptionStatus] as const,
         queryFn: async (): Promise<MarketingOffer[]> => {
-            return await marketingService.getActiveOffersForUser(user ?? null);
+            if (!user) return [];
+            return await marketingService.getActiveOffersForUser(user);
         },
+        enabled: Boolean(user),
         staleTime: OFFERS_CACHE_TTL_MS,
+        placeholderData: (previous) => previous,
     });
+    const { refetch: refetchOffers } = query;
 
     const offers = useMemo(() => query.data ?? [], [query.data]);
     const error = query.error && !isNetworkLikeError(query.error)
@@ -26,8 +30,8 @@ export const useOffers = () => {
         : null;
 
     const fetchOffers = useCallback(async () => {
-        await query.refetch();
-    }, [query]);
+        await refetchOffers();
+    }, [refetchOffers]);
 
     const primaryOffer = useMemo(() => offers[0] ?? null, [offers]);
 

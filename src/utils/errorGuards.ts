@@ -6,9 +6,12 @@ const NETWORK_TOKENS = [
     'failed to fetch',
     'network error',
     'request timed out',
+    'timed out',
     'aborterror',
     'internet connection',
     'cors',
+    'server error: 500',
+    'request failed (500)',
 ];
 
 export const isNetworkLikeMessage = (value: string | null | undefined): boolean => {
@@ -19,8 +22,11 @@ export const isNetworkLikeMessage = (value: string | null | undefined): boolean 
 };
 
 export const isNetworkLikeError = (error: unknown): boolean => {
-    if (error instanceof ApiError && error.status === 0) {
-        return true;
+    if (error instanceof ApiError) {
+        if (error.status === 0) return true;
+        // Treat transient backend/service failures as connectivity-like for UX:
+        // keep UI responsive, use cached data, and avoid noisy dialogs.
+        if (error.status === 429 || error.status >= 500) return true;
     }
     if (error instanceof Error) {
         return isNetworkLikeMessage(error.message);
@@ -31,4 +37,3 @@ export const isNetworkLikeError = (error: unknown): boolean => {
 export const shouldThrowClientApiError = (error: unknown): error is ApiError => {
     return error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 408;
 };
-

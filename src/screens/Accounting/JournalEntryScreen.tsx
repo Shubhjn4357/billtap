@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text, useTheme, Menu, Button } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { AppDateField } from '../../components/common/AppDateField';
 import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DesignSystem } from '../../constants/DesignSystem';
 import type { Account } from '../../types';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 
@@ -25,6 +27,8 @@ const toNumber = (value: string) => {
 
 export const JournalEntryScreen = () => {
     const theme = useTheme();
+    const { width } = useWindowDimensions();
+    const isWide = width >= 960;
     const accountsQuery = useQuery({
         queryKey: ['accounting-journal-accounts'] as const,
         queryFn: async (): Promise<Account[]> => {
@@ -45,7 +49,8 @@ export const JournalEntryScreen = () => {
     ]);
     const [menuLineId, setMenuLineId] = useState<string | null>(null);
     const [narration, setNarration] = useState('');
-    const [entryDate, setEntryDate] = useState('');
+    const [entryDateValue, setEntryDateValue] = useState<Date | undefined>(undefined);
+    const entryDate = entryDateValue ? entryDateValue.toISOString().slice(0, 10) : '';
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -102,7 +107,7 @@ export const JournalEntryScreen = () => {
                 { id: 'line-2', accountId: '', debit: '', credit: '' },
             ]);
             setNarration('');
-            setEntryDate('');
+            setEntryDateValue(undefined);
         } catch (saveError: unknown) {
             setError(saveError instanceof Error ? saveError.message : 'Failed to save journal.');
         } finally {
@@ -112,111 +117,160 @@ export const JournalEntryScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <PageHeaderCard
-                    title="Journal Voucher"
-                    subtitle="Post balanced accounting entries manually."
-                />
-
-                {error ? (
-                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>
-                        {error}
-                    </Text>
-                ) : queryError ? (
-                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>
-                        {queryError}
-                    </Text>
-                ) : null}
-
-                <AppCard>
-                    <AppInput
-                        label="Entry Date (YYYY-MM-DD)"
-                        value={entryDate}
-                        onChangeText={setEntryDate}
-                        placeholder="2026-02-14"
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                    <PageHeaderCard
+                        title="Journal Voucher"
+                        subtitle="Post balanced accounting entries manually."
                     />
-                    <AppInput
-                        label="Narration"
-                        value={narration}
-                        onChangeText={setNarration}
-                        multiline
-                    />
-                </AppCard>
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>Lines</Text>
-                    {accountsQuery.isFetching && accounts.length === 0 ? (
-                        <Text variant="bodySmall" style={{ marginBottom: 8, color: theme.colors.outline }}>
-                            Loading accounts...
+                    {error ? (
+                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                            {error}
+                        </Text>
+                    ) : queryError ? (
+                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                            {queryError}
                         </Text>
                     ) : null}
-                    {lines.map((line, index) => {
-                        const selectedAccount = accounts.find((entry) => entry.id === line.accountId);
-                        return (
-                            <View key={line.id} style={{ marginBottom: 12 }}>
-                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                                    Line {index + 1}
-                                </Text>
-                                <Menu
-                                    visible={menuLineId === line.id}
-                                    onDismiss={() => setMenuLineId(null)}
-                                    anchor={(
-                                        <Button mode="outlined" onPress={() => setMenuLineId(line.id)} style={{ marginBottom: 8 }}>
-                                            {selectedAccount ? `${selectedAccount.code} - ${selectedAccount.name}` : 'Select Account'}
-                                        </Button>
-                                    )}
-                                >
-                                    {accounts.map((account) => (
-                                        <Menu.Item
-                                            key={account.id}
-                                            title={`${account.code} - ${account.name}`}
-                                            onPress={() => {
-                                                updateLine(line.id, { accountId: account.id });
-                                                setMenuLineId(null);
-                                            }}
+
+                    <AppCard>
+                        <AppDateField
+                            label="Entry Date"
+                            value={entryDateValue}
+                            onChange={setEntryDateValue}
+                            placeholder="Select entry date"
+                        />
+                        <AppInput
+                            label="Narration"
+                            value={narration}
+                            onChangeText={setNarration}
+                            multiline
+                            inputType="text"
+                        />
+                    </AppCard>
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>Lines</Text>
+                        {accountsQuery.isFetching && accounts.length === 0 ? (
+                            <Text variant="bodySmall" style={[styles.loadingText, { color: theme.colors.outline }]}>
+                                Loading accounts...
+                            </Text>
+                        ) : null}
+                        {lines.map((line, index) => {
+                            const selectedAccount = accounts.find((entry) => entry.id === line.accountId);
+                            return (
+                                <View key={line.id} style={styles.lineBlock}>
+                                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                        Line {index + 1}
+                                    </Text>
+                                    <Menu
+                                        visible={menuLineId === line.id}
+                                        onDismiss={() => setMenuLineId(null)}
+                                        anchor={(
+                                            <Button mode="outlined" onPress={() => setMenuLineId(line.id)} style={styles.accountSelectButton}>
+                                                {selectedAccount ? `${selectedAccount.code} - ${selectedAccount.name}` : 'Select Account'}
+                                            </Button>
+                                        )}
+                                    >
+                                        {accounts.map((account) => (
+                                            <Menu.Item
+                                                key={account.id}
+                                                title={`${account.code} - ${account.name}`}
+                                                onPress={() => {
+                                                    updateLine(line.id, { accountId: account.id });
+                                                    setMenuLineId(null);
+                                                }}
+                                            />
+                                        ))}
+                                    </Menu>
+                                    <View style={styles.amountRow}>
+                                        <AppInput
+                                            label="Debit"
+                                            value={line.debit}
+                                            onChangeText={(value) => updateLine(line.id, { debit: value })}
+                                            inputType="decimal"
+                                            style={[styles.amountInput, styles.amountInputRight]}
                                         />
-                                    ))}
-                                </Menu>
-                                <View style={{ flexDirection: 'row', gap: 8 }}>
-                                    <AppInput
-                                        label="Debit"
-                                        value={line.debit}
-                                        onChangeText={(value) => updateLine(line.id, { debit: value })}
-                                        keyboardType="numeric"
-                                        style={{ flex: 1 }}
-                                    />
-                                    <AppInput
-                                        label="Credit"
-                                        value={line.credit}
-                                        onChangeText={(value) => updateLine(line.id, { credit: value })}
-                                        keyboardType="numeric"
-                                        style={{ flex: 1 }}
-                                    />
+                                        <AppInput
+                                            label="Credit"
+                                            value={line.credit}
+                                            onChangeText={(value) => updateLine(line.id, { credit: value })}
+                                            inputType="decimal"
+                                            style={styles.amountInput}
+                                        />
+                                    </View>
+                                    <AppButton mode="text" onPress={() => removeLine(line.id)}>
+                                        Remove Line
+                                    </AppButton>
                                 </View>
-                                <AppButton mode="text" onPress={() => removeLine(line.id)}>
-                                    Remove Line
-                                </AppButton>
-                            </View>
-                        );
-                    })}
+                            );
+                        })}
 
-                    <AppButton mode="contained-tonal" onPress={addLine}>
-                        Add Line
-                    </AppButton>
-                </AppCard>
+                        <AppButton mode="contained-tonal" onPress={addLine}>
+                            Add Line
+                        </AppButton>
+                    </AppCard>
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>Totals</Text>
-                    <Text variant="bodySmall">Debit: {totals.totalDebit.toFixed(2)}</Text>
-                    <Text variant="bodySmall">Credit: {totals.totalCredit.toFixed(2)}</Text>
-                    <Text variant="bodySmall" style={{ color: totals.isBalanced ? theme.colors.primary : theme.colors.error }}>
-                        {totals.isBalanced ? 'Balanced' : 'Not Balanced'}
-                    </Text>
-                    <AppButton mode="contained" onPress={() => { void handleSave(); }} loading={saving} style={{ marginTop: 8 }}>
-                        Post Entry
-                    </AppButton>
-                </AppCard>
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>Totals</Text>
+                        <Text variant="bodySmall">Debit: {totals.totalDebit.toFixed(2)}</Text>
+                        <Text variant="bodySmall">Credit: {totals.totalCredit.toFixed(2)}</Text>
+                        <Text variant="bodySmall" style={{ color: totals.isBalanced ? theme.colors.primary : theme.colors.error }}>
+                            {totals.isBalanced ? 'Balanced' : 'Not Balanced'}
+                        </Text>
+                        <AppButton mode="contained" onPress={() => { void handleSave(); }} loading={saving} style={styles.postButton}>
+                            Post Entry
+                        </AppButton>
+                    </AppCard>
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+        gap: DesignSystem.layout.sectionGap,
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.pageMaxWidth,
+    },
+    errorText: {
+        marginTop: DesignSystem.spacing.xs + 2,
+    },
+    sectionTitle: {
+        fontWeight: '700',
+    },
+    sectionTitleWithGap: {
+        fontWeight: '700',
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    loadingText: {
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    lineBlock: {
+        marginBottom: DesignSystem.spacing.md - 2,
+    },
+    accountSelectButton: {
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    amountRow: {
+        flexDirection: 'row',
+    },
+    amountInput: {
+        flex: 1,
+    },
+    amountInputRight: {
+        marginRight: DesignSystem.spacing.xs + 2,
+    },
+    postButton: {
+        marginTop: DesignSystem.spacing.xs,
+    },
+});

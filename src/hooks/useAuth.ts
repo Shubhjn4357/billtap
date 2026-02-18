@@ -3,8 +3,11 @@ import { authService } from '../api/authService';
 import { useOrganizationStore, useUserStore } from '../store';
 
 export const useAuth = () => {
-    const { user, isLoading, setUser } = useUserStore();
-    const { setSelectedOrganizationId, clearOrganizationContext } = useOrganizationStore();
+    const user = useUserStore((state) => state.user);
+    const isLoading = useUserStore((state) => state.isLoading);
+    const setUser = useUserStore((state) => state.setUser);
+    const setSelectedOrganizationId = useOrganizationStore((state) => state.setSelectedOrganizationId);
+    const clearOrganizationContext = useOrganizationStore((state) => state.clearOrganizationContext);
 
     const signInWithGoogle = useCallback(async (idToken: string) => {
         const profile = await authService.googleSignIn(idToken);

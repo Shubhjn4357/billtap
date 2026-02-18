@@ -77,7 +77,7 @@ export const generateSalesReportHTML = (payload: SalesReportPayload) => {
         <table>
           <thead>
             <tr>
-              <th>Bill ID</th>
+              <th>Bill No</th>
               <th>Date</th>
               <th class="right">Items</th>
               <th class="right">Total</th>
@@ -86,7 +86,7 @@ export const generateSalesReportHTML = (payload: SalesReportPayload) => {
           <tbody>
             ${payload.bills.map((bill) => `
               <tr>
-                <td>${bill.id.slice(0, 8).toUpperCase()}</td>
+                <td>${bill.billNumber?.trim() || bill.id.slice(0, 8).toUpperCase()}</td>
                 <td>${formatDate(bill.createdAt)}</td>
                 <td class="right">${bill.items.length}</td>
                 <td class="right">${formatCurrency(bill.total, bill.currency ?? payload.currency)}</td>

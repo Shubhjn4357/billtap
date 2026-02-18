@@ -6,12 +6,18 @@ import {
     ScrollView,
     StyleSheet,
     View,
+    useWindowDimensions,
 } from 'react-native';
-import { MotiView } from 'moti';
+import { MotionView } from '../../components/motion/Motion';
 import { ActivityIndicator, Divider, Text, useTheme, type MD3Theme } from 'react-native-paper';
+import { AppCard } from '../../components/common/AppCard';
 import { AppButton } from '../../components/common/AppButton';
-import { AppInput } from '../../components/common/AppInput';
+import { OtpInput } from '../../components/forms/OtpInput';
+import { PhoneNumberInput } from '../../components/forms/PhoneNumberInput';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DEFAULT_COUNTRY_DIAL_CODE } from '../../constants/countryDialCodes';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { AUTH_TEXT, COMMON_TEXT } from '../../constants/staticText';
 import { useAuth } from '../../hooks/useAuth';
 import {
@@ -21,9 +27,13 @@ import {
 } from '../../utils/googleNativeSignIn';
 import { useWebGoogleAuth } from '../../utils/googleWebAuth';
 import { useAppDialog } from '../../components/providers/DialogProvider';
+import { buildE164PhoneNumber, sanitizePhoneLocal } from '../../utils/phone';
+
+const LOGIN_CAPABILITY_BADGES = ['GST + Estimate', 'Offline Safe', 'Multi-Store'] as const;
 
 export const LoginScreen = () => {
     const { signInWithGoogle, sendPhoneVerification, confirmPhoneVerification, loading: authLoading } = useAuth();
+    const [countryDialCode, setCountryDialCode] = useState(DEFAULT_COUNTRY_DIAL_CODE);
     const [phoneNumber, setPhoneNumber] = useState('');
     const [verificationId, setVerificationId] = useState('');
     const [verificationCode, setVerificationCode] = useState('');
@@ -49,6 +59,8 @@ export const LoginScreen = () => {
 
     const theme = useTheme();
     const styles = createStyles(theme);
+    const { width } = useWindowDimensions();
+    const isWide = width >= 960;
     const isBusy = loading || authLoading;
     const isOtpStep = verificationId.length > 0;
 
@@ -88,12 +100,6 @@ export const LoginScreen = () => {
             )
         );
     }, [webGoogleIdToken, signInWithGoogle, useNativeGoogleOnAndroid, dialog]);
-
-    const normalizePhoneNumber = (value: string) => {
-        const digits = value.replace(/\D/g, '');
-        if (!digits) return '';
-        return `+${digits}`;
-    };
 
     const handleBackToMethodSelection = () => {
         setPhoneMode(false);
@@ -159,7 +165,7 @@ export const LoginScreen = () => {
         sendOtpInFlightRef.current = true;
         setLoading(true);
         try {
-            const formattedPhone = normalizePhoneNumber(phoneNumber);
+            const formattedPhone = buildE164PhoneNumber(countryDialCode, phoneNumber);
             if (!formattedPhone || formattedPhone.length < 8) {
                 dialog.alert(COMMON_TEXT.alerts.error, AUTH_TEXT.login.enterPhoneNumber);
                 return;
@@ -201,77 +207,81 @@ export const LoginScreen = () => {
     return (
         <ScreenWrapper>
             <View style={styles.container}>
-                <View style={[styles.orbTop, { backgroundColor: theme.colors.primaryContainer }]} pointerEvents="none" />
-                <View style={[styles.orbBottom, { backgroundColor: theme.colors.secondaryContainer }]} pointerEvents="none" />
-
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboard}>
                     <ScrollView
                         contentContainerStyle={styles.scrollContent}
                         keyboardShouldPersistTaps="handled"
                         showsVerticalScrollIndicator={false}
                     >
-                        <MotiView
-                            style={styles.heroPanel}
+                        <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                        <PageHeaderCard
+                            title={AUTH_TEXT.login.title}
+                            subtitle={AUTH_TEXT.login.subtitle}
+                        />
+
+                        <MotionView
                             from={{ opacity: 0, translateY: 12 }}
                             animate={{ opacity: 1, translateY: 0 }}
                             transition={{ type: 'timing', duration: 260 }}
                         >
-                            <View style={styles.brandRow}>
-                                <View
-                                    style={[
-                                        styles.logoFrame,
-                                        {
-                                            backgroundColor: theme.colors.surface,
-                                            borderColor: theme.colors.primary,
-                                        },
-                                    ]}
-                                >
-                                    <Image source={require('../../../assets/images/icon.png')} style={styles.logo} />
-                                </View>
-                                <View style={styles.brandTextWrap}>
-                                    <Text variant="labelLarge" style={[styles.brandLabel, { color: theme.colors.primary }]}>
-                                        BillTap OS 2026
-                                    </Text>
-                                    <Text variant="headlineSmall" style={[styles.title, { color: theme.colors.onSurface }]}>
-                                        {AUTH_TEXT.login.title}
-                                    </Text>
-                                </View>
-                            </View>
-                            <Text variant="bodyMedium" style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}>
-                                {AUTH_TEXT.login.subtitle}
-                            </Text>
-                            <View style={styles.capabilityRow}>
-                                {['GST + Estimate', 'Offline Safe', 'Multi-Store'].map((badge) => (
+                            <AppCard disableMotion style={styles.heroPanel}>
+                                <View style={styles.brandRow}>
                                     <View
-                                        key={badge}
                                         style={[
-                                            styles.capabilityBadge,
+                                            styles.logoFrame,
                                             {
-                                                backgroundColor: theme.dark ? 'rgba(51,65,85,0.52)' : 'rgba(226,232,240,0.68)',
-                                                borderColor: theme.dark ? 'rgba(148,163,184,0.28)' : 'rgba(30,41,59,0.12)',
+                                                backgroundColor: theme.colors.surface,
+                                                borderColor: theme.colors.primary,
                                             },
                                         ]}
                                     >
-                                        <Text variant="labelSmall" style={{ color: theme.colors.onSurface }}>
-                                            {badge}
+                                        <Image source={require('../../../assets/images/icon.png')} style={styles.logo} />
+                                    </View>
+                                    <View style={styles.brandTextWrap}>
+                                        <Text variant="labelLarge" style={[styles.brandLabel, { color: theme.colors.primary }]}>
+                                            BillTap OS 2026
+                                        </Text>
+                                        <Text variant="headlineSmall" style={[styles.title, { color: theme.colors.onSurface }]}>
+                                            Secure Sign-In
                                         </Text>
                                     </View>
-                                ))}
-                            </View>
-                        </MotiView>
+                                </View>
+                                <View style={styles.capabilityRow}>
+                                    {LOGIN_CAPABILITY_BADGES.map((badge) => (
+                                        <View
+                                            key={badge}
+                                        style={[
+                                            styles.capabilityBadge,
+                                            {
+                                                backgroundColor: theme.colors.surfaceVariant,
+                                                borderColor: theme.colors.outlineVariant,
+                                            },
+                                        ]}
+                                    >
+                                            <Text variant="labelSmall" style={{ color: theme.colors.onSurface }}>
+                                                {badge}
+                                            </Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            </AppCard>
+                        </MotionView>
 
-                        <MotiView
-                            style={[
-                                styles.authCard,
-                                {
-                                    backgroundColor: theme.dark ? 'rgba(17,26,45,0.82)' : 'rgba(255,255,255,0.8)',
-                                    borderColor: theme.dark ? 'rgba(148,163,184,0.18)' : 'rgba(30,41,59,0.14)',
-                                },
-                            ]}
+                        <MotionView
                             from={{ opacity: 0, translateY: 18, scale: 0.98 }}
                             animate={{ opacity: 1, translateY: 0, scale: 1 }}
                             transition={{ type: 'timing', duration: 280, delay: 80 }}
                         >
+                            <AppCard
+                                disableMotion
+                                style={[
+                                    styles.authCard,
+                                    {
+                                        backgroundColor: theme.colors.surface,
+                                        borderColor: theme.colors.outlineVariant,
+                                    },
+                                ]}
+                            >
                             <View style={styles.modeRow}>
                                 <View
                                     style={[
@@ -316,13 +326,13 @@ export const LoginScreen = () => {
 
                                     {!isOtpStep ? (
                                         <>
-                                            <AppInput
+                                            <PhoneNumberInput
+                                                dialCode={countryDialCode}
+                                                onDialCodeChange={setCountryDialCode}
+                                                phoneNumber={phoneNumber}
+                                                onPhoneNumberChange={(next) => setPhoneNumber(sanitizePhoneLocal(next))}
                                                 label={AUTH_TEXT.login.phoneNumberLabel}
-                                                value={phoneNumber}
-                                                onChangeText={setPhoneNumber}
-                                                keyboardType="phone-pad"
-                                                autoComplete="tel"
-                                                placeholder="+1 555 123 4567"
+                                                placeholder="9876543210"
                                             />
                                             <AppButton
                                                 mode="contained"
@@ -337,15 +347,10 @@ export const LoginScreen = () => {
                                         </>
                                     ) : (
                                         <>
-                                            <AppInput
-                                                label={AUTH_TEXT.login.verificationCodeLabel}
+                                            <OtpInput
                                                 value={verificationCode}
-                                                onChangeText={(text) => setVerificationCode(text.replace(/\D/g, '').slice(0, 6))}
-                                                keyboardType="number-pad"
-                                                autoComplete="one-time-code"
-                                                textContentType="oneTimeCode"
-                                                placeholder="123456"
-                                                maxLength={6}
+                                                onChange={setVerificationCode}
+                                                label={AUTH_TEXT.login.verificationCodeLabel}
                                             />
                                             <AppButton
                                                 mode="contained"
@@ -406,7 +411,9 @@ export const LoginScreen = () => {
                             )}
 
                             {isBusy && <ActivityIndicator style={styles.loadingIndicator} />}
-                        </MotiView>
+                            </AppCard>
+                        </MotionView>
+                        </View>
                     </ScrollView>
                 </KeyboardAvoidingView>
             </View>
@@ -458,10 +465,17 @@ const createStyles = (theme: MD3Theme) =>
         scrollContent: {
             flexGrow: 1,
             justifyContent: 'center',
-            paddingVertical: 24,
+            paddingVertical: DesignSystem.layout.pageTop,
+            alignItems: 'center',
+        },
+        contentInner: {
+            width: '100%',
+        },
+        contentInnerWide: {
+            maxWidth: DesignSystem.layout.compactMaxWidth,
         },
         heroPanel: {
-            marginBottom: 16,
+            marginBottom: DesignSystem.spacing.xs,
         },
         brandRow: {
             flexDirection: 'row',
@@ -469,29 +483,11 @@ const createStyles = (theme: MD3Theme) =>
         },
         brandTextWrap: {
             flex: 1,
-            marginLeft: 10,
+            marginLeft: DesignSystem.spacing.sm,
         },
         brandLabel: {
             fontWeight: '700',
             letterSpacing: 0.4,
-        },
-        orbTop: {
-            position: 'absolute',
-            top: -120,
-            right: -80,
-            width: 240,
-            height: 240,
-            borderRadius: 120,
-            opacity: 0.45,
-        },
-        orbBottom: {
-            position: 'absolute',
-            bottom: -140,
-            left: -90,
-            width: 260,
-            height: 260,
-            borderRadius: 130,
-            opacity: 0.3,
         },
         logoFrame: {
             width: 72,
@@ -515,50 +511,42 @@ const createStyles = (theme: MD3Theme) =>
             fontWeight: '700',
         },
         subtitle: {
-            marginTop: 8,
+            marginTop: DesignSystem.spacing.xs,
         },
         capabilityRow: {
             flexDirection: 'row',
             flexWrap: 'wrap',
-            marginTop: 10,
-            gap: 8,
+            marginTop: DesignSystem.spacing.sm,
+            gap: DesignSystem.spacing.xs,
         },
         capabilityBadge: {
             borderRadius: 999,
             borderWidth: 1,
-            paddingHorizontal: 10,
+            paddingHorizontal: DesignSystem.spacing.sm,
             paddingVertical: 5,
         },
         authCard: {
-            borderRadius: 24,
-            borderWidth: 1,
-            paddingHorizontal: 16,
-            paddingVertical: 18,
-            shadowColor: '#020617',
-            shadowOffset: { width: 0, height: 12 },
-            shadowOpacity: 0.14,
-            shadowRadius: 24,
-            elevation: 8,
+            marginBottom: DesignSystem.spacing.xs,
         },
         modeRow: {
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: 10,
-            gap: 8,
+            marginBottom: DesignSystem.spacing.sm,
+            gap: DesignSystem.spacing.xs,
         },
         modeChip: {
             borderRadius: 999,
             borderWidth: 1,
-            paddingHorizontal: 10,
+            paddingHorizontal: DesignSystem.spacing.sm,
             paddingVertical: 5,
         },
         stepBadge: {
             alignSelf: 'flex-start',
             borderRadius: 999,
-            paddingHorizontal: 10,
+            paddingHorizontal: DesignSystem.spacing.sm,
             paddingVertical: 4,
-            marginBottom: 12,
+            marginBottom: DesignSystem.spacing.sm,
         },
         primaryButtonContent: {
             minHeight: 48,
@@ -566,24 +554,24 @@ const createStyles = (theme: MD3Theme) =>
         separatorRow: {
             flexDirection: 'row',
             alignItems: 'center',
-            marginVertical: 12,
+            marginVertical: DesignSystem.spacing.sm,
         },
         separator: {
             flex: 1,
         },
         separatorLabel: {
-            marginHorizontal: 10,
+            marginHorizontal: DesignSystem.spacing.sm,
             textTransform: 'uppercase',
             letterSpacing: 0.5,
         },
         footerRow: {
-            marginTop: 10,
+            marginTop: DesignSystem.spacing.sm,
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
             minHeight: 36,
         },
         loadingIndicator: {
-            marginTop: 14,
+            marginTop: DesignSystem.spacing.sm,
         },
     });

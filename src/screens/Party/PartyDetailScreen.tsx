@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ScrollView, Alert } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text, useTheme, SegmentedButtons } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
@@ -8,12 +8,15 @@ import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
 import { AppButton } from '../../components/common/AppButton';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { usePartyStore } from '../../store';
 import { COMMON_TEXT } from '../../constants/staticText';
 import type { PartyType } from '../../types';
 import { partyService } from '../../api/partyService';
 import { useAuth } from '../../hooks/useAuth';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import { useAppDialog } from '../../components/providers/DialogProvider';
+import { partySchema } from '../../validation/forms';
 
 export const PartyDetailScreen = () => {
     const params = useLocalSearchParams<{ id?: string | string[] }>();
@@ -24,6 +27,9 @@ export const PartyDetailScreen = () => {
     const { canManageParties } = useOrganizationAccess();
     const router = useRouter();
     const theme = useTheme();
+    const { width } = useWindowDimensions();
+    const isWide = width >= 960;
+    const dialog = useAppDialog();
 
     const [form, setForm] = useState({
         name: '',
@@ -51,22 +57,34 @@ export const PartyDetailScreen = () => {
     }, [partyId, isNew, parties]);
 
     const handleSubmit = async () => {
-        if (!form.name || !form.phone) {
-            return Alert.alert(COMMON_TEXT.alerts.error, 'Name and Phone are required.');
-        }
         if (!user) {
-            return Alert.alert(COMMON_TEXT.alerts.error, 'You must be logged in.');
+            dialog.alert(COMMON_TEXT.alerts.error, 'You must be logged in.');
+            return;
         }
+        const validation = partySchema.safeParse({
+            name: form.name,
+            phone: form.phone.replace(/\D/g, ''),
+            email: form.email,
+            address: form.address,
+            gstNumber: form.gstNumber ? form.gstNumber.toUpperCase() : '',
+        });
+        if (!validation.success) {
+            dialog.alert(COMMON_TEXT.alerts.error, validation.error.issues[0]?.message || 'Please check party details.');
+            return;
+        }
+
+        const values = validation.data;
 
         try {
             if (isNew) {
                 const id = await partyService.createParty({
-                    name: form.name,
+                    userId: user.uid,
+                    name: values.name.trim(),
                     type: form.type,
-                    phone: form.phone,
-                    email: form.email,
-                    address: form.address,
-                    gstNumber: form.gstNumber,
+                    phone: values.phone,
+                    email: values.email?.trim() || undefined,
+                    address: values.address?.trim() || undefined,
+                    gstNumber: values.gstNumber?.trim().toUpperCase() || undefined,
                     isActive: true,
                 });
 
@@ -76,145 +94,184 @@ export const PartyDetailScreen = () => {
                     isActive: true,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
-                    ...form
+                    ...form,
+                    name: values.name.trim(),
+                    phone: values.phone,
+                    email: values.email?.trim() || undefined,
+                    address: values.address?.trim() || undefined,
+                    gstNumber: values.gstNumber?.trim().toUpperCase() || undefined,
                 });
-                Alert.alert(COMMON_TEXT.alerts.success, 'Party added successfully.');
+                dialog.alert(COMMON_TEXT.alerts.success, 'Party added successfully.');
                 router.back();
             } else {
                 if (!partyId) return;
                 await partyService.updateParty(partyId, {
-                    name: form.name,
+                    name: values.name.trim(),
                     type: form.type,
-                    phone: form.phone,
-                    email: form.email,
-                    address: form.address,
-                    gstNumber: form.gstNumber,
+                    phone: values.phone,
+                    email: values.email?.trim() || undefined,
+                    address: values.address?.trim() || undefined,
+                    gstNumber: values.gstNumber?.trim().toUpperCase() || undefined,
                 });
                 updateParty(partyId, {
                     ...form,
+                    name: values.name.trim(),
+                    phone: values.phone,
+                    email: values.email?.trim() || undefined,
+                    address: values.address?.trim() || undefined,
+                    gstNumber: values.gstNumber?.trim().toUpperCase() || undefined,
                     updatedAt: new Date().toISOString()
                 });
-                Alert.alert(COMMON_TEXT.alerts.success, 'Party updated successfully.');
+                dialog.alert(COMMON_TEXT.alerts.success, 'Party updated successfully.');
                 router.back();
             }
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to save party.');
+            dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to save party.');
         }
     };
 
     const handleDelete = () => {
         if (isNew || !partyId) return;
-        Alert.alert(
+        dialog.confirm(
             'Delete Party',
             'Are you sure you want to delete this party?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { 
-                    text: 'Delete', 
-                    style: 'destructive', 
-                    onPress: async () => {
-                        try {
-                            await partyService.archiveParty(partyId);
-                        } catch {
-                            // keep local cleanup even if remote call fails
-                        }
-                        deleteParty(partyId);
-                        router.back();
-                    }
+            async () => {
+                try {
+                    await partyService.archiveParty(partyId);
+                } catch {
+                    // keep local cleanup even if remote call fails
                 }
-            ]
+                deleteParty(partyId);
+                router.back();
+            }
         );
     };
 
     return (
         <ScreenWrapper>
             {!canManageParties ? (
-                <PageHeaderCard
-                    title="Party access disabled"
-                    subtitle="Ask owner/admin to enable party management."
-                />
+                <View style={styles.blockedContainer}>
+                    <PageHeaderCard
+                        title="Party access disabled"
+                        subtitle="Ask owner/admin to enable party management."
+                    />
+                </View>
             ) : (
-            <ScrollView contentContainerStyle={{ paddingTop: 20 }}>
-                <PageHeaderCard
-                    title={isNew ? 'Add Party' : 'Edit Party'}
-                    subtitle="Manage customer/supplier details, tax info and contact fields."
-                />
+                <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                    <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                        <PageHeaderCard
+                            title={isNew ? 'Add Party' : 'Edit Party'}
+                            subtitle="Manage customer/supplier details, tax info and contact fields."
+                        />
 
-                <AppCard>
-                    <Text variant="titleSmall" style={{ fontWeight: '700', marginBottom: 10 }}>
-                        Party Type
-                    </Text>
-                    <SegmentedButtons
-                        value={form.type}
-                        onValueChange={(val) => setForm({ ...form, type: val as PartyType })}
-                        buttons={[
-                            { value: 'customer', label: 'Customer' },
-                            { value: 'supplier', label: 'Supplier' },
-                        ]}
-                        style={{ marginBottom: 8 }}
-                    />
-                </AppCard>
+                        <AppCard>
+                            <Text variant="titleSmall" style={styles.sectionTitle}>
+                                Party Type
+                            </Text>
+                            <SegmentedButtons
+                                value={form.type}
+                                onValueChange={(val) => setForm({ ...form, type: val as PartyType })}
+                                buttons={[
+                                    { value: 'customer', label: 'Customer' },
+                                    { value: 'supplier', label: 'Supplier' },
+                                ]}
+                                style={styles.segmented}
+                            />
+                        </AppCard>
 
-                <AppCard>
-                    <Text variant="titleSmall" style={{ fontWeight: '700', marginBottom: 10 }}>
-                        Contact Information
-                    </Text>
-                    <AppInput
-                        label="Name"
-                        value={form.name}
-                        onChangeText={(t) => setForm({ ...form, name: t })}
-                    />
-                    <AppInput
-                        label="Phone Number"
-                        value={form.phone}
-                        onChangeText={(t) => setForm({ ...form, phone: t })}
-                        keyboardType="phone-pad"
-                    />
-                    <AppInput
-                        label="Email (Optional)"
-                        value={form.email}
-                        onChangeText={(t) => setForm({ ...form, email: t })}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                    />
-                    <AppInput
-                        label="GST Number (Optional)"
-                        value={form.gstNumber}
-                        onChangeText={(t) => setForm({ ...form, gstNumber: t })}
-                        autoCapitalize="characters"
-                    />
-                    <AppInput
-                        label="Address"
-                        value={form.address}
-                        onChangeText={(t) => setForm({ ...form, address: t })}
-                        multiline
-                        numberOfLines={3}
-                    />
-                </AppCard>
+                        <AppCard>
+                            <Text variant="titleSmall" style={styles.sectionTitle}>
+                                Contact Information
+                            </Text>
+                            <AppInput
+                                label="Name"
+                                value={form.name}
+                                onChangeText={(t) => setForm({ ...form, name: t })}
+                                inputType="name"
+                            />
+                            <AppInput
+                                label="Phone Number"
+                                value={form.phone}
+                                onChangeText={(t) => setForm({ ...form, phone: t.replace(/\D/g, '') })}
+                                inputType="phone"
+                            />
+                            <AppInput
+                                label="Email (Optional)"
+                                value={form.email}
+                                onChangeText={(t) => setForm({ ...form, email: t })}
+                                inputType="email"
+                                autoCapitalize="none"
+                            />
+                            <AppInput
+                                label="GST Number (Optional)"
+                                value={form.gstNumber}
+                                onChangeText={(t) => setForm({ ...form, gstNumber: t.toUpperCase().replace(/[^0-9A-Z]/g, '') })}
+                                autoCapitalize="characters"
+                            />
+                            <AppInput
+                                label="Address"
+                                value={form.address}
+                                onChangeText={(t) => setForm({ ...form, address: t })}
+                                multiline
+                                numberOfLines={3}
+                                inputType="text"
+                            />
+                        </AppCard>
 
-                <AppButton 
-                    mode="contained" 
-                    onPress={handleSubmit} 
-                    loading={loading}
-                    style={{ marginTop: 20 }}
-                >
-                    {isNew ? 'Save Party' : 'Update Party'}
-                </AppButton>
+                        <AppButton
+                            mode="contained"
+                            onPress={handleSubmit}
+                            loading={loading}
+                            style={styles.primaryButton}
+                        >
+                            {isNew ? 'Save Party' : 'Update Party'}
+                        </AppButton>
 
-                {!isNew && (
-                    <AppButton
-                        mode="outlined"
-                        onPress={handleDelete}
-                        loading={loading}
-                        style={{ marginTop: 10 }}
-                        textColor={theme.colors.error}
-                        icon="delete"
-                    >
-                        Delete Party
-                    </AppButton>
-                )}
-            </ScrollView>
+                        {!isNew && (
+                            <AppButton
+                                mode="outlined"
+                                onPress={handleDelete}
+                                loading={loading}
+                                style={styles.secondaryButton}
+                                textColor={theme.colors.error}
+                                icon="delete"
+                            >
+                                Delete Party
+                            </AppButton>
+                        )}
+                    </View>
+                </ScrollView>
             )}
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    blockedContainer: {
+        paddingTop: DesignSystem.layout.pageTop,
+    },
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.formMaxWidth,
+    },
+    sectionTitle: {
+        fontWeight: '700',
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    segmented: {
+        marginBottom: DesignSystem.spacing.xs + 2,
+    },
+    primaryButton: {
+        marginTop: DesignSystem.spacing.md + 2,
+    },
+    secondaryButton: {
+        marginTop: DesignSystem.spacing.sm,
+    },
+});

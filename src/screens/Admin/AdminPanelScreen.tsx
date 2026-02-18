@@ -1,20 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Chip, SegmentedButtons, Switch, Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
 import { adminService } from '../../api/adminService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
+import { LoadingScreen } from '../../components/common/LoadingScreen';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { ADMIN_TEXT, COMMON_TEXT } from '../../constants/staticText';
-import { DEFAULT_SUBSCRIPTION_PLANS } from '../../constants/subscriptionPlans';
 import { useAnalyticsFunnel } from '../../hooks/useAnalyticsFunnel';
 import type { MarketingOffer, SubscriptionPlan, SubscriptionStatus, UserProfile, UserRole } from '../../types';
 import { addMonths, toDateSafe } from '../../utils/date';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
+import { adminOfferSchema, adminPlanSchema } from '../../validation/forms';
 
 type AdminTab = 'users' | 'plans' | 'offers';
 
@@ -24,6 +26,9 @@ const roleLabel = (role: UserRole | undefined) => (role ?? 'owner').toUpperCase(
 
 export const AdminPanelScreen = () => {
     const theme = useTheme();
+    const { width } = useWindowDimensions();
+    const isWide = width >= 1120;
+    const defaultOfferBackground = theme.colors.secondaryContainer;
     const {
         metrics,
         loading: analyticsLoading,
@@ -42,7 +47,7 @@ export const AdminPanelScreen = () => {
         title: '',
         message: '',
         bannerUrl: '',
-        bannerBackground: '#E8DEF8',
+        bannerBackground: defaultOfferBackground,
         ctaText: 'View Plan',
         ctaRoute: '/subscription',
         audience: 'all' as MarketingOffer['audience'],
@@ -72,11 +77,9 @@ export const AdminPanelScreen = () => {
                 adminService.getPlans(true),
                 adminService.getOffers(true),
             ]);
-
-            const mergedPlans = fetchedPlans.length > 0 ? fetchedPlans : DEFAULT_SUBSCRIPTION_PLANS;
             return {
                 users: fetchedUsers,
-                plans: mergedPlans,
+                plans: fetchedPlans,
                 offers: fetchedOffers,
             };
         },
@@ -196,23 +199,29 @@ export const AdminPanelScreen = () => {
         const draft = planDrafts[planId];
         if (!draft) return;
 
-        if (!draft.name.trim()) {
-            Alert.alert(COMMON_TEXT.alerts.validation, ADMIN_TEXT.alerts.planNameRequired);
+        const validation = adminPlanSchema.safeParse({
+            ...draft,
+            monthlyPrice: Number(draft.monthlyPrice),
+            displayOrder: Number(draft.displayOrder) || 0,
+            currency: draft.currency.trim().toUpperCase(),
+            features: draft.features.map((feature) => feature.trim()).filter(Boolean),
+        });
+        if (!validation.success) {
+            Alert.alert(COMMON_TEXT.alerts.validation, validation.error.issues[0]?.message || ADMIN_TEXT.alerts.planNameRequired);
             return;
         }
-        if (Number.isNaN(Number(draft.monthlyPrice)) || Number(draft.monthlyPrice) < 0) {
-            Alert.alert(COMMON_TEXT.alerts.validation, ADMIN_TEXT.alerts.monthlyPriceInvalid);
-            return;
-        }
+        const values = validation.data;
 
         const normalized: SubscriptionPlan = {
             ...draft,
-            name: draft.name.trim(),
-            description: draft.description.trim(),
-            monthlyPrice: Number(draft.monthlyPrice),
-            currency: draft.currency.trim().toUpperCase(),
-            displayOrder: Number(draft.displayOrder) || 0,
-            features: draft.features.map((feature) => feature.trim()).filter(Boolean),
+            id: values.id,
+            name: values.name,
+            description: values.description,
+            monthlyPrice: values.monthlyPrice,
+            currency: values.currency,
+            displayOrder: values.displayOrder,
+            features: values.features,
+            isActive: values.isActive,
         };
 
         try {
@@ -245,28 +254,27 @@ export const AdminPanelScreen = () => {
     };
 
     const handleCreateOffer = async () => {
-        if (!offerForm.title.trim() || !offerForm.message.trim()) {
-            Alert.alert(COMMON_TEXT.alerts.validation, ADMIN_TEXT.alerts.offerTitleMessageRequired);
+        const validation = adminOfferSchema.safeParse({
+            ...offerForm,
+            priority: Number(offerForm.priority),
+        });
+        if (!validation.success) {
+            Alert.alert(COMMON_TEXT.alerts.validation, validation.error.issues[0]?.message || ADMIN_TEXT.alerts.offerTitleMessageRequired);
             return;
         }
-
-        const priority = Number(offerForm.priority);
-        if (Number.isNaN(priority)) {
-            Alert.alert(COMMON_TEXT.alerts.validation, ADMIN_TEXT.alerts.offerPriorityInvalid);
-            return;
-        }
+        const values = validation.data;
 
         const offer: MarketingOffer = {
             id: `offer_${Date.now()}`,
-            title: offerForm.title.trim(),
-            message: offerForm.message.trim(),
-            bannerUrl: offerForm.bannerUrl.trim() || undefined,
-            bannerBackground: offerForm.bannerBackground.trim() || undefined,
-            ctaText: offerForm.ctaText.trim() || undefined,
-            ctaRoute: offerForm.ctaRoute.trim() || undefined,
-            audience: offerForm.audience,
-            isActive: offerForm.isActive,
-            priority,
+            title: values.title.trim(),
+            message: values.message.trim(),
+            bannerUrl: values.bannerUrl?.trim() || undefined,
+            bannerBackground: values.bannerBackground.trim() || undefined,
+            ctaText: values.ctaText?.trim() || undefined,
+            ctaRoute: values.ctaRoute?.trim() || undefined,
+            audience: values.audience,
+            isActive: values.isActive,
+            priority: values.priority,
             startsAt: new Date(),
         };
 
@@ -278,7 +286,7 @@ export const AdminPanelScreen = () => {
                 title: '',
                 message: '',
                 bannerUrl: '',
-                bannerBackground: '#E8DEF8',
+                bannerBackground: defaultOfferBackground,
                 ctaText: 'View Plan',
                 ctaRoute: '/subscription',
                 audience: 'all',
@@ -323,13 +331,7 @@ export const AdminPanelScreen = () => {
     };
 
     if (accessLoading) {
-        return (
-            <ScreenWrapper>
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <Text variant="bodyLarge">Verifying admin access...</Text>
-                </View>
-            </ScreenWrapper>
-        );
+        return <LoadingScreen message="Verifying admin access..." />;
     }
 
     if (!canAccess) {
@@ -347,9 +349,18 @@ export const AdminPanelScreen = () => {
         );
     }
 
+    if (adminDataQuery.isFetching && !adminDataQuery.data) {
+        return <LoadingScreen message="Loading admin dashboard..." />;
+    }
+
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingBottom: 110, paddingTop: 14 }}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+            >
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
                     title={ADMIN_TEXT.title}
                     subtitle={ADMIN_TEXT.subtitle}
@@ -480,6 +491,13 @@ export const AdminPanelScreen = () => {
 
                 {tab === 'plans' && (
                     <View>
+                        {plans.length === 0 && (
+                            <AppCard>
+                                <Text variant="bodyMedium" style={{ color: theme.colors.outline }}>
+                                    No subscription plans found. Create plans from admin APIs before assigning users.
+                                </Text>
+                            </AppCard>
+                        )}
                         {plans.map((plan) => {
                             const draft = planDrafts[plan.id] ?? plan;
                             return (
@@ -498,7 +516,7 @@ export const AdminPanelScreen = () => {
                                     <View style={{ flexDirection: 'row', gap: 8 }}>
                                         <AppInput
                                             label={ADMIN_TEXT.plans.monthlyPrice}
-                                            keyboardType="numeric"
+                                            inputType="decimal"
                                             value={String(draft.monthlyPrice)}
                                             onChangeText={(value) =>
                                                 handlePlanFieldChange(plan.id, { monthlyPrice: Number(value || 0) })
@@ -570,7 +588,7 @@ export const AdminPanelScreen = () => {
                                 />
                                 <AppInput
                                     label={ADMIN_TEXT.offers.priority}
-                                    keyboardType="numeric"
+                                    inputType="number"
                                     value={offerForm.priority}
                                     onChangeText={(value) => setOfferForm((current) => ({ ...current, priority: value }))}
                                     style={{ flex: 1 }}
@@ -647,8 +665,23 @@ export const AdminPanelScreen = () => {
                         ))}
                     </View>
                 )}
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.dashboardMaxWidth,
+    },
+});
 

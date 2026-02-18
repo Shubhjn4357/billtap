@@ -1,15 +1,23 @@
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text } from 'react-native-paper';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { ABOUT_TEXT, BRAND } from '../../constants/staticText';
 
 export const AboutScreen = () => {
+    const { width } = useWindowDimensions();
+    const isWide = width >= 1120;
+
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
                     title={ABOUT_TEXT.title}
                     subtitle={`${ABOUT_TEXT.lastUpdatedPrefix} ${BRAND.legalLastUpdated}`}
@@ -48,7 +56,22 @@ export const AboutScreen = () => {
                         {ABOUT_TEXT.legalNotice}
                     </Text>
                 </AppCard>
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.pageMaxWidth,
+    },
+});

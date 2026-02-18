@@ -46,8 +46,10 @@ export const useStock = () => {
             return sortItemsByName(await itemService.getUserItems(user.uid));
         },
         enabled: Boolean(user),
-        staleTime: 20_000,
+        staleTime: 45_000,
+        placeholderData: (previous) => previous,
     });
+    const { refetch: refetchStock } = stockQuery;
 
     useEffect(() => {
         if (!user) {
@@ -57,7 +59,7 @@ export const useStock = () => {
         }
 
         if (stockQuery.data) {
-            setItems(sortItemsByName(stockQuery.data));
+            setItems(stockQuery.data);
             setError(null);
         }
     }, [setItems, stockQuery.data, user]);
@@ -88,15 +90,15 @@ export const useStock = () => {
             return;
         }
 
-        const result = await stockQuery.refetch();
+        const result = await refetchStock();
         if (result.data) {
-            setItems(sortItemsByName(result.data));
+            setItems(result.data);
         }
 
         if (result.error && !isNetworkLikeError(result.error)) {
             setError(getErrorMessage(result.error));
         }
-    }, [setItems, stockQuery, user]);
+    }, [refetchStock, setItems, user]);
 
     const normalizedSearch = debouncedSearchQuery.trim().toLowerCase();
     const filteredItems = useMemo(() => {

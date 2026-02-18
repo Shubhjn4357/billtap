@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
-import { ScrollView } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
@@ -8,8 +7,10 @@ import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
+import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 
 interface InventoryInsightsData {
     valuation: {
@@ -37,6 +38,8 @@ interface InventoryInsightsData {
 
 export const InventoryInsightsScreen = () => {
     const theme = useTheme();
+    const { width } = useWindowDimensions();
+    const isWide = width >= 960;
     const insightsQuery = useQuery({
         queryKey: ['accounting-inventory-insights'] as const,
         queryFn: async (): Promise<InventoryInsightsData> => {
@@ -70,8 +73,9 @@ export const InventoryInsightsScreen = () => {
                 },
             };
         },
-        staleTime: 30_000,
+        staleTime: 45_000,
     });
+    const { refetch: refetchInventoryInsights } = insightsQuery;
 
     const data = insightsQuery.data ?? null;
     const error = insightsQuery.error && !isNetworkLikeError(insightsQuery.error)
@@ -79,76 +83,102 @@ export const InventoryInsightsScreen = () => {
         : null;
 
     const loadData = useCallback(async () => {
-        await insightsQuery.refetch();
-    }, [insightsQuery]);
+        await refetchInventoryInsights();
+    }, [refetchInventoryInsights]);
 
-    useFocusEffect(
-        useCallback(() => {
-            void loadData();
-        }, [loadData])
-    );
+    useFocusRefresh(loadData, { minIntervalMs: 10_000 });
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <PageHeaderCard
-                    title="Inventory Insights"
-                    subtitle="Valuation, reorder signals and stock-aging view."
-                />
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                    <PageHeaderCard
+                        title="Inventory Insights"
+                        subtitle="Valuation, reorder signals and stock-aging view."
+                    />
 
-                <AppCard>
-                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={insightsQuery.isFetching}>
-                        Refresh Inventory Insights
-                    </AppButton>
-                </AppCard>
+                    <AppCard>
+                        <AppButton mode="contained" onPress={() => { void loadData(); }} loading={insightsQuery.isFetching}>
+                            Refresh Inventory Insights
+                        </AppButton>
+                    </AppCard>
 
-                {error ? (
-                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 10 }}>
-                        {error}
-                    </Text>
-                ) : null}
-
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>Valuation</Text>
-                    <Text variant="bodySmall">Cost Value: {formatCurrency(data?.valuation.totalCostValue ?? 0, 'INR')}</Text>
-                    <Text variant="bodySmall">Retail Value: {formatCurrency(data?.valuation.totalRetailValue ?? 0, 'INR')}</Text>
-                    <Text variant="bodySmall">Potential Gross Margin: {formatCurrency(data?.valuation.potentialGrossMargin ?? 0, 'INR')}</Text>
-                    <Text variant="bodySmall">Low Stock Items: {data?.valuation.lowStockCount ?? 0}</Text>
-                </AppCard>
-
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
-                        Reorder Suggestions ({data?.reorder.count ?? 0})
-                    </Text>
-                    {(data?.reorder.suggestions ?? []).map((row) => (
-                        <Text key={row.itemId} variant="bodySmall" style={{ marginBottom: 6 }}>
-                            {row.name} | Stock {row.stock}/{row.minimumStock} | Order {row.suggestedOrderQty} | Cost {formatCurrency(row.estimatedCost, 'INR')}
+                    {error ? (
+                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                            {error}
                         </Text>
-                    ))}
-                </AppCard>
+                    ) : null}
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
-                        Stock Aging Buckets
-                    </Text>
-                    {(data?.aging.summary ?? []).map((row) => (
-                        <Text key={row.bucket} variant="bodySmall" style={{ marginBottom: 6 }}>
-                            {row.bucket} days | Items {row.itemCount} | Qty {row.quantity} | Cost {formatCurrency(row.costValue, 'INR')}
-                        </Text>
-                    ))}
-                </AppCard>
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>Valuation</Text>
+                        <Text variant="bodySmall">Cost Value: {formatCurrency(data?.valuation.totalCostValue ?? 0, 'INR')}</Text>
+                        <Text variant="bodySmall">Retail Value: {formatCurrency(data?.valuation.totalRetailValue ?? 0, 'INR')}</Text>
+                        <Text variant="bodySmall">Potential Gross Margin: {formatCurrency(data?.valuation.potentialGrossMargin ?? 0, 'INR')}</Text>
+                        <Text variant="bodySmall">Low Stock Items: {data?.valuation.lowStockCount ?? 0}</Text>
+                    </AppCard>
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
-                        Oldest Moving Stock ({data?.aging.rows.length ?? 0})
-                    </Text>
-                    {(data?.aging.rows ?? []).map((row) => (
-                        <Text key={row.itemId} variant="bodySmall" style={{ marginBottom: 6 }}>
-                            {row.name} | {row.ageDays} days | {row.stock} {row.unit} | Bucket {row.bucket}
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
+                            Reorder Suggestions ({data?.reorder.count ?? 0})
                         </Text>
-                    ))}
-                </AppCard>
+                        {(data?.reorder.suggestions ?? []).map((row) => (
+                            <Text key={row.itemId} variant="bodySmall" style={styles.listRow}>
+                                {row.name} | Stock {row.stock}/{row.minimumStock} | Order {row.suggestedOrderQty} | Cost {formatCurrency(row.estimatedCost, 'INR')}
+                            </Text>
+                        ))}
+                    </AppCard>
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
+                            Stock Aging Buckets
+                        </Text>
+                        {(data?.aging.summary ?? []).map((row) => (
+                            <Text key={row.bucket} variant="bodySmall" style={styles.listRow}>
+                                {row.bucket} days | Items {row.itemCount} | Qty {row.quantity} | Cost {formatCurrency(row.costValue, 'INR')}
+                            </Text>
+                        ))}
+                    </AppCard>
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
+                            Oldest Moving Stock ({data?.aging.rows.length ?? 0})
+                        </Text>
+                        {(data?.aging.rows ?? []).map((row) => (
+                            <Text key={row.itemId} variant="bodySmall" style={styles.listRow}>
+                                {row.name} | {row.ageDays} days | {row.stock} {row.unit} | Bucket {row.bucket}
+                            </Text>
+                        ))}
+                    </AppCard>
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+        gap: DesignSystem.layout.sectionGap,
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.pageMaxWidth,
+    },
+    errorText: {
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    sectionTitle: {
+        fontWeight: '700',
+    },
+    sectionTitleWithGap: {
+        fontWeight: '700',
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    listRow: {
+        marginBottom: DesignSystem.spacing.xs,
+    },
+});

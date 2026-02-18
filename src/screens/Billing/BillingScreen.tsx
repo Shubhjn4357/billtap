@@ -1,19 +1,21 @@
 
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useReducer, useState, useTransition } from 'react';
-import { StyleSheet, View, ScrollView } from 'react-native';
-import { Text, Searchbar, Divider, useTheme, IconButton, SegmentedButtons, Switch, TextInput, Chip } from 'react-native-paper';
+import { Image, Pressable, StyleSheet, View, ScrollView, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Text, useTheme, IconButton, Portal, SegmentedButtons, Surface, Switch, TextInput, Chip } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppCard } from '../../components/common/AppCard';
 import { AppButton } from '../../components/common/AppButton';
 import { AppInput } from '../../components/common/AppInput';
+import { AppSkeleton } from '../../components/common/AppSkeleton';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { useStock } from '../../hooks/useStock';
 import { useAuth } from '../../hooks/useAuth';
 import { useCartStore } from '../../store/cartStore';
-import { useSettingsStore } from '../../store';
+import { useOrganizationStore, useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { BILLING_TEXT, COMMON_TEXT } from '../../constants/staticText';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
 import { billService } from '../../api/billService';
@@ -21,9 +23,17 @@ import { shareBillPDF } from '../../utils/pdfGenerator';
 import { getStockHealth, resolveLowStockThreshold } from '../../utils/stockStatus';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
-import type { BillItem } from '../../types';
+import { useFocusRefresh } from '../../hooks/useFocusRefresh';
+import type { Bill, BillItem } from '../../types';
+import { useShallow } from 'zustand/react/shallow';
+import { MotionPresence, MotionView } from '../../components/motion/Motion';
+import { transactionService } from '../../api/transactionService';
+import { billingCheckoutSchema } from '../../validation/forms';
+import { buildUpiPaymentUri, buildUpiQrImageUrl } from '../../utils/upi';
 
 type StockFilter = 'available' | 'low' | 'out' | 'all';
+
+const MAX_VISIBLE_CATALOG_ITEMS = 80;
 
 interface CartSummaryState {
     subtotal: number;
@@ -60,12 +70,31 @@ const cartSummaryReducer = (_state: CartSummaryState, action: CartSummaryAction)
     return _state;
 };
 
+const asRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+type BillSharePayload = Omit<Bill, 'id' | 'createdAt'> & {
+    id: string;
+    createdAt: Date;
+};
+
+interface CheckoutResultState {
+    paymentStatus: 'PAID' | 'PENDING';
+    upiUri?: string;
+    qrImageUrl?: string;
+    bill: BillSharePayload;
+}
+
 export const BillingScreen = () => {
-    const { allItems, fetchItems } = useStock();
+    const { allItems, loading: stockLoading, fetchItems } = useStock();
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
+    const organizationSettings = useOrganizationStore((state) => state.context.settings);
     const theme = useTheme();
     const router = useRouter();
+    const { width } = useWindowDimensions();
     const params = useLocalSearchParams<{ search?: string | string[] }>();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
     const dialog = useAppDialog();
@@ -96,12 +125,34 @@ export const BillingScreen = () => {
         setTransactionType,
         setBillDetails,
         setIsGstBill,
-    } = useCartStore();
+    } = useCartStore(useShallow((state) => ({
+        items: state.items,
+        addItem: state.addItem,
+        updateQuantity: state.updateQuantity,
+        removeItem: state.removeItem,
+        clearCart: state.clearCart,
+        customerName: state.customerName,
+        customerPhone: state.customerPhone,
+        partyId: state.partyId,
+        customerGst: state.customerGst,
+        customerAddress: state.customerAddress,
+        transactionType: state.transactionType,
+        billNumber: state.billNumber,
+        billDate: state.billDate,
+        isGstBill: state.isGstBill,
+        setCustomerDetails: state.setCustomerDetails,
+        setCustomer: state.setCustomer,
+        setTransactionType: state.setTransactionType,
+        setBillDetails: state.setBillDetails,
+        setIsGstBill: state.setIsGstBill,
+    })));
 
     const [searchQuery, setSearchQuery] = useState('');
     const [barcodeInput, setBarcodeInput] = useState('');
     const [stockFilter, setStockFilter] = useState<StockFilter>('available');
     const [checkoutLoading, setCheckoutLoading] = useState(false);
+    const [paymentStatusLoading, setPaymentStatusLoading] = useState(false);
+    const [checkoutResult, setCheckoutResult] = useState<CheckoutResultState | null>(null);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [searchPending, startSearchTransition] = useTransition();
     const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -129,11 +180,10 @@ export const BillingScreen = () => {
         setStockFilter(transactionType === 'SALE' ? 'available' : 'all');
     }, [canCreatePurchase, canCreateSale, setTransactionType, transactionType]);
 
-    useFocusEffect(
-        useCallback(() => {
-            void fetchItems();
-        }, [fetchItems])
-    );
+    useFocusRefresh(fetchItems, {
+        enabled: canOpenBilling && (canCreateSale || canCreatePurchase),
+        minIntervalMs: 10_000,
+    });
 
     const handleSearchChange = useCallback((value: string) => {
         startSearchTransition(() => {
@@ -209,7 +259,49 @@ export const BillingScreen = () => {
         return ranked;
     }, [allItems, normalizedQuery, searchTerm, stockFilter, transactionType]);
 
+    const visibleCatalogItems = useMemo(() => {
+        return filteredItems.slice(0, MAX_VISIBLE_CATALOG_ITEMS);
+    }, [filteredItems]);
+
+    const hiddenCatalogCount = Math.max(0, filteredItems.length - visibleCatalogItems.length);
+
     const canUseBilling = canOpenBilling && (canCreateSale || canCreatePurchase);
+    const useWideWorkspace = width >= 1080;
+    const printTemplateMetadata = useMemo(() => {
+        const settings = asRecord(organizationSettings);
+        const customization = asRecord(settings.customization);
+        const print = asRecord(settings.print);
+        const payment = asRecord(settings.payment);
+        const signatureImageUrl =
+            typeof settings.signatureImageUrl === 'string'
+                ? settings.signatureImageUrl
+                : (typeof customization.signatureImageUrl === 'string' ? customization.signatureImageUrl : undefined);
+
+        const printerType: 'STANDARD' | 'THERMAL' = print.printerType === 'THERMAL' ? 'THERMAL' : 'STANDARD';
+        const resolvedPaperSizeRaw = typeof print.paperSize === 'string' ? print.paperSize.toUpperCase() : 'A4';
+        const paperSize: 'A4' | 'A5' | '2INCH' | '3INCH' =
+            resolvedPaperSizeRaw === 'A5'
+                ? 'A5'
+                : resolvedPaperSizeRaw === '2INCH'
+                    ? '2INCH'
+                    : resolvedPaperSizeRaw === '3INCH'
+                        ? '3INCH'
+                        : 'A4';
+
+        return {
+            templateKey: typeof customization.templateKey === 'string' ? customization.templateKey : undefined,
+            acknowledgmentText: typeof customization.acknowledgmentText === 'string'
+                ? customization.acknowledgmentText
+                : undefined,
+            footerText: typeof customization.footerText === 'string' ? customization.footerText : undefined,
+            printerType,
+            paperSize,
+            upiId: typeof payment.upiId === 'string' ? payment.upiId : undefined,
+            upiReceiverName: typeof payment.receiverName === 'string' ? payment.receiverName : undefined,
+            qrImageDataUrl: typeof payment.qrImageDataUrl === 'string' ? payment.qrImageDataUrl : undefined,
+            signatureImageUrl,
+        };
+    }, [organizationSettings]);
 
     const transactionTypeButtons = useMemo(() => {
         const buttons: { value: 'SALE' | 'PURCHASE'; label: string }[] = [];
@@ -227,8 +319,25 @@ export const BillingScreen = () => {
         return new Map(entries);
     }, [allItems]);
 
-    const getCartQuantity = (itemId: string) =>
-        cart.find((entry) => entry.id === itemId)?.quantity ?? 0;
+    const cartQtyById = useMemo(() => {
+        const entries = cart.map((entry) => [entry.id, entry.quantity] as const);
+        return new Map(entries);
+    }, [cart]);
+
+    const getCartQuantity = useCallback((itemId: string) => {
+        return cartQtyById.get(itemId) ?? 0;
+    }, [cartQtyById]);
+
+    const canCheckout = useMemo(() => {
+        if (cart.length === 0) return false;
+        return transactionType === 'SALE' ? canCreateSale : canCreatePurchase;
+    }, [canCreatePurchase, canCreateSale, cart.length, transactionType]);
+    const qrSize = useMemo(() => {
+        if (useWideWorkspace) {
+            return Math.min(220, Math.max(170, Math.floor(width * 0.19)));
+        }
+        return Math.min(210, Math.max(148, Math.floor(width * 0.44)));
+    }, [useWideWorkspace, width]);
 
     const handleAddItem = (item: (typeof allItems)[number]) => {
         const qtyInCart = getCartQuantity(item.id);
@@ -290,6 +399,42 @@ export const BillingScreen = () => {
 
         setCheckoutLoading(true);
         try {
+            const normalizedBillNumber = billNumber?.trim()
+                ? billNumber.trim()
+                : `INV-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`;
+            const normalizedCustomerName = customerName.trim();
+            const normalizedCustomerPhone = customerPhone.trim();
+            const checkoutValidation = billingCheckoutSchema.safeParse({
+                billNumber: normalizedBillNumber,
+                customerName: normalizedCustomerName,
+                customerPhone: normalizedCustomerPhone,
+            });
+            if (!checkoutValidation.success) {
+                dialog.alert('Billing', checkoutValidation.error.issues[0]?.message || 'Please check bill details.');
+                return;
+            }
+
+            const billNumberCheck = await transactionService.checkBillNumberAvailability(normalizedBillNumber);
+            if (!billNumberCheck.available) {
+                dialog.alert(
+                    'Duplicate Bill Number',
+                    `Bill number ${normalizedBillNumber} already exists. Use a unique bill number or settle the existing bill.`,
+                    [
+                        {
+                            text: 'Open Settlements',
+                            onPress: () => router.push('/transaction/settlements' as never),
+                        },
+                        {
+                            text: COMMON_TEXT.actions.cancel,
+                            style: 'cancel',
+                        },
+                    ]
+                );
+                return;
+            }
+
+            setBillDetails(billDate, normalizedBillNumber);
+
             // Recalculate tax based on isGstBill flag
             const itemsWithTaxAdjusted = cart.map(item => ({
                 ...item,
@@ -299,6 +444,19 @@ export const BillingScreen = () => {
 
             const adjustedTotal = cartSummary.grandTotal;
             const billMode: 'GST' | 'ESTIMATE' = isGstBill ? 'GST' : 'ESTIMATE';
+            const upiPaymentUri = printTemplateMetadata.upiId
+                ? buildUpiPaymentUri({
+                    upiId: printTemplateMetadata.upiId,
+                    amount: adjustedTotal,
+                    payeeName: printTemplateMetadata.upiReceiverName ?? user.businessName ?? user.displayName ?? 'BillTap Merchant',
+                    note: `Bill ${normalizedBillNumber}`,
+                    transactionRef: normalizedBillNumber,
+                    currency: activeCurrency,
+                })
+                : null;
+            const dynamicQrImageUrl = upiPaymentUri
+                ? buildUpiQrImageUrl(upiPaymentUri, 300)
+                : printTemplateMetadata.qrImageDataUrl;
 
 
             const billData = {
@@ -306,44 +464,72 @@ export const BillingScreen = () => {
                 type: transactionType,
                 billMode,
                 partyId: partyId,
-                customerName: customerName.trim() || undefined,
-                customerPhone: customerPhone.trim() || undefined,
+                customerName: normalizedCustomerName || undefined,
+                customerPhone: normalizedCustomerPhone || undefined,
+                customerAddress: customerAddress?.trim() || undefined,
+                customerGstNumber: customerGst?.trim() || undefined,
                 businessName: user.businessName || undefined,
                 businessAddress: user.address || undefined,
                 gstNumber: user.gstNumber || undefined,
                 currency: activeCurrency,
-                billNumber: billNumber,
+                billNumber: normalizedBillNumber,
                 billDate: billDate,
                 items: itemsWithTaxAdjusted,
                 total: adjustedTotal,
+                ...printTemplateMetadata,
+                upiId: printTemplateMetadata.upiId,
+                qrImageDataUrl: dynamicQrImageUrl,
             };
 
             const billId = await billService.createBillWithStockValidation(billData);
             await fetchItems();
-
-            dialog.alert(
-                BILLING_TEXT.billCreatedTitle,
-                BILLING_TEXT.billCreatedPrompt,
-                [
-                    { text: COMMON_TEXT.actions.cancel, onPress: () => clearCart(), style: 'cancel' },
-                    {
-                        text: BILLING_TEXT.sharePdfButton,
-                        onPress: async () => {
-                            try {
-                                await shareBillPDF({ ...billData, id: billId, createdAt: new Date() });
-                            } finally {
-                                clearCart();
-                            }
-                        }
-                    }
-                ]
-            );
+            const billForShare: BillSharePayload = {
+                ...billData,
+                id: billId,
+                createdAt: new Date(),
+            };
+            clearCart();
+            setCheckoutResult({
+                bill: billForShare,
+                paymentStatus: 'PENDING',
+                upiUri: upiPaymentUri ?? undefined,
+                qrImageUrl: dynamicQrImageUrl,
+            });
         } catch (error: unknown) {
             dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : BILLING_TEXT.checkoutFailed);
         } finally {
             setCheckoutLoading(false);
         }
     };
+
+    const handleShareCreatedBill = useCallback(async () => {
+        if (!checkoutResult) return;
+        try {
+            await shareBillPDF(checkoutResult.bill);
+        } catch (error: unknown) {
+            dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to share bill.');
+        }
+    }, [checkoutResult, dialog]);
+
+    const handlePaymentStatusChange = useCallback(async (nextStatus: 'PAID' | 'PENDING') => {
+        if (!checkoutResult) return;
+        setPaymentStatusLoading(true);
+        try {
+            await transactionService.updatePayment(checkoutResult.bill.id, {
+                markAsPaid: nextStatus === 'PAID',
+                paidAmount: nextStatus === 'PAID' ? checkoutResult.bill.total : 0,
+            });
+            setCheckoutResult((current) => (
+                current
+                    ? { ...current, paymentStatus: nextStatus }
+                    : current
+            ));
+        } catch (error: unknown) {
+            dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to update payment status.');
+        } finally {
+            setPaymentStatusLoading(false);
+        }
+    }, [checkoutResult, dialog]);
 
     const renderCartItem = ({ item, index }: { item: (typeof cart)[number]; index: number }) => {
         const stockItem = stockById.get(item.id);
@@ -432,21 +618,48 @@ export const BillingScreen = () => {
                 contentContainerStyle={styles.contentContainer}
                 keyboardShouldPersistTaps="handled"
             >
-            <AppCard animationDelay={40} style={{ backgroundColor: theme.colors.primaryContainer, marginBottom: 16 }}>
-                <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
+            <View style={[styles.contentInner, useWideWorkspace && styles.contentInnerWide]}>
+            <PageHeaderCard
+                title="Billing Terminal"
+                subtitle={transactionType === 'SALE' ? 'Create sale bills quickly' : 'Record stock purchases'}
+                right={(
+                    <View style={styles.headerActions}>
+                        <AppButton mode="outlined" compact onPress={() => router.push('/transaction/settlements' as never)}>
+                            Settlements
+                        </AppButton>
+                        {canManageParties && (
+                            <AppButton mode="contained-tonal" compact onPress={() => router.push('/party')}>
+                                Parties
+                            </AppButton>
+                        )}
+                    </View>
+                )}
+            />
+            <AppCard
+                animationDelay={40}
+                style={styles.heroCard}
+            >
+                <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onSurface }}>
                     Create Bill
                 </Text>
-                <Text variant="bodyMedium" style={{ color: theme.colors.onPrimaryContainer }}>
+                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
                     {transactionType === 'SALE' ? 'New Sale' : 'Stock Purchase'}
                 </Text>
-                <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer, marginTop: 2 }}>
+                <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
                     {isGstBill ? 'Mode: GST Bill' : 'Mode: Estimate / Rough'}
                 </Text>
-                <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer, marginTop: 6 }}>
+                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 6 }}>
                     Subtotal {formatCurrency(cartSummary.subtotal, activeCurrency)} | Tax {formatCurrency(cartSummary.taxTotal, activeCurrency)} | Total {formatCurrency(cartSummary.grandTotal, activeCurrency)}
                 </Text>
+                <View style={styles.heroChipRow}>
+                    <Chip compact>{transactionType === 'SALE' ? 'Sales' : 'Purchase'}</Chip>
+                    <Chip compact>{isGstBill ? 'GST Mode' : 'Estimate Mode'}</Chip>
+                    <Chip compact>Items: {cart.length}</Chip>
+                </View>
                 </AppCard>
 
+                <View style={[styles.workspaceGrid, useWideWorkspace && styles.workspaceGridWide]}>
+                <View style={[styles.workspaceColumn, useWideWorkspace && styles.workspaceLeftColumn]}>
 
                 {/* Transaction Type */}
                 {transactionTypeButtons.length > 1 && (
@@ -477,22 +690,23 @@ export const BillingScreen = () => {
                     ]}
                     style={{ marginBottom: 16 }}
                 />
-                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-                    <View style={{ flex: 1 }}>
-                        <Searchbar
+                <View style={[styles.searchRow, useWideWorkspace && styles.searchRowWide]}>
+                    <View style={styles.searchInputWrap}>
+                        <AppInput
+                            label="Search Items"
                             placeholder={BILLING_TEXT.searchPlaceholder}
                             onChangeText={handleSearchChange}
                             value={searchQuery}
-                            elevation={1}
-                            style={{ backgroundColor: theme.colors.elevation.level1 }}
+                            inputType="search"
+                            style={styles.searchInput}
                         />
                         {searchPending && (
-                            <Text variant="labelSmall" style={{ marginTop: 4, color: theme.colors.outline }}>
+                            <Text variant="labelSmall" style={styles.searchPendingText}>
                                 Updating search...
                             </Text>
                         )}
                     </View>
-                    <View style={{ width: 60 }}>
+                    <View style={styles.scanButtonWrap}>
                         <IconButton
                             icon="barcode-scan"
                             mode="contained"
@@ -504,12 +718,12 @@ export const BillingScreen = () => {
 
                 {/* Quick Barcode Input for Hardware Scanners */}
                 <View style={{ marginBottom: 16 }}>
-                    <TextInput
+                    <AppInput
                         label="Scan Barcode (Enter)"
                         value={barcodeInput}
                         onChangeText={setBarcodeInput}
-                        onSubmitEditing={handleBarcodeSubmit}
-                        mode="outlined"
+                        onSubmitEditing={() => { handleBarcodeSubmit(); }}
+                        inputType="search"
                         right={<TextInput.Icon icon="arrow-right-circle" onPress={handleBarcodeSubmit} />}
                         placeholder="Type or scan barcode..."
                     />
@@ -559,12 +773,22 @@ export const BillingScreen = () => {
                         </Chip>
                     </View>
 
-                    {filteredItems.length === 0 ? (
+                    {stockLoading && allItems.length === 0 ? (
+                        Array.from({ length: 6 }).map((_, index) => (
+                            <View key={`catalog-skeleton-${index}`} style={styles.catalogSkeletonRow}>
+                                <View style={{ flex: 1 }}>
+                                    <AppSkeleton width="52%" height={12} />
+                                    <AppSkeleton width="36%" height={10} style={{ marginTop: 8 }} />
+                                </View>
+                                <AppSkeleton width={66} height={30} borderRadius={DesignSystem.radius.pill} />
+                            </View>
+                        ))
+                    ) : filteredItems.length === 0 ? (
                         <Text style={{ paddingVertical: 12, textAlign: 'center', color: theme.colors.outline }}>
                             No items match this filter.
                         </Text>
                     ) : (
-                        filteredItems.map((item, index) => {
+                        visibleCatalogItems.map((item, index) => {
                             const stockHealth = getStockHealth(item);
                             const lowStockThreshold = resolveLowStockThreshold(item);
                             const cannotSell = transactionType === 'SALE' && item.stock <= 0;
@@ -599,31 +823,39 @@ export const BillingScreen = () => {
                                             Add
                                         </AppButton>
                                     </View>
-                                    {index !== filteredItems.length - 1 && <Divider style={styles.itemDivider} />}
                                 </View>
                             );
                         })
                     )}
+                    {hiddenCatalogCount > 0 && (
+                        <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 8 }}>
+                            Showing first {visibleCatalogItems.length} results. Refine search to narrow {hiddenCatalogCount} more items.
+                        </Text>
+                    )}
                 </AppCard>
+                </View>
+
+                <View style={[styles.workspaceColumn, useWideWorkspace && styles.workspaceRightColumn]}>
 
                 {/* Bill Details */}
                 <AppCard animationDelay={95} style={{ marginBottom: 16 }}>
                     <Text variant="titleSmall" style={[styles.sectionTitle, { marginBottom: 12 }]}>Bill Details</Text>
 
-                    <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                    <View style={[styles.billMetaRow, useWideWorkspace && styles.billMetaRowWide]}>
                         <View style={{ flex: 1 }}>
                             <AppInput
                                 label="Bill No."
+                                inputType="text"
                                 value={billNumber || ''}
-                                onChangeText={val => setBillDetails(billDate, val)}
-                                placeholder="Auto"
+                                onChangeText={(val) => setBillDetails(billDate, val.toUpperCase().replace(/\s+/g, ''))}
+                                placeholder="Auto-generated"
                             />
                         </View>
                         <View style={{ flex: 1 }}>
                             <AppButton
                                 mode="outlined"
                                 onPress={() => setShowDatePicker(true)}
-                                style={{ marginTop: 6 }}
+                                style={{ marginTop: 6, borderColor: theme.colors.outline }}
                                 contentStyle={{ height: 50, justifyContent: 'flex-start' }}
                                 icon="calendar"
                             >
@@ -668,7 +900,7 @@ export const BillingScreen = () => {
                     </View>
 
                     {partyId ? (
-                        <View style={{ backgroundColor: theme.colors.surfaceVariant, padding: 12, borderRadius: 8 }}>
+                        <View style={{ backgroundColor: theme.colors.surfaceVariant, padding: 12, borderRadius: DesignSystem.radius.sm }}>
                             <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>{customerName}</Text>
                             <Text variant="bodyMedium">{customerPhone}</Text>
                             {!!customerGst && <Text variant="bodySmall">GST: {customerGst}</Text>}
@@ -683,10 +915,11 @@ export const BillingScreen = () => {
                             </AppButton>
                         </View>
                     ) : (
-                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <View style={[styles.partyInputRow, useWideWorkspace && styles.partyInputRowWide]}>
                             <View style={{ flex: 1 }}>
                                 <AppInput
                                     label="Name"
+                                    inputType="name"
                                     value={customerName}
                                     onChangeText={(value) => setCustomerDetails(value, customerPhone)}
                                 />
@@ -694,9 +927,9 @@ export const BillingScreen = () => {
                             <View style={{ flex: 1 }}>
                                 <AppInput
                                     label="Phone"
+                                    inputType="phone"
                                     value={customerPhone}
                                     onChangeText={(value) => setCustomerDetails(customerName, value)}
-                                    keyboardType="phone-pad"
                                 />
                             </View>
                         </View>
@@ -736,13 +969,7 @@ export const BillingScreen = () => {
 
                 <AppCard
                     animationDelay={170}
-                    style={[
-                        styles.checkoutCard,
-                        {
-                            backgroundColor: theme.colors.primaryContainer,
-                            borderColor: theme.colors.primary,
-                        },
-                    ]}
+                    style={[styles.checkoutCard, { backgroundColor: theme.colors.primaryContainer }]}
                     contentStyle={styles.checkoutContent}
                 >
                     <View>
@@ -760,15 +987,107 @@ export const BillingScreen = () => {
                         mode="contained"
                         onPress={handleCheckout}
                         loading={checkoutLoading}
-                        disabled={cart.length === 0 || (transactionType === 'SALE' ? !canCreateSale : !canCreatePurchase)}
+                        disabled={!canCheckout}
                         icon="check"
                         contentStyle={{ paddingHorizontal: 16 }}
                     >
                         Checkout
                     </AppButton>
                 </AppCard>
+                </View>
+                </View>
+            </View>
             </ScrollView>
             )}
+            <Portal>
+                <MotionPresence>
+                    {checkoutLoading && (
+                        <MotionView style={[styles.blockingOverlay, { backgroundColor: theme.colors.backdrop }]}>
+                            <Surface style={[styles.loadingSheet, { backgroundColor: theme.colors.surface }]}>
+                                <ActivityIndicator animating size="small" />
+                                <Text variant="bodyMedium">Creating bill...</Text>
+                            </Surface>
+                        </MotionView>
+                    )}
+                </MotionPresence>
+                <MotionPresence>
+                    {checkoutResult && (
+                        <MotionView style={[styles.drawerBackdrop, { backgroundColor: theme.colors.backdrop }]}>
+                            <Pressable style={StyleSheet.absoluteFill} onPress={() => setCheckoutResult(null)} />
+                            <Surface
+                                style={[
+                                    styles.checkoutDrawer,
+                                    {
+                                        backgroundColor: theme.colors.surface,
+                                        borderColor: theme.colors.outlineVariant,
+                                    },
+                                ]}
+                            >
+                                <View style={styles.checkoutDrawerHeader}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text variant="titleMedium" style={{ fontWeight: '700' }}>
+                                            Bill #{checkoutResult.bill.billNumber || checkoutResult.bill.id.slice(0, 8)}
+                                        </Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                            {formatCurrency(checkoutResult.bill.total, checkoutResult.bill.currency || activeCurrency)}
+                                        </Text>
+                                    </View>
+                                    <Chip compact>{checkoutResult.paymentStatus}</Chip>
+                                </View>
+                                {checkoutResult.qrImageUrl ? (
+                                    <View style={styles.qrBlock}>
+                                        <Image source={{ uri: checkoutResult.qrImageUrl }} style={[styles.qrImage, { width: qrSize, height: qrSize }]} />
+                                        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                            Scan to pay exact amount
+                                        </Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                            {checkoutResult.bill.upiId || 'UPI configured in profile'}
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 10 }}>
+                                        Add UPI ID in Profile to generate payment QR automatically.
+                                    </Text>
+                                )}
+
+                                <View style={styles.drawerActionsRow}>
+                                    <AppButton
+                                        mode={checkoutResult.paymentStatus === 'PENDING' ? 'contained-tonal' : 'outlined'}
+                                        onPress={() => { void handlePaymentStatusChange('PENDING'); }}
+                                        loading={paymentStatusLoading}
+                                        disabled={paymentStatusLoading}
+                                    >
+                                        Mark Pending
+                                    </AppButton>
+                                    <AppButton
+                                        mode={checkoutResult.paymentStatus === 'PAID' ? 'contained' : 'outlined'}
+                                        onPress={() => { void handlePaymentStatusChange('PAID'); }}
+                                        loading={paymentStatusLoading}
+                                        disabled={paymentStatusLoading}
+                                    >
+                                        Mark Paid
+                                    </AppButton>
+                                </View>
+
+                                <View style={styles.drawerActionsRow}>
+                                    <AppButton
+                                        mode="outlined"
+                                        onPress={() => { void handleShareCreatedBill(); }}
+                                    >
+                                        Print / Share
+                                    </AppButton>
+                                    <AppButton
+                                        mode="contained"
+                                        onPress={() => router.push('/transaction/settlements' as never)}
+                                    >
+                                        Settlements
+                                    </AppButton>
+                                </View>
+                            </Surface>
+                        </MotionView>
+                    )}
+                </MotionPresence>
+            </Portal>
         </ScreenWrapper>
     );
 };
@@ -779,13 +1098,80 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     contentContainer: {
+        paddingTop: DesignSystem.layout.pageTop,
         paddingBottom: 24,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.dashboardMaxWidth,
+    },
+    workspaceGrid: {
+        gap: 12,
+    },
+    workspaceGridWide: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 14,
+    },
+    workspaceColumn: {
+        minWidth: 0,
+    },
+    workspaceLeftColumn: {
+        flex: 1.15,
+    },
+    workspaceRightColumn: {
+        flex: 1,
+    },
+    heroCard: {
+        marginBottom: 16,
+    },
+    heroChipRow: {
+        marginTop: 10,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    headerActions: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        alignItems: 'center',
+    },
+    searchRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginBottom: 16,
+    },
+    searchRowWide: {
+        alignItems: 'center',
+    },
+    searchInputWrap: {
+        flex: 1,
+    },
+    searchInput: {
+        marginBottom: 0,
+    },
+    searchPendingText: {
+        marginTop: 4,
+    },
+    scanButtonWrap: {
+        width: 60,
+        justifyContent: 'center',
     },
     sectionTitle: {
         fontWeight: '700',
     },
     searchResultCard: {
         overflow: 'hidden',
+    },
+    catalogSkeletonRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        paddingVertical: 10,
     },
     catalogHeaderRow: {
         flexDirection: 'row',
@@ -812,8 +1198,22 @@ const styles = StyleSheet.create({
     searchItemName: {
         fontWeight: '600',
     },
-    itemDivider: {
-        marginBottom: 2,
+    billMetaRow: {
+        flexDirection: 'column',
+        gap: 12,
+        marginBottom: 12,
+    },
+    billMetaRowWide: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+    },
+    partyInputRow: {
+        flexDirection: 'column',
+        gap: 10,
+    },
+    partyInputRowWide: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
     },
     cartHeader: {
         marginBottom: 8,
@@ -855,13 +1255,58 @@ const styles = StyleSheet.create({
     },
     checkoutCard: {
         marginTop: 8,
-        borderWidth: 1,
-        elevation: 3,
+        borderWidth: 0,
+        elevation: 0,
     },
     checkoutContent: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingVertical: 8,
+    },
+    blockingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingSheet: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: DesignSystem.spacing.xs,
+        paddingHorizontal: DesignSystem.spacing.md,
+        paddingVertical: DesignSystem.spacing.sm,
+        borderRadius: DesignSystem.radius.lg,
+    },
+    drawerBackdrop: {
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    checkoutDrawer: {
+        borderTopLeftRadius: DesignSystem.radius.xl,
+        borderTopRightRadius: DesignSystem.radius.xl,
+        borderWidth: 0,
+        paddingHorizontal: DesignSystem.spacing.md,
+        paddingTop: DesignSystem.spacing.md,
+        paddingBottom: DesignSystem.spacing.lg,
+        gap: DesignSystem.spacing.xs,
+    },
+    checkoutDrawerHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: DesignSystem.spacing.sm,
+    },
+    qrBlock: {
+        alignItems: 'center',
+        gap: 6,
+        marginVertical: 8,
+    },
+    qrImage: {
+        borderRadius: DesignSystem.radius.sm,
+    },
+    drawerActionsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: DesignSystem.spacing.xs,
     },
 });

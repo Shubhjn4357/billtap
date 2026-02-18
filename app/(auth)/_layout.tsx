@@ -3,9 +3,9 @@ import { useUserStore } from '../../src/store';
 import { LoadingScreen } from '../../src/components/common/LoadingScreen';
 
 export default function AuthLayout() {
-    const { isAuthenticated, isLoading, hasHydrated: userHydrated } = useUserStore();
+    const { isAuthenticated, hasHydrated: userHydrated } = useUserStore();
 
-    if (!userHydrated || isLoading) {
+    if (!userHydrated) {
         return <LoadingScreen message="Checking authentication..." />;
     }
 

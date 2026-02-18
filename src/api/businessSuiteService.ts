@@ -1,4 +1,18 @@
 import { apiClient } from './httpClient';
+import { offlineSyncService } from './offlineSyncService';
+import { isNetworkLikeError } from '../utils/errorGuards';
+import {
+    getOrgCachedValue,
+    ORG_FEE_REMINDERS_CACHE_KEY,
+    ORG_CONTEXT_CACHE_KEY,
+    ORG_LIST_CACHE_KEY,
+    ORG_MEMBERS_CACHE_KEY,
+    ORG_SETTINGS_CACHE_KEY,
+    ORG_SIGNATURES_CACHE_KEY,
+    ORG_STUDENTS_CACHE_KEY,
+    ORG_TEMPLATES_CACHE_KEY,
+    setOrgCachedValue,
+} from './businessSuiteCache';
 
 export interface PayrollSnapshot {
     attendanceCount: number;
@@ -257,17 +271,27 @@ export const businessSuiteService = {
     },
 
     async getMyOrganizations(): Promise<OrganizationMembership[]> {
-        const response = await apiClient.get<{
-            ok: boolean;
-            organizations?: OrganizationMembership[];
-            message?: string;
-        }>('/organizations/mine');
+        try {
+            const response = await apiClient.get<{
+                ok: boolean;
+                organizations?: OrganizationMembership[];
+                message?: string;
+            }>('/organizations/mine');
 
-        if (!response.ok || !response.organizations) {
-            throw new Error(response.message || 'Failed to load organizations.');
+            if (!response.ok || !response.organizations) {
+                throw new Error(response.message || 'Failed to load organizations.');
+            }
+
+            await setOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, undefined, response.organizations);
+            return response.organizations;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+            const cached = await getOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, undefined);
+            if (cached) return cached;
+            throw error;
         }
-
-        return response.organizations;
     },
 
     async createOrganization(payload: {
@@ -289,6 +313,20 @@ export const businessSuiteService = {
             throw new Error(response.message || 'Failed to create organization.');
         }
 
+        const cached = await getOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, undefined) ?? [];
+        const next: OrganizationMembership[] = [
+            ...cached,
+            {
+                id: response.id,
+                name: payload.name,
+                code: payload.code,
+                currency: payload.currency ?? null,
+                role: 'owner',
+                permissions: {},
+            },
+        ];
+        await setOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, undefined, next);
+
         return response.id;
     },
 
@@ -296,35 +334,59 @@ export const businessSuiteService = {
         organization: OrganizationSummary;
         context: OrganizationContextPayload;
     }> {
-        const response = await apiClient.get<{
-            ok: boolean;
-            organization?: OrganizationSummary;
-            context?: OrganizationContextPayload;
-            message?: string;
-        }>(withOrgQuery('/organizations/current', organizationId));
+        try {
+            const response = await apiClient.get<{
+                ok: boolean;
+                organization?: OrganizationSummary;
+                context?: OrganizationContextPayload;
+                message?: string;
+            }>(withOrgQuery('/organizations/current', organizationId));
 
-        if (!response.ok || !response.organization || !response.context) {
-            throw new Error(response.message || 'Failed to load organization context.');
+            if (!response.ok || !response.organization || !response.context) {
+                throw new Error(response.message || 'Failed to load organization context.');
+            }
+
+            const payload = {
+                organization: response.organization,
+                context: response.context,
+            };
+            await setOrgCachedValue(ORG_CONTEXT_CACHE_KEY, organizationId ?? response.organization.id, payload);
+            return payload;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+            const cached = await getOrgCachedValue<{
+                organization: OrganizationSummary;
+                context: OrganizationContextPayload;
+            }>(ORG_CONTEXT_CACHE_KEY, organizationId);
+            if (cached) return cached;
+            throw error;
         }
-
-        return {
-            organization: response.organization,
-            context: response.context,
-        };
     },
 
     async getOrganizationMembers(organizationId?: string): Promise<OrganizationMember[]> {
-        const response = await apiClient.get<{
-            ok: boolean;
-            members?: OrganizationMember[];
-            message?: string;
-        }>(withOrgQuery('/organizations/members/current', organizationId));
+        try {
+            const response = await apiClient.get<{
+                ok: boolean;
+                members?: OrganizationMember[];
+                message?: string;
+            }>(withOrgQuery('/organizations/members/current', organizationId));
 
-        if (!response.ok || !response.members) {
-            throw new Error(response.message || 'Failed to load organization members.');
+            if (!response.ok || !response.members) {
+                throw new Error(response.message || 'Failed to load organization members.');
+            }
+
+            await setOrgCachedValue<OrganizationMember[]>(ORG_MEMBERS_CACHE_KEY, organizationId, response.members);
+            return response.members;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+            const cached = await getOrgCachedValue<OrganizationMember[]>(ORG_MEMBERS_CACHE_KEY, organizationId);
+            if (cached) return cached;
+            throw error;
         }
-
-        return response.members;
     },
 
     async addOrganizationMember(payload: {
@@ -343,6 +405,29 @@ export const businessSuiteService = {
             throw new Error(response.message || 'Failed to add staff member.');
         }
 
+        const cached = await getOrgCachedValue<OrganizationMember[]>(ORG_MEMBERS_CACHE_KEY, organizationId) ?? [];
+        await setOrgCachedValue<OrganizationMember[]>(
+            ORG_MEMBERS_CACHE_KEY,
+            organizationId,
+            [
+                ...cached,
+                {
+                    id: offlineSyncService.createLocalId('member'),
+                    userId: response.userId,
+                    organizationId: organizationId ?? '',
+                    role: payload.role,
+                    permissions: payload.permissions ?? {},
+                    isActive: true,
+                    phoneNumberSnapshot: payload.phoneNumber,
+                    user: {
+                        uid: response.userId,
+                        displayName: payload.displayName,
+                        phoneNumber: payload.phoneNumber,
+                    },
+                },
+            ]
+        );
+
         return response.userId;
     },
 
@@ -358,6 +443,23 @@ export const businessSuiteService = {
         if (!response.ok) {
             throw new Error(response.message || 'Failed to update member.');
         }
+
+        const cached = await getOrgCachedValue<OrganizationMember[]>(ORG_MEMBERS_CACHE_KEY, organizationId);
+        if (!cached) return;
+        await setOrgCachedValue<OrganizationMember[]>(
+            ORG_MEMBERS_CACHE_KEY,
+            organizationId,
+            cached.map((entry) => (
+                entry.id === memberId
+                    ? {
+                        ...entry,
+                        role: payload.role ?? entry.role,
+                        permissions: payload.permissions ?? entry.permissions,
+                        isActive: payload.isActive ?? entry.isActive,
+                    }
+                    : entry
+            ))
+        );
     },
 
     async removeOrganizationMember(memberId: string, organizationId?: string): Promise<void> {
@@ -367,59 +469,118 @@ export const businessSuiteService = {
         if (!response.ok) {
             throw new Error(response.message || 'Failed to remove member.');
         }
+
+        const cached = await getOrgCachedValue<OrganizationMember[]>(ORG_MEMBERS_CACHE_KEY, organizationId);
+        if (!cached) return;
+        await setOrgCachedValue<OrganizationMember[]>(
+            ORG_MEMBERS_CACHE_KEY,
+            organizationId,
+            cached.filter((entry) => entry.id !== memberId)
+        );
     },
 
     async getOrganizationSettings(organizationId?: string): Promise<Record<string, unknown>> {
-        const response = await apiClient.get<{
-            ok: boolean;
-            settings?: Record<string, unknown>;
-            message?: string;
-        }>(withOrgQuery('/organizations/settings/current', organizationId));
+        try {
+            const response = await apiClient.get<{
+                ok: boolean;
+                settings?: Record<string, unknown>;
+                message?: string;
+            }>(withOrgQuery('/organizations/settings/current', organizationId));
 
-        if (!response.ok || !response.settings) {
-            throw new Error(response.message || 'Failed to load organization settings.');
+            if (!response.ok || !response.settings) {
+                throw new Error(response.message || 'Failed to load organization settings.');
+            }
+
+            await setOrgCachedValue<Record<string, unknown>>(ORG_SETTINGS_CACHE_KEY, organizationId, response.settings);
+            return response.settings;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+
+            const cached = await getOrgCachedValue<Record<string, unknown>>(ORG_SETTINGS_CACHE_KEY, organizationId);
+            if (cached) return cached;
+            throw error;
         }
-
-        return response.settings;
     },
 
     async updateOrganizationSettings(
         settings: Record<string, unknown>,
         organizationId?: string
     ): Promise<Record<string, unknown>> {
-        const response = await apiClient.put<{
-            ok: boolean;
-            settings?: Record<string, unknown>;
-            message?: string;
-        }>(withOrgQuery('/organizations/settings/current', organizationId), { settings });
+        try {
+            const response = await apiClient.put<{
+                ok: boolean;
+                settings?: Record<string, unknown>;
+                message?: string;
+            }>(withOrgQuery('/organizations/settings/current', organizationId), { settings });
 
-        if (!response.ok || !response.settings) {
-            throw new Error(response.message || 'Failed to update organization settings.');
+            if (!response.ok || !response.settings) {
+                throw new Error(response.message || 'Failed to update organization settings.');
+            }
+
+            await setOrgCachedValue<Record<string, unknown>>(ORG_SETTINGS_CACHE_KEY, organizationId, response.settings);
+            return response.settings;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+
+            await setOrgCachedValue<Record<string, unknown>>(ORG_SETTINGS_CACHE_KEY, organizationId, settings);
+            await offlineSyncService.enqueueMutation({
+                type: 'update_organization_settings',
+                payload: {
+                    organizationId,
+                    settings,
+                },
+            });
+            return settings;
         }
-
-        return response.settings;
     },
 
     async getTemplates(organizationId?: string): Promise<BillTemplateEntry[]> {
-        const response = await apiClient.get<{ ok: boolean; templates?: BillTemplateEntry[]; message?: string }>(
-            withOrgQuery('/organizations/templates/current', organizationId)
-        );
+        try {
+            const response = await apiClient.get<{ ok: boolean; templates?: BillTemplateEntry[]; message?: string }>(
+                withOrgQuery('/organizations/templates/current', organizationId)
+            );
 
-        if (!response.ok || !response.templates) {
-            throw new Error(response.message || 'Failed to load templates.');
+            if (!response.ok || !response.templates) {
+                throw new Error(response.message || 'Failed to load templates.');
+            }
+
+            await setOrgCachedValue<BillTemplateEntry[]>(ORG_TEMPLATES_CACHE_KEY, organizationId, response.templates);
+            return response.templates;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+
+            const cached = await getOrgCachedValue<BillTemplateEntry[]>(ORG_TEMPLATES_CACHE_KEY, organizationId);
+            if (cached) return cached;
+            throw error;
         }
-
-        return response.templates;
     },
 
     async getSignatures(organizationId?: string): Promise<SignatureEntry[]> {
-        const response = await apiClient.get<{ ok: boolean; signatures?: SignatureEntry[]; message?: string }>(
-            withOrgQuery('/organizations/signatures/current', organizationId)
-        );
-        if (!response.ok || !response.signatures) {
-            throw new Error(response.message || 'Failed to load signatures.');
+        try {
+            const response = await apiClient.get<{ ok: boolean; signatures?: SignatureEntry[]; message?: string }>(
+                withOrgQuery('/organizations/signatures/current', organizationId)
+            );
+            if (!response.ok || !response.signatures) {
+                throw new Error(response.message || 'Failed to load signatures.');
+            }
+
+            await setOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId, response.signatures);
+            return response.signatures;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+
+            const cached = await getOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId);
+            if (cached) return cached;
+            throw error;
         }
-        return response.signatures;
     },
 
     async createSignature(payload: {
@@ -428,48 +589,139 @@ export const businessSuiteService = {
         signatureUrl?: string;
         isDefault?: boolean;
     }, organizationId?: string): Promise<string> {
-        const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>(
-            withOrgQuery('/organizations/signatures/current', organizationId),
-            payload
-        );
-        if (!response.ok || !response.id) {
-            throw new Error(response.message || 'Failed to save signature.');
+        try {
+            const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>(
+                withOrgQuery('/organizations/signatures/current', organizationId),
+                payload
+            );
+            if (!response.ok || !response.id) {
+                throw new Error(response.message || 'Failed to save signature.');
+            }
+
+            const cached = await getOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId) ?? [];
+            const nextEntry: SignatureEntry = {
+                id: response.id,
+                name: payload.name ?? null,
+                signatureData: payload.signatureData ?? null,
+                signatureUrl: payload.signatureUrl ?? null,
+                isDefault: Boolean(payload.isDefault),
+            };
+            const next = [...cached.filter((entry) => entry.id !== response.id), nextEntry].map((entry) => ({
+                ...entry,
+                isDefault: nextEntry.isDefault ? entry.id === nextEntry.id : entry.isDefault,
+            }));
+            await setOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId, next);
+            return response.id;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+
+            const localId = offlineSyncService.createLocalId('signature');
+            const cached = await getOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId) ?? [];
+            const shouldDefault = payload.isDefault ?? cached.length === 0;
+            const nextEntry: SignatureEntry = {
+                id: localId,
+                name: payload.name ?? null,
+                signatureData: payload.signatureData ?? null,
+                signatureUrl: payload.signatureUrl ?? null,
+                isDefault: shouldDefault,
+            };
+            const next = [...cached.filter((entry) => entry.id !== localId), nextEntry].map((entry) => ({
+                ...entry,
+                isDefault: shouldDefault ? entry.id === localId : entry.isDefault,
+            }));
+            await setOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId, next);
+            await offlineSyncService.enqueueMutation({
+                type: 'create_signature',
+                payload: {
+                    organizationId,
+                    localId,
+                    name: payload.name,
+                    signatureData: payload.signatureData,
+                    signatureUrl: payload.signatureUrl,
+                    isDefault: shouldDefault,
+                },
+            });
+            return localId;
         }
-        return response.id;
     },
 
     async setDefaultSignature(signatureId: string, organizationId?: string): Promise<void> {
-        const response = await apiClient.post<{ ok: boolean; message?: string }>(
-            withOrgQuery(`/organizations/signatures/current/${signatureId}/default`, organizationId)
-        );
-        if (!response.ok) {
-            throw new Error(response.message || 'Failed to set default signature.');
+        let queuedForLater = false;
+        try {
+            const response = await apiClient.post<{ ok: boolean; message?: string }>(
+                withOrgQuery(`/organizations/signatures/current/${signatureId}/default`, organizationId)
+            );
+            if (!response.ok) {
+                throw new Error(response.message || 'Failed to set default signature.');
+            }
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+            queuedForLater = true;
+            await offlineSyncService.enqueueMutation({
+                type: 'set_default_signature',
+                payload: {
+                    organizationId,
+                    signatureId,
+                },
+            });
         }
+
+        const cached = await getOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId);
+        if (!cached || cached.length === 0) return;
+        const next = cached.map((entry) => ({ ...entry, isDefault: entry.id === signatureId }));
+        await setOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId, next);
+        if (queuedForLater) return;
     },
 
     async getInstitutionStudents(organizationId?: string): Promise<InstitutionStudent[]> {
-        const response = await apiClient.get<{ ok: boolean; students?: InstitutionStudent[]; message?: string }>(
-            withOrgQuery('/institution/students', organizationId)
-        );
+        try {
+            const response = await apiClient.get<{ ok: boolean; students?: InstitutionStudent[]; message?: string }>(
+                withOrgQuery('/institution/students', organizationId)
+            );
 
-        if (!response.ok || !response.students) {
-            throw new Error(response.message || 'Failed to load students.');
+            if (!response.ok || !response.students) {
+                throw new Error(response.message || 'Failed to load students.');
+            }
+
+            await setOrgCachedValue<InstitutionStudent[]>(ORG_STUDENTS_CACHE_KEY, organizationId, response.students);
+            return response.students;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+
+            const cached = await getOrgCachedValue<InstitutionStudent[]>(ORG_STUDENTS_CACHE_KEY, organizationId);
+            if (cached) return cached;
+            throw error;
         }
-
-        return response.students;
     },
 
     async getDueFeeReminders(dueBefore?: string, organizationId?: string): Promise<FeeReminderInvoice[]> {
         const query = dueBefore ? `?dueBefore=${encodeURIComponent(dueBefore)}` : '';
-        const response = await apiClient.get<{ ok: boolean; reminders?: FeeReminderInvoice[]; message?: string }>(
-            withOrgQuery(`/institution/fee-reminders/due${query}`, organizationId)
-        );
+        try {
+            const response = await apiClient.get<{ ok: boolean; reminders?: FeeReminderInvoice[]; message?: string }>(
+                withOrgQuery(`/institution/fee-reminders/due${query}`, organizationId)
+            );
 
-        if (!response.ok || !response.reminders) {
-            throw new Error(response.message || 'Failed to load due reminders.');
+            if (!response.ok || !response.reminders) {
+                throw new Error(response.message || 'Failed to load due reminders.');
+            }
+
+            await setOrgCachedValue<FeeReminderInvoice[]>(ORG_FEE_REMINDERS_CACHE_KEY, organizationId, response.reminders);
+            return response.reminders;
+        } catch (error: unknown) {
+            if (!isNetworkLikeError(error)) {
+                throw error;
+            }
+
+            const cached = await getOrgCachedValue<FeeReminderInvoice[]>(ORG_FEE_REMINDERS_CACHE_KEY, organizationId);
+            if (cached) return cached;
+            throw error;
         }
-
-        return response.reminders;
     },
 
     async sendFeeReminderWhatsApp(payload: {

@@ -10,54 +10,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: amber_gold 
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #d97706;
+        min-height: 190px;
+        border: 2px solid #B45309;
         border-radius: 14px;
-        background: #fffbeb;
-        color: #4a3410;
+        background: #FFF8E8;
+        color: #3D2A0D;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #B45309;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #B45309;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #d97706;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #92400E;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #3D2A0D;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #B45309;
+        border-color: #3D2A0D;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -73,54 +158,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: charcoal_cl
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #52525b;
+        min-height: 190px;
+        border: 2px solid #3F3F46;
         border-radius: 14px;
-        background: #f4f4f5;
-        color: #27272a;
+        background: #F4F4F5;
+        color: #18181B;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #3F3F46;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #3F3F46;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #52525b;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #52525B;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #18181B;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #3F3F46;
+        border-color: #18181B;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -136,54 +306,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: forest_pro 
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #047857;
+        min-height: 190px;
+        border: 2px solid #0F766E;
         border-radius: 14px;
-        background: #ecfdf5;
-        color: #064e3b;
+        background: #EAFBF0;
+        color: #0B3B2E;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #0F766E;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0F766E;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #047857;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #115E59;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #0B3B2E;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #0F766E;
+        border-color: #0B3B2E;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -199,54 +454,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: indigo_mode
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #4f46e5;
+        min-height: 190px;
+        border: 2px solid #4F46E5;
         border-radius: 14px;
-        background: #eef2ff;
-        color: #1e1b4b;
+        background: #EEF2FF;
+        color: #1E1B4B;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #4F46E5;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #4F46E5;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #4f46e5;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #4338CA;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #1E1B4B;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #4F46E5;
+        border-color: #1E1B4B;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -262,54 +602,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: mint_fresh 
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #10b981;
+        min-height: 190px;
+        border: 2px solid #059669;
         border-radius: 14px;
-        background: #e8fff7;
-        color: #114737;
+        background: #ECFDF5;
+        color: #064E3B;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #059669;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #059669;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #10b981;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #065F46;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #064E3B;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #059669;
+        border-color: #064E3B;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -325,54 +750,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: ocean_blue 
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #2563eb;
+        min-height: 190px;
+        border: 2px solid #1D4ED8;
         border-radius: 14px;
-        background: #e8f2ff;
-        color: #0c2f4f;
+        background: #EEF4FF;
+        color: #0F2B52;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #1D4ED8;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #1D4ED8;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #2563eb;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #1E40AF;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #0F2B52;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #1D4ED8;
+        border-color: #0F2B52;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -388,54 +898,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: peach_soft 
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #ea580c;
+        min-height: 190px;
+        border: 2px solid #EA580C;
         border-radius: 14px;
-        background: #fff7ed;
-        color: #7c2d12;
+        background: #FFF7ED;
+        color: #7C2D12;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #EA580C;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #EA580C;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #ea580c;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #9A3412;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #7C2D12;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #EA580C;
+        border-color: #7C2D12;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -451,54 +1046,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: rose_modern
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #db2777;
+        min-height: 190px;
+        border: 2px solid #DB2777;
         border-radius: 14px;
-        background: #fff1f5;
+        background: #FFF1F5;
         color: #831843;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #DB2777;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #DB2777;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #db2777;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #9D174D;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #831843;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #DB2777;
+        border-color: #831843;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -514,54 +1194,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: ruby_classi
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #e11d48;
+        min-height: 190px;
+        border: 2px solid #DB2777;
         border-radius: 14px;
-        background: #fff1f2;
-        color: #4a0817;
+        background: #FFF1F2;
+        color: #4A0817;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #DB2777;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #DB2777;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #e11d48;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #9D174D;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #4A0817;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #DB2777;
+        border-color: #4A0817;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -577,54 +1342,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: slate_busin
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
+        min-height: 190px;
         border: 2px solid #334155;
         border-radius: 14px;
-        background: #f8fafc;
-        color: #1e293b;
+        background: #F8FAFC;
+        color: #0F172A;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #334155;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #334155;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #334155;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #475569;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #0F172A;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #334155;
+        border-color: #0F172A;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -640,54 +1490,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: sunrise_ora
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #f97316;
+        min-height: 190px;
+        border: 2px solid #EA580C;
         border-radius: 14px;
-        background: #fff2e8;
-        color: #4a2207;
+        background: #FFF4EB;
+        color: #47280C;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #EA580C;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #EA580C;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #f97316;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #9A3412;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #47280C;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #EA580C;
+        border-color: #47280C;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"
@@ -703,54 +1638,139 @@ exports[`buildBusinessCardHtml > renders stable markup for template: teal_minima
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
-        border: 2px solid #0f766e;
+        min-height: 190px;
+        border: 2px solid #0F766E;
         border-radius: 14px;
-        background: #f0fdfa;
-        color: #134e4a;
+        background: #F0FDFA;
+        color: #134E4A;
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #0F766E;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0F766E;
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #0f766e;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0F766E;
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #134E4A;
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: #0F766E;
+        border-color: #134E4A;
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">ACME Traders &amp; Sons</div>
-      <div class="owner">Shubh Jain</div>
-      <div class="tagline">Trusted billing partner since 2016</div>
-      <div class="row">Phone: +91 98765 43210</div>
-      <div class="row">Email: hello@acme.test</div>
-      <div class="row">Website: https://acme.test</div>
-      <div class="row">Address: Main Road, Ratlam</div>
-      <div class="gst">GSTIN: 23ABCDE1234F1Z5</div>
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">AT</div>
+            <div>
+              <div class="title">ACME Traders &amp; Sons</div>
+              <div class="owner">Shubh Jain</div>
+            </div>
+          </div>
+          <div class="tagline">Trusted billing partner since 2016</div>
+          <div class="details">
+            <div class="detail-row">+91 98765 43210</div>
+            <div class="detail-row">hello@acme.test</div>
+            <div class="detail-row">https://acme.test</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">ACME Traders &amp; Sons</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">Main Road, Ratlam</div>
+          <div class="address">GSTIN: 23ABCDE1234F1Z5</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>"

@@ -1,7 +1,25 @@
 const fs = require('fs');
 const path = require('path');
+const parseArgs = () => {
+    const args = process.argv.slice(2);
+    const map = {};
+    for (let i = 0; i < args.length; i += 1) {
+        const arg = args[i];
+        if (!arg.startsWith('--')) continue;
+        const key = arg.slice(2);
+        const next = args[i + 1];
+        if (!next || next.startsWith('--')) {
+            map[key] = 'true';
+            continue;
+        }
+        map[key] = next;
+        i += 1;
+    }
+    return map;
+};
 
-const bumpType = (process.env.BUMP_TYPE || 'patch').toLowerCase();
+const args = parseArgs();
+const bumpType = (process.env.BUMP_TYPE || Object.keys(args)[0] || 'patch').toLowerCase();
 if (!['patch', 'minor', 'major'].includes(bumpType)) {
     throw new Error(`Invalid BUMP_TYPE: ${bumpType}`);
 }

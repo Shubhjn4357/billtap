@@ -61,8 +61,8 @@ interface SettingsState {
     currencySymbol: string;
     setCurrency: (symbol: string) => void;
     autoTheme: boolean;
-    themeMode: 'light' | 'dark';
-    setThemeMode: (mode: 'light' | 'dark' | 'auto') => void;
+    themeMode: 'light' | 'dark' | 'system';
+    setThemeMode: (mode: 'light' | 'dark' | 'system' | 'auto') => void;
     hasSeenOnboarding: boolean;
     setHasSeenOnboarding: (seen: boolean) => void;
     notificationSoundEnabled: boolean;
@@ -84,11 +84,14 @@ export const useSettingsStore = create<SettingsState>()(
                         : Config.defaultCurrency,
                 }),
             autoTheme: true,
-            themeMode: 'light',
-            setThemeMode: (mode) => set({
-                autoTheme: mode === 'auto',
-                themeMode: mode === 'auto' ? 'light' : mode,
-            }),
+            themeMode: 'system',
+            setThemeMode: (mode) => {
+                const resolvedMode = mode === 'auto' ? 'system' : mode;
+                set({
+                    autoTheme: resolvedMode === 'system',
+                    themeMode: resolvedMode,
+                });
+            },
             hasSeenOnboarding: false,
             setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
             notificationSoundEnabled: true,
@@ -99,11 +102,10 @@ export const useSettingsStore = create<SettingsState>()(
         {
             name: 'settings-storage',
             storage: createJSONStorage(() => AsyncStorage),
-            version: 1,
+            version: 2,
             partialize: (state) => ({
                 isBiometricEnabled: state.isBiometricEnabled,
                 currencySymbol: state.currencySymbol,
-                autoTheme: state.autoTheme,
                 themeMode: state.themeMode,
                 hasSeenOnboarding: state.hasSeenOnboarding,
                 notificationSoundEnabled: state.notificationSoundEnabled,
@@ -112,7 +114,45 @@ export const useSettingsStore = create<SettingsState>()(
                 if (version === 0) {
                     return { ...persistedState, hasSeenOnboarding: false };
                 }
-                return persistedState;
+
+                if (version === 1) {
+                    const nextThemeMode = persistedState?.autoTheme
+                        ? 'system'
+                        : (persistedState?.themeMode === 'dark' ? 'dark' : 'light');
+
+                    return {
+                        ...persistedState,
+                        themeMode: nextThemeMode,
+                    };
+                }
+
+                if (!persistedState || typeof persistedState !== 'object') {
+                    return persistedState;
+                }
+
+                return {
+                    ...persistedState,
+                    themeMode: persistedState.themeMode === 'dark'
+                        ? 'dark'
+                        : persistedState.themeMode === 'light'
+                            ? 'light'
+                            : 'system',
+                };
+            },
+            merge: (persistedState, currentState) => {
+                const persisted = (persistedState ?? {}) as Partial<SettingsState>;
+                const themeMode = persisted.themeMode === 'dark'
+                    ? 'dark'
+                    : persisted.themeMode === 'light'
+                        ? 'light'
+                        : 'system';
+
+                return {
+                    ...currentState,
+                    ...persisted,
+                    themeMode,
+                    autoTheme: themeMode === 'system',
+                };
             },
             onRehydrateStorage: () => (state) => {
                 state?.setHydrated(true);
@@ -130,7 +170,12 @@ interface NetworkState {
 export const useNetworkStore = create<NetworkState>((set) => ({
     isConnected: true,
     isInternetReachable: true,
-    setNetworkState: ({ isConnected, isInternetReachable }) => set({ isConnected, isInternetReachable }),
+    setNetworkState: ({ isConnected, isInternetReachable }) => set((state) => {
+        if (state.isConnected === isConnected && state.isInternetReachable === isInternetReachable) {
+            return state;
+        }
+        return { isConnected, isInternetReachable };
+    }),
 }));
 
 interface OrganizationContextState {
@@ -164,9 +209,22 @@ export const useOrganizationStore = create<OrganizationState>()(
                 permissions: {},
                 settings: {},
             },
-            setSelectedOrganizationId: (organizationId) => set({ selectedOrganizationId: organizationId }),
+            setSelectedOrganizationId: (organizationId) => set((state) => {
+                if (state.selectedOrganizationId === organizationId) {
+                    return state;
+                }
+                return { selectedOrganizationId: organizationId };
+            }),
             setOrganizationContext: (context) => set((state) => {
                 if (!context) {
+                    if (
+                        state.context.role === null &&
+                        state.context.ownerUserId === null &&
+                        Object.keys(state.context.permissions).length === 0 &&
+                        Object.keys(state.context.settings).length === 0
+                    ) {
+                        return state;
+                    }
                     return {
                         context: {
                             role: null,
@@ -193,13 +251,23 @@ export const useOrganizationStore = create<OrganizationState>()(
                     settings: { ...settings },
                 },
             })),
-            clearOrganizationContext: () => set({
-                context: {
-                    role: null,
-                    ownerUserId: null,
-                    permissions: {},
-                    settings: {},
-                },
+            clearOrganizationContext: () => set((state) => {
+                if (
+                    state.context.role === null &&
+                    state.context.ownerUserId === null &&
+                    Object.keys(state.context.permissions).length === 0 &&
+                    Object.keys(state.context.settings).length === 0
+                ) {
+                    return state;
+                }
+                return {
+                    context: {
+                        role: null,
+                        ownerUserId: null,
+                        permissions: {},
+                        settings: {},
+                    },
+                };
             }),
         }),
         {

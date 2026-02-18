@@ -7,21 +7,22 @@ export interface BusinessCardTemplate {
     background: string;
     foreground: string;
     accent: string;
+    muted?: string;
 }
 
 export const BUSINESS_CARD_TEMPLATES: BusinessCardTemplate[] = [
-    { key: 'sunrise_orange', name: 'Sunrise Orange', background: '#fff2e8', foreground: '#4a2207', accent: '#f97316' },
-    { key: 'ocean_blue', name: 'Ocean Blue', background: '#e8f2ff', foreground: '#0c2f4f', accent: '#2563eb' },
-    { key: 'mint_fresh', name: 'Mint Fresh', background: '#e8fff7', foreground: '#114737', accent: '#10b981' },
-    { key: 'charcoal_clean', name: 'Charcoal Clean', background: '#f4f4f5', foreground: '#27272a', accent: '#52525b' },
-    { key: 'ruby_classic', name: 'Ruby Classic', background: '#fff1f2', foreground: '#4a0817', accent: '#e11d48' },
-    { key: 'amber_gold', name: 'Amber Gold', background: '#fffbeb', foreground: '#4a3410', accent: '#d97706' },
-    { key: 'forest_pro', name: 'Forest Pro', background: '#ecfdf5', foreground: '#064e3b', accent: '#047857' },
-    { key: 'indigo_modern', name: 'Indigo Modern', background: '#eef2ff', foreground: '#1e1b4b', accent: '#4f46e5' },
-    { key: 'slate_business', name: 'Slate Business', background: '#f8fafc', foreground: '#1e293b', accent: '#334155' },
-    { key: 'peach_soft', name: 'Peach Soft', background: '#fff7ed', foreground: '#7c2d12', accent: '#ea580c' },
-    { key: 'teal_minimal', name: 'Teal Minimal', background: '#f0fdfa', foreground: '#134e4a', accent: '#0f766e' },
-    { key: 'rose_modern', name: 'Rose Modern', background: '#fff1f5', foreground: '#831843', accent: '#db2777' },
+    { key: 'sunrise_orange', name: 'Sunrise Orange', background: '#FFF4EB', foreground: '#47280C', accent: '#EA580C', muted: '#9A3412' },
+    { key: 'ocean_blue', name: 'Ocean Blue', background: '#EEF4FF', foreground: '#0F2B52', accent: '#1D4ED8', muted: '#1E40AF' },
+    { key: 'mint_fresh', name: 'Mint Fresh', background: '#ECFDF5', foreground: '#064E3B', accent: '#059669', muted: '#065F46' },
+    { key: 'charcoal_clean', name: 'Charcoal Clean', background: '#F4F4F5', foreground: '#18181B', accent: '#3F3F46', muted: '#52525B' },
+    { key: 'ruby_classic', name: 'Ruby Classic', background: '#FFF1F2', foreground: '#4A0817', accent: '#DB2777', muted: '#9D174D' },
+    { key: 'amber_gold', name: 'Amber Gold', background: '#FFF8E8', foreground: '#3D2A0D', accent: '#B45309', muted: '#92400E' },
+    { key: 'forest_pro', name: 'Forest Pro', background: '#EAFBF0', foreground: '#0B3B2E', accent: '#0F766E', muted: '#115E59' },
+    { key: 'indigo_modern', name: 'Indigo Modern', background: '#EEF2FF', foreground: '#1E1B4B', accent: '#4F46E5', muted: '#4338CA' },
+    { key: 'slate_business', name: 'Slate Business', background: '#F8FAFC', foreground: '#0F172A', accent: '#334155', muted: '#475569' },
+    { key: 'peach_soft', name: 'Peach Soft', background: '#FFF7ED', foreground: '#7C2D12', accent: '#EA580C', muted: '#9A3412' },
+    { key: 'teal_minimal', name: 'Teal Minimal', background: '#F0FDFA', foreground: '#134E4A', accent: '#0F766E', muted: '#0F766E' },
+    { key: 'rose_modern', name: 'Rose Modern', background: '#FFF1F5', foreground: '#831843', accent: '#DB2777', muted: '#9D174D' },
 ];
 
 export interface BusinessCardPayload {
@@ -48,6 +49,16 @@ const pickTemplate = (templateKey: string): BusinessCardTemplate => {
     return BUSINESS_CARD_TEMPLATES.find((entry) => entry.key === templateKey) ?? BUSINESS_CARD_TEMPLATES[0];
 };
 
+const buildInitials = (value: string): string => {
+    const tokens = value
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2);
+    if (tokens.length === 0) return 'BS';
+    return tokens.map((token) => token[0]?.toUpperCase() ?? '').join('');
+};
+
 export const buildBusinessCardHtml = (payload: BusinessCardPayload): string => {
     const template = pickTemplate(payload.templateKey);
     const businessName = escapeHtml(payload.businessName || 'Business Name');
@@ -58,6 +69,8 @@ export const buildBusinessCardHtml = (payload: BusinessCardPayload): string => {
     const address = escapeHtml(payload.address || '-');
     const tagline = escapeHtml(payload.tagline || '');
     const gstNumber = escapeHtml(payload.gstNumber || '');
+    const initials = escapeHtml(buildInitials(payload.businessName || 'Business'));
+    const muted = template.muted ?? template.accent;
 
     return `
 <!DOCTYPE html>
@@ -68,54 +81,139 @@ export const buildBusinessCardHtml = (payload: BusinessCardPayload): string => {
       body {
         margin: 0;
         padding: 24px;
-        font-family: Arial, sans-serif;
+        background: #f5f7fb;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .cards-row {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       .card {
         width: 340px;
-        height: 190px;
+        min-height: 190px;
         border: 2px solid ${template.accent};
         border-radius: 14px;
         background: ${template.background};
         color: ${template.foreground};
         box-sizing: border-box;
-        padding: 16px;
+        padding: 14px;
+      }
+      .front-top {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid ${template.accent};
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: ${template.accent};
       }
       .title {
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 21px;
+        font-weight: 800;
         line-height: 1.1;
       }
       .owner {
-        margin-top: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        color: ${template.accent};
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: ${muted};
       }
       .tagline {
-        margin-top: 6px;
-        font-size: 11px;
-      }
-      .row {
         margin-top: 8px;
         font-size: 11px;
       }
-      .gst {
+      .detail-row {
+        font-size: 11px;
+        line-height: 1.45;
+        color: ${template.foreground};
+      }
+      .details {
         margin-top: 8px;
-        font-size: 10px;
-        opacity: 0.9;
+        display: grid;
+        gap: 2px;
+      }
+      .back {
+        background: ${template.accent};
+        border-color: ${template.foreground};
+        color: #ffffff;
+      }
+      .back-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .back-title {
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .qr {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .qr::before {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2px solid #101828;
+        border-radius: 4px;
+      }
+      .address {
+        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        opacity: 0.95;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="title">${businessName}</div>
-      <div class="owner">${ownerName}</div>
-      ${tagline ? `<div class="tagline">${tagline}</div>` : ''}
-      <div class="row">Phone: ${phone}</div>
-      <div class="row">Email: ${email}</div>
-      <div class="row">Website: ${website}</div>
-      <div class="row">Address: ${address}</div>
-      ${gstNumber ? `<div class="gst">GSTIN: ${gstNumber}</div>` : ''}
+    <div class="page">
+      <div class="cards-row">
+        <div class="card">
+          <div class="front-top">
+            <div class="badge">${initials}</div>
+            <div>
+              <div class="title">${businessName}</div>
+              <div class="owner">${ownerName}</div>
+            </div>
+          </div>
+          ${tagline ? `<div class="tagline">${tagline}</div>` : ''}
+          <div class="details">
+            <div class="detail-row">${phone}</div>
+            <div class="detail-row">${email}</div>
+            <div class="detail-row">${website}</div>
+          </div>
+        </div>
+
+        <div class="card back">
+          <div class="back-head">
+            <div class="back-title">${businessName}</div>
+            <div class="qr"></div>
+          </div>
+          <div class="address">${address}</div>
+          ${gstNumber ? `<div class="address">GSTIN: ${gstNumber}</div>` : ''}
+        </div>
+      </div>
     </div>
   </body>
 </html>`;

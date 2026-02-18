@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
-import { Modal, StyleSheet, View } from 'react-native';
+import { Modal, Platform, StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { AppButton } from '../common/AppButton';
 
 interface SignatureCaptureModalProps {
@@ -10,7 +9,13 @@ interface SignatureCaptureModalProps {
     onSave: (dataUrl: string) => void;
 }
 
-const buildSignatureHtml = (strokeColor: string, gridColor: string) => `
+const buildSignatureHtml = (
+    strokeColor: string,
+    gridColor: string,
+    pageBackground: string,
+    surfaceBackground: string,
+    textColor: string
+) => `
 <!doctype html>
 <html>
 <head>
@@ -22,8 +27,9 @@ const buildSignatureHtml = (strokeColor: string, gridColor: string) => `
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #ffffff;
+      background: ${pageBackground};
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: ${textColor};
     }
     .wrap {
       display: flex;
@@ -54,14 +60,14 @@ const buildSignatureHtml = (strokeColor: string, gridColor: string) => `
       height: 100%;
       display: block;
       touch-action: none;
-      background: #fff;
+      background: ${surfaceBackground};
     }
     .actions {
       display: flex;
       gap: 8px;
       padding: 8px;
       border-top: 1px solid ${gridColor};
-      background: #fff;
+      background: ${surfaceBackground};
     }
     button {
       flex: 1;
@@ -69,8 +75,8 @@ const buildSignatureHtml = (strokeColor: string, gridColor: string) => `
       border-radius: 8px;
       padding: 10px 8px;
       font-size: 14px;
-      background: #fff;
-      color: #111;
+      background: ${surfaceBackground};
+      color: ${textColor};
     }
     button.primary {
       background: ${strokeColor};
@@ -195,12 +201,36 @@ const buildSignatureHtml = (strokeColor: string, gridColor: string) => `
 
 export const SignatureCaptureModal = ({ visible, onClose, onSave }: SignatureCaptureModalProps) => {
     const theme = useTheme();
+    const overlayBackground = theme.colors.backdrop;
 
     const signatureHtml = useMemo(() => {
-        return buildSignatureHtml(theme.colors.primary, theme.colors.outline);
-    }, [theme.colors.outline, theme.colors.primary]);
+        return buildSignatureHtml(
+            theme.colors.primary,
+            theme.colors.outline,
+            theme.colors.background,
+            theme.colors.surface,
+            theme.colors.onSurface
+        );
+    }, [
+        theme.colors.background,
+        theme.colors.onSurface,
+        theme.colors.outline,
+        theme.colors.primary,
+        theme.colors.surface,
+    ]);
 
-    const handleMessage = (event: WebViewMessageEvent) => {
+    const WebViewComponent = useMemo(() => {
+        if (Platform.OS === 'web') return null;
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const webview = require('react-native-webview') as typeof import('react-native-webview');
+            return webview.WebView;
+        } catch {
+            return null;
+        }
+    }, []);
+
+    const handleMessage = (event: { nativeEvent: { data: string } }) => {
         const raw = event.nativeEvent.data;
         try {
             const parsed = JSON.parse(raw) as {
@@ -222,20 +252,28 @@ export const SignatureCaptureModal = ({ visible, onClose, onSave }: SignatureCap
             transparent
             onRequestClose={onClose}
         >
-            <View style={styles.overlay}>
+            <View style={[styles.overlay, { backgroundColor: overlayBackground }]}>
                 <View style={[styles.sheet, { backgroundColor: theme.colors.background }]}>
                     <Text variant="titleMedium" style={styles.title}>
                         Draw Signature
                     </Text>
                     <View style={styles.canvasContainer}>
-                        <WebView
-                            source={{ html: signatureHtml }}
-                            onMessage={handleMessage}
-                            originWhitelist={['*']}
-                            javaScriptEnabled
-                            domStorageEnabled
-                            style={styles.webview}
-                        />
+                        {WebViewComponent ? (
+                            <WebViewComponent
+                                source={{ html: signatureHtml }}
+                                onMessage={handleMessage}
+                                originWhitelist={['*']}
+                                javaScriptEnabled
+                                domStorageEnabled
+                                style={[styles.webview, { backgroundColor: theme.colors.surface }]}
+                            />
+                        ) : (
+                            <View style={[styles.webFallback, { borderColor: theme.colors.outline }]}>
+                                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
+                                    Signature capture is available on Android/iOS builds.
+                                </Text>
+                            </View>
+                        )}
                     </View>
                     <View style={styles.footer}>
                         <AppButton mode="outlined" onPress={onClose}>
@@ -251,7 +289,6 @@ export const SignatureCaptureModal = ({ visible, onClose, onSave }: SignatureCap
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.35)',
         justifyContent: 'flex-end',
     },
     sheet: {
@@ -274,7 +311,14 @@ const styles = StyleSheet.create({
     },
     webview: {
         flex: 1,
-        backgroundColor: '#fff',
+    },
+    webFallback: {
+        flex: 1,
+        borderWidth: 1,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 12,
     },
     footer: {
         marginTop: 10,

@@ -78,24 +78,32 @@ jobs:
           SMOKE_OTP_CODE_SECRET: ${{ secrets.SMOKE_OTP_CODE }}
           SMOKE_CREATE_SECOND_STORE_SECRET: ${{ secrets.SMOKE_CREATE_SECOND_STORE }}
           SMOKE_REMINDER_RECIPIENT_SECRET: ${{ secrets.SMOKE_REMINDER_RECIPIENT }}
+          SMOKE_REQUIRED_SECRET: ${{ secrets.SMOKE_REQUIRED }}
           SMOKE_API_BASE_URL_VAR: ${{ vars.SMOKE_API_BASE_URL }}
           SMOKE_PHONE_NUMBER_VAR: ${{ vars.SMOKE_PHONE_NUMBER }}
           SMOKE_OTP_CODE_VAR: ${{ vars.SMOKE_OTP_CODE }}
           SMOKE_CREATE_SECOND_STORE_VAR: ${{ vars.SMOKE_CREATE_SECOND_STORE }}
           SMOKE_REMINDER_RECIPIENT_VAR: ${{ vars.SMOKE_REMINDER_RECIPIENT }}
+          SMOKE_REQUIRED_VAR: ${{ vars.SMOKE_REQUIRED }}
         run: |
           export SMOKE_API_BASE_URL="${SMOKE_API_BASE_URL_SECRET:-$SMOKE_API_BASE_URL_VAR}"
           export SMOKE_PHONE_NUMBER="${SMOKE_PHONE_NUMBER_SECRET:-$SMOKE_PHONE_NUMBER_VAR}"
           export SMOKE_OTP_CODE="${SMOKE_OTP_CODE_SECRET:-$SMOKE_OTP_CODE_VAR}"
           export SMOKE_CREATE_SECOND_STORE="${SMOKE_CREATE_SECOND_STORE_SECRET:-$SMOKE_CREATE_SECOND_STORE_VAR}"
           export SMOKE_REMINDER_RECIPIENT="${SMOKE_REMINDER_RECIPIENT_SECRET:-$SMOKE_REMINDER_RECIPIENT_VAR}"
+          export SMOKE_REQUIRED="${SMOKE_REQUIRED_SECRET:-$SMOKE_REQUIRED_VAR}"
 
           if [ -z "${SMOKE_API_BASE_URL}" ] || [ -z "${SMOKE_PHONE_NUMBER}" ]; then
-            echo "::error::SMOKE_API_BASE_URL and SMOKE_PHONE_NUMBER are required for pre-build smoke validation."
-            echo "Set them in GitHub Secrets or Variables:"
-            echo "- secrets.SMOKE_API_BASE_URL or vars.SMOKE_API_BASE_URL"
-            echo "- secrets.SMOKE_PHONE_NUMBER or vars.SMOKE_PHONE_NUMBER"
-            exit 1
+            if [ "${SMOKE_REQUIRED}" = "true" ]; then
+              echo "::error::SMOKE_REQUIRED=true, but SMOKE_API_BASE_URL and SMOKE_PHONE_NUMBER are missing."
+              echo "Set them in GitHub Secrets or Variables:"
+              echo "- secrets.SMOKE_API_BASE_URL or vars.SMOKE_API_BASE_URL"
+              echo "- secrets.SMOKE_PHONE_NUMBER or vars.SMOKE_PHONE_NUMBER"
+              exit 1
+            fi
+
+            echo "::warning::Skipping smoke:e2e (set SMOKE_REQUIRED=true to enforce)."
+            exit 0
           fi
 
           pnpm run smoke:e2e
@@ -139,7 +147,7 @@ jobs:
             echo "BILLTAP_UPLOAD_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> $GITHUB_ENV
             echo "Release signing configured from GitHub secrets/vars."
           else
-            echo "::warning::Release signing inputs not fully configured. Build will fall back to debug signing and release SHA1/SHA256 will be not_available."
+            echo "::warning::Release signing inputs not fully configured. Build will fall back to debug signing and release SHA1/SHA256 will use debug fingerprints."
             echo "Set ALL of these in Secrets or Variables:"
             echo "- ANDROID_KEYSTORE_BASE64"
             echo "- ANDROID_KEYSTORE_PASSWORD"
@@ -185,8 +193,8 @@ jobs:
             } >> build-metadata/signing-fingerprints.txt
           else
             {
-              echo "release_sha1=not_available"
-              echo "release_sha256=not_available"
+              echo "release_sha1=$DEBUG_SHA1"
+              echo "release_sha256=$DEBUG_SHA256"
               echo "release_signing_mode=debug_fallback_or_missing_release_keystore"
             } >> build-metadata/signing-fingerprints.txt
           fi

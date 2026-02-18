@@ -1,11 +1,10 @@
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useRef } from 'react';
-import { Alert, Platform } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, InteractionManager, Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Updates from 'expo-updates';
-import '../src/utils/reanimated';
 
 import { authService } from '../src/api/authService';
 import { ApiError } from '../src/api/httpClient';
@@ -23,6 +22,11 @@ import { normalizeCurrencyCode } from '../src/utils/formatters';
 import { useNetworkStore, useSettingsStore, useUserStore } from '../src/store';
 import { LoadingScreen } from '../src/components/common/LoadingScreen';
 
+if (Platform.OS !== 'web') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('../src/utils/reanimated.native');
+}
+
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync().catch(() => {
     // Ignore splash race conditions during fast refresh.
@@ -32,6 +36,7 @@ export default function RootLayout() {
     const [loaded] = useFonts({
         SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     });
+    const [startupReady, setStartupReady] = useState(false);
 
     const hasBootstrappedRef = useRef(false);
     const user = useUserStore((state) => state.user);
@@ -39,19 +44,13 @@ export default function RootLayout() {
     const setLoading = useUserStore((state) => state.setLoading);
     const setUser = useUserStore((state) => state.setUser);
     const userHydrated = useUserStore((state) => state.hasHydrated);
+    const setUserHydrated = useUserStore((state) => state.setHydrated);
     const settingsHydrated = useSettingsStore((state) => state.hasHydrated);
+    const setSettingsHydrated = useSettingsStore((state) => state.setHydrated);
     const { setCurrency } = useSettingsStore();
     const { setNetworkState } = useNetworkStore();
     const userId = user?.uid;
     const userSubscriptionStatus = user?.subscriptionStatus;
-
-    useEffect(() => {
-        NetInfo.configure({
-            // Prevent noisy web reachability probes like HEAD http://localhost:8082/.
-            // Native platforms keep reachability checks enabled.
-            reachabilityShouldRun: () => Platform.OS !== 'web',
-        });
-    }, []);
 
     useEffect(() => {
         const originalAlert = Alert.alert;
@@ -68,6 +67,43 @@ export default function RootLayout() {
             Alert.alert = originalAlert;
         };
     }, []);
+
+    // Fail-safe: avoid permanent loading if persisted store hydration fails due corrupted web storage.
+    useEffect(() => {
+        if (userHydrated && settingsHydrated) return;
+        const timer = setTimeout(() => {
+            if (!useUserStore.getState().hasHydrated) {
+                setUserHydrated(true);
+            }
+            if (!useSettingsStore.getState().hasHydrated) {
+                setSettingsHydrated(true);
+            }
+        }, 3000);
+        return () => clearTimeout(timer);
+    }, [setSettingsHydrated, setUserHydrated, settingsHydrated, userHydrated]);
+
+    // Fail-safe: avoid indefinite "Initializing..." if a startup network call hangs unexpectedly.
+    useEffect(() => {
+        if (!isLoading) return;
+        const timer = setTimeout(() => {
+            if (useUserStore.getState().isLoading) {
+                useUserStore.getState().setLoading(false);
+            }
+        }, 15000);
+        return () => clearTimeout(timer);
+    }, [isLoading]);
+
+    // Fail-safe: unlock startup UI even if bootstrapping gets interrupted.
+    useEffect(() => {
+        if (startupReady) return;
+        const timer = setTimeout(() => {
+            if (!startupReady) {
+                useUserStore.getState().setLoading(false);
+                setStartupReady(true);
+            }
+        }, 20000);
+        return () => clearTimeout(timer);
+    }, [startupReady]);
 
     // Bootstrap: Load user profile on mount
     useEffect(() => {
@@ -97,11 +133,9 @@ export default function RootLayout() {
                     currency: profileCurrency,
                 });
                 setCurrency(profileCurrency);
-                try {
-                    await offlineSyncService.flushQueue();
-                } catch {
+                void offlineSyncService.flushQueue().catch(() => {
                     // Ignore transient sync failures during bootstrap.
-                }
+                });
             } catch (error: unknown) {
                 if (!isMounted) return;
                 const isUnauthorized = error instanceof ApiError && error.status === 401;
@@ -129,6 +163,7 @@ export default function RootLayout() {
             } finally {
                 if (isMounted) {
                     setLoading(false);
+                    setStartupReady(true);
                 }
             }
         };
@@ -168,7 +203,13 @@ export default function RootLayout() {
     useEffect(() => {
         if (!userId) return;
         if (Platform.OS === 'web') return;
-        void paymentReminderService.syncPendingPaymentReminders();
+        const interaction = InteractionManager.runAfterInteractions(() => {
+            void paymentReminderService.syncPendingPaymentReminders();
+        });
+
+        return () => {
+            interaction.cancel();
+        };
     }, [userId, userSubscriptionStatus]);
 
     // Monitor network state
@@ -197,38 +238,50 @@ export default function RootLayout() {
     }, [setNetworkState, userId]);
 
     useEffect(() => {
-        offlineSyncService.startAutoSync();
+        const interaction = InteractionManager.runAfterInteractions(() => {
+            offlineSyncService.startAutoSync();
+        });
+
         return () => {
+            interaction.cancel();
             offlineSyncService.stopAutoSync();
         };
     }, []);
 
     // Hide splash screen when ready
     useEffect(() => {
-        if (loaded && userHydrated && settingsHydrated && !isLoading) {
+        if (loaded && userHydrated && settingsHydrated && startupReady) {
             SplashScreen.hideAsync();
         }
-    }, [isLoading, loaded, settingsHydrated, userHydrated]);
+    }, [loaded, settingsHydrated, startupReady, userHydrated]);
 
     useEffect(() => {
         if (__DEV__ || Platform.OS === 'web' || !Updates.isEnabled) return;
 
-        const runAutoUpdateCheck = async () => {
-            try {
-                const update = await Updates.checkForUpdateAsync();
-                if (!update.isAvailable) return;
-                await Updates.fetchUpdateAsync();
-            } catch {
-                // Silent auto-update checks should not block app startup.
-            }
-        };
+        const interaction = InteractionManager.runAfterInteractions(() => {
+            void (async () => {
+                try {
+                    const update = await Updates.checkForUpdateAsync();
+                    if (!update.isAvailable) return;
+                    await Updates.fetchUpdateAsync();
+                } catch {
+                    // Silent auto-update checks should not block app startup.
+                }
+            })();
+        });
 
-        void runAutoUpdateCheck();
+        return () => {
+            interaction.cancel();
+        };
     }, []);
 
     // Show loading screen while fonts load or auth is bootstrapping
-    if (!loaded || !userHydrated || !settingsHydrated || isLoading) {
-        return <LoadingScreen message="Initializing..." />;
+    if (!loaded || !userHydrated || !settingsHydrated || !startupReady) {
+        return (
+            <AppThemeProvider>
+                <LoadingScreen message="Initializing..." />
+            </AppThemeProvider>
+        );
     }
 
     return (

@@ -1,9 +1,10 @@
 import React, { useCallback, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text, Switch, useTheme } from 'react-native-paper';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { AppDateField } from '../../components/common/AppDateField';
 import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
@@ -11,6 +12,7 @@ import { useAppDialog } from '../../components/providers/DialogProvider';
 import { operationsService, type AccountingPeriod, type ApprovalRequest, type AuditLogEntry, type BusinessControls } from '../../api/operationsService';
 import { useAuth } from '../../hooks/useAuth';
 import { isNetworkLikeError } from '../../utils/errorGuards';
+import { DesignSystem } from '../../constants/DesignSystem';
 
 interface OperationsControlsPayload {
     controls: BusinessControls;
@@ -38,11 +40,15 @@ export const OperationsControlsScreen = () => {
     const { user } = useAuth();
     const dialog = useAppDialog();
     const queryClient = useQueryClient();
+    const { width } = useWindowDimensions();
+    const isWide = width >= 960;
 
     const [controlsSaving, setControlsSaving] = useState(false);
-    const [periodStart, setPeriodStart] = useState('');
-    const [periodEnd, setPeriodEnd] = useState('');
+    const [periodStartDate, setPeriodStartDate] = useState<Date | undefined>(undefined);
+    const [periodEndDate, setPeriodEndDate] = useState<Date | undefined>(undefined);
     const [periodNotes, setPeriodNotes] = useState('');
+    const periodStart = periodStartDate ? periodStartDate.toISOString().slice(0, 10) : '';
+    const periodEnd = periodEndDate ? periodEndDate.toISOString().slice(0, 10) : '';
 
     const operationsQuery = useQuery({
         queryKey: OPERATIONS_CONTROLS_QUERY_KEY,
@@ -63,6 +69,7 @@ export const OperationsControlsScreen = () => {
         },
         staleTime: 15_000,
     });
+    const { refetch: refetchOperations } = operationsQuery;
 
     const controls = operationsQuery.data?.controls ?? null;
     const approvals = operationsQuery.data?.approvals ?? [];
@@ -73,8 +80,8 @@ export const OperationsControlsScreen = () => {
     const showQueryError = Boolean(queryError) && !isNetworkLikeError(queryError);
 
     const loadData = useCallback(async () => {
-        await operationsQuery.refetch();
-    }, [operationsQuery]);
+        await refetchOperations();
+    }, [refetchOperations]);
 
     const updateControl = async (field: keyof BusinessControls, value: boolean) => {
         const currentPayload = operationsQuery.data;
@@ -124,7 +131,11 @@ export const OperationsControlsScreen = () => {
 
     const handleLockPeriod = async () => {
         if (!periodStart || !periodEnd) {
-            dialog.alert('Missing Dates', 'Enter period start and end in YYYY-MM-DD format.');
+            dialog.alert('Missing Dates', 'Select period start and end dates.');
+            return;
+        }
+        if (periodStartDate && periodEndDate && periodStartDate.getTime() > periodEndDate.getTime()) {
+            dialog.alert('Invalid Dates', 'Period start cannot be after period end.');
             return;
         }
         try {
@@ -156,171 +167,266 @@ export const OperationsControlsScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-                <PageHeaderCard
-                    title="Operations Controls"
-                    subtitle={`Role: ${(user?.role ?? 'owner').toUpperCase()}`}
-                />
+            <ScrollView contentContainerStyle={styles.content}>
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                    <PageHeaderCard
+                        title="Operations Controls"
+                        subtitle={`Role: ${(user?.role ?? 'owner').toUpperCase()}`}
+                    />
 
-                {showQueryError && (
-                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 10 }}>
-                        {getErrorMessage(queryError, 'Failed to load operations controls.')}
-                    </Text>
-                )}
-
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
-                        Control Toggles
-                    </Text>
-                    <Text variant="bodySmall" style={{ color: theme.colors.outline, marginBottom: 10 }}>
-                        Maker-checker, approvals, and accounting period lock controls.
-                    </Text>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text variant="bodyMedium">Enable maker-checker</Text>
-                        <Switch
-                            value={controls?.makerCheckerEnabled ?? false}
-                            disabled={!controls || controlsSaving}
-                            onValueChange={(value) => { void updateControl('makerCheckerEnabled', value); }}
-                        />
-                    </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text variant="bodyMedium">Journal approval required</Text>
-                        <Switch
-                            value={controls?.journalApprovalRequired ?? false}
-                            disabled={!controls || controlsSaving}
-                            onValueChange={(value) => { void updateControl('journalApprovalRequired', value); }}
-                        />
-                    </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text variant="bodyMedium">Stock adjustment approval required</Text>
-                        <Switch
-                            value={controls?.stockAdjustmentApprovalRequired ?? false}
-                            disabled={!controls || controlsSaving}
-                            onValueChange={(value) => { void updateControl('stockAdjustmentApprovalRequired', value); }}
-                        />
-                    </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text variant="bodyMedium">Period lock enforcement</Text>
-                        <Switch
-                            value={controls?.periodLockEnabled ?? false}
-                            disabled={!controls || controlsSaving}
-                            onValueChange={(value) => { void updateControl('periodLockEnabled', value); }}
-                        />
-                    </View>
-                </AppCard>
-
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
-                        Pending Approvals ({approvals.length})
-                    </Text>
-                    {approvals.length === 0 ? (
-                        <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 8 }}>
-                            No pending approval requests.
+                    {showQueryError && (
+                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                            {getErrorMessage(queryError, 'Failed to load operations controls.')}
                         </Text>
-                    ) : (
-                        approvals.slice(0, 12).map((entry) => (
-                            <View key={entry.id} style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.colors.outlineVariant }}>
-                                <Text variant="bodyMedium" style={{ fontWeight: '600' }}>
-                                    {entry.requestType} | {entry.module.toUpperCase()}
+                    )}
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>
+                            Control Toggles
+                        </Text>
+                        <Text variant="bodySmall" style={[styles.mutedText, { color: theme.colors.outline }]}>
+                            Maker-checker, approvals, and accounting period lock controls.
+                        </Text>
+                        <View style={styles.toggleRow}>
+                            <Text variant="bodyMedium">Enable maker-checker</Text>
+                            <Switch
+                                value={controls?.makerCheckerEnabled ?? false}
+                                disabled={!controls || controlsSaving}
+                                onValueChange={(value) => { void updateControl('makerCheckerEnabled', value); }}
+                            />
+                        </View>
+                        <View style={styles.toggleRow}>
+                            <Text variant="bodyMedium">Journal approval required</Text>
+                            <Switch
+                                value={controls?.journalApprovalRequired ?? false}
+                                disabled={!controls || controlsSaving}
+                                onValueChange={(value) => { void updateControl('journalApprovalRequired', value); }}
+                            />
+                        </View>
+                        <View style={styles.toggleRow}>
+                            <Text variant="bodyMedium">Stock adjustment approval required</Text>
+                            <Switch
+                                value={controls?.stockAdjustmentApprovalRequired ?? false}
+                                disabled={!controls || controlsSaving}
+                                onValueChange={(value) => { void updateControl('stockAdjustmentApprovalRequired', value); }}
+                            />
+                        </View>
+                        <View style={styles.toggleRowLast}>
+                            <Text variant="bodyMedium">Period lock enforcement</Text>
+                            <Switch
+                                value={controls?.periodLockEnabled ?? false}
+                                disabled={!controls || controlsSaving}
+                                onValueChange={(value) => { void updateControl('periodLockEnabled', value); }}
+                            />
+                        </View>
+                    </AppCard>
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>
+                            Pending Approvals ({approvals.length})
+                        </Text>
+                        {approvals.length === 0 ? (
+                            <Text variant="bodySmall" style={[styles.emptyText, { color: theme.colors.outline }]}>
+                                No pending approval requests.
+                            </Text>
+                        ) : (
+                            approvals.slice(0, 12).map((entry) => (
+                                <View
+                                    key={entry.id}
+                                    style={[styles.listDivider, { borderTopColor: theme.colors.outlineVariant }]}
+                                >
+                                    <Text variant="bodyMedium" style={styles.itemTitle}>
+                                        {entry.requestType} | {entry.module.toUpperCase()}
+                                    </Text>
+                                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                        Requested by: {entry.requestedBy} | {formatDateTime(entry.createdAt)}
+                                    </Text>
+                                    {!!entry.reason && (
+                                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                            Reason: {entry.reason}
+                                        </Text>
+                                    )}
+                                    <View style={styles.actionRow}>
+                                        <AppButton
+                                            mode="contained-tonal"
+                                            compact
+                                            style={styles.rightSpacedButton}
+                                            onPress={() => { void handleApprove(entry.id); }}
+                                        >
+                                            Approve
+                                        </AppButton>
+                                        <AppButton mode="outlined" compact onPress={() => { void handleReject(entry.id); }}>
+                                            Reject
+                                        </AppButton>
+                                    </View>
+                                </View>
+                            ))
+                        )}
+                    </AppCard>
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>
+                            Accounting Period Lock
+                        </Text>
+                        <Text variant="bodySmall" style={[styles.mutedText, { color: theme.colors.outline }]}>
+                            Select a date range to lock accounting period.
+                        </Text>
+                        <AppDateField
+                            label="Period Start"
+                            value={periodStartDate}
+                            onChange={setPeriodStartDate}
+                            placeholder="Select start date"
+                        />
+                        <AppDateField
+                            label="Period End"
+                            value={periodEndDate}
+                            onChange={setPeriodEndDate}
+                            placeholder="Select end date"
+                            minimumDate={periodStartDate}
+                        />
+                        <AppInput
+                            label="Notes"
+                            value={periodNotes}
+                            onChangeText={setPeriodNotes}
+                            placeholder="Optional note"
+                        />
+                        <AppButton mode="contained" onPress={() => { void handleLockPeriod(); }}>
+                            Lock Period
+                        </AppButton>
+                        {periods.map((period) => (
+                            <View
+                                key={period.id}
+                                style={[styles.listDividerTight, { borderTopColor: theme.colors.outlineVariant }]}
+                            >
+                                <Text variant="bodyMedium" style={styles.itemTitle}>
+                                    {period.periodStart.slice(0, 10)} to {period.periodEnd.slice(0, 10)}
                                 </Text>
                                 <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                                    Requested by: {entry.requestedBy} | {formatDateTime(entry.createdAt)}
+                                    Status: {period.status.toUpperCase()}
                                 </Text>
-                                {!!entry.reason && (
-                                    <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                                        Reason: {entry.reason}
-                                    </Text>
-                                )}
-                                <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                                    <AppButton mode="contained-tonal" compact style={{ marginRight: 8 }} onPress={() => { void handleApprove(entry.id); }}>
-                                        Approve
-                                    </AppButton>
-                                    <AppButton mode="outlined" compact onPress={() => { void handleReject(entry.id); }}>
-                                        Reject
-                                    </AppButton>
+                                <View style={styles.actionRowCompact}>
+                                    {period.status !== 'closed' && (
+                                        <AppButton
+                                            mode="contained-tonal"
+                                            compact
+                                            style={styles.rightSpacedButton}
+                                            onPress={() => { void handleClosePeriod(period.id); }}
+                                        >
+                                            Close
+                                        </AppButton>
+                                    )}
+                                    {period.status !== 'open' && (
+                                        <AppButton mode="outlined" compact onPress={() => { void handleReopenPeriod(period.id); }}>
+                                            Reopen
+                                        </AppButton>
+                                    )}
                                 </View>
                             </View>
-                        ))
-                    )}
-                </AppCard>
+                        ))}
+                    </AppCard>
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
-                        Accounting Period Lock
-                    </Text>
-                    <Text variant="bodySmall" style={{ color: theme.colors.outline, marginBottom: 10 }}>
-                        Enter dates in YYYY-MM-DD.
-                    </Text>
-                    <AppInput
-                        label="Period Start"
-                        value={periodStart}
-                        onChangeText={setPeriodStart}
-                        placeholder="2026-01-01"
-                    />
-                    <AppInput
-                        label="Period End"
-                        value={periodEnd}
-                        onChangeText={setPeriodEnd}
-                        placeholder="2026-01-31"
-                    />
-                    <AppInput
-                        label="Notes"
-                        value={periodNotes}
-                        onChangeText={setPeriodNotes}
-                        placeholder="Optional note"
-                    />
-                    <AppButton mode="contained" onPress={() => { void handleLockPeriod(); }}>
-                        Lock Period
-                    </AppButton>
-                    {periods.map((period) => (
-                        <View key={period.id} style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.colors.outlineVariant }}>
-                            <Text variant="bodyMedium" style={{ fontWeight: '600' }}>
-                                {period.periodStart.slice(0, 10)} to {period.periodEnd.slice(0, 10)}
-                            </Text>
-                            <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                                Status: {period.status.toUpperCase()}
-                            </Text>
-                            <View style={{ flexDirection: 'row', marginTop: 6 }}>
-                                {period.status !== 'closed' && (
-                                    <AppButton mode="contained-tonal" compact style={{ marginRight: 8 }} onPress={() => { void handleClosePeriod(period.id); }}>
-                                        Close
-                                    </AppButton>
-                                )}
-                                {period.status !== 'open' && (
-                                    <AppButton mode="outlined" compact onPress={() => { void handleReopenPeriod(period.id); }}>
-                                        Reopen
-                                    </AppButton>
-                                )}
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>
+                            Audit Log Explorer
+                        </Text>
+                        <Text variant="bodySmall" style={[styles.mutedTextSmall, { color: theme.colors.outline }]}>
+                            Recent activity ({auditLogs.length} entries).
+                        </Text>
+                        {auditLogs.slice(0, 20).map((log) => (
+                            <View
+                                key={log.id}
+                                style={[styles.listDividerCompact, { borderTopColor: theme.colors.outlineVariant }]}
+                            >
+                                <Text variant="bodyMedium" style={styles.itemTitle}>
+                                    {log.module.toUpperCase()} | {log.action}
+                                </Text>
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                    {formatDateTime(log.createdAt)} | {log.actorUid}
+                                </Text>
                             </View>
-                        </View>
-                    ))}
-                </AppCard>
+                        ))}
+                    </AppCard>
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>
-                        Audit Log Explorer
-                    </Text>
-                    <Text variant="bodySmall" style={{ color: theme.colors.outline, marginBottom: 8 }}>
-                        Recent activity ({auditLogs.length} entries).
-                    </Text>
-                    {auditLogs.slice(0, 20).map((log) => (
-                        <View key={log.id} style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.colors.outlineVariant }}>
-                            <Text variant="bodyMedium" style={{ fontWeight: '600' }}>
-                                {log.module.toUpperCase()} | {log.action}
-                            </Text>
-                            <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                                {formatDateTime(log.createdAt)} | {log.actorUid}
-                            </Text>
-                        </View>
-                    ))}
-                </AppCard>
-
-                {(loading || operationsQuery.isRefetching) && (
-                    <Text variant="bodySmall" style={{ color: theme.colors.outline, textAlign: 'center' }}>
-                        Refreshing operations data...
-                    </Text>
-                )}
+                    {(loading || operationsQuery.isRefetching) && (
+                        <Text variant="bodySmall" style={[styles.refreshingText, { color: theme.colors.outline }]}>
+                            Refreshing operations data...
+                        </Text>
+                    )}
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+        gap: DesignSystem.layout.sectionGap,
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.pageMaxWidth,
+    },
+    sectionTitle: {
+        fontWeight: '700',
+    },
+    mutedText: {
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    mutedTextSmall: {
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    errorText: {
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    toggleRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    toggleRowLast: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    emptyText: {
+        marginTop: DesignSystem.spacing.xs,
+    },
+    listDivider: {
+        marginTop: DesignSystem.spacing.sm + 2,
+        paddingTop: DesignSystem.spacing.sm + 2,
+        borderTopWidth: 1,
+    },
+    listDividerTight: {
+        marginTop: DesignSystem.spacing.sm,
+        paddingTop: DesignSystem.spacing.sm,
+        borderTopWidth: 1,
+    },
+    listDividerCompact: {
+        marginTop: DesignSystem.spacing.xs + 2,
+        paddingTop: DesignSystem.spacing.xs + 2,
+        borderTopWidth: 1,
+    },
+    itemTitle: {
+        fontWeight: '600',
+    },
+    actionRow: {
+        flexDirection: 'row',
+        marginTop: DesignSystem.spacing.xs + 2,
+    },
+    actionRowCompact: {
+        flexDirection: 'row',
+        marginTop: DesignSystem.spacing.xs,
+    },
+    rightSpacedButton: {
+        marginRight: DesignSystem.spacing.xs + 2,
+    },
+    refreshingText: {
+        textAlign: 'center',
+    },
+});

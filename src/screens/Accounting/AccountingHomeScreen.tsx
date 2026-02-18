@@ -1,6 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useMemo } from 'react';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
@@ -9,8 +8,10 @@ import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
+import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 
 interface AccountingSnapshot {
     totalDebit: number;
@@ -27,6 +28,8 @@ interface AccountingSnapshot {
 export const AccountingHomeScreen = () => {
     const router = useRouter();
     const theme = useTheme();
+    const { width } = useWindowDimensions();
+    const isWide = width >= 960;
     const snapshotQuery = useQuery({
         queryKey: ['accounting-home-snapshot'] as const,
         queryFn: async (): Promise<AccountingSnapshot> => {
@@ -49,8 +52,9 @@ export const AccountingHomeScreen = () => {
                 lowStockCount: inventoryValuation.lowStockCount,
             };
         },
-        staleTime: 30_000,
+        staleTime: 45_000,
     });
+    const { refetch: refetchSnapshot } = snapshotQuery;
 
     const snapshot = snapshotQuery.data ?? null;
     const loading = snapshotQuery.isFetching && !snapshot;
@@ -61,99 +65,130 @@ export const AccountingHomeScreen = () => {
         return snapshotQuery.error instanceof Error ? snapshotQuery.error.message : 'Failed to load accounting summary.';
     }, [snapshotQuery.error]);
 
-    useFocusEffect(
-        useCallback(() => {
-            void snapshotQuery.refetch();
-        }, [snapshotQuery])
-    );
+    useFocusRefresh(() => {
+        void refetchSnapshot();
+    }, { minIntervalMs: 10_000 });
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 100 }}>
-                <PageHeaderCard
-                    title="Accounting Suite"
-                    subtitle="Ledger, GST and financial controls in one place."
-                />
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                    <PageHeaderCard
+                        title="Accounting Suite"
+                        subtitle="Ledger, GST and financial controls in one place."
+                    />
 
-                {error ? (
-                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 12 }}>
-                        {error}
-                    </Text>
-                ) : null}
+                    {error ? (
+                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                            {error}
+                        </Text>
+                    ) : null}
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>Trial Balance Health</Text>
-                    <View style={{ marginTop: 8 }}>
-                        <Text variant="bodySmall">
-                            Total Debit: {snapshot ? formatCurrency(snapshot.totalDebit, 'INR') : '-'}
-                        </Text>
-                        <Text variant="bodySmall">
-                            Total Credit: {snapshot ? formatCurrency(snapshot.totalCredit, 'INR') : '-'}
-                        </Text>
-                        <Text variant="bodySmall" style={{ color: snapshot?.isBalanced ? theme.colors.primary : theme.colors.error }}>
-                            {snapshot ? (snapshot.isBalanced ? 'Balanced' : 'Not Balanced') : '-'}
-                        </Text>
-                    </View>
-                </AppCard>
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>Trial Balance Health</Text>
+                        <View style={styles.summaryBlock}>
+                            <Text variant="bodySmall">
+                                Total Debit: {snapshot ? formatCurrency(snapshot.totalDebit, 'INR') : '-'}
+                            </Text>
+                            <Text variant="bodySmall">
+                                Total Credit: {snapshot ? formatCurrency(snapshot.totalCredit, 'INR') : '-'}
+                            </Text>
+                            <Text variant="bodySmall" style={{ color: snapshot?.isBalanced ? theme.colors.primary : theme.colors.error }}>
+                                {snapshot ? (snapshot.isBalanced ? 'Balanced' : 'Not Balanced') : '-'}
+                            </Text>
+                        </View>
+                    </AppCard>
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>P&L Snapshot</Text>
-                    <Text variant="headlineSmall" style={{ marginTop: 8, color: theme.colors.primary }}>
-                        {snapshot ? formatCurrency(snapshot.netProfit, 'INR') : '-'}
-                    </Text>
-                </AppCard>
-
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>Inventory Snapshot</Text>
-                    <View style={{ marginTop: 8 }}>
-                        <Text variant="bodySmall">
-                            Cost Value: {snapshot ? formatCurrency(snapshot.stockCostValue, 'INR') : '-'}
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>P&L Snapshot</Text>
+                        <Text variant="headlineSmall" style={[styles.primaryMetric, { color: theme.colors.primary }]}>
+                            {snapshot ? formatCurrency(snapshot.netProfit, 'INR') : '-'}
                         </Text>
-                        <Text variant="bodySmall">
-                            Low Stock Items: {snapshot ? snapshot.lowStockCount : '-'}
-                        </Text>
-                    </View>
-                </AppCard>
+                    </AppCard>
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>GST Snapshot</Text>
-                    <View style={{ marginTop: 8 }}>
-                        <Text variant="bodySmall">Output Tax: {snapshot ? formatCurrency(snapshot.outputTax, 'INR') : '-'}</Text>
-                        <Text variant="bodySmall">Input Tax: {snapshot ? formatCurrency(snapshot.inputTax, 'INR') : '-'}</Text>
-                        <Text variant="bodySmall" style={{ color: theme.colors.primary }}>
-                            Net GST Payable: {snapshot ? formatCurrency(snapshot.netGstPayable, 'INR') : '-'}
-                        </Text>
-                    </View>
-                </AppCard>
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>Inventory Snapshot</Text>
+                        <View style={styles.summaryBlock}>
+                            <Text variant="bodySmall">
+                                Cost Value: {snapshot ? formatCurrency(snapshot.stockCostValue, 'INR') : '-'}
+                            </Text>
+                            <Text variant="bodySmall">
+                                Low Stock Items: {snapshot ? snapshot.lowStockCount : '-'}
+                            </Text>
+                        </View>
+                    </AppCard>
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>Actions</Text>
-                    <AppButton mode="contained" onPress={() => router.push('/accounting/accounts' as never)}>
-                        Manage Accounts
-                    </AppButton>
-                    <AppButton mode="contained-tonal" onPress={() => router.push('/accounting/journal' as never)}>
-                        Post Journal Entry
-                    </AppButton>
-                    <AppButton mode="outlined" onPress={() => router.push('/accounting/trial-balance' as never)}>
-                        View Trial Balance
-                    </AppButton>
-                    <AppButton mode="outlined" onPress={() => router.push('/accounting/profit-loss' as never)}>
-                        View Profit & Loss
-                    </AppButton>
-                    <AppButton mode="outlined" onPress={() => router.push('/accounting/balance-sheet' as never)}>
-                        View Balance Sheet
-                    </AppButton>
-                    <AppButton mode="outlined" onPress={() => router.push('/accounting/gst' as never)}>
-                        View GST Summary
-                    </AppButton>
-                    <AppButton mode="outlined" onPress={() => router.push('/accounting/inventory' as never)}>
-                        Inventory Insights
-                    </AppButton>
-                    <AppButton mode="text" onPress={() => { void snapshotQuery.refetch(); }} loading={loading}>
-                        Refresh
-                    </AppButton>
-                </AppCard>
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>GST Snapshot</Text>
+                        <View style={styles.summaryBlock}>
+                            <Text variant="bodySmall">Output Tax: {snapshot ? formatCurrency(snapshot.outputTax, 'INR') : '-'}</Text>
+                            <Text variant="bodySmall">Input Tax: {snapshot ? formatCurrency(snapshot.inputTax, 'INR') : '-'}</Text>
+                            <Text variant="bodySmall" style={{ color: theme.colors.primary }}>
+                                Net GST Payable: {snapshot ? formatCurrency(snapshot.netGstPayable, 'INR') : '-'}
+                            </Text>
+                        </View>
+                    </AppCard>
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>Actions</Text>
+                        <AppButton mode="contained" onPress={() => router.push('/accounting/accounts' as never)}>
+                            Manage Accounts
+                        </AppButton>
+                        <AppButton mode="contained-tonal" onPress={() => router.push('/accounting/journal' as never)}>
+                            Post Journal Entry
+                        </AppButton>
+                        <AppButton mode="outlined" onPress={() => router.push('/accounting/trial-balance' as never)}>
+                            View Trial Balance
+                        </AppButton>
+                        <AppButton mode="outlined" onPress={() => router.push('/accounting/profit-loss' as never)}>
+                            View Profit & Loss
+                        </AppButton>
+                        <AppButton mode="outlined" onPress={() => router.push('/accounting/balance-sheet' as never)}>
+                            View Balance Sheet
+                        </AppButton>
+                        <AppButton mode="outlined" onPress={() => router.push('/accounting/gst' as never)}>
+                            View GST Summary
+                        </AppButton>
+                        <AppButton mode="outlined" onPress={() => router.push('/accounting/inventory' as never)}>
+                            Inventory Insights
+                        </AppButton>
+                        <AppButton mode="text" onPress={() => { void refetchSnapshot(); }} loading={loading}>
+                            Refresh
+                        </AppButton>
+                    </AppCard>
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+        gap: DesignSystem.layout.sectionGap,
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.pageMaxWidth,
+    },
+    errorText: {
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    sectionTitle: {
+        fontWeight: '700',
+    },
+    sectionTitleWithGap: {
+        fontWeight: '700',
+        marginBottom: DesignSystem.spacing.xs + 2,
+    },
+    summaryBlock: {
+        marginTop: DesignSystem.spacing.xs + 2,
+    },
+    primaryMetric: {
+        marginTop: DesignSystem.spacing.xs + 2,
+    },
+});

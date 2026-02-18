@@ -3,10 +3,10 @@ import { useUserStore, useSettingsStore } from '../src/store';
 import { LoadingScreen } from '../src/components/common/LoadingScreen';
 
 export default function Index() {
-    const { isAuthenticated, isLoading, user, hasHydrated: userHydrated } = useUserStore();
+    const { isAuthenticated, user, hasHydrated: userHydrated } = useUserStore();
     const { hasSeenOnboarding, hasHydrated: settingsHydrated } = useSettingsStore();
 
-    if (!userHydrated || !settingsHydrated || isLoading) {
+    if (!userHydrated || !settingsHydrated) {
         return <LoadingScreen message="Getting started..." />;
     }
 

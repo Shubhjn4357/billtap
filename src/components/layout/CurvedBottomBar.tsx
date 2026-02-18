@@ -1,13 +1,21 @@
 import type { BottomTabNavigationOptions, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Surface, Text, useTheme, Portal, Divider } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AnimatePresence, MotiView } from 'moti';
+import { MotionPresence, MotionView } from '../motion/Motion';
 import { useNetworkStore } from '../../store';
-import { CURVED_TAB_BAR_HEIGHT, getCurvedTabBarBottomPadding } from './tabBarMetrics';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import {
+    CURVED_TAB_BAR_HEIGHT,
+    SIDEBAR_NAV_MARGIN,
+    SIDEBAR_NAV_WIDTH,
+    getCurvedTabBarBottomPadding,
+    shouldUseSidebarNavigation,
+} from './tabBarMetrics';
+import { DesignSystem } from '../../constants/DesignSystem';
 
 interface ExtendedOptions extends BottomTabNavigationOptions {
     tabBarTestID?: string;
@@ -32,13 +40,35 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
     const [quickActionsOpen, setQuickActionsOpen] = React.useState(false);
     const theme = useTheme();
     const insets = useSafeAreaInsets();
+    const { width } = useWindowDimensions();
     const { isConnected, isInternetReachable } = useNetworkStore();
+    const {
+        canOpenBilling,
+        canCreateSale,
+        canCreatePurchase,
+        canManageInventory,
+        canManageParties,
+        canAccessBusinessSuite,
+    } = useOrganizationAccess();
+
+    const sidebarLayout = shouldUseSidebarNavigation(width);
     const bottomPadding = getCurvedTabBarBottomPadding(insets.bottom);
     const isOffline = isConnected === false || isInternetReachable === false;
+    const compactLayout = width < 390;
+    const tabButtonWidth = compactLayout ? 46 : width < 430 ? 50 : 54;
+    const tabButtonHeight = compactLayout ? 46 : 48;
+    const tabIconSize = compactLayout ? 20 : 21;
+    const quickFabSize = compactLayout ? 50 : 56;
+    const centerGapWidth = quickFabSize + (compactLayout ? 16 : 24);
+    const contentHorizontalPadding = compactLayout ? 4 : 8;
+    const contentWidth = width < 420 ? '97.5%' : '95.5%';
+    const quickFabOffset = compactLayout ? -20 : -24;
+
     const routeIndexByKey = React.useMemo(
         () => new Map(state.routes.map((route, index) => [route.key, index])),
         [state.routes]
     );
+
     const tabRoutes = React.useMemo(
         () => state.routes.filter((route) => {
             const options = descriptors[route.key].options as ExtendedOptions;
@@ -47,6 +77,7 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
         }),
         [descriptors, state.routes]
     );
+
     const leftRoutes = tabRoutes.slice(0, 2);
     const rightRoutes = tabRoutes.slice(2);
     const leftSlots = React.useMemo(
@@ -58,80 +89,105 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
         [rightRoutes]
     );
 
-    const quickActions = React.useMemo(() => ([
-        {
-            key: 'new-bill',
-            label: 'New Bill',
-            subtitle: 'Open billing terminal',
-            icon: 'calculator',
-            route: '/(main)/(tabs)/billing',
-        },
-        {
-            key: 'new-item',
-            label: 'Add Item',
-            subtitle: 'Create stock entry',
-            icon: 'package-variant-plus',
-            route: '/item/new',
-        },
-        {
-            key: 'new-party',
-            label: 'Add Party',
-            subtitle: 'Customer or supplier',
-            icon: 'account-plus',
-            route: '/party/new',
-        },
-        {
-            key: 'scan',
-            label: 'Scan Barcode',
-            subtitle: 'Capture SKU instantly',
-            icon: 'barcode-scan',
-            route: '/scan',
-        },
-        {
-            key: 'business-suite',
-            label: 'Business Suite',
-            subtitle: 'Operations and compliance',
-            icon: 'briefcase-outline',
-            route: '/business-suite',
-        },
-    ]), []);
+    const quickActions = React.useMemo(
+        () => ([
+            {
+                key: 'new-bill',
+                label: 'New Bill',
+                subtitle: 'Open billing terminal',
+                icon: 'calculator',
+                route: '/(main)/(tabs)/billing',
+                enabled: canOpenBilling && (canCreateSale || canCreatePurchase),
+            },
+            {
+                key: 'settlements',
+                label: 'Settlements',
+                subtitle: 'Settle unpaid invoices',
+                icon: 'cash-check',
+                route: '/transaction/settlements',
+                enabled: canOpenBilling,
+            },
+            {
+                key: 'new-item',
+                label: 'Add Item',
+                subtitle: 'Create stock entry',
+                icon: 'package-variant-plus',
+                route: '/item/new',
+                enabled: canManageInventory,
+            },
+            {
+                key: 'new-party',
+                label: 'Parties',
+                subtitle: 'Customers and suppliers',
+                icon: 'account-multiple-plus-outline',
+                route: '/party',
+                enabled: canManageParties,
+            },
+            {
+                key: 'scan',
+                label: 'Scan Barcode',
+                subtitle: 'Capture SKU instantly',
+                icon: 'barcode-scan',
+                route: '/scan',
+                enabled: canManageInventory || canOpenBilling,
+            },
+            {
+                key: 'business-suite',
+                label: 'Business Suite',
+                subtitle: 'Operations and compliance',
+                icon: 'briefcase-outline',
+                route: '/business-suite',
+                enabled: canAccessBusinessSuite,
+            },
+        ]).filter((entry) => entry.enabled),
+        [
+            canAccessBusinessSuite,
+            canCreatePurchase,
+            canCreateSale,
+            canManageInventory,
+            canManageParties,
+            canOpenBilling,
+        ]
+    );
 
-    const renderTab = (route: typeof state.routes[number] | null, slotKey: string) => {
-        if (!route) {
-            return <View key={slotKey} style={styles.tabPlaceholder} />;
-        }
-
+    const getTabState = (route: typeof state.routes[number]) => {
         const index = routeIndexByKey.get(route.key) ?? 0;
         const options = descriptors[route.key].options as ExtendedOptions;
         const isFocused = state.index === index;
         const label = getTabLabel(options, route.name);
+        return { index, options, isFocused, label };
+    };
 
-        const onPress = () => {
-            const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-            });
+    const onTabPress = (route: typeof state.routes[number], isFocused: boolean) => {
+        const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+        });
 
-            if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-            }
-        };
+        if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+        }
+    };
 
-        const onLongPress = () => {
-            navigation.emit({
-                type: 'tabLongPress',
-                target: route.key,
-            });
-        };
+    const onTabLongPress = (route: typeof state.routes[number]) => {
+        navigation.emit({
+            type: 'tabLongPress',
+            target: route.key,
+        });
+    };
 
-        const activeBackground = isFocused
-            ? (theme.dark ? 'rgba(103, 212, 234, 0.16)' : 'rgba(14, 116, 144, 0.14)')
-            : 'transparent';
+    const renderBottomTab = (route: typeof state.routes[number] | null, slotKey: string) => {
+        if (!route) {
+            return <View key={slotKey} style={[styles.tabPlaceholder, { width: tabButtonWidth, height: tabButtonHeight }]} />;
+        }
+
+        const { options, isFocused, label } = getTabState(route);
+        const activeBackground = isFocused ? theme.colors.primaryContainer : 'transparent';
         const activeColor = isFocused ? theme.colors.primary : theme.colors.onSurfaceVariant;
 
         return (
-            <MotiView
+            <MotionView
                 key={route.key}
                 animate={{ translateY: isFocused ? -2 : 0, scale: isFocused ? 1.03 : 1 }}
                 transition={{ type: 'spring', damping: 16, stiffness: 260 }}
@@ -141,17 +197,22 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
                     accessibilityState={isFocused ? { selected: true } : {}}
                     accessibilityLabel={options.tabBarAccessibilityLabel}
                     testID={options.tabBarTestID}
-                    onPress={onPress}
-                    onLongPress={onLongPress}
+                    onPress={() => onTabPress(route, isFocused)}
+                    onLongPress={() => onTabLongPress(route)}
                     style={({ pressed }) => [
                         styles.tab,
-                        { backgroundColor: activeBackground, opacity: pressed ? 0.86 : 1 },
+                        {
+                            backgroundColor: activeBackground,
+                            opacity: pressed ? 0.86 : 1,
+                            width: tabButtonWidth,
+                            height: tabButtonHeight,
+                        },
                     ]}
                 >
                     {options.tabBarIcon && options.tabBarIcon({
                         focused: isFocused,
                         color: activeColor,
-                        size: 21,
+                        size: tabIconSize,
                     })}
                     <Text
                         variant="labelSmall"
@@ -161,19 +222,106 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
                         {label}
                     </Text>
                 </Pressable>
-            </MotiView>
+            </MotionView>
         );
     };
 
-    return (
-        <>
+    const renderSidebarTab = (route: typeof state.routes[number]) => {
+        const { options, isFocused, label } = getTabState(route);
+        const activeBackground = isFocused ? theme.colors.primaryContainer : 'transparent';
+        const activeColor = isFocused ? theme.colors.primary : theme.colors.onSurfaceVariant;
+
+        return (
+            <MotionView
+                key={route.key}
+                animate={{ scale: isFocused ? 1.03 : 1 }}
+                transition={{ type: 'spring', damping: 16, stiffness: 240 }}
+            >
+                <Pressable
+                    accessibilityRole="tab"
+                    accessibilityState={isFocused ? { selected: true } : {}}
+                    accessibilityLabel={options.tabBarAccessibilityLabel}
+                    testID={options.tabBarTestID}
+                    onPress={() => onTabPress(route, isFocused)}
+                    onLongPress={() => onTabLongPress(route)}
+                    style={({ pressed }) => [
+                        styles.sidebarTab,
+                        {
+                            backgroundColor: activeBackground,
+                            opacity: pressed ? 0.86 : 1,
+                        },
+                    ]}
+                >
+                    {options.tabBarIcon && options.tabBarIcon({
+                        focused: isFocused,
+                        color: activeColor,
+                        size: 22,
+                    })}
+                    <Text
+                        variant="labelSmall"
+                        style={[styles.sidebarTabLabel, { color: activeColor, fontWeight: isFocused ? '700' : '500' }]}
+                        numberOfLines={2}
+                    >
+                        {label}
+                    </Text>
+                </Pressable>
+            </MotionView>
+        );
+    };
+
+    const renderNavigation = () => {
+        if (sidebarLayout) {
+            return (
+                <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+                    <MotionView
+                        style={[
+                            styles.sidebarContainer,
+                            {
+                                top: insets.top + SIDEBAR_NAV_MARGIN,
+                                bottom: insets.bottom + SIDEBAR_NAV_MARGIN,
+                                left: insets.left + SIDEBAR_NAV_MARGIN,
+                                width: SIDEBAR_NAV_WIDTH,
+                                backgroundColor: theme.colors.surface,
+                                borderColor: theme.colors.outlineVariant,
+                            },
+                        ]}
+                        from={{ opacity: 0, translateX: -12 }}
+                        animate={{ opacity: 1, translateX: 0 }}
+                        transition={{ type: 'timing', duration: 220 }}
+                    >
+                        <View style={styles.sidebarTabsWrap}>
+                            {tabRoutes.map(renderSidebarTab)}
+                        </View>
+
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Open quick actions"
+                            onPress={() => setQuickActionsOpen(true)}
+                            style={[
+                                styles.sidebarFabButton,
+                                {
+                                    backgroundColor: theme.colors.primary,
+                                    borderColor: theme.colors.outlineVariant,
+                                },
+                            ]}
+                        >
+                            <MaterialCommunityIcons name="plus" size={22} color={theme.colors.onPrimary} />
+                        </Pressable>
+                    </MotionView>
+                </View>
+            );
+        }
+
+        return (
             <View style={[styles.container, { paddingBottom: bottomPadding }]}>
-                <MotiView
+                <MotionView
                     style={[
                         styles.content,
                         {
-                            backgroundColor: theme.dark ? 'rgba(17, 26, 45, 0.86)' : 'rgba(255, 255, 255, 0.88)',
-                            borderColor: theme.dark ? 'rgba(148, 163, 184, 0.2)' : 'rgba(30, 41, 59, 0.12)',
+                            backgroundColor: theme.colors.surface,
+                            borderColor: theme.colors.outlineVariant,
+                            width: contentWidth,
+                            paddingHorizontal: contentHorizontalPadding,
                         },
                     ]}
                     from={{ opacity: 0, translateY: 22 }}
@@ -181,21 +329,26 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
                     transition={{ type: 'timing', duration: 220 }}
                 >
                     <View style={styles.tabGroup}>
-                        {leftSlots.map((route, index) => renderTab(route, `left-${index}`))}
+                        {leftSlots.map((route, index) => renderBottomTab(route, `left-${index}`))}
                     </View>
 
-                    <View style={styles.centerGap} />
+                    <View style={[styles.centerGap, { width: centerGapWidth }]} />
 
                     <View style={styles.tabGroup}>
-                        {rightSlots.map((route, index) => renderTab(route, `right-${index}`))}
+                        {rightSlots.map((route, index) => renderBottomTab(route, `right-${index}`))}
                     </View>
 
-                    <MotiView
+                    <MotionView
                         style={[
                             styles.quickFabWrap,
                             {
                                 backgroundColor: theme.colors.primary,
-                                borderColor: theme.dark ? 'rgba(191, 204, 217, 0.45)' : 'rgba(255, 255, 255, 0.85)',
+                                borderColor: theme.colors.outlineVariant,
+                                width: quickFabSize,
+                                height: quickFabSize,
+                                borderRadius: quickFabSize / 2,
+                                top: quickFabOffset,
+                                marginLeft: -quickFabSize / 2,
                             },
                         ]}
                         animate={{ scale: quickActionsOpen ? 0.94 : 1, translateY: quickActionsOpen ? 3 : 0 }}
@@ -205,27 +358,36 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
                             accessibilityRole="button"
                             accessibilityLabel="Open quick actions"
                             onPress={() => setQuickActionsOpen(true)}
-                            style={styles.quickFabPressable}
+                            style={[styles.quickFabPressable, { borderRadius: quickFabSize / 2 }]}
                         >
-                            <MaterialCommunityIcons name="plus" size={24} color={theme.colors.onPrimary} />
+                            <MaterialCommunityIcons name="plus" size={compactLayout ? 22 : 24} color={theme.colors.onPrimary} />
                         </Pressable>
-                    </MotiView>
-                </MotiView>
+                    </MotionView>
+                </MotionView>
             </View>
+        );
+    };
+
+    return (
+        <>
+            {renderNavigation()}
 
             <Portal>
-                <AnimatePresence>
+                <MotionPresence>
                     {quickActionsOpen && (
-                        <MotiView
+                        <MotionView
                             key="quick-actions-backdrop"
-                            style={styles.backdrop}
+                            style={[
+                                styles.backdrop,
+                                { backgroundColor: theme.colors.backdrop },
+                            ]}
                             from={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ type: 'timing', duration: 180 }}
                         >
                             <Pressable style={StyleSheet.absoluteFill} onPress={() => setQuickActionsOpen(false)} />
-                            <MotiView
+                            <MotionView
                                 from={{ translateY: 28, opacity: 0.92 }}
                                 animate={{ translateY: 0, opacity: 1 }}
                                 exit={{ translateY: 20, opacity: 0 }}
@@ -235,8 +397,8 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
                                     style={[
                                         styles.drawer,
                                         {
-                                            backgroundColor: theme.dark ? 'rgba(17, 26, 45, 0.96)' : 'rgba(255, 255, 255, 0.96)',
-                                            borderColor: theme.dark ? 'rgba(148, 163, 184, 0.2)' : 'rgba(30, 41, 59, 0.12)',
+                                            backgroundColor: theme.colors.surface,
+                                            borderColor: theme.colors.outlineVariant,
                                         },
                                     ]}
                                 >
@@ -255,7 +417,7 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
                                     </View>
                                     <Divider style={{ marginBottom: 6 }} />
                                     {quickActions.map((action, index) => (
-                                        <MotiView
+                                        <MotionView
                                             key={action.key}
                                             from={{ opacity: 0, translateY: 8 }}
                                             animate={{ opacity: 1, translateY: 0 }}
@@ -269,9 +431,7 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
                                                 style={({ pressed }) => [
                                                     styles.actionRow,
                                                     {
-                                                        backgroundColor: pressed
-                                                            ? (theme.dark ? 'rgba(51, 65, 85, 0.42)' : 'rgba(226, 232, 240, 0.54)')
-                                                            : 'transparent',
+                                                        backgroundColor: pressed ? theme.colors.surfaceVariant : 'transparent',
                                                     },
                                                 ]}
                                                 onPress={() => {
@@ -296,13 +456,13 @@ export const CurvedBottomBar: React.FC<BottomTabBarProps> = ({ state, descriptor
                                                 </View>
                                                 <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.onSurfaceVariant} />
                                             </Pressable>
-                                        </MotiView>
+                                        </MotionView>
                                     ))}
                                 </Surface>
-                            </MotiView>
-                        </MotiView>
+                            </MotionView>
+                        </MotionView>
                     )}
-                </AnimatePresence>
+                </MotionPresence>
             </Portal>
         </>
     );
@@ -315,24 +475,24 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         alignItems: 'center',
-        zIndex: 1000, // Ensure it sits on top of content
+        zIndex: 1000,
         elevation: 20,
     },
     content: {
-        width: '95.5%',
         height: CURVED_TAB_BAR_HEIGHT,
+        position: 'relative',
         flexDirection: 'row',
-        borderRadius: 24,
+        borderRadius: DesignSystem.radius.lg,
         borderWidth: 1,
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 6,
+        paddingHorizontal: 8,
         overflow: 'visible',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.14,
-        shadowRadius: 18,
-        elevation: 12,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 4,
     },
     tabGroup: {
         flex: 1,
@@ -344,12 +504,10 @@ const styles = StyleSheet.create({
         width: 88,
     },
     tab: {
-        width: 54,
         marginHorizontal: 2,
-        borderRadius: 16,
+        borderRadius: DesignSystem.radius.sm,
         alignItems: 'center',
         justifyContent: 'center',
-        height: 48,
         paddingHorizontal: 2,
     },
     tabPlaceholder: {
@@ -358,18 +516,13 @@ const styles = StyleSheet.create({
     },
     quickFabWrap: {
         position: 'absolute',
-        top: -22,
         left: '50%',
-        marginLeft: -27,
-        width: 54,
-        height: 54,
-        borderRadius: 27,
         borderWidth: 1,
         shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.22,
-        shadowRadius: 16,
-        elevation: 12,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 10,
+        elevation: 6,
     },
     quickFabPressable: {
         flex: 1,
@@ -377,14 +530,52 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    sidebarContainer: {
+        position: 'absolute',
+        borderRadius: DesignSystem.radius.lg,
+        borderWidth: 1,
+        paddingVertical: 12,
+        paddingHorizontal: 6,
+        justifyContent: 'space-between',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        elevation: 5,
+        zIndex: 1000,
+    },
+    sidebarTabsWrap: {
+        flex: 1,
+        gap: 6,
+        justifyContent: 'center',
+    },
+    sidebarTab: {
+        borderRadius: DesignSystem.radius.sm,
+        minHeight: 58,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 4,
+    },
+    sidebarTabLabel: {
+        marginTop: 3,
+        textAlign: 'center',
+    },
+    sidebarFabButton: {
+        marginTop: 8,
+        height: 46,
+        borderRadius: DesignSystem.radius.sm,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     backdrop: {
         flex: 1,
         justifyContent: 'flex-end',
-        backgroundColor: 'rgba(2, 6, 23, 0.24)',
     },
     drawer: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        borderTopLeftRadius: DesignSystem.radius.xl,
+        borderTopRightRadius: DesignSystem.radius.xl,
         borderWidth: 1,
         paddingHorizontal: 14,
         paddingTop: 12,
@@ -406,7 +597,7 @@ const styles = StyleSheet.create({
     actionRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        borderRadius: 14,
+        borderRadius: DesignSystem.radius.sm,
         paddingHorizontal: 8,
         paddingVertical: 8,
     },

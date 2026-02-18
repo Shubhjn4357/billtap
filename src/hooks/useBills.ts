@@ -7,19 +7,26 @@ import { isNetworkLikeError } from '../utils/errorGuards';
 
 const BILL_CACHE_TTL_MS = 30_000;
 
-export const useBills = (enabled = true) => {
+interface UseBillsOptions {
+    limit?: number;
+}
+
+export const useBills = (enabled = true, options: UseBillsOptions = {}) => {
     const { user } = useAuth();
     const userId = user?.uid ?? null;
+    const limit = options.limit ?? 1000;
 
     const query = useQuery({
-        queryKey: ['bills', userId, enabled] as const,
+        queryKey: ['bills', userId, limit] as const,
         queryFn: async (): Promise<StoredBill[]> => {
             if (!userId || !enabled) return [];
-            return await billService.getUserBills(userId, 1000);
+            return await billService.getUserBills(userId, limit);
         },
         enabled: Boolean(userId) && enabled,
         staleTime: BILL_CACHE_TTL_MS,
+        placeholderData: (previous) => previous,
     });
+    const { refetch: refetchBills } = query;
 
     const bills = useMemo(() => query.data ?? [], [query.data]);
     const error = query.error && !isNetworkLikeError(query.error)
@@ -27,8 +34,8 @@ export const useBills = (enabled = true) => {
         : null;
 
     const fetchBills = useCallback(async () => {
-        await query.refetch();
-    }, [query]);
+        await refetchBills();
+    }, [refetchBills]);
 
     const stats = useMemo(() => calculateBillStats(bills), [bills]);
 

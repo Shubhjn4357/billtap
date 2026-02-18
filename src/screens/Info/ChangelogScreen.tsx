@@ -1,17 +1,24 @@
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { APP_CHANGELOG, CHANGELOG_TEXT } from '../../constants/staticText';
 
 export const ChangelogScreen = () => {
     const theme = useTheme();
+    const { width } = useWindowDimensions();
+    const isWide = width >= 1120;
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
                     title={CHANGELOG_TEXT.title}
                     subtitle={CHANGELOG_TEXT.subtitle}
@@ -34,7 +41,22 @@ export const ChangelogScreen = () => {
                         </View>
                     </AppCard>
                 ))}
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.pageMaxWidth,
+    },
+});

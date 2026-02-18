@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
-import { MotiView } from 'moti';
+import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { MotionView } from '../motion/Motion';
 import { Card, useTheme } from 'react-native-paper';
+import { DesignSystem } from '../../constants/DesignSystem';
 
 type AppCardProps = React.ComponentProps<typeof Card> & {
     style?: StyleProp<ViewStyle>;
@@ -9,13 +10,6 @@ type AppCardProps = React.ComponentProps<typeof Card> & {
     children: React.ReactNode;
     animationDelay?: number;
     disableMotion?: boolean;
-};
-
-let appCardMountCounter = 0;
-const getNextAutoDelay = () => {
-    const delay = (appCardMountCounter % 10) * 24;
-    appCardMountCounter += 1;
-    return delay;
 };
 
 export const AppCard: React.FC<AppCardProps> = ({
@@ -27,17 +21,18 @@ export const AppCard: React.FC<AppCardProps> = ({
     ...props
 }) => {
     const theme = useTheme();
-    const autoDelayRef = React.useRef<number>(getNextAutoDelay());
-    const resolvedDelay = animationDelay ?? autoDelayRef.current;
+    const shouldAnimate = !disableMotion && typeof animationDelay === 'number';
+    const backgroundColor = theme.colors.surface;
+    const borderColor = theme.colors.outlineVariant;
 
     return (
-        <MotiView
-            from={disableMotion ? undefined : { opacity: 0.9, translateY: 12, scale: 0.99 }}
+        <MotionView
+            from={shouldAnimate ? { opacity: 0.9, translateY: 12, scale: 0.99 } : undefined}
             animate={{ opacity: 1, translateY: 0, scale: 1 }}
             transition={{
                 type: 'timing',
-                duration: disableMotion ? 1 : 280,
-                delay: disableMotion ? 0 : resolvedDelay,
+                duration: shouldAnimate ? DesignSystem.motion.slow : 1,
+                delay: shouldAnimate ? animationDelay : 0,
             }}
         >
             <Card
@@ -45,51 +40,36 @@ export const AppCard: React.FC<AppCardProps> = ({
                 style={[
                     styles.card,
                     {
-                        backgroundColor: theme.dark ? 'rgba(15,23,42,0.72)' : 'rgba(255,255,255,0.7)',
-                        borderColor: theme.dark ? 'rgba(148,163,184,0.22)' : 'rgba(148,163,184,0.2)',
-                        shadowColor: '#020617',
+                        backgroundColor,
+                        borderColor,
+                        shadowColor: theme.dark ? '#020617' : '#334155',
+                        shadowOpacity: theme.dark ? 0.14 : 0.07,
                     },
                     style,
                 ]}
                 {...props}
             >
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.glassGloss,
-                        {
-                            backgroundColor: theme.dark ? 'rgba(191,204,217,0.06)' : 'rgba(255,255,255,0.3)',
-                        },
-                    ]}
-                />
                 <Card.Content style={[styles.content, contentStyle]}>
                     {children}
                 </Card.Content>
             </Card>
-        </MotiView>
+        </MotionView>
     );
 };
 
 const styles = StyleSheet.create({
     card: {
-        borderRadius: 18,
-        borderWidth: 1,
-        marginBottom: 10,
+        borderRadius: DesignSystem.radius.md,
+        borderWidth: 0,
+        marginBottom: DesignSystem.spacing.sm,
         overflow: 'hidden',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.1,
-        shadowRadius: 14,
-        elevation: 4,
-    },
-    glassGloss: {
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        left: 0,
-        height: 36,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 7,
+        elevation: 1,
     },
     content: {
-        paddingVertical: 12,
-        paddingHorizontal: 12,
+        paddingVertical: DesignSystem.spacing.sm,
+        paddingHorizontal: DesignSystem.spacing.sm,
     },
 });

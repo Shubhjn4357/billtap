@@ -1,11 +1,11 @@
 import { Stack } from 'expo-router';
-import { BusinessSuiteScreen } from '../../src/screens/BusinessSuite/BusinessSuiteScreen';
+import { BusinessSuiteHubScreen } from '../../src/screens/BusinessSuite/BusinessSuiteHubScreen';
 
 export default function BusinessSuiteRoute() {
     return (
         <>
             <Stack.Screen options={{ headerShown: true, title: 'Business Suite' }} />
-            <BusinessSuiteScreen />
+            <BusinessSuiteHubScreen />
         </>
     );
 }

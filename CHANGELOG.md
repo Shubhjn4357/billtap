@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0.1 - 2026-02-18
+- Full stability + layout sweep across client screens:
+  - normalized responsive content shells and compact spacing in shared headers/screen wrappers.
+  - fixed centered `+` action button alignment in bottom navigation and improved tab shell positioning.
+  - improved scroll/layout consistency for Admin, Info pages, Business Suite pages, Billing, and route-level shells.
+- Connectivity and loading resilience upgrades:
+  - treated transient backend failures (`429`, `5xx`) as network-like for silent fallback behavior.
+  - reduced repeated organization-context sync calls with throttled refresh in main layout.
+  - kept route structure stable with accounting stack registration updates.
+- Billing flow hardening:
+  - improved checkout drawer responsiveness (QR size adapts by viewport, actions wrap on narrow screens).
+  - removed dead/duplicate branch in bill creation service.
+- Validation status:
+  - `typecheck`, `lint`, `routes:check`, and `api:routes:check` all passing after the sweep.
+
 ## 2.3.0 - 2026-02-17
 - Adopted TanStack Query for server-state hooks:
   - migrated `useStock`, `useBills`, `useOffers`, and `useAnalyticsFunnel` to `useQuery` with offline-first defaults.
@@ -71,3 +86,27 @@
 - Added multi-store organization controls with company switching and organization-scoped API context.
 - Added Business Suite enhancements for staff permission management, signature controls, and fee reminder tooling.
 - Fixed organization membership filtering in backend organization listing to prevent cross-org visibility issues.
+
+## 2.3.1 - 2026-02-17
+- Automated patch version bump.
+
+## 2.3.2 - 2026-02-17
+- Automated patch version bump.
+
+## 2.3.3 - 2026-02-17
+- Automated patch version bump.
+
+## 2.3.4 - 2026-02-17
+- Automated patch version bump.
+
+## 2.3.5 - 2026-02-17
+- Automated patch version bump.
+
+## 2.3.6 - 2026-02-17
+- Automated patch version bump.
+
+## 3.0.0 - 2026-02-17
+- Automated major version bump.
+
+## 3.0.1 - 2026-02-18
+- Automated patch version bump.

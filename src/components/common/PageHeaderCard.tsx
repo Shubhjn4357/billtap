@@ -1,8 +1,9 @@
 import React from 'react';
-import { View } from 'react-native';
-import { MotiView } from 'moti';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { MotionView } from '../motion/Motion';
 import { Text, useTheme } from 'react-native-paper';
 import { AppCard } from './AppCard';
+import { DesignSystem } from '../../constants/DesignSystem';
 
 type PageHeaderCardProps = {
     title: string;
@@ -12,36 +13,81 @@ type PageHeaderCardProps = {
 
 export const PageHeaderCard: React.FC<PageHeaderCardProps> = ({ title, subtitle, right }) => {
     const theme = useTheme();
-    const backgroundColor = theme.dark ? 'rgba(10,76,96,0.28)' : 'rgba(207,243,250,0.68)';
-    const textColor = theme.dark ? theme.colors.onSurface : theme.colors.onPrimaryContainer;
+    const { width } = useWindowDimensions();
+    const isCompact = width < 420;
+    const titleFontSize = isCompact ? 22 : 26;
+    const titleLineHeight = isCompact ? 28 : 32;
+    const backgroundColor = theme.colors.surface;
 
     return (
-        <MotiView
+        <MotionView
             from={{ opacity: 0.85, translateY: 10 }}
             animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 280 }}
+            transition={{ type: 'timing', duration: DesignSystem.motion.slow }}
         >
             <AppCard
                 disableMotion
                 style={{
                     backgroundColor,
-                    borderColor: theme.dark ? 'rgba(103,212,234,0.22)' : 'rgba(14,116,144,0.18)',
                 }}
             >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <View style={{ flex: 1, marginRight: right ? 12 : 0 }}>
-                        <Text variant="titleLarge" style={{ fontWeight: '700', color: textColor }}>
+                <View style={styles.row}>
+                    <View style={[styles.titleWrap, right ? styles.titleWrapWithAction : null]}>
+                        <Text
+                            variant="headlineSmall"
+                            style={[
+                                styles.title,
+                                {
+                                    color: theme.colors.onSurface,
+                                    fontSize: titleFontSize,
+                                    lineHeight: titleLineHeight,
+                                },
+                            ]}
+                            numberOfLines={2}
+                        >
                             {title}
                         </Text>
                         {!!subtitle && (
-                            <Text variant="labelMedium" style={{ color: textColor, marginTop: 3, opacity: 0.82 }}>
+                            <Text
+                                variant="bodyMedium"
+                                style={[
+                                    styles.subtitle,
+                                    { color: theme.colors.onSurfaceVariant },
+                                ]}
+                                numberOfLines={2}
+                            >
                                 {subtitle}
                             </Text>
                         )}
                     </View>
-                    {right}
+                    {right ? <View style={styles.actionWrap}>{right}</View> : null}
                 </View>
             </AppCard>
-        </MotiView>
+        </MotionView>
     );
 };
+
+const styles = StyleSheet.create({
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    titleWrap: {
+        flex: 1,
+    },
+    titleWrapWithAction: {
+        marginRight: 12,
+    },
+    title: {
+        fontWeight: '800',
+    },
+    subtitle: {
+        marginTop: 4,
+        opacity: 0.92,
+    },
+    actionWrap: {
+        marginLeft: DesignSystem.spacing.sm,
+        paddingTop: 2,
+    },
+});

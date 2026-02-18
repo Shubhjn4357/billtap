@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react';
-import { useTheme, Button, Dialog, Paragraph, Portal } from 'react-native-paper';
+import { StyleSheet, View } from 'react-native';
+import { useTheme, Button, Modal, Portal, Surface, Text } from 'react-native-paper';
 import { isNetworkLikeMessage } from '../../utils/errorGuards';
+import { DesignSystem } from '../../constants/DesignSystem';
 
 interface DialogAction {
     text: string;
@@ -23,7 +25,7 @@ interface DialogContextType {
 }
 
 const DialogContext = createContext<DialogContextType | undefined>(undefined);
-const DUPLICATE_ALERT_WINDOW_MS = 1400;
+const DUPLICATE_ALERT_WINDOW_MS = 2400;
 
 export const useAppDialog = () => {
     const context = useContext(DialogContext);
@@ -108,35 +110,100 @@ export const DialogProvider = ({ children }: DialogProviderProps) => {
         <DialogContext.Provider value={{ alert, confirm, show, hide }}>
             {children}
             <Portal>
-                <Dialog 
-                    visible={visible} 
+                <Modal
+                    visible={visible}
                     onDismiss={options.dismissable !== false ? hide : undefined}
-                    style={{ backgroundColor: theme.colors.surface, borderRadius: 12 }}
+                    dismissable={options.dismissable !== false}
+                    contentContainerStyle={styles.modalContainer}
                 >
-                    {options.title && <Dialog.Title style={{ fontWeight: 'bold' }}>{options.title}</Dialog.Title>}
-                    <Dialog.Content>
-                        {options.message && <Paragraph>{options.message}</Paragraph>}
-                    </Dialog.Content>
-                    <Dialog.Actions>
-                        {options.actions?.map((action, index) => {
-                             const isDestructive = action.style === 'destructive';
-                             const isCancel = action.style === 'cancel';
-                             
-                             return (
-                                <Button
-                                    key={index}
-                                    onPress={() => handleActionPress(action)}
-                                    loading={loading}
-                                    disabled={loading}
-                                    textColor={isDestructive ? theme.colors.error : (isCancel ? theme.colors.secondary : theme.colors.primary)}
-                                >
-                                    {action.text}
-                                </Button>
-                             );
-                        })}
-                    </Dialog.Actions>
-                </Dialog>
+                    <Surface
+                        style={[
+                            styles.drawer,
+                            {
+                                backgroundColor: theme.colors.surface,
+                                borderColor: theme.colors.outlineVariant,
+                            },
+                        ]}
+                    >
+                        <View
+                            style={[
+                                styles.handle,
+                                { backgroundColor: theme.colors.outline },
+                            ]}
+                        />
+                        {options.title ? (
+                            <Text variant="titleMedium" style={styles.title}>
+                                {options.title}
+                            </Text>
+                        ) : null}
+                        {options.message ? (
+                            <Text variant="bodyMedium" style={styles.message}>
+                                {options.message}
+                            </Text>
+                        ) : null}
+                        <View style={styles.actions}>
+                            {options.actions?.map((action, index) => {
+                                const isDestructive = action.style === 'destructive';
+                                const isCancel = action.style === 'cancel';
+                                const mode = isDestructive ? 'contained-tonal' : (isCancel ? 'outlined' : 'contained');
+
+                                return (
+                                    <Button
+                                        key={`${action.text}-${index}`}
+                                        mode={mode}
+                                        onPress={() => { void handleActionPress(action); }}
+                                        loading={loading}
+                                        disabled={loading}
+                                        style={styles.actionButton}
+                                        textColor={isDestructive ? theme.colors.error : undefined}
+                                    >
+                                        {action.text}
+                                    </Button>
+                                );
+                            })}
+                        </View>
+                    </Surface>
+                </Modal>
             </Portal>
         </DialogContext.Provider>
     );
 };
+
+const styles = StyleSheet.create({
+    modalContainer: {
+        justifyContent: 'flex-end',
+        margin: 0,
+        paddingHorizontal: 0,
+    },
+    drawer: {
+        borderTopLeftRadius: DesignSystem.radius.xl,
+        borderTopRightRadius: DesignSystem.radius.xl,
+        borderWidth: 1,
+        borderBottomWidth: 0,
+        paddingHorizontal: DesignSystem.spacing.md,
+        paddingTop: DesignSystem.spacing.xs,
+        paddingBottom: DesignSystem.spacing.md,
+    },
+    handle: {
+        alignSelf: 'center',
+        width: 42,
+        height: 4,
+        borderRadius: 999,
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    title: {
+        fontWeight: '700',
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    message: {
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    actions: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: DesignSystem.spacing.xs,
+    },
+    actionButton: {
+        minWidth: 96,
+    },
+});

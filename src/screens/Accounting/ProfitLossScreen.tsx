@@ -1,16 +1,17 @@
 import { useCallback, useState } from 'react';
-import { ScrollView } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
 import { accountingService } from '../../api/accountingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
-import { AppInput } from '../../components/common/AppInput';
+import { AppDateField } from '../../components/common/AppDateField';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { DesignSystem } from '../../constants/DesignSystem';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
+import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 
 interface ProfitLossData {
     income: { accountId: string; code: string; name: string; net: number }[];
@@ -22,10 +23,14 @@ interface ProfitLossData {
 
 export const ProfitLossScreen = () => {
     const theme = useTheme();
-    const [start, setStart] = useState('');
-    const [end, setEnd] = useState('');
+    const { width } = useWindowDimensions();
+    const isWide = width >= 960;
+    const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+    const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+    const start = startDate ? startDate.toISOString().slice(0, 10) : '';
+    const end = endDate ? endDate.toISOString().slice(0, 10) : '';
     const profitLossQuery = useQuery({
-        queryKey: ['accounting-profit-loss', start.trim(), end.trim()] as const,
+        queryKey: ['accounting-profit-loss', start, end] as const,
         queryFn: async (): Promise<ProfitLossData> => {
             const response = await accountingService.getProfitLoss(start || undefined, end || undefined);
             return {
@@ -37,8 +42,9 @@ export const ProfitLossScreen = () => {
             };
         },
         enabled: false,
-        staleTime: 30_000,
+        staleTime: 45_000,
     });
+    const { refetch: refetchProfitLoss } = profitLossQuery;
 
     const data = profitLossQuery.data ?? null;
     const error = profitLossQuery.error && !isNetworkLikeError(profitLossQuery.error)
@@ -46,68 +52,107 @@ export const ProfitLossScreen = () => {
         : null;
 
     const loadData = useCallback(async () => {
-        await profitLossQuery.refetch();
-    }, [profitLossQuery]);
+        await refetchProfitLoss();
+    }, [refetchProfitLoss]);
 
-    useFocusEffect(
-        useCallback(() => {
-            void loadData();
-        }, [loadData])
-    );
+    useFocusRefresh(loadData, {
+        enabled: profitLossQuery.isFetched,
+        minIntervalMs: 10_000,
+    });
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: 80 }}>
-                <PageHeaderCard
-                    title="Profit & Loss"
-                    subtitle="Income versus expense from posted ledgers."
-                />
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                    <PageHeaderCard
+                        title="Profit & Loss"
+                        subtitle="Income versus expense from posted ledgers."
+                    />
 
-                <AppCard>
-                    <AppInput label="Start Date (YYYY-MM-DD)" value={start} onChangeText={setStart} />
-                    <AppInput label="End Date (YYYY-MM-DD)" value={end} onChangeText={setEnd} />
-                    <AppButton mode="contained" onPress={() => { void loadData(); }} loading={profitLossQuery.isFetching}>
-                        Refresh Profit & Loss
-                    </AppButton>
-                </AppCard>
+                    <AppCard>
+                        <AppDateField
+                            label="Start Date"
+                            value={startDate}
+                            onChange={setStartDate}
+                            placeholder="Select start date"
+                        />
+                        <AppDateField
+                            label="End Date"
+                            value={endDate}
+                            onChange={setEndDate}
+                            placeholder="Select end date"
+                        />
+                        <AppButton mode="contained" onPress={() => { void loadData(); }} loading={profitLossQuery.isFetching}>
+                            Refresh Profit & Loss
+                        </AppButton>
+                    </AppCard>
 
-                {error ? (
-                    <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 10 }}>
-                        {error}
-                    </Text>
-                ) : null}
-
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700' }}>Summary</Text>
-                    <Text variant="bodySmall">Total Income: {formatCurrency(data?.totalIncome ?? 0, 'INR')}</Text>
-                    <Text variant="bodySmall">Total Expenses: {formatCurrency(data?.totalExpenses ?? 0, 'INR')}</Text>
-                    <Text variant="bodySmall" style={{ color: (data?.netProfit ?? 0) >= 0 ? theme.colors.primary : theme.colors.error }}>
-                        Net Profit: {formatCurrency(data?.netProfit ?? 0, 'INR')}
-                    </Text>
-                </AppCard>
-
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
-                        Income Accounts ({data?.income.length ?? 0})
-                    </Text>
-                    {(data?.income ?? []).map((row) => (
-                        <Text key={row.accountId} variant="bodySmall" style={{ marginBottom: 6 }}>
-                            {row.code} | {row.name} | {formatCurrency(row.net, 'INR')}
+                    {error ? (
+                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                            {error}
                         </Text>
-                    ))}
-                </AppCard>
+                    ) : null}
 
-                <AppCard>
-                    <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
-                        Expense Accounts ({data?.expenses.length ?? 0})
-                    </Text>
-                    {(data?.expenses ?? []).map((row) => (
-                        <Text key={row.accountId} variant="bodySmall" style={{ marginBottom: 6 }}>
-                            {row.code} | {row.name} | {formatCurrency(row.net, 'INR')}
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitle}>Summary</Text>
+                        <Text variant="bodySmall">Total Income: {formatCurrency(data?.totalIncome ?? 0, 'INR')}</Text>
+                        <Text variant="bodySmall">Total Expenses: {formatCurrency(data?.totalExpenses ?? 0, 'INR')}</Text>
+                        <Text variant="bodySmall" style={{ color: (data?.netProfit ?? 0) >= 0 ? theme.colors.primary : theme.colors.error }}>
+                            Net Profit: {formatCurrency(data?.netProfit ?? 0, 'INR')}
                         </Text>
-                    ))}
-                </AppCard>
+                    </AppCard>
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
+                            Income Accounts ({data?.income.length ?? 0})
+                        </Text>
+                        {(data?.income ?? []).map((row) => (
+                            <Text key={row.accountId} variant="bodySmall" style={styles.listRow}>
+                                {row.code} | {row.name} | {formatCurrency(row.net, 'INR')}
+                            </Text>
+                        ))}
+                    </AppCard>
+
+                    <AppCard>
+                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
+                            Expense Accounts ({data?.expenses.length ?? 0})
+                        </Text>
+                        {(data?.expenses ?? []).map((row) => (
+                            <Text key={row.accountId} variant="bodySmall" style={styles.listRow}>
+                                {row.code} | {row.name} | {formatCurrency(row.net, 'INR')}
+                            </Text>
+                        ))}
+                    </AppCard>
+                </View>
             </ScrollView>
         </ScreenWrapper>
     );
 };
+
+const styles = StyleSheet.create({
+    content: {
+        paddingTop: DesignSystem.layout.pageTop,
+        paddingBottom: DesignSystem.layout.pageBottom,
+        alignItems: 'center',
+    },
+    contentInner: {
+        width: '100%',
+        gap: DesignSystem.layout.sectionGap,
+    },
+    contentInnerWide: {
+        maxWidth: DesignSystem.layout.pageMaxWidth,
+    },
+    errorText: {
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    sectionTitle: {
+        fontWeight: '700',
+    },
+    sectionTitleWithGap: {
+        fontWeight: '700',
+        marginBottom: DesignSystem.spacing.xs,
+    },
+    listRow: {
+        marginBottom: DesignSystem.spacing.xs,
+    },
+});
