@@ -66,6 +66,11 @@ const transactionSchema = z.object({
 });
 
 const roundAmount = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+const normalizeBillNumber = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    const normalized = value.trim().toUpperCase().replace(/\s+/g, '');
+    return normalized.length > 0 ? normalized : null;
+};
 const toStatusFromAmounts = (totalAmount: number, paidAmount: number): 'PAID' | 'PARTIAL' | 'PENDING' => {
     const roundedTotal = roundAmount(Math.max(totalAmount, 0));
     const roundedPaid = roundAmount(Math.max(paidAmount, 0));
@@ -248,6 +253,56 @@ const postTransactionJournal = async (tx: any, input: AccountingPostInput) => {
     }
 };
 
+// GET /transactions/bill-number/check - validate bill number availability inside organization scope
+transactionsRoute.get(
+    '/bill-number/check',
+    requireAuth,
+    withOrganizationContext,
+    requirePermission('can_create_bill'),
+    async (c) => {
+        try {
+            const effectiveUserId = c.get('effectiveUserId');
+            const organizationId = c.get('organizationId');
+            const authUser = c.get('authUser');
+            if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+            if (!hasModulePermission(authUser, 'billing', 'create')) {
+                return c.json({ ok: false, message: 'Billing create access denied.' }, 403);
+            }
+
+            const db = c.get('db');
+            const query = z.object({
+                billNumber: z.string().min(1),
+            }).parse({
+                billNumber: c.req.query('billNumber') ?? '',
+            });
+
+            const billNumber = normalizeBillNumber(query.billNumber);
+            if (!billNumber) {
+                return c.json({ ok: false, message: 'billNumber is required.' }, 400);
+            }
+
+            const existing = await db
+                .select({ id: transactions.id })
+                .from(transactions)
+                .where(and(
+                    eq(transactions.userId, effectiveUserId),
+                    eq(transactions.organizationId, organizationId),
+                    eq(transactions.billNumber, billNumber),
+                ))
+                .limit(1);
+
+            return c.json({
+                ok: true,
+                billNumber,
+                available: existing.length === 0,
+                existingTransactionId: existing[0]?.id ?? null,
+            });
+        } catch (error: unknown) {
+            return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to validate bill number.' }, 400);
+        }
+    }
+);
+
 // POST /transactions - Create a Purchase or Sale
 transactionsRoute.post(
     '/',
@@ -270,6 +325,7 @@ transactionsRoute.post(
         }
 
         const payload = transactionSchema.parse(body);
+        const normalizedBillNumber = normalizeBillNumber(payload.billNumber);
         if (!hasFeatureEnabled(c, 'billing')) {
             return c.json({ ok: false, message: 'Billing module is disabled for your role.' }, 403);
         }
@@ -335,6 +391,21 @@ transactionsRoute.post(
         }
 
         await withTransaction(db, async (tx) => {
+            if (normalizedBillNumber) {
+                const existingBill = await tx
+                    .select({ id: transactions.id })
+                    .from(transactions)
+                    .where(and(
+                        eq(transactions.userId, effectiveUserId),
+                        eq(transactions.organizationId, organizationId),
+                        eq(transactions.billNumber, normalizedBillNumber),
+                    ))
+                    .limit(1);
+                if (existingBill[0]) {
+                    throw new Error(`Bill number ${normalizedBillNumber} already exists.`);
+                }
+            }
+
             const itemIds = [...grouped.keys()];
             const sourceItems = itemIds.length === 0
                 ? []
@@ -455,7 +526,7 @@ transactionsRoute.post(
                 partyId: payload.partyId ?? null,
                 partyName: payload.partyName ?? null,
                 partyPhone: payload.partyPhone ?? null,
-                billNumber: payload.billNumber ?? null,
+                billNumber: normalizedBillNumber,
                 billDate: billDate,
                 totalAmount: payload.totalAmount,
                 discountAmount: payload.discountAmount,
@@ -603,9 +674,10 @@ transactionsRoute.patch(
         if (!current) return c.json({ ok: false, message: 'Transaction not found.' }, 404);
 
         const totalAmount = Number(current.totalAmount ?? 0);
-        const nextPaidAmount = payload.markAsPaid
+        const computedPaidAmount = payload.markAsPaid
             ? totalAmount
             : roundAmount(payload.paidAmount ?? Number(current.paidAmount ?? 0));
+        const nextPaidAmount = roundAmount(Math.min(totalAmount, Math.max(computedPaidAmount, 0)));
         const nextStatus = toStatusFromAmounts(totalAmount, nextPaidAmount);
 
         const nextReminderEnabled = payload.reminderEnabled ?? Boolean(current.reminderEnabled);

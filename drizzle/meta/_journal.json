@@ -36,6 +36,13 @@
       "when": 1771256990438,
       "tag": "0004_messy_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1771413781238,
+      "tag": "0005_mighty_mad_thinker",
+      "breakpoints": true
     }
   ]
 }

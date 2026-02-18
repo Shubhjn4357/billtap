@@ -200,6 +200,7 @@ export const transactions = pgTable('transactions', {
 }, (table) => ({
     userIndex: index('transactions_user_idx').on(table.userId),
     organizationIndex: index('transactions_org_idx').on(table.organizationId),
+    organizationBillNumberIndex: index('transactions_org_bill_number_idx').on(table.organizationId, table.billNumber),
     branchIndex: index('transactions_branch_idx').on(table.branchId),
     typeIndex: index('transactions_type_idx').on(table.type),
     createdIndex: index('transactions_created_idx').on(table.createdAt),
