@@ -195,6 +195,10 @@ export const transactions = pgTable('transactions', {
     }>>().notNull(),
 
     remark: text('remark'),
+    deliveryAddress: text('deliveryAddress'),
+    deliveryContactName: text('deliveryContactName'),
+    deliveryContactPhone: text('deliveryContactPhone'),
+    accountId: text('accountId'),
     createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
     updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 }, (table) => ({
@@ -793,9 +797,23 @@ export const expenses = pgTable('expenses', {
 }, (table) => ({
     userIndex: index('expenses_user_idx').on(table.userId),
     organizationIndex: index('expenses_org_idx').on(table.organizationId),
-    branchIndex: index('expenses_branch_idx').on(table.branchId),
     dateIndex: index('expenses_date_idx').on(table.expenseDate),
     categoryIndex: index('expenses_category_idx').on(table.category),
+}));
+
+export const templates = pgTable('templates', {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // 'invoice' | 'card' | 'email'
+    content: jsonb('content').notNull(), // HTML string or structured JSON
+    isDefault: boolean('isDefault').default(false).notNull(),
+    thumbnailUrl: text('thumbnailUrl'),
+    isActive: boolean('isActive').default(true).notNull(),
+    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+}, (table) => ({
+    typeIndex: index('templates_type_idx').on(table.type),
+    defaultIndex: index('templates_default_idx').on(table.isDefault),
 }));
 
 export const mediaAssets = pgTable('media_assets', {

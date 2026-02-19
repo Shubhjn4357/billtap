@@ -43,6 +43,13 @@
       "when": 1771413781238,
       "tag": "0005_mighty_mad_thinker",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1771492581598,
+      "tag": "0006_funny_nicolaos",
+      "breakpoints": true
     }
   ]
 }

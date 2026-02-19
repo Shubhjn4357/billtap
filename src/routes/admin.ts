@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { offers, plans, users } from '../db/schema';
+import { offers, plans, users, templates } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { isDeveloperAdminPrincipal, requireAuth, requireDeveloperAdmin, type AppEnv } from '../middleware/auth';
 import { z } from 'zod';
@@ -11,6 +11,65 @@ const parseBoolean = (value: string | undefined, fallback = false) => {
     if (value === undefined) return fallback;
     return value.toLowerCase() === 'true';
 };
+
+// GET /admin/stats - Dashboard analytics
+adminRoute.get('/stats', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+
+    // Parallelize queries for performance
+    const [
+        totalUsersResult,
+        activeSubsResult,
+        revenueResult,
+        recentUsers
+    ] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(users),
+        db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.subscriptionStatus, 'active')),
+        db.select({ total: sql<number>`sum(${users.subscriptionAmountMonthly})` }).from(users).where(eq(users.subscriptionStatus, 'active')),
+        db.select().from(users).orderBy(desc(users.createdAt)).limit(5)
+    ]);
+
+    const totalUsers = Number(totalUsersResult[0]?.count || 0);
+    const activeSubscriptions = Number(activeSubsResult[0]?.count || 0);
+    const monthlyRevenue = Number(revenueResult[0]?.total || 0);
+
+    return c.json({
+        ok: true,
+        stats: {
+            totalUsers,
+            activeSubscriptions,
+            monthlyRevenue,
+            recentUsers
+        }
+    });
+});
+
+// GET /admin/templates
+adminRoute.get('/templates', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const allTemplates = await db.select().from(templates).orderBy(desc(templates.createdAt));
+    return c.json({ ok: true, templates: allTemplates });
+});
+
+// POST /admin/templates
+adminRoute.post('/templates', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const body = await c.req.json();
+    const payload = z.object({
+        name: z.string().min(1),
+        type: z.enum(['invoice', 'card', 'email']),
+        content: z.any(), // JSON content
+        isDefault: z.boolean().optional(),
+        thumbnailUrl: z.string().optional(),
+    }).parse(body);
+
+    const newTemplate = await db.insert(templates).values({
+        id: `tpl_${Date.now()}`,
+        ...payload,
+    }).returning();
+
+    return c.json({ ok: true, template: newTemplate[0] });
+});
 
 adminRoute.get('/access', requireAuth, async (c) => {
     const authUser = c.get('authUser');
