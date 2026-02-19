@@ -1,8 +1,8 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text, useTheme, SegmentedButtons, IconButton, Divider, Menu, Button } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppInput } from '../../components/common/AppInput';
@@ -15,15 +15,17 @@ import { usePartyStore, useSettingsStore, useTransactionStore } from '../../stor
 import { useStock } from '../../hooks/useStock';
 import { COMMON_TEXT } from '../../constants/staticText';
 import { nanoid } from 'nanoid/non-secure';
-import type { Transaction, TransactionItem, Party, Item } from '../../types';
+import type { TransactionItem, Party, Item } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
-import { transactionService } from '../../api/transactionService';
-import { offlineSyncService } from '../../api/offlineSyncService';
+// import { transactionService } from '../../api/transactionService';
+// import { offlineSyncService } from '../../api/offlineSyncService';
+import type { NewDbTransaction } from '../../types/db';
 import { taskNotificationService } from '../../services/taskNotificationService';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
 import { useAppDialog } from '../../components/providers/DialogProvider';
-import { transactionCreditSchema } from '../../validation/forms';
-import { isNetworkLikeError } from '../../utils/errorGuards';
+// import { transactionCreditSchema } from '../../validation/forms';
+// import { isNetworkLikeError } from '../../utils/errorGuards';
+import { billRepository } from '../../repositories/billRepository';
 
 export const TransactionScreen = () => {
     const router = useRouter();
@@ -34,66 +36,147 @@ export const TransactionScreen = () => {
     const { currencySymbol } = useSettingsStore();
     const { parties } = usePartyStore();
     const { allItems } = useStock();
-    const { addTransaction, loading } = useTransactionStore();
+    const { loading } = useTransactionStore();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? 'INR');
     const dialog = useAppDialog();
 
+    const params = useLocalSearchParams<{ id: string }>();
+    const id = params.id;
+    const isEditMode = !!id;
+
+    // Delivery Address State
+    const [sameAsBilling, setSameAsBilling] = useState(true);
+    const [deliveryAddress, setDeliveryAddress] = useState('');
+    const [deliveryContactName, setDeliveryContactName] = useState('');
+    const [deliveryContactPhone, setDeliveryContactPhone] = useState('');
+
+    // State
     const [type, setType] = useState<'SALE' | 'PURCHASE'>('SALE');
-    const [selectedParty, setSelectedParty] = useState<Party | null>(null);
-    const [items, setItems] = useState<TransactionItem[]>([]);
-    const [billNo, setBillNo] = useState(`INV-${Date.now().toString().slice(-6)}`);
-    const [billDate, setBillDate] = useState<Date>(new Date());
+    const [billNo, setBillNo] = useState('');
+    const [billDate, setBillDate] = useState(new Date());
     const [remarks, setRemarks] = useState('');
     const [paymentMode, setPaymentMode] = useState<'CASH' | 'CREDIT'>('CASH');
-    const [paidAmountInput, setPaidAmountInput] = useState('');
     const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
-    const [showDueDatePicker, setShowDueDatePicker] = useState(false);
-    const [reminderEnabled, setReminderEnabled] = useState(true);
+    const [items, setItems] = useState<TransactionItem[]>([]);
+    const [selectedParty, setSelectedParty] = useState<Party | null>(null);
+    const [paidAmountInput, setPaidAmountInput] = useState('');
+    const [reminderEnabled, setReminderEnabled] = useState(false);
     const [reminderFrequencyDays, setReminderFrequencyDays] = useState('3');
-
-    // Item Selection Modal/Menu State (Simplified as a list for now)
-    const [showItemMenu, setShowItemMenu] = useState(false);
     const [showPartyMenu, setShowPartyMenu] = useState(false);
+    const [showDueDatePicker, setShowDueDatePicker] = useState(false);
+    const [showItemMenu, setShowItemMenu] = useState(false);
 
+    // Computed
+    const totals = useMemo(() => {
+        const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const taxAmount = items.reduce((sum, item) => sum + (item.price * item.quantity * (item.tax || 0)) / 100, 0);
+        return {
+            subtotal,
+            taxAmount,
+            total: subtotal + taxAmount,
+        };
+    }, [items]);
+
+    // Helpers
     const handleAddItem = (item: Item) => {
-        const existing = items.find(i => i.id === item.id);
-        if (existing) {
-            setItems(items.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * i.price } : i));
+        const existingItemIndex = items.findIndex((i) => i.id === item.id);
+        if (existingItemIndex >= 0) {
+            const newItems = [...items];
+            newItems[existingItemIndex].quantity += 1;
+            setItems(newItems);
         } else {
             setItems([...items, {
                 id: item.id,
                 name: item.name,
                 quantity: 1,
-                price: type === 'SALE' ? item.price : (item.purchasePrice || 0),
+                price: item.price,
                 tax: item.gstPercentage || 0,
-                total: 1 * (type === 'SALE' ? item.price : (item.purchasePrice || 0))
+                total: item.price // Initial total for qty 1
             }]);
         }
         setShowItemMenu(false);
     };
 
-    const updateItemQuantity = (index: number, quantity: string) => {
-        const qty = Number(quantity);
-        if (isNaN(qty) || qty < 0) return;
+    const updateItemQuantity = (index: number, quantityStr: string) => {
         const newItems = [...items];
-        newItems[index].quantity = qty;
+        const quantity = parseInt(quantityStr) || 0;
+        if (quantity <= 0) {
+            newItems.splice(index, 1);
+        } else {
+            newItems[index].quantity = quantity;
+        }
         setItems(newItems);
     };
 
     const removeItem = (index: number) => {
-        setItems(items.filter((_, i) => i !== index));
+        const newItems = [...items];
+        newItems.splice(index, 1);
+        setItems(newItems);
     };
 
-    const totals = useMemo(() => {
-        let subtotal = 0;
-        let taxAmount = 0;
-        items.forEach(item => {
-            const itemTotal = item.quantity * item.price;
-            subtotal += itemTotal;
-            taxAmount += (itemTotal * item.tax) / 100;
-        });
-        return { subtotal, taxAmount, total: subtotal + taxAmount };
-    }, [items]);
+    // Effect to load existing transaction
+    useEffect(() => {
+        if (!id) return;
+
+        const loadTransaction = async () => {
+            try {
+                const transaction = await billRepository.getById(id);
+                if (!transaction) {
+                    dialog.alert(COMMON_TEXT.alerts.error, 'Transaction not found');
+                    router.back();
+                    return;
+                }
+
+                setType(transaction.type as 'SALE' | 'PURCHASE');
+                setBillNo(transaction.billNumber || '');
+                setBillDate(new Date(transaction.billDate));
+                setRemarks(transaction.remark || '');
+                setPaymentMode(transaction.paymentMode as 'CASH' | 'CREDIT');
+
+                // Set Delivery Address
+                // Set Delivery Address
+                if (transaction.deliveryAddress) {
+                    setSameAsBilling(false);
+                    setDeliveryAddress(transaction.deliveryAddress);
+                    setDeliveryContactName(transaction.deliveryContactName || '');
+                    setDeliveryContactPhone(transaction.deliveryContactPhone || '');
+                } else {
+                    setSameAsBilling(true);
+                    setDeliveryContactName('');
+                    setDeliveryContactPhone('');
+                }
+
+                if (transaction.dueDate) {
+                    setDueDate(new Date(transaction.dueDate));
+                }
+
+                // Parse items
+                try {
+                    const parsedItems = transaction.itemsSnapshot ? JSON.parse(transaction.itemsSnapshot) : [];
+                    setItems(parsedItems);
+                } catch (e) {
+                    console.error('Failed to parse items', e);
+                }
+
+                // Set party
+                if (transaction.partyId) {
+                    const party = parties.find(p => p.id === transaction.partyId);
+                    if (party) setSelectedParty(party);
+                    else setSelectedParty({ id: transaction.partyId, name: transaction.partyName } as Party);
+                }
+
+                if (transaction.paymentMode === 'CREDIT') {
+                    setPaidAmountInput((transaction.paidAmount || 0).toString());
+                }
+
+            } catch (error) {
+                console.error('Failed to load transaction', error);
+                dialog.alert(COMMON_TEXT.alerts.error, 'Failed to load transaction details');
+            }
+        };
+
+        loadTransaction();
+    }, [id, parties, dialog, router]);
 
     const handleSave = async () => {
         if (!selectedParty) {
@@ -115,99 +198,61 @@ export const TransactionScreen = () => {
             return;
         }
 
-        const cachedBills = await offlineSyncService.getCachedBills<Record<string, unknown> & { id: string }>();
-        const duplicateBill = cachedBills.find((entry) => {
-            const raw = entry.billNumber;
-            return typeof raw === 'string' && raw.trim().toUpperCase() === normalizedBillNo;
-        });
-        if (duplicateBill) {
-            dialog.alert(COMMON_TEXT.alerts.validation, `Bill number "${normalizedBillNo}" already exists.`);
-            return;
+        if (!isEditMode) {
+            const isAvailable = await billRepository.checkBillNumberAvailability(normalizedBillNo, user.uid);
+            if (!isAvailable) {
+                dialog.alert(COMMON_TEXT.alerts.validation, `Bill number "${normalizedBillNo}" already exists.`);
+                return;
+            }
         }
 
         const paidAmount = paymentMode === 'CREDIT'
             ? Number(paidAmountInput || 0)
             : totals.total;
-        const reminderDays = Number(reminderFrequencyDays || 3);
-        if (paymentMode === 'CREDIT') {
-            if (!dueDate) {
-                dialog.alert(COMMON_TEXT.alerts.validation, 'Please choose a due date.');
-                return;
-            }
-            const validation = transactionCreditSchema.safeParse({
-                paidAmount,
-                totalAmount: totals.total,
-                reminderFrequencyDays: reminderDays,
-                dueDate,
-            });
-            if (!validation.success) {
-                dialog.alert(COMMON_TEXT.alerts.validation, validation.error.issues[0]?.message || 'Invalid credit payment details.');
-                return;
-            }
-        }
 
-        const localId = nanoid();
-        const transaction: Transaction = {
-            id: localId,
+        const dbPayload: NewDbTransaction = {
+            id: id || nanoid(),
+            organizationId: user.uid,
             type,
             partyId: selectedParty.id,
             partyName: selectedParty.name,
-            partyPhone: selectedParty.phone,
-            userId: user.uid,
-            items,
+            billNumber: normalizedBillNo,
+            billDate: billDate.toISOString(),
+            itemsSnapshot: JSON.stringify(items),
             totalAmount: totals.total,
-            taxAmount: totals.taxAmount,
             discountAmount: 0,
+            taxAmount: totals.taxAmount,
             paidAmount,
             paymentMode,
             paymentStatus: paidAmount >= totals.total ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'PENDING'),
-            dueDate: dueDate ? dueDate.toISOString() : undefined,
-            reminderEnabled: paymentMode === 'CREDIT' ? reminderEnabled : false,
-            reminderFrequencyDays: paymentMode === 'CREDIT' ? reminderDays : undefined,
+            dueDate: dueDate ? dueDate.toISOString() : null,
+            remark: remarks || null,
+            deliveryAddress: sameAsBilling ? null : deliveryAddress, // Logic for delivery address
+            deliveryContactName: sameAsBilling ? null : deliveryContactName,
+            deliveryContactPhone: sameAsBilling ? null : deliveryContactPhone,
             currency: activeCurrency,
-            billDate: billDate.getTime(),
-            createdAt: billDate.getTime(),
-            updatedAt: Date.now(),
-            billNumber: normalizedBillNo,
-            remark: remarks || undefined
+            createdAt: isEditMode ? (await billRepository.getById(id!))?.createdAt || new Date().toISOString() : new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
         };
 
         try {
-            const transactionId = await transactionService.createTransaction({
-                id: localId,
-                type,
-                partyId: selectedParty.id,
-                partyName: selectedParty.name,
-                partyPhone: selectedParty.phone,
-                billNumber: normalizedBillNo,
-                billDate,
-                items,
-                totalAmount: totals.total,
-                discountAmount: 0,
-                taxAmount: totals.taxAmount,
-                paidAmount,
-                paymentMode,
-                paymentStatus: paidAmount >= totals.total ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'PENDING'),
-                dueDate,
-                reminderEnabled: paymentMode === 'CREDIT' ? reminderEnabled : false,
-                reminderFrequencyDays: paymentMode === 'CREDIT' ? reminderDays : undefined,
-                nextReminderAt: paymentMode === 'CREDIT' && reminderEnabled
-                    ? (dueDate ?? new Date(Date.now() + reminderDays * 24 * 60 * 60 * 1000))
-                    : undefined,
-                currency: activeCurrency,
-                remark: remarks || undefined,
-            });
-            addTransaction({
-                ...transaction,
-                id: transactionId,
-            });
-            await taskNotificationService.notify('Transaction Saved', `${type} transaction ${normalizedBillNo} saved successfully.`);
-            dialog.alert(COMMON_TEXT.alerts.success, 'Transaction saved successfully.');
-            router.back();
-        } catch (error: unknown) {
-            if (!isNetworkLikeError(error)) {
-                dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to save transaction.');
+            if (isEditMode) {
+                await billRepository.update(id!, dbPayload);
+            } else {
+                await billRepository.create(dbPayload);
             }
+
+            await taskNotificationService.notify('Transaction Saved', `${type} transaction ${normalizedBillNo} saved successfully.`);
+
+            // Navigate to Success Screen on Creation (not necessarily edit, or maybe both? usually creation)
+            if (!isEditMode) {
+                router.replace({ pathname: '/bill-success', params: { id: dbPayload.id } } as any);
+            } else {
+                dialog.alert(COMMON_TEXT.alerts.success, 'Transaction saved successfully.');
+                router.back();
+            }
+        } catch (error: unknown) {
+            dialog.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to save transaction.');
         }
     };
 
@@ -254,6 +299,47 @@ export const TransactionScreen = () => {
                             ))}
                             <Menu.Item onPress={() => { setShowPartyMenu(false); router.push('/party/new' as never); }} title="+ Add New Party" />
                         </Menu>
+                    </View>
+
+                    {/* Delivery Address Section */}
+                    <View style={styles.section}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                            <IconButton
+                                icon={sameAsBilling ? "checkbox-marked" : "checkbox-blank-outline"}
+                                size={20}
+                                onPress={() => setSameAsBilling(!sameAsBilling)}
+                                iconColor={theme.colors.primary}
+                                style={{ margin: 0 }}
+                            />
+                            <Text variant="bodyMedium" onPress={() => setSameAsBilling(!sameAsBilling)} style={{ marginLeft: 4 }}>
+                                Same as billing address
+                            </Text>
+                        </View>
+                        {!sameAsBilling && (
+                            <View style={{ gap: DesignSystem.spacing.sm }}>
+                                <AppInput
+                                    label="Delivery Address"
+                                    value={deliveryAddress}
+                                    onChangeText={setDeliveryAddress}
+                                    inputType="text"
+                                    multiline
+                                    numberOfLines={2}
+                                />
+                                <AppInput
+                                    label="Contact Name (Optional)"
+                                    value={deliveryContactName}
+                                    onChangeText={setDeliveryContactName}
+                                    inputType="text"
+                                />
+                                <AppInput
+                                    label="Contact Phone (Optional)"
+                                    value={deliveryContactPhone}
+                                    onChangeText={setDeliveryContactPhone}
+                                    inputType="phone"
+                                    maxLength={10}
+                                />
+                            </View>
+                        )}
                     </View>
 
                     <View style={styles.section}>

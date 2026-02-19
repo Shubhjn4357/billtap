@@ -3,16 +3,13 @@ import * as Updates from 'expo-updates';
 import React, { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { List, Switch, Text, useTheme } from 'react-native-paper';
+import { List, Switch, Text, useTheme, SegmentedButtons, Icon, Button } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
-import { adminService } from '../../api/adminService';
 import { businessSuiteService } from '../../api/businessSuiteService';
-import { offlineSyncService } from '../../api/offlineSyncService';
+import { syncService } from '../../services/syncService';
 import { userService } from '../../api/userService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
-import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
 import { useAppDialog } from '../../components/providers/DialogProvider';
@@ -23,42 +20,18 @@ import { normalizeCurrencyCode } from '../../utils/formatters';
 import { useAuth } from '../../hooks/useAuth';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 import { useOrganizationStore, useSettingsStore, useUserStore } from '../../store';
-import { useOrganizationAccess, type AppModuleAccessMap, DEFAULT_APP_MODULE_ACCESS, type AppModuleKey } from '../../hooks/useOrganizationAccess';
+import { useOrganizationAccess, DEFAULT_APP_MODULE_ACCESS, type AppModuleAccessMap, type AppModuleKey } from '../../hooks/useOrganizationAccess';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 
 type UpdateState = 'idle' | 'checking' | 'downloading' | 'upToDate' | 'downloaded' | 'disabled' | 'error';
+type SettingsTab = 'profile' | 'business';
 
-const formatTimestamp = (value: Date | null): string => {
-    if (!value) return '-';
-    return new Intl.DateTimeFormat('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    }).format(value);
-};
 
-const parseDateSafe = (value: string | null): Date | null => {
-    if (!value) return null;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
 
-const getRuntimeVersion = (): string => {
-    if (Updates.runtimeVersion) return Updates.runtimeVersion;
 
-    const configRuntimeVersion = Constants.expoConfig?.runtimeVersion;
-    if (typeof configRuntimeVersion === 'string') {
-        return configRuntimeVersion;
-    }
 
-    if (configRuntimeVersion && typeof configRuntimeVersion === 'object' && 'policy' in configRuntimeVersion) {
-        return `policy:${String(configRuntimeVersion.policy)}`;
-    }
 
-    return 'N/A';
-};
+
 
 export const SettingsScreen = () => {
     const { user, signOut } = useAuth();
@@ -68,7 +41,6 @@ export const SettingsScreen = () => {
         canAccessAccounting,
         canAccessOperations,
         canAccessBusinessSuite,
-        canAccessAdminPanel,
         appModuleAccess,
         setOrganizationSettings,
         isOwnerOrAdmin,
@@ -80,7 +52,7 @@ export const SettingsScreen = () => {
     const dialog = useAppDialog();
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
-    const [isUiPending, startUiTransition] = useTransition();
+    const [, startUiTransition] = useTransition();
     const {
         autoTheme,
         themeMode,
@@ -91,14 +63,13 @@ export const SettingsScreen = () => {
         toggleNotificationSound,
     } = useSettingsStore();
 
+    const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
     const [updateState, setUpdateState] = useState<UpdateState>('idle');
-    const [updateMessage, setUpdateMessage] = useState<string>(SETTINGS_TEXT.updateMessages.initial);
-    const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
     const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
+
     const [pendingSyncCount, setPendingSyncCount] = useState(0);
-    const [oldestPendingAt, setOldestPendingAt] = useState<Date | null>(null);
-    const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
-    const [storageBackend, setStorageBackend] = useState<'sqlite-drizzle' | 'async-storage'>('async-storage');
+
+    const [storageBackend, setStorageBackend] = useState<'sqlite-drizzle' | 'async-storage' | 'SQLite'>('async-storage');
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState<string>(SETTINGS_TEXT.dataSync.idleMessage);
     const [moduleAccessDraft, setModuleAccessDraft] = useState<AppModuleAccessMap>(DEFAULT_APP_MODULE_ACCESS);
@@ -113,135 +84,83 @@ export const SettingsScreen = () => {
 
     const appVersion = Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? 'Unknown';
     const buildVersion = Constants.nativeBuildVersion ?? 'N/A';
-    const runtimeVersion = getRuntimeVersion();
-    const updateChannel = Updates.channel ?? 'default';
     const canCheckUpdates = Platform.OS !== 'web' && !__DEV__ && Updates.isEnabled;
     const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 24);
-    const isWide = width >= 1100;
+    const isWide = width >= 960;
 
-    const updateStatusLabel = useMemo(() => {
-        return SETTINGS_TEXT.updateStatus[updateState];
-    }, [updateState]);
-    const sectionCardStyle = useMemo(
-        () => ({
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.outlineVariant,
-        }),
-        [theme.colors.outlineVariant, theme.colors.surface]
-    );
-    const sectionCardContainer = useMemo(
-        () => [styles.sectionCard, sectionCardStyle, isWide && styles.sectionCardWide],
-        [isWide, sectionCardStyle]
-    );
 
-    const moduleFields = useMemo(
-        () => ([
-            { key: 'billingPurchase' as AppModuleKey, title: 'Purchase Ledger', description: 'Disable purchase entry and inward ledger.' },
-            { key: 'billingSale' as AppModuleKey, title: 'Sales Ledger', description: 'Disable sales invoice creation.' },
-            { key: 'parties' as AppModuleKey, title: 'Party Ledger', description: 'Hide customer/supplier ledger.' },
-            { key: 'payments' as AppModuleKey, title: 'Payment Settlements', description: 'Hide payment in/out settlement pages.' },
-            { key: 'expenses' as AppModuleKey, title: 'Expense Tracking', description: 'Hide expense screens and actions.' },
-            { key: 'accounting' as AppModuleKey, title: 'Accounting Suite', description: 'Hide accounting pages from app.' },
-            { key: 'reports' as AppModuleKey, title: 'Reports', description: 'Hide analytics and exports.' },
-            { key: 'stock' as AppModuleKey, title: 'Inventory', description: 'Hide stock/inventory module.' },
-        ]),
-        []
-    );
 
-    const adminAccessQuery = useQuery({
-        queryKey: ['settings-admin-access'] as const,
-        queryFn: async () => {
-            return await adminService.getAccess();
-        },
-        staleTime: 60_000,
-        retry: false,
-        enabled: canAccessSettings && isOwnerOrAdmin,
-    });
-
-    const canAccessAdminPanelEntry = Boolean(adminAccessQuery.data?.canAccess && canAccessAdminPanel);
+    const moduleFields = useMemo<{ key: AppModuleKey; title: string; description: string }[]>(() => ([
+        { key: 'billingPurchase', title: 'Purchase Ledger', description: 'Disable purchase entry and inward ledger.' },
+        { key: 'billingSale', title: 'Sales Ledger', description: 'Disable sales invoice creation.' },
+        { key: 'parties', title: 'Party Ledger', description: 'Hide customer/supplier ledger.' },
+        { key: 'payments', title: 'Payment Settlements', description: 'Hide payment in/out settlement pages.' },
+        { key: 'expenses', title: 'Expense Tracking', description: 'Hide expense screens and actions.' },
+        { key: 'accounting', title: 'Accounting Suite', description: 'Hide accounting pages from app.' },
+        { key: 'reports', title: 'Reports', description: 'Hide analytics and exports.' },
+        { key: 'stock', title: 'Inventory', description: 'Hide stock/inventory module.' },
+    ]), []);
 
     const handleCurrencyChange = async (currency: string) => {
         const normalized = normalizeCurrencyCode(currency);
         const previousCurrency = activeCurrency;
         startUiTransition(() => {
             setCurrency(normalized);
-            if (user) {
-                setUser({ ...user, currency: normalized });
-            }
+            if (user) setUser({ ...user, currency: normalized });
         });
 
         if (!user) return;
-
         try {
             const updatedUser = await userService.updateCurrentUser({ currency: normalized });
             setUser(updatedUser);
         } catch (error: unknown) {
             startUiTransition(() => {
                 setCurrency(previousCurrency);
-                if (user) {
-                    setUser({ ...user, currency: previousCurrency });
-                }
+                if (user) setUser({ ...user, currency: previousCurrency });
             });
             if (!isNetworkLikeError(error)) {
-                dialog.alert(
-                    SETTINGS_TEXT.errors.generic,
-                    error instanceof Error ? error.message : SETTINGS_TEXT.errors.currencySaveFailed
-                );
+                dialog.alert(SETTINGS_TEXT.errors.generic, error instanceof Error ? error.message : SETTINGS_TEXT.errors.currencySaveFailed);
             }
         }
     };
 
     const checkForUpdates = useCallback(async () => {
-        setLastCheckedAt(new Date());
 
         if (!canCheckUpdates) {
-            const message = __DEV__
-                ? SETTINGS_TEXT.updateMessages.devOnly
-                : Platform.OS === 'web'
-                    ? SETTINGS_TEXT.updateMessages.webManaged
-                    : SETTINGS_TEXT.updateMessages.disabled;
-
             setUpdateState('disabled');
-            setUpdateMessage(message);
+
             return;
         }
 
         setUpdateState('checking');
-        setUpdateMessage(SETTINGS_TEXT.updateMessages.checking);
+
 
         try {
             const update = await Updates.checkForUpdateAsync();
             if (!update.isAvailable) {
                 setUpdateState('upToDate');
-                setUpdateMessage(SETTINGS_TEXT.updateMessages.upToDate);
+
                 return;
             }
 
             setUpdateState('downloading');
-            setUpdateMessage(SETTINGS_TEXT.updateMessages.downloading);
+
             await Updates.fetchUpdateAsync();
 
             setUpdateState('downloaded');
-            setUpdateMessage(SETTINGS_TEXT.updateMessages.downloaded);
-        } catch (error: unknown) {
+
+        } catch {
             setUpdateState('error');
-            setUpdateMessage(error instanceof Error ? error.message : SETTINGS_TEXT.updateMessages.failed);
         }
     }, [canCheckUpdates]);
 
     const applyDownloadedUpdate = async () => {
         if (updateState !== 'downloaded') return;
-
         setIsApplyingUpdate(true);
         try {
             await Updates.reloadAsync();
         } catch (error: unknown) {
-            if (!isNetworkLikeError(error)) {
-                dialog.alert(
-                    SETTINGS_TEXT.errors.updateError,
-                    error instanceof Error ? error.message : SETTINGS_TEXT.updateMessages.applyFailed
-                );
-            }
+            dialog.alert(SETTINGS_TEXT.errors.updateError, error instanceof Error ? error.message : SETTINGS_TEXT.updateMessages.applyFailed);
         } finally {
             setIsApplyingUpdate(false);
         }
@@ -249,32 +168,22 @@ export const SettingsScreen = () => {
 
     const refreshQueueStats = useCallback(async () => {
         try {
-            const stats = await offlineSyncService.getQueueStats();
+            const stats = await syncService.getQueueStats();
             setPendingSyncCount(stats.pendingCount);
-            setOldestPendingAt(parseDateSafe(stats.oldestCreatedAt));
-            setSyncMessage(
-                stats.pendingCount > 0
-                    ? SETTINGS_TEXT.dataSync.queuedMessage
-                    : SETTINGS_TEXT.dataSync.idleMessage
-            );
-        } catch {
-            // Keep last known state on read failures.
-        }
+
+            setSyncMessage(stats.pendingCount > 0 ? SETTINGS_TEXT.dataSync.queuedMessage : SETTINGS_TEXT.dataSync.idleMessage);
+        } catch { }
     }, []);
 
     const runManualSync = useCallback(async () => {
         if (isSyncing) return;
         setIsSyncing(true);
         setSyncMessage(SETTINGS_TEXT.dataSync.syncingMessage);
-
         try {
-            const result = await offlineSyncService.flushQueue();
-            setLastSyncAt(new Date());
-            if (result.remaining > 0) {
-                setSyncMessage(`Synced ${result.processed}. ${result.remaining} pending.`);
-            } else {
-                setSyncMessage(SETTINGS_TEXT.dataSync.idleMessage);
-            }
+            await syncService.flushQueue();
+            const stats = await syncService.getQueueStats();
+
+            setSyncMessage(stats.pendingCount > 0 ? `Synced recent items. ${stats.pendingCount} pending.` : SETTINGS_TEXT.dataSync.idleMessage);
         } catch {
             setSyncMessage('Sync failed. Please try again.');
         } finally {
@@ -293,405 +202,364 @@ export const SettingsScreen = () => {
             }, selectedOrganizationId ?? undefined);
             setOrganizationSettings(settings);
         } catch (error: unknown) {
-            if (!isNetworkLikeError(error)) {
-                dialog.alert('Module Visibility', error instanceof Error ? error.message : 'Failed to save module visibility.');
-            }
+            dialog.alert('Module Visibility', error instanceof Error ? error.message : 'Failed to save module visibility.');
         } finally {
             setSavingModuleAccess(false);
         }
     }, [dialog, isOwnerOrAdmin, moduleAccessDraft, selectedOrganizationId, setOrganizationSettings]);
 
-    useEffect(() => {
-        void checkForUpdates();
-    }, [checkForUpdates]);
-
-    useEffect(() => {
-        setModuleAccessDraft((current) => ({
-            ...current,
-            ...appModuleAccess,
-        }));
-    }, [appModuleAccess]);
-
+    useEffect(() => { void checkForUpdates(); }, [checkForUpdates]);
+    useEffect(() => { setModuleAccessDraft((current) => ({ ...current, ...appModuleAccess })); }, [appModuleAccess]);
     useEffect(() => {
         void refreshQueueStats();
-        setStorageBackend(offlineSyncService.getStorageBackend());
+        setStorageBackend('SQLite');
     }, [refreshQueueStats]);
 
-    useFocusRefresh(refreshQueueStats, {
-        enabled: canAccessSettings,
-        minIntervalMs: 8_000,
-        delayMs: 120,
-    });
+    useFocusRefresh(refreshQueueStats, { enabled: canAccessSettings, minIntervalMs: 8_000 });
+
+    if (!canAccessSettings) {
+        return (
+            <ScreenWrapper>
+                <View style={styles.centerContainer}>
+                    <Text variant="titleMedium" style={styles.titleBold}>Access Restricted</Text>
+                    <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 8 }}>
+                        You do not have permission to view settings.
+                    </Text>
+                    <AppButton mode="outlined" onPress={signOut} style={styles.marginTop}>
+                        {SETTINGS_TEXT.actions.signOut}
+                    </AppButton>
+                </View>
+            </ScreenWrapper>
+        );
+    }
 
     return (
         <ScreenWrapper>
-            {!canAccessSettings ? (
-                <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]} showsVerticalScrollIndicator={false}>
-                    <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                        <PageHeaderCard
-                            title={SETTINGS_TEXT.title}
-                            subtitle="Access restricted"
-                        />
-                        <AppCard animationDelay={40}>
-                            <Text variant="titleSmall" style={{ fontWeight: '700' }}>
-                                Settings access is disabled
-                            </Text>
-                            <Text variant="bodySmall" style={{ marginTop: 8, color: theme.colors.outline }}>
-                                Ask owner/admin to enable settings permissions for your account.
-                            </Text>
-                        </AppCard>
-                        <View style={styles.signOutWrap}>
-                            <AppButton mode="outlined" onPress={signOut} icon="logout">
-                                {SETTINGS_TEXT.actions.signOut}
-                            </AppButton>
-                        </View>
-                    </View>
-                </ScrollView>
-            ) : (
-                <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]} showsVerticalScrollIndicator={false}>
-                    <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                        <PageHeaderCard
-                            title={SETTINGS_TEXT.title}
-                            subtitle={user?.email || user?.phoneNumber || SETTINGS_TEXT.userFallback}
-                        />
-                        <AppCard
-                            animationDelay={30}
-                            style={styles.heroCard}
-                        >
-                            <Text variant="titleSmall" style={{ fontWeight: '700' }}>
-                                Preferences & Controls
-                            </Text>
-                            <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 4 }}>
-                                Theme, sync status, account access and app updates in one place.
-                            </Text>
-                        </AppCard>
-                        {adminAccessQuery.error && !isNetworkLikeError(adminAccessQuery.error) ? (
-                            <Text variant="bodySmall" style={{ color: theme.colors.error, marginBottom: 8 }}>
-                                {adminAccessQuery.error instanceof Error ? adminAccessQuery.error.message : 'Failed to verify admin access.'}
-                            </Text>
-                        ) : null}
+            <View style={styles.header}>
+                <Text variant="headlineMedium" style={styles.headerTitle}>Settings</Text>
+                <SegmentedButtons
+                    value={activeTab}
+                    onValueChange={(val) => setActiveTab(val as SettingsTab)}
+                    buttons={[
+                        { value: 'profile', label: 'Profile', icon: 'account' },
+                        { value: 'business', label: 'Business', icon: 'domain' },
+                    ]}
+                    style={styles.tabs}
+                />
+            </View>
 
-                        <View style={[styles.grid, isWide && styles.gridWide]}>
-                    <AppCard animationDelay={40} style={sectionCardContainer}>
-                        <List.Section style={styles.listSection}>
-                            <List.Subheader>{SETTINGS_TEXT.sections.appearance}</List.Subheader>
-                            <List.Item
-                                title={SETTINGS_TEXT.appearance.useSystemTheme}
-                                right={() => (
-                                    <Switch
-                                        value={isSystemTheme}
-                                        onValueChange={(enabled) => setThemeMode(enabled ? 'system' : (effectiveDark ? 'dark' : 'light'))}
-                                    />
-                                )}
-                                left={(props) => <List.Icon {...props} icon="theme-light-dark" />}
-                            />
-                            <List.Item
-                                title={SETTINGS_TEXT.appearance.darkMode}
-                                description={isSystemTheme ? SETTINGS_TEXT.appearance.darkModeSystemNote : undefined}
-                                disabled={isSystemTheme}
-                                right={() => (
-                                    <Switch
-                                        value={effectiveDark}
-                                        onValueChange={(enabled) => setThemeMode(enabled ? 'dark' : 'light')}
-                                    />
-                                )}
-                                left={(props) => <List.Icon {...props} icon="weather-night" />}
-                            />
-                        </List.Section>
-                    </AppCard>
+            <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]} showsVerticalScrollIndicator={false}>
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
 
-                    <AppCard animationDelay={52} style={sectionCardContainer}>
-                        <List.Section style={styles.listSection}>
-                            <List.Subheader>{SETTINGS_TEXT.sections.billingPreferences}</List.Subheader>
-                            <List.Accordion
-                                title={`${SETTINGS_TEXT.billing.currencyPrefix} ${activeCurrency}`}
-                                left={(props) => <List.Icon {...props} icon="cash-multiple" />}
-                            >
-                                {Config.supportedCurrencies.map((entry) => (
+                    {activeTab === 'profile' && (
+                        <View style={styles.tabContent}>
+                            {/* Profile Hero */}
+                            <AppCard style={styles.heroCard}>
+                                <View style={styles.profileRow}>
+                                    <View style={[styles.avatarPlaceholder, { backgroundColor: theme.colors.primaryContainer }]}>
+                                        <Text variant="headlineSmall" style={{ color: theme.colors.primary }}>
+                                            {user?.displayName?.[0] || 'U'}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.profileInfo}>
+                                        <Text variant="titleMedium" style={styles.titleBold}>{user?.displayName || 'User'}</Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>{user?.email || user?.phoneNumber}</Text>
+                                        <AppButton
+                                            mode="text"
+                                            compact
+                                            style={styles.editProfileBtn}
+                                            onPress={() => router.push('/profile' as never)}
+                                        >
+                                            Edit Profile
+                                        </AppButton>
+                                    </View>
+                                </View>
+                            </AppCard>
+
+                            {/* Appearance */}
+                            <AppCard>
+                                <List.Section style={styles.sectionNoMargin}>
+                                    <List.Subheader>Appearance</List.Subheader>
                                     <List.Item
-                                        key={entry.code}
-                                        title={`${entry.code} - ${entry.label}`}
-                                        onPress={() => {
-                                            void handleCurrencyChange(entry.code);
-                                        }}
-                                        right={(props) => (
-                                            entry.code === activeCurrency ? <List.Icon {...props} icon="check" /> : null
-                                        )}
-                                    />
-                                ))}
-                            </List.Accordion>
-                            <List.Item
-                                title="Notification Sound"
-                                description="Play system sound for reminders and task alerts"
-                                left={(props) => <List.Icon {...props} icon="volume-high" />}
-                                right={() => (
-                                    <Switch
-                                        value={notificationSoundEnabled}
-                                        onValueChange={toggleNotificationSound}
-                                    />
-                                )}
-                            />
-                        </List.Section>
-                    </AppCard>
-
-                    {isOwnerOrAdmin && (
-                        <AppCard animationDelay={56} style={sectionCardContainer}>
-                            <List.Section style={styles.listSection}>
-                                <List.Subheader>Module Visibility</List.Subheader>
-                                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 6 }}>
-                                    Disable modules you do not need. Disabled modules are hidden across the app.
-                                </Text>
-                                {moduleFields.map((field) => (
-                                    <List.Item
-                                        key={field.key}
-                                        title={field.title}
-                                        description={field.description}
+                                        title={SETTINGS_TEXT.appearance.useSystemTheme}
                                         right={() => (
                                             <Switch
-                                                value={moduleAccessDraft[field.key] !== false}
-                                                onValueChange={(enabled) => {
-                                                    setModuleAccessDraft((current) => ({
-                                                        ...current,
-                                                        [field.key]: enabled,
-                                                    }));
-                                                }}
+                                                value={isSystemTheme}
+                                                onValueChange={(val) => setThemeMode(val ? 'system' : (effectiveDark ? 'dark' : 'light'))}
                                             />
                                         )}
+                                        left={(props) => <List.Icon {...props} icon="theme-light-dark" />}
                                     />
-                                ))}
-                                <AppButton
-                                    mode="contained"
-                                    onPress={() => { void saveModuleAccess(); }}
-                                    loading={savingModuleAccess}
-                                    disabled={savingModuleAccess}
-                                >
-                                    Save Module Visibility
-                                </AppButton>
-                            </List.Section>
-                        </AppCard>
+                                    <List.Item
+                                        title={SETTINGS_TEXT.appearance.darkMode}
+                                        disabled={isSystemTheme}
+                                        right={() => (
+                                            <Switch
+                                                value={effectiveDark}
+                                                onValueChange={(val) => setThemeMode(val ? 'dark' : 'light')}
+                                            />
+                                        )}
+                                        left={(props) => <List.Icon {...props} icon="weather-night" />}
+                                    />
+                                </List.Section>
+                            </AppCard>
+
+                            {/* About / Info */}
+                            <AppCard>
+                                <List.Section style={styles.sectionNoMargin}>
+                                    <List.Subheader>Application</List.Subheader>
+                                    <List.Item
+                                        title="About BillTap"
+                                        left={(props) => <List.Icon {...props} icon="information-outline" />}
+                                        onPress={() => router.push('/about' as never)}
+                                    />
+                                    <List.Item
+                                        title="Update Check"
+                                        description={`${appVersion} (${buildVersion})`}
+                                        left={(props) => <List.Icon {...props} icon="cloud-download-outline" />}
+                                        onPress={() => void checkForUpdates()}
+                                    />
+                                    {updateState === 'downloaded' && (
+                                        <AppButton mode="contained" onPress={() => void applyDownloadedUpdate()} loading={isApplyingUpdate}>
+                                            Restart & Update
+                                        </AppButton>
+                                    )}
+                                </List.Section>
+                            </AppCard>
+
+                            <AppButton mode="outlined" icon="logout" onPress={signOut} style={styles.signOutButton}>
+                                Sign Out
+                            </AppButton>
+                        </View>
                     )}
 
-                    <AppCard animationDelay={64} style={sectionCardContainer}>
-                        <List.Section style={styles.listSection}>
-                            <List.Subheader>{SETTINGS_TEXT.sections.account}</List.Subheader>
-                            <List.Item
-                                title="Profile Setup"
-                                description="Manage account details and link mobile number."
-                                left={(props) => <List.Icon {...props} icon="account-circle-outline" />}
-                                onPress={() => router.push('/profile' as never)}
-                            />
-                            {(isOwnerOrAdmin || canManageSubscription) && (
-                                <List.Item
-                                    title={SETTINGS_TEXT.account.subscriptionTitle}
-                                    description={subscriptionLabel}
-                                    left={(props) => <List.Icon {...props} icon="credit-card-outline" />}
-                                    onPress={() => router.push('/subscription' as never)}
-                                />
-                            )}
-                            {canAccessAdminPanelEntry && (
-                                <List.Item
-                                    title={SETTINGS_TEXT.account.adminPanelTitle}
-                                    description={SETTINGS_TEXT.account.adminPanelDescription}
-                                    left={(props) => <List.Icon {...props} icon="shield-crown-outline" />}
-                                    onPress={() => router.push('/admin' as never)}
-                                />
-                            )}
-                            {canAccessAccounting && (
-                                <List.Item
-                                    title="Accounting Suite"
-                                    description="Chart of accounts, journals, trial balance and GST."
-                                    left={(props) => <List.Icon {...props} icon="book-open-variant" />}
-                                    onPress={() => router.push('/accounting' as never)}
-                                />
-                            )}
-                            {canAccessOperations && (
-                                <List.Item
-                                    title="Operations Controls"
-                                    description="Approvals, audit logs and period lock workflow."
-                                    left={(props) => <List.Icon {...props} icon="shield-check-outline" />}
-                                    onPress={() => router.push('/operations' as never)}
-                                />
-                            )}
-                            {canAccessBusinessSuite && (
-                                <List.Item
-                                    title="Business Suite"
-                                    description="Payroll, GST compliance, treasury and enterprise snapshots."
-                                    left={(props) => <List.Icon {...props} icon="briefcase-variant-outline" />}
-                                    onPress={() => router.push('/business-suite' as never)}
-                                />
-                            )}
-                            <List.Item
-                                title={SETTINGS_TEXT.account.businessProfileTitle}
-                                description={SETTINGS_TEXT.account.businessProfileDescription}
-                                left={(props) => <List.Icon {...props} icon="store" />}
-                                onPress={() => router.push('/business-setup' as never)}
-                            />
-                        </List.Section>
-                    </AppCard>
+                    {activeTab === 'business' && (
+                        <View style={styles.tabContent}>
+                            {/* Business Hero */}
+                            <AppCard style={styles.heroCard}>
+                                <View style={styles.profileRow}>
+                                    <View style={[styles.avatarPlaceholder, { backgroundColor: theme.colors.tertiaryContainer }]}>
+                                        <Icon source="domain" size={32} color={theme.colors.tertiary} />
+                                    </View>
+                                    <View style={styles.profileInfo}>
+                                        <Text variant="titleMedium" style={styles.titleBold}>{user?.businessName || 'My Business'}</Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>Role: {user?.role || 'Staff'}</Text>
+                                        <AppButton 
+                                            mode="text"
+                                            compact
+                                            style={styles.editProfileBtn}
+                                            onPress={() => router.push('/business-setup' as never)}
+                                        >
+                                            Business Details
+                                        </AppButton>
+                                    </View>
+                                </View>
+                            </AppCard>
 
-                    <AppCard animationDelay={76} style={sectionCardContainer}>
-                        <List.Section style={styles.listSection}>
-                            <List.Subheader>{SETTINGS_TEXT.sections.dataSync}</List.Subheader>
-                            <Text variant="titleSmall" style={{ fontWeight: '700' }}>
-                                {SETTINGS_TEXT.dataSync.title}
-                            </Text>
-                            <Text variant="bodySmall" style={{ marginTop: 8 }}>
-                                {SETTINGS_TEXT.dataSync.statusLabel}: {pendingSyncCount}
-                            </Text>
-                            <Text variant="bodySmall" style={{ marginTop: 2 }}>
-                                {SETTINGS_TEXT.dataSync.oldestLabel}: {formatTimestamp(oldestPendingAt)}
-                            </Text>
-                            <Text variant="bodySmall" style={{ marginTop: 2 }}>
-                                {SETTINGS_TEXT.dataSync.lastSyncLabel}: {formatTimestamp(lastSyncAt)}
-                            </Text>
-                            <Text variant="bodySmall" style={{ marginTop: 2 }}>
-                                Storage backend: {storageBackend}
-                            </Text>
-                            <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 6 }}>
-                                {syncMessage}
-                            </Text>
-                            <AppButton
-                                mode="outlined"
-                                style={{ marginTop: 10 }}
-                                loading={isSyncing}
-                                disabled={isSyncing || isUiPending}
-                                onPress={() => { void runManualSync(); }}
-                            >
-                                {SETTINGS_TEXT.dataSync.syncNowButton}
-                            </AppButton>
-                        </List.Section>
-                    </AppCard>
+                            {/* Modules & Feature Links */}
+                            <AppCard>
+                                <List.Section style={styles.sectionNoMargin}>
+                                    <List.Subheader>Business Modules</List.Subheader>
 
-                    <AppCard animationDelay={84} style={sectionCardContainer}>
-                        <List.Section style={styles.listSection}>
-                            <List.Subheader>{SETTINGS_TEXT.sections.appInformation}</List.Subheader>
-                            <List.Item
-                                title={SETTINGS_TEXT.appInfo.aboutTitle}
-                                description={SETTINGS_TEXT.appInfo.aboutDescription}
-                                left={(props) => <List.Icon {...props} icon="information-outline" />}
-                                onPress={() => router.push('/about' as never)}
-                            />
-                            <List.Item
-                                title={SETTINGS_TEXT.appInfo.changelogTitle}
-                                description={SETTINGS_TEXT.appInfo.changelogDescription}
-                                left={(props) => <List.Icon {...props} icon="history" />}
-                                onPress={() => router.push('/changelog' as never)}
-                            />
-                            <List.Item
-                                title={SETTINGS_TEXT.appInfo.termsTitle}
-                                description={SETTINGS_TEXT.appInfo.termsDescription}
-                                left={(props) => <List.Icon {...props} icon="file-document-outline" />}
-                                onPress={() => router.push('/terms' as never)}
-                            />
-                            <List.Item
-                                title={SETTINGS_TEXT.appInfo.privacyTitle}
-                                description={SETTINGS_TEXT.appInfo.privacyDescription}
-                                left={(props) => <List.Icon {...props} icon="shield-account-outline" />}
-                                onPress={() => router.push('/privacy' as never)}
-                            />
-                            <List.Item
-                                title={SETTINGS_TEXT.appInfo.sitemapTitle}
-                                description={SETTINGS_TEXT.appInfo.sitemapDescription}
-                                left={(props) => <List.Icon {...props} icon="sitemap" />}
-                                onPress={() => router.push('/sitemap' as never)}
-                            />
-                        </List.Section>
-                    </AppCard>
+                                    {(isOwnerOrAdmin || canManageSubscription) && (
+                                        <List.Item
+                                            title="Subscription Plan"
+                                            description={subscriptionLabel}
+                                            left={(props) => <List.Icon {...props} icon="credit-card-outline" />}
+                                            onPress={() => router.push('/subscription' as never)}
+                                        />
+                                    )}
 
-                    <AppCard animationDelay={95} style={sectionCardContainer}>
-                        <Text variant="titleSmall" style={{ fontWeight: '700' }}>
-                            {SETTINGS_TEXT.updateCard.title}
-                        </Text>
-                        <Text variant="bodySmall" style={{ marginTop: 8 }}>
-                            {SETTINGS_TEXT.updateCard.versionLabel}: {appVersion}
-                        </Text>
-                        <Text variant="bodySmall" style={{ marginTop: 2 }}>
-                            {SETTINGS_TEXT.updateCard.buildLabel}: {buildVersion}
-                        </Text>
-                        <Text variant="bodySmall" style={{ marginTop: 2 }}>
-                            {SETTINGS_TEXT.updateCard.runtimeLabel}: {runtimeVersion}
-                        </Text>
-                        <Text variant="bodySmall" style={{ marginTop: 2 }}>
-                            {SETTINGS_TEXT.updateCard.channelLabel}: {updateChannel}
-                        </Text>
-                        <Text variant="bodySmall" style={{ marginTop: 6 }}>
-                            {SETTINGS_TEXT.updateCard.statusLabel}: {updateStatusLabel}
-                        </Text>
-                        <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 2 }}>
-                            {updateMessage}
-                        </Text>
-                        <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 2 }}>
-                            {SETTINGS_TEXT.updateCard.lastCheckedLabel}: {formatTimestamp(lastCheckedAt)}
-                        </Text>
+                                    {canAccessAccounting && (
+                                        <List.Item
+                                            title="Accounting"
+                                            description="Chart of accounts, Journals, Tax"
+                                            left={(props) => <List.Icon {...props} icon="book-open-variant" />}
+                                            onPress={() => router.push('/accounting' as never)}
+                                        />
+                                    )}
 
-                        <AppButton
-                            mode="outlined"
-                            style={{ marginTop: 10 }}
-                            loading={updateState === 'checking' || updateState === 'downloading'}
-                            disabled={isApplyingUpdate || isUiPending}
-                            onPress={() => { void checkForUpdates(); }}
-                        >
-                            {SETTINGS_TEXT.updateCard.checkButton}
-                        </AppButton>
+                                    {canAccessOperations && (
+                                        <List.Item
+                                            title="Operations"
+                                            description="Staff, Audit, Approvals"
+                                            left={(props) => <List.Icon {...props} icon="shield-check-outline" />}
+                                            onPress={() => router.push('/operations' as never)}
+                                        />
+                                    )}
 
-                        {updateState === 'downloaded' && (
-                            <AppButton
-                                mode="contained"
-                                style={{ marginTop: 8 }}
-                                loading={isApplyingUpdate}
-                                disabled={isUiPending}
-                                onPress={() => { void applyDownloadedUpdate(); }}
-                            >
-                                {SETTINGS_TEXT.updateCard.applyButton}
-                            </AppButton>
-                        )}
-                    </AppCard>
+                                    {canAccessBusinessSuite && (
+                                        <List.Item
+                                            title="Enterprise Suite"
+                                            description="Payroll, Treasury, Compliance"
+                                            left={(props) => <List.Icon {...props} icon="briefcase-variant-outline" />}
+                                            onPress={() => router.push('/business-suite' as never)}
+                                        />
+                                    )}
+                                </List.Section>
+                            </AppCard>
+
+                            {/* Preferences */}
+                            <AppCard>
+                                <List.Section style={styles.sectionNoMargin}>
+                                    <List.Subheader>Preferences</List.Subheader>
+                                    <List.Accordion
+                                        title={`Currency: ${activeCurrency}`}
+                                        left={(props) => <List.Icon {...props} icon="cash-multiple" />}
+                                    >
+                                        {Config.supportedCurrencies.map((entry) => (
+                                            <List.Item
+                                                key={entry.code}
+                                                title={`${entry.code} - ${entry.label}`}
+                                                onPress={() => void handleCurrencyChange(entry.code)}
+                                                right={(props) => entry.code === activeCurrency ? <List.Icon {...props} icon="check" /> : null}
+                                            />
+                                        ))}
+                                    </List.Accordion>
+                                    <List.Item
+                                        title="Sound Effects"
+                                        right={() => <Switch value={notificationSoundEnabled} onValueChange={toggleNotificationSound} />}
+                                        left={(props) => <List.Icon {...props} icon="volume-high" />}
+                                    />
+                                </List.Section>
+                            </AppCard>
+
+                            {/* Data Sync */}
+                            <AppCard>
+                                <List.Section style={styles.sectionNoMargin}>
+                                    <List.Subheader>Data & Sync</List.Subheader>
+                                    <List.Item
+                                        title="Sync Status"
+                                        description={`${syncMessage} (Pending: ${pendingSyncCount})`}
+                                        left={(props) => <List.Icon {...props} icon="cloud-sync" />}
+                                        right={() => (
+                                            <Button mode="text" onPress={() => void runManualSync()} loading={isSyncing} disabled={isSyncing}>
+                                                Sync Now
+                                            </Button>
+                                        )}
+                                    />
+                                    <List.Item
+                                        title="Storage"
+                                        description={`Backend: ${storageBackend}`}
+                                        left={(props) => <List.Icon {...props} icon="database" />}
+                                    />
+                                </List.Section>
+                            </AppCard>
+
+                            {/* Module Visibility (Owner Only) */}
+                            {isOwnerOrAdmin && (
+                                <AppCard>
+                                    <List.Section style={styles.sectionNoMargin}>
+                                        <List.Subheader>Module Configuration</List.Subheader>
+                                        <View style={styles.moduleList}>
+                                            {moduleFields.map((field) => (
+                                                <List.Item
+                                                    key={field.key}
+                                                    title={field.title}
+                                                    description={field.description}
+                                                    right={() => (
+                                                        <Switch
+                                                            value={moduleAccessDraft[field.key] !== false}
+                                                            onValueChange={(val) => setModuleAccessDraft(curr => ({ ...curr, [field.key]: val }))}
+                                                        />
+                                                    )}
+                                                />
+                                            ))}
+                                        </View>
+                                        <AppButton
+                                            mode="contained" 
+                                            onPress={() => void saveModuleAccess()}
+                                            loading={savingModuleAccess}
+                                            style={styles.saveBtn}
+                                        >
+                                            Save Configuration
+                                        </AppButton>
+                                    </List.Section>
+                                </AppCard>
+                            )}
                         </View>
-
-                        <View style={styles.signOutWrap}>
-                            <AppButton mode="outlined" onPress={signOut} icon="logout">
-                                {SETTINGS_TEXT.actions.signOut}
-                            </AppButton>
-                        </View>
-                    </View>
-                </ScrollView>
-            )}
+                    )}
+                </View>
+            </ScrollView>
         </ScreenWrapper>
     );
 };
 
 const styles = StyleSheet.create({
-    content: {
-        paddingTop: DesignSystem.layout.pageTop,
+    header: {
+        paddingHorizontal: DesignSystem.spacing.xl,
+        paddingTop: DesignSystem.spacing.lg,
+        gap: DesignSystem.spacing.md,
+    },
+    headerTitle: {
+        fontWeight: 'bold',
+    },
+    tabs: {
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    centerContainer: {
+        flex: 1,
+        justifyContent: 'center',
         alignItems: 'center',
+        padding: DesignSystem.spacing.xl,
+    },
+    content: {
+        paddingTop: DesignSystem.spacing.md,
     },
     contentInner: {
         width: '100%',
+        paddingHorizontal: DesignSystem.spacing.md,
+        gap: DesignSystem.spacing.md,
     },
     contentInnerWide: {
         maxWidth: DesignSystem.layout.workspaceMaxWidth,
+        alignSelf: 'center',
+    },
+    tabContent: {
+        gap: DesignSystem.spacing.md,
     },
     heroCard: {
-        marginBottom: 8,
+        padding: 0,
     },
-    grid: {
-        gap: 8,
-    },
-    gridWide: {
+    profileRow: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
+        alignItems: 'center',
+        padding: DesignSystem.spacing.md,
+        gap: DesignSystem.spacing.md,
     },
-    sectionCard: {
-        marginBottom: 0,
+    avatarPlaceholder: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    sectionCardWide: {
-        width: '49%',
+    profileInfo: {
+        flex: 1,
     },
-    listSection: {
+    editProfileBtn: {
+        alignSelf: 'flex-start',
+        marginLeft: -8,
+    },
+    titleBold: {
+        fontWeight: 'bold',
+    },
+    sectionNoMargin: {
         marginVertical: 0,
+        paddingVertical: 0,
     },
-    signOutWrap: {
-        marginTop: 8,
-        marginBottom: 8,
+    signOutButton: {
+        marginTop: DesignSystem.spacing.sm,
+        marginBottom: DesignSystem.spacing.xl,
+        borderColor: '#FF5252', // Hardcoded error color or use theme.colors.error if accessible in styles (it's not usually, so hardcode or use a constant)
+    },
+    moduleList: {
+        marginBottom: DesignSystem.spacing.md,
+    },
+    saveBtn: {
+        marginTop: DesignSystem.spacing.sm,
+    },
+    marginTop: {
+        marginTop: DesignSystem.spacing.lg,
     },
 });

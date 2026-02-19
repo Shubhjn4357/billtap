@@ -11,6 +11,7 @@ export const DesignSystem = {
         sectionGap: 10,
     },
     radius: {
+        xxs: 4,
         xs: 8,
         sm: 12,
         md: 16,

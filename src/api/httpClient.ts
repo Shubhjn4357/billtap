@@ -57,6 +57,7 @@ interface RequestOptions {
     body?: unknown;
     headers?: Record<string, string>;
     skipAuth?: boolean;
+    params?: unknown;
 }
 
 const asServerMessage = (response: AxiosResponse<unknown>): string => {
@@ -110,8 +111,10 @@ const wait = async (ms: number) => {
     await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+// ... (existing code)
+
 const request = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
-    const { method = 'GET', body, headers = {}, skipAuth = false } = options;
+    const { method = 'GET', body, headers = {}, skipAuth = false, params } = options;
     const retryableMethod = method === 'GET';
 
     const requestHeaders: Record<string, string> = {
@@ -152,6 +155,7 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
                 timeout: DEFAULT_TIMEOUT_MS,
                 headers: requestHeaders,
                 data: hasBody ? body : undefined,
+                params,
                 validateStatus: () => true,
             });
 

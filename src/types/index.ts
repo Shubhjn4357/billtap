@@ -117,6 +117,7 @@ export interface Item {
 
     // Stock
     stock: number;
+    lowStockThreshold?: number;
     minimumStock?: number;
     openingStock?: number;
     unit?: string;
@@ -245,17 +246,20 @@ export interface StaffInvite {
     createdAt: FirestoreDate;
 }
 
-export type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
+// Consolidated Account Type
+export type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE' | 'CASH' | 'BANK';
 
 export interface Account {
     id: string;
-    userId: string;
-    code: string;
+    organizationId: string;
+    code?: string; // Added for Chart of Accounts
     name: string;
     type: AccountType;
-    parentId?: string | null;
-    isSystem: boolean;
-    isActive: boolean;
+    balance: number;
+    isDefault: boolean;
+    isActive?: boolean;
+    isSystem?: boolean; // Added for protected accounts
+    details?: string; // JSON string for bank details
     createdAt?: FirestoreDate;
     updatedAt?: FirestoreDate;
 }

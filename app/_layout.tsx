@@ -1,5 +1,9 @@
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
+import { db } from '../src/db/client';
+import { migrationData } from '../src/db/migrations/index';
+import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
+import { syncService } from '../src/services/syncService';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, InteractionManager, Platform } from 'react-native';
@@ -51,6 +55,8 @@ export default function RootLayout() {
     const { setNetworkState } = useNetworkStore();
     const userId = user?.uid;
     const userSubscriptionStatus = user?.subscriptionStatus;
+
+    const { success: migrationSuccess, error: migrationError } = useMigrations(db, migrationData);
 
     useEffect(() => {
         const originalAlert = Alert.alert;
@@ -118,7 +124,16 @@ export default function RootLayout() {
             setLoading(true);
 
             try {
+                // Initialize Local DB
+                // Managed by useMigrations hook now
+                // await migrateDb(expoDb); // Removed manual migration
+
+                // Start background sync
+                syncService.startSync();
+                void syncService.registerBackgroundSync();
+
                 const profile = await authService.getCurrentUser();
+
                 if (!isMounted) return;
 
                 if (!profile) {
@@ -126,6 +141,7 @@ export default function RootLayout() {
                     setLoading(false);
                     return;
                 }
+                // ... rest of the code ...
 
                 const profileCurrency = normalizeCurrencyCode(profile.currency ?? Config.defaultCurrency);
                 setUser({
@@ -276,10 +292,11 @@ export default function RootLayout() {
     }, []);
 
     // Show loading screen while fonts load or auth is bootstrapping
-    if (!loaded || !userHydrated || !settingsHydrated || !startupReady) {
+    if (!loaded || !userHydrated || !settingsHydrated || !startupReady || !migrationSuccess) {
+        const errorMsg = migrationError ? `Migration Error: ${migrationError.message}` : "Initializing...";
         return (
             <AppThemeProvider>
-                <LoadingScreen message="Initializing..." />
+                <LoadingScreen message={errorMsg} />
             </AppThemeProvider>
         );
     }

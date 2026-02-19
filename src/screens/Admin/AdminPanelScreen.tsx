@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Chip, SegmentedButtons, Switch, Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
 import { adminService } from '../../api/adminService';
@@ -17,6 +17,7 @@ import { addMonths, toDateSafe } from '../../utils/date';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { adminOfferSchema, adminPlanSchema } from '../../validation/forms';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 
 type AdminTab = 'users' | 'plans' | 'offers';
 
@@ -25,6 +26,7 @@ const buildNextMonthEnd = (startDate: Date) => addMonths(startDate, 1);
 const roleLabel = (role: UserRole | undefined) => (role ?? 'owner').toUpperCase();
 
 export const AdminPanelScreen = () => {
+    const { alert } = useAppDialog();
     const theme = useTheme();
     const { width } = useWindowDimensions();
     const isWide = width >= 1120;
@@ -131,15 +133,15 @@ export const AdminPanelScreen = () => {
         try {
             await adminService.updateUserRole(targetUser.uid, role);
             updateUserList(targetUser.uid, { role });
-            Alert.alert(COMMON_TEXT.alerts.saved, ADMIN_TEXT.alerts.roleUpdated(role));
+            alert(COMMON_TEXT.alerts.saved, ADMIN_TEXT.alerts.roleUpdated(role));
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.roleUpdateFailed);
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.roleUpdateFailed);
         }
     };
 
     const handleActivateSubscription = async (targetUser: UserProfile) => {
         if (!activeGrowthPlan) {
-            Alert.alert(ADMIN_TEXT.alerts.noPlanTitle, ADMIN_TEXT.alerts.noPlanBody);
+            alert(ADMIN_TEXT.alerts.noPlanTitle, ADMIN_TEXT.alerts.noPlanBody);
             return;
         }
 
@@ -159,12 +161,12 @@ export const AdminPanelScreen = () => {
         try {
             await adminService.updateUser(targetUser.uid, payload);
             updateUserList(targetUser.uid, payload);
-            Alert.alert(
+            alert(
                 ADMIN_TEXT.alerts.subscriptionUpdatedTitle,
                 ADMIN_TEXT.alerts.subscriptionUpdatedBody(targetUser.displayName ?? COMMON_TEXT.labels.none)
             );
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.activateSubscriptionFailed);
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.activateSubscriptionFailed);
         }
     };
 
@@ -179,9 +181,9 @@ export const AdminPanelScreen = () => {
         try {
             await adminService.updateUser(targetUser.uid, payload);
             updateUserList(targetUser.uid, payload);
-            Alert.alert(COMMON_TEXT.alerts.saved, ADMIN_TEXT.alerts.subscriptionStatusUpdated(status));
+            alert(COMMON_TEXT.alerts.saved, ADMIN_TEXT.alerts.subscriptionStatusUpdated(status));
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.subscriptionStatusFailed);
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.subscriptionStatusFailed);
         }
     };
 
@@ -207,7 +209,7 @@ export const AdminPanelScreen = () => {
             features: draft.features.map((feature) => feature.trim()).filter(Boolean),
         });
         if (!validation.success) {
-            Alert.alert(COMMON_TEXT.alerts.validation, validation.error.issues[0]?.message || ADMIN_TEXT.alerts.planNameRequired);
+            alert(COMMON_TEXT.alerts.validation, validation.error.issues[0]?.message || ADMIN_TEXT.alerts.planNameRequired);
             return;
         }
         const values = validation.data;
@@ -232,9 +234,9 @@ export const AdminPanelScreen = () => {
                     .sort((a, b) => a.displayOrder - b.displayOrder)
             );
             setPlanDrafts((current) => ({ ...current, [normalized.id]: normalized }));
-            Alert.alert(COMMON_TEXT.alerts.saved, ADMIN_TEXT.alerts.planUpdated(normalized.name));
+            alert(COMMON_TEXT.alerts.saved, ADMIN_TEXT.alerts.planUpdated(normalized.name));
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.savePlanFailed);
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.savePlanFailed);
         }
     };
 
@@ -247,9 +249,9 @@ export const AdminPanelScreen = () => {
                 delete copy[planId];
                 return copy;
             });
-            Alert.alert(COMMON_TEXT.alerts.saved, 'Plan deleted.');
+            alert(COMMON_TEXT.alerts.saved, 'Plan deleted.');
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete plan.');
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete plan.');
         }
     };
 
@@ -259,7 +261,7 @@ export const AdminPanelScreen = () => {
             priority: Number(offerForm.priority),
         });
         if (!validation.success) {
-            Alert.alert(COMMON_TEXT.alerts.validation, validation.error.issues[0]?.message || ADMIN_TEXT.alerts.offerTitleMessageRequired);
+            alert(COMMON_TEXT.alerts.validation, validation.error.issues[0]?.message || ADMIN_TEXT.alerts.offerTitleMessageRequired);
             return;
         }
         const values = validation.data;
@@ -293,9 +295,9 @@ export const AdminPanelScreen = () => {
                 priority: '10',
                 isActive: true,
             });
-            Alert.alert(ADMIN_TEXT.alerts.offerCreatedTitle, ADMIN_TEXT.alerts.offerCreatedBody);
+            alert(ADMIN_TEXT.alerts.offerCreatedTitle, ADMIN_TEXT.alerts.offerCreatedBody);
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.createOfferFailed);
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.createOfferFailed);
         } finally {
             setOfferLoading(false);
         }
@@ -308,7 +310,7 @@ export const AdminPanelScreen = () => {
                 current.map((entry) => (entry.id === offer.id ? { ...entry, isActive: nextState } : entry))
             );
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.offerToggleFailed);
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : ADMIN_TEXT.alerts.offerToggleFailed);
         }
     };
 
@@ -317,7 +319,7 @@ export const AdminPanelScreen = () => {
             await adminService.deleteOffer(offerId);
             setOffers((current) => current.filter((entry) => entry.id !== offerId));
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete offer.');
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete offer.');
         }
     };
 
@@ -326,7 +328,7 @@ export const AdminPanelScreen = () => {
             await adminService.deleteUser(uid);
             setUsers((current) => current.filter((entry) => entry.uid !== uid));
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete user.');
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : 'Failed to delete user.');
         }
     };
 

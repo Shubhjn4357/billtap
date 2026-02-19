@@ -38,11 +38,12 @@ const { LightTheme, DarkTheme } = adaptNavigationTheme({
 const CustomLightTheme = {
     ...MD3LightTheme,
     ...LightTheme,
-    roundness: DesignSystem.radius.md,
+    roundness: DesignSystem.radius.xs / 4,
     colors: {
         ...MD3LightTheme.colors,
         ...LightTheme.colors,
         ...Colors.light,
+        elevation: Colors.light.elevation,
     },
     fonts: configureFonts({
         config: appFontConfig,
@@ -52,11 +53,12 @@ const CustomLightTheme = {
 const CustomDarkTheme = {
     ...MD3DarkTheme,
     ...DarkTheme,
-    roundness: DesignSystem.radius.md,
+    roundness: DesignSystem.radius.xs / 4,
     colors: {
         ...MD3DarkTheme.colors,
         ...DarkTheme.colors,
         ...Colors.dark,
+        elevation: Colors.dark.elevation,
     },
     fonts: configureFonts({
         config: appFontConfig,

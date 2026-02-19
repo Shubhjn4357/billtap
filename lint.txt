@@ -1,0 +1,27 @@
+﻿
+> billtap@3.0.1 lint D:\Code\billtap\client
+> expo lint
+
+env: load .env
+env: export EXPO_PUBLIC_API_BASE_URL EXPO_PUBLIC_ENABLE_LIVE_PAYMENTS EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID SMOKE_API_BASE_URL SMOKE_PHONE_NUMBER
+
+D:\Code\billtap\client\src\repositories\baseRepository.ts
+  3:10  warning  'eq' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Code\billtap\client\src\screens\Dashboard\DashboardScreen.tsx
+  2:40  warning  'useWindowDimensions' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Code\billtap\client\src\screens\Settings\SettingsScreen.tsx
+    4:71  warning  'TouchableOpacity' is defined but never used            @typescript-eslint/no-unused-vars
+   29:7   warning  'formatTimestamp' is assigned a value but never used    @typescript-eslint/no-unused-vars
+   75:12  warning  'isUiPending' is assigned a value but never used        @typescript-eslint/no-unused-vars
+   88:12  warning  'updateMessage' is assigned a value but never used      @typescript-eslint/no-unused-vars
+   89:12  warning  'lastCheckedAt' is assigned a value but never used      @typescript-eslint/no-unused-vars
+   92:12  warning  'oldestPendingAt' is assigned a value but never used    @typescript-eslint/no-unused-vars
+   93:12  warning  'lastSyncAt' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  109:11  warning  'runtimeVersion' is assigned a value but never used     @typescript-eslint/no-unused-vars
+  110:11  warning  'updateChannel' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  115:11  warning  'updateStatusLabel' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+Γ£û 12 problems (0 errors, 12 warnings)
+

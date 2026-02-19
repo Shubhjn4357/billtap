@@ -1,14 +1,13 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, FlatList, RefreshControl, StyleSheet, useWindowDimensions, Platform } from 'react-native';
-import { Chip, Text, FAB, SegmentedButtons, useTheme } from 'react-native-paper';
+import { Chip, Text, FAB, SegmentedButtons, useTheme, Searchbar, Avatar, IconButton } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStock } from '../../hooks/useStock';
 import { useAuth } from '../../hooks/useAuth';
 import { AppCard } from '../../components/common/AppCard';
 import { AppButton } from '../../components/common/AppButton';
-import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { Skeleton } from '../../components/feedback/Skeleton';
@@ -174,33 +173,42 @@ export const StockListScreen = () => {
             <AppCard
                 animationDelay={Math.min(index * 24, 220)}
                 onPress={() => router.push(`/item/${item.id}`)}
-                style={{ backgroundColor: needsAttention ? theme.colors.elevation.level2 : undefined }}
+                style={{ backgroundColor: needsAttention ? theme.colors.elevation.level2 : theme.colors.surface }}
             >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <View style={{ flex: 1, marginRight: 10 }}>
-                        <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
-                            {item.name}
-                        </Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                            <Text variant="bodySmall" style={{ color: theme.colors.outline, marginRight: 8 }}>
-                                Qty: {item.stock}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }}>
+                        {/* Avatar for Item */}
+                        <Avatar.Text
+                            size={48}
+                            label={item.name.substring(0, 2).toUpperCase()}
+                            style={{ backgroundColor: theme.colors.primaryContainer, marginRight: 16 }}
+                            color={theme.colors.primary}
+                        />
+                        <View style={{ flex: 1 }}>
+                            <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
+                                {item.name}
                             </Text>
-                            <Chip
-                                compact
-                                style={{ backgroundColor: status.backgroundColor, height: 24, marginRight: 8 }}
-                                textStyle={{ color: status.textColor, marginVertical: -2 }}
-                            >
-                                {status.label}
-                            </Chip>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
+                                    Qty: {item.stock}
+                                </Text>
+                                <Chip
+                                    compact
+                                    style={{ backgroundColor: status.backgroundColor, height: 24 }}
+                                    textStyle={{ color: status.textColor, marginVertical: -2, fontSize: 11 }}
+                                >
+                                    {status.label}
+                                </Chip>
+                            </View>
+                            {!!item.barcode && (
+                                <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 4 }}>
+                                    Barcode: {item.barcode}
+                                </Text>
+                            )}
                         </View>
-                        {!!item.barcode && (
-                            <Text variant="bodySmall" style={{ color: theme.colors.outline, marginTop: 4 }}>
-                                Barcode: {item.barcode}
-                            </Text>
-                        )}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                        <Text variant="titleMedium" style={{ color: theme.colors.primary, marginBottom: 8 }}>
+                        <Text variant="titleMedium" style={{ color: theme.colors.primary, marginBottom: 8, fontWeight: 'bold' }}>
                             {formatCurrency(item.price, activeCurrency)}
                         </Text>
                         <AppButton
@@ -214,7 +222,7 @@ export const StockListScreen = () => {
                 </View>
             </AppCard>
         );
-    }, [activeCurrency, getStockStatus, router, stockMetaById, theme.colors.elevation.level2, theme.colors.onSurface, theme.colors.outline, theme.colors.primary]);
+    }, [activeCurrency, getStockStatus, router, stockMetaById, theme.colors.elevation.level2, theme.colors.onSurface, theme.colors.outline, theme.colors.primary, theme.colors.primaryContainer, theme.colors.surface]);
 
     return (
         <ScreenWrapper>
@@ -236,8 +244,8 @@ export const StockListScreen = () => {
                             title="Inventory"
                             subtitle={`${items.length} items tracked`}
                             right={(
-                                <AppButton mode="contained-tonal" compact onPress={() => router.push('/item/new')}>
-                                    Add
+                                <AppButton mode="contained" icon="plus" onPress={() => router.push('/item/new')}>
+                                    Add New
                                 </AppButton>
                             )}
                         />
@@ -259,23 +267,23 @@ export const StockListScreen = () => {
                         </AppCard>
 
                         <View style={styles.searchRow}>
-                            <AppInput
-                                label="Search item"
-                                value={searchQuery}
+                                <Searchbar
+                                    placeholder="Search by name or barcode"
                                 onChangeText={setSearchQuery}
-                                placeholder="Name or barcode"
-                                inputType="search"
+                                    value={searchQuery}
                                 style={styles.searchInput}
+                                    inputStyle={{ minHeight: 0 }}
+                                    elevation={0}
                             />
-                            <AppButton
-                                mode="contained-tonal"
-                                compact
+                                <IconButton
                                 icon="barcode-scan"
+                                    mode="contained"
+                                    containerColor={theme.colors.secondaryContainer}
+                                    iconColor={theme.colors.onSecondaryContainer}
+                                    size={28}
                                 onPress={() => router.push({ pathname: '/scan', params: { target: 'stock' } })}
                                 style={styles.scanAction}
-                            >
-                                Scan
-                            </AppButton>
+                                />
                         </View>
                         {searchPending && (
                             <Text variant="labelSmall" style={{ marginBottom: 8, color: theme.colors.outline }}>
@@ -287,12 +295,13 @@ export const StockListScreen = () => {
                             value={stockScope}
                             onValueChange={(value) => setStockScope(value as StockScope)}
                             buttons={[
-                                { value: 'all', label: `All (${items.length})` },
-                                { value: 'in', label: `In (${inventoryStats.inStock})` },
-                                { value: 'low', label: `Low (${inventoryStats.lowStock})` },
-                                { value: 'out', label: `Out (${inventoryStats.outOfStock})` },
+                                { value: 'all', label: 'All' },
+                                { value: 'in', label: 'In Stock' },
+                                { value: 'low', label: 'Low Stock' },
+                                { value: 'out', label: 'Out of Stock' },
                             ]}
                             style={styles.scopeSelector}
+                                density="medium"
                         />
 
                         {loading ? (
@@ -474,10 +483,11 @@ const styles = StyleSheet.create({
     },
     searchInput: {
         flex: 1,
-        marginBottom: 0,
+        backgroundColor: '#F5F5F5',
+        borderRadius: DesignSystem.radius.lg,
     },
     scanAction: {
-        minWidth: 88,
+        margin: 0,
     },
     emptyCard: {
         marginTop: 20,

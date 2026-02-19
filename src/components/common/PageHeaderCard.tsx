@@ -3,6 +3,7 @@ import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { MotionView } from '../motion/Motion';
 import { Text, useTheme } from 'react-native-paper';
 import { AppCard } from './AppCard';
+import { SyncIndicator } from './SyncIndicator';
 import { DesignSystem } from '../../constants/DesignSystem';
 
 type PageHeaderCardProps = {
@@ -31,6 +32,7 @@ export const PageHeaderCard: React.FC<PageHeaderCardProps> = ({ title, subtitle,
                     backgroundColor,
                 }}
             >
+
                 <View style={styles.row}>
                     <View style={[styles.titleWrap, right ? styles.titleWrapWithAction : null]}>
                         <Text
@@ -60,6 +62,7 @@ export const PageHeaderCard: React.FC<PageHeaderCardProps> = ({ title, subtitle,
                             </Text>
                         )}
                     </View>
+                    <SyncIndicator />
                     {right ? <View style={styles.actionWrap}>{right}</View> : null}
                 </View>
             </AppCard>

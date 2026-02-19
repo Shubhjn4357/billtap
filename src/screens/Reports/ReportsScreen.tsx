@@ -440,6 +440,14 @@ export const ReportsScreen = () => {
                                                     <AppButton
                                                         mode="text"
                                                         compact
+                                                        icon="pencil"
+                                                        onPress={() => router.push({ pathname: '/transaction', params: { id: item.id } } as any)}
+                                                    >
+                                                        Edit
+                                                    </AppButton>
+                                                    <AppButton
+                                                        mode="text"
+                                                        compact
                                                         icon="share-variant"
                                                         onPress={() => { void handleShareBill(item); }}
                                                     >

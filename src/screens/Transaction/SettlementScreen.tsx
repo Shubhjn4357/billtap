@@ -12,12 +12,16 @@ import { useAppDialog } from '../../components/providers/DialogProvider';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 import { useSettingsStore, useNetworkStore } from '../../store';
-import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { transactionService } from '../../api/transactionService';
+// import { useFocusRefresh } from '../../hooks/useFocusRefresh';
+// import { transactionService } from '../../api/transactionService';
 import { formatCurrency, formatDate, normalizeCurrencyCode } from '../../utils/formatters';
-import { isNetworkLikeError } from '../../utils/errorGuards';
+// import { isNetworkLikeError } from '../../utils/errorGuards';
+import { billRepository } from '../../repositories/billRepository';
+import { useAuth } from '../../hooks/useAuth';
 
-type ReminderEntry = Awaited<ReturnType<typeof transactionService.getPendingReminders>>[number];
+import type { DbTransaction } from '../../types/db';
+
+type ReminderEntry = DbTransaction & { dueAmount: number };
 
 export const SettlementScreen = () => {
     const theme = useTheme();
@@ -30,34 +34,35 @@ export const SettlementScreen = () => {
     const [selected, setSelected] = React.useState<ReminderEntry | null>(null);
     const [amountInput, setAmountInput] = React.useState('');
     const [saving, setSaving] = React.useState(false);
+    const { user } = useAuth();
 
     const remindersQuery = useQuery({
-        queryKey: ['transaction-pending-reminders'] as const,
+        queryKey: ['transaction-pending-reminders', user?.uid] as const,
         queryFn: async () => {
-            return await transactionService.getPendingReminders();
+            if (!user?.uid) return [];
+            const data = await billRepository.getUnpaid(user.uid);
+            return data.map(item => ({
+                ...item,
+                dueAmount: item.totalAmount - (item.paidAmount || 0),
+            }));
         },
-        staleTime: 20_000,
+        enabled: !!user,
+        staleTime: 5000,
     });
 
-    useFocusRefresh(async () => {
-        await remindersQuery.refetch();
-    }, {
-        enabled: canManagePayments,
-        minIntervalMs: 8_000,
-    });
-
-    const reminders = React.useMemo(() => remindersQuery.data ?? [], [remindersQuery.data]);
+    const reminders = remindersQuery.data || [];
 
     const handleOpenSettlement = (entry: ReminderEntry) => {
         setSelected(entry);
-        setAmountInput(entry.dueAmount > 0 ? String(entry.dueAmount) : '');
+        setAmountInput('');
     };
 
     const handleCloseSettlement = () => {
-        if (saving) return;
         setSelected(null);
         setAmountInput('');
     };
+
+    // ...
 
     const submitSettlement = async (markAsPaid: boolean) => {
         if (!selected) return;
@@ -70,16 +75,19 @@ export const SettlementScreen = () => {
 
         setSaving(true);
         try {
-            await transactionService.updatePayment(selected.id, {
-                markAsPaid,
-                paidAmount: markAsPaid ? selected.totalAmount : (selected.paidAmount + parsedAmount),
+            const currentPaid = selected.paidAmount || 0;
+            const nextPaid = markAsPaid ? selected.totalAmount : (currentPaid + parsedAmount);
+            const nextStatus = nextPaid >= selected.totalAmount ? 'PAID' : 'PARTIAL';
+
+            await billRepository.updatePayment(selected.id, {
+                paidAmount: nextPaid,
+                paymentStatus: nextStatus
             });
+
             await remindersQuery.refetch();
             handleCloseSettlement();
         } catch (error: unknown) {
-            if (!isNetworkLikeError(error)) {
-                dialog.alert('Settlement', error instanceof Error ? error.message : 'Failed to update payment.');
-            }
+            dialog.alert('Settlement', error instanceof Error ? error.message : 'Failed to update payment.');
         } finally {
             setSaving(false);
         }
@@ -135,7 +143,7 @@ export const SettlementScreen = () => {
 
                                 <View style={styles.metricRow}>
                                     <Text variant="bodySmall">Total: {formatCurrency(entry.totalAmount, entry.currency || activeCurrency)}</Text>
-                                    <Text variant="bodySmall">Paid: {formatCurrency(entry.paidAmount, entry.currency || activeCurrency)}</Text>
+                                    <Text variant="bodySmall">Paid: {formatCurrency(entry.paidAmount || 0, entry.currency || activeCurrency)}</Text>
                                     <Text variant="bodySmall" style={{ color: theme.colors.error }}>
                                         Due: {formatCurrency(entry.dueAmount, entry.currency || activeCurrency)}
                                     </Text>

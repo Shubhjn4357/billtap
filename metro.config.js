@@ -9,5 +9,7 @@ config.transformer.getTransformOptions = async () => ({
     },
 });
 
+config.resolver.sourceExts.push('sql'); // Add SQL support
+
 module.exports = config;
 

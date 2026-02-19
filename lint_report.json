@@ -1,0 +1,24 @@
+[0m[0m
+[0m[4mD:\Code\billtap\client\src\repositories\baseRepository.ts[24m[0m
+[0m  [2m3:10[22m  [33mwarning[39m  'eq' is defined but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4mD:\Code\billtap\client\src\screens\Dashboard\DashboardScreen.tsx[24m[0m
+[0m  [2m2:40[22m  [33mwarning[39m  'useWindowDimensions' is defined but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4mD:\Code\billtap\client\src\screens\Settings\SettingsScreen.tsx[24m[0m
+[0m    [2m4:71[22m  [33mwarning[39m  'TouchableOpacity' is defined but never used            [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m29:7[22m   [33mwarning[39m  'formatTimestamp' is assigned a value but never used    [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m75:12[22m  [33mwarning[39m  'isUiPending' is assigned a value but never used        [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m88:12[22m  [33mwarning[39m  'updateMessage' is assigned a value but never used      [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m89:12[22m  [33mwarning[39m  'lastCheckedAt' is assigned a value but never used      [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m92:12[22m  [33mwarning[39m  'oldestPendingAt' is assigned a value but never used    [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m   [2m93:12[22m  [33mwarning[39m  'lastSyncAt' is assigned a value but never used         [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m109:11[22m  [33mwarning[39m  'runtimeVersion' is assigned a value but never used     [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m110:11[22m  [33mwarning[39m  'updateChannel' is assigned a value but never used      [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m115:11[22m  [33mwarning[39m  'updateStatusLabel' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[4mD:\Code\billtap\client\src\screens\Transaction\TransactionScreen.tsx[24m[0m
+[0m  [2m39:13[22m  [33mwarning[39m  'addTransaction' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m[0m
+[0m[33m[1m✖ 13 problems (0 errors, 13 warnings)[22m[39m[0m
+[0m[33m[1m[22m[39m[0m

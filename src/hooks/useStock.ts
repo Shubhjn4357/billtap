@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { itemService } from '../api/itemService';
+import { itemRepository } from '../repositories/itemRepository';
 import { useStockStore } from '../store';
 import type { Item } from '../types';
 import { useAuth } from './useAuth';
 import { useDebouncedValue } from './useDebouncedValue';
-import { isNetworkLikeError } from '../utils/errorGuards';
+// import { isNetworkLikeError } from '../utils/errorGuards';
+import { nanoid } from 'nanoid/non-secure';
+import type { NewDbItem } from '../types/db';
+import { mapDbItemToAppItem } from '../utils/mappers';
 
 type NewStockItem = Omit<Item, 'id' | 'userId' | 'updatedAt' | 'nameLowercase'>;
 type StockItemUpdate = Partial<Omit<Item, 'id' | 'userId' | 'updatedAt'>>;
@@ -38,15 +41,23 @@ export const useStock = () => {
     const [searchPending, startSearchTransition] = useTransition();
     const debouncedSearchQuery = useDebouncedValue(searchQuery, 220);
     const queryKey = useMemo(() => ['stock-items', user?.uid ?? 'guest'] as const, [user?.uid]);
+    const organizationId = user?.uid; // Assuming Owner UID is Org ID for now, adjust if needed
 
     const stockQuery = useQuery({
         queryKey,
         queryFn: async (): Promise<Item[]> => {
-            if (!user) return [];
-            return sortItemsByName(await itemService.getUserItems(user.uid));
+            if (!user || !organizationId) return [];
+            // import { mapDbItemToAppItem } from '../utils/mappers'; // Moved to top
+
+            // ...
+
+            // Load from SQLite Repository
+            const localItems = await itemRepository.getAll(organizationId);
+            return sortItemsByName(localItems.map(mapDbItemToAppItem));
         },
         enabled: Boolean(user),
-        staleTime: 45_000,
+        // Stale time can be short because it's local DB
+        staleTime: 5000, 
         placeholderData: (previous) => previous,
     });
     const { refetch: refetchStock } = stockQuery;
@@ -66,16 +77,13 @@ export const useStock = () => {
 
     useEffect(() => {
         if (!stockQuery.error) return;
-        if (isNetworkLikeError(stockQuery.error)) {
-            setError(null);
-            return;
-        }
         setError(getErrorMessage(stockQuery.error));
     }, [stockQuery.error]);
 
     const invalidateStock = useCallback(() => {
         void queryClient.invalidateQueries({ queryKey });
-    }, [queryClient, queryKey]);
+        void refetchStock();
+    }, [queryClient, queryKey, refetchStock]);
 
     const setSearchQuery = useCallback((value: string) => {
         startSearchTransition(() => {
@@ -89,15 +97,7 @@ export const useStock = () => {
             setError(null);
             return;
         }
-
-        const result = await refetchStock();
-        if (result.data) {
-            setItems(result.data);
-        }
-
-        if (result.error && !isNetworkLikeError(result.error)) {
-            setError(getErrorMessage(result.error));
-        }
+        await refetchStock();
     }, [refetchStock, setItems, user]);
 
     const normalizedSearch = debouncedSearchQuery.trim().toLowerCase();
@@ -112,105 +112,156 @@ export const useStock = () => {
         );
     }, [items, normalizedSearch, debouncedSearchQuery]);
 
-    const addItem = async (item: NewStockItem) => {
-        if (!user) throw new Error('You must be logged in to add items.');
+
+
+    const deleteItem = async (id: string) => {
+        if (!user || !organizationId) throw new Error('You must be logged in to delete items.');
 
         setActionLoading(true);
         setError(null);
         try {
-            const payload = {
-                ...item,
-                userId: user.uid,
-                nameLowercase: item.name.trim().toLowerCase(),
-                updatedAt: new Date(),
-            };
-
-            const id = await itemService.addItem(payload);
-            addToStore({ id, ...payload });
+            deleteFromStore(id);
+            await itemRepository.delete(id, organizationId);
             invalidateStock();
         } catch (err: unknown) {
-            if (!isNetworkLikeError(err)) {
-                const message = getErrorMessage(err);
-                setError(message);
-                throw new Error(message);
-            }
+            const message = getErrorMessage(err);
+            setError(message);
+            throw new Error(message);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const addItem = async (itemPayload: NewStockItem) => {
+        if (!user || !organizationId) throw new Error('You must be logged in to add items.');
+
+        setActionLoading(true);
+        setError(null);
+        try {
+            const id = nanoid();
+            // Map to DB Schema
+            const fullItem: NewDbItem = {
+                id,
+                organizationId,
+                name: itemPayload.name.trim(),
+                nameLowercase: itemPayload.name.trim().toLowerCase(),
+                price: itemPayload.price,
+                purchasePrice: itemPayload.purchasePrice ?? 0,
+                mrp: itemPayload.mrp ?? 0,
+                hsn: itemPayload.hsn,
+                gstPercentage: itemPayload.gstPercentage ?? 0,
+                stock: itemPayload.stock ?? 0,
+                minimumStock: itemPayload.minimumStock ?? 0,
+                unit: itemPayload.unit ?? 'pcs',
+                category: itemPayload.category,
+                image: itemPayload.imageUrl, // Mapped to 'image' property as per schema
+                barcode: itemPayload.barcode,
+                isActive: true, // Boolean mode handled by Drizzle
+                updatedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+            };
+
+            // Remove 'as any' since types should match NewDbItem
+            await itemRepository.create(fullItem);
+
+            addToStore(fullItem as any); // Store might still use Item interface, keep cast for store if needed or update store types later
+            invalidateStock();
+        } catch (err: unknown) {
+            const message = getErrorMessage(err);
+            setError(message);
+            throw new Error(message);
         } finally {
             setActionLoading(false);
         }
     };
 
     const updateItem = async (id: string, updates: StockItemUpdate) => {
-        if (!user) throw new Error('You must be logged in to update items.');
+        if (!user || !organizationId) throw new Error('You must be logged in to update items.');
 
         setActionLoading(true);
         setError(null);
         try {
             const originalItem = items.find((entry) => entry.id === id);
-            const nextName = typeof updates.name === 'string' ? updates.name.trim() : originalItem?.name || '';
+            if (!originalItem) throw new Error('Item not found');
 
-            updateInStore(id, {
-                ...updates,
+            const nextName = typeof updates.name === 'string' ? updates.name.trim() : originalItem.name;
+
+            // Construct full object to satisfy upsert's NewDbItem requirement
+            // We merge originalItem props (which might match NewDbItem mostly) with updates
+            const mergedItem: NewDbItem = {
+                id: originalItem.id,
+                organizationId: organizationId,
                 name: nextName,
                 nameLowercase: nextName.toLowerCase(),
-                updatedAt: new Date(),
-            });
+                price: updates.price ?? originalItem.price,
+                purchasePrice: updates.purchasePrice ?? originalItem.purchasePrice ?? 0,
+                mrp: updates.mrp ?? originalItem.mrp ?? 0,
+                hsn: updates.hsn ?? originalItem.hsn ?? undefined,
+                gstPercentage: updates.gstPercentage ?? originalItem.gstPercentage ?? 0,
+                stock: updates.stock ?? originalItem.stock ?? 0,
+                minimumStock: updates.minimumStock ?? originalItem.minimumStock ?? 0,
+                unit: updates.unit ?? originalItem.unit ?? 'pcs',
+                category: updates.category ?? originalItem.category,
+                image: updates.imageUrl ?? originalItem.imageUrl, // Mapped to 'image' property
+                barcode: updates.barcode ?? originalItem.barcode,
+                isActive: updates.isActive ?? originalItem.isActive ?? true,
+                updatedAt: new Date().toISOString(),
+                createdAt: originalItem.createdAt ? new Date(originalItem.createdAt).toISOString() : new Date().toISOString(),
+            };
 
-            await itemService.updateItem(id, updates);
+            await itemRepository.update(mergedItem.id, mergedItem);
+            updateInStore(id, mergedItem as any);
             invalidateStock();
         } catch (err: unknown) {
-            if (!isNetworkLikeError(err)) {
-                const message = getErrorMessage(err);
-                setError(message);
-                await fetchItems();
-                throw new Error(message);
-            }
+            const message = getErrorMessage(err);
+            setError(message);
+            throw new Error(message);
         } finally {
             setActionLoading(false);
         }
     };
 
-    const deleteItem = async (id: string) => {
-        if (!user) throw new Error('You must be logged in to delete items.');
-
-        setActionLoading(true);
-        setError(null);
-        try {
-            deleteFromStore(id);
-            await itemService.deleteItem(id);
-            invalidateStock();
-        } catch (err: unknown) {
-            if (!isNetworkLikeError(err)) {
-                const message = getErrorMessage(err);
-                setError(message);
-                await fetchItems();
-                throw new Error(message);
-            }
-        } finally {
-            setActionLoading(false);
-        }
-    };
+    // ...
 
     const adjustStock = async (id: string, qty: number, type: 'IN' | 'OUT', reason?: string) => {
-        if (!user) throw new Error('You must be logged in to update stock.');
+        if (!user || !organizationId) throw new Error('You must be logged in to update stock.');
 
         setActionLoading(true);
         setError(null);
         try {
             const current = items.find((entry) => entry.id === id);
             if (current) {
-                const nextStock = type === 'IN' ? current.stock + qty : current.stock - qty;
+                const nextStock = type === 'IN' ? (current.stock || 0) + qty : (current.stock || 0) - qty;
+
+                const updatedItem: NewDbItem = {
+                    id: current.id,
+                    organizationId: organizationId,
+                    name: current.name,
+                    nameLowercase: current.nameLowercase,
+                    price: current.price,
+                    purchasePrice: current.purchasePrice ?? 0,
+                    mrp: current.mrp ?? 0,
+                    hsn: current.hsn,
+                    gstPercentage: current.gstPercentage ?? 0,
+                    stock: nextStock,
+                    minimumStock: current.minimumStock ?? 0,
+                    unit: current.unit ?? 'pcs',
+                    category: current.category,
+                    image: current.imageUrl, // Map from Item's imageUrl to DbItem's image
+                    barcode: current.barcode,
+                    isActive: current.isActive ?? true,
+                    createdAt: current.createdAt ? new Date(current.createdAt).toISOString() : new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+
+                await itemRepository.update(updatedItem.id, updatedItem);
                 updateInStore(id, { stock: nextStock });
             }
-
-            await itemService.updateStock(id, qty, type, reason);
             invalidateStock();
         } catch (err: unknown) {
-            if (!isNetworkLikeError(err)) {
-                const message = getErrorMessage(err);
-                setError(message);
-                await fetchItems();
-                throw new Error(message);
-            }
+            const message = getErrorMessage(err);
+            setError(message);
+            throw new Error(message);
         } finally {
             setActionLoading(false);
         }

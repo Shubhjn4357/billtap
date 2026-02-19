@@ -477,8 +477,9 @@ const renderA4BillHTML = (bill: Bill, data: Record<string, unknown>) => {
             </div>
             <div class="party-box">
               <p class="party-heading">Ship To</p>
-              <p class="party-name">${customerName}</p>
-              <p class="party-line">${customerAddress}</p>
+              <p class="party-name">${escapeHtml(asString(data.deliveryContactName || data.customerName, '-'))}</p>
+              <p class="party-line">${escapeHtml(asString(data.deliveryContactPhone || data.customerPhone, '-'))}</p>
+              <p class="party-line">${escapeHtml(asString(data.deliveryAddress || data.customerAddress, '-'))}</p>
             </div>
           </div>
 

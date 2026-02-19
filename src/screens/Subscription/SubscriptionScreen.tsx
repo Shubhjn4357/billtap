@@ -43,16 +43,11 @@ export const SubscriptionScreen = () => {
 
     const handleSubscribe = async (plan: SubscriptionPlan) => {
         setProcessing(plan.id);
-        try {
-            const session = await subscriptionService.createCheckoutSession(plan);
-            if (session.checkoutUrl) {
-                dialog.alert('Checkout', `Please complete payment at: ${session.checkoutUrl}`);
-            }
-        } catch {
-            dialog.alert('Error', 'Failed to start subscription');
-        } finally {
+        // Mock Payment Flow
+        setTimeout(() => {
             setProcessing(null);
-        }
+            dialog.alert('Mock Payment', 'This is a mock payment flow. Subscription would be activated here.');
+        }, 1500);
     };
 
     const currentPlanId = user?.subscriptionPlanId || 'plan_free';

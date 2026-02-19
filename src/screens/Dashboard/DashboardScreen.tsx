@@ -1,413 +1,261 @@
 import React, { useCallback, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Chip, Text, useTheme } from 'react-native-paper';
+import { Text, useTheme, FAB, Surface, Icon, IconButton } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { StoredBill } from '../../api/billService';
-import { analyticsService } from '../../api/analyticsService';
-import { AppButton } from '../../components/common/AppButton';
-import { AppCard } from '../../components/common/AppCard';
-import { AppSkeleton } from '../../components/common/AppSkeleton';
-import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
-import { Config } from '../../constants/Config';
+import { Colors } from '../../constants/Colors';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { useAuth } from '../../hooks/useAuth';
 import { useBills } from '../../hooks/useBills';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { useOffers } from '../../hooks/useOffers';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
-import { useStock } from '../../hooks/useStock';
-import { useSettingsStore } from '../../store';
-import { formatCurrency, formatDate, normalizeCurrencyCode } from '../../utils/formatters';
-import { isLowStock } from '../../utils/stockStatus';
-
-const billStatusLabel = (bill: StoredBill): 'PAID' | 'PARTIAL' | 'PENDING' => {
-    const raw = bill as unknown as { paymentStatus?: string; paidAmount?: number };
-    const paymentStatus = raw.paymentStatus?.toUpperCase();
-    if (paymentStatus === 'PAID' || paymentStatus === 'PARTIAL' || paymentStatus === 'PENDING') {
-        return paymentStatus;
-    }
-    const paidAmount = Number(raw.paidAmount ?? 0);
-    if (paidAmount >= bill.total) return 'PAID';
-    if (paidAmount > 0) return 'PARTIAL';
-    return 'PENDING';
-};
-
-const getStatusColors = (
-    status: ReturnType<typeof billStatusLabel>,
-    colors: { primaryContainer: string; onPrimaryContainer: string; secondaryContainer: string; onSecondaryContainer: string; errorContainer: string; onErrorContainer: string }
-) => {
-    if (status === 'PAID') return { bg: colors.primaryContainer, fg: colors.onPrimaryContainer };
-    if (status === 'PARTIAL') return { bg: colors.secondaryContainer, fg: colors.onSecondaryContainer };
-    return { bg: colors.errorContainer, fg: colors.onErrorContainer };
-};
+import { useAccounts } from '../../hooks/useAccounts';
+import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
 
 export const DashboardScreen = () => {
     const { user } = useAuth();
     const router = useRouter();
     const theme = useTheme();
     const insets = useSafeAreaInsets();
-    const { width } = useWindowDimensions();
-    const { currencySymbol } = useSettingsStore();
     const {
         canViewDashboard,
         canOpenBilling,
-        canCreateSale,
-        canCreatePurchase,
-        canManageInventory,
         canViewReports,
     } = useOrganizationAccess();
-    const { bills, stats, loading: billsLoading, fetchBills } = useBills(canViewReports, { limit: 300 });
-    const { primaryOffer, fetchOffers } = useOffers();
-    const { items, loading: stockLoading, fetchItems } = useStock();
 
-    const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
-    const isTablet = width >= 900;
-    const isDesktop = width >= 1180;
-    const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 20);
+    // Data Hooks
+    const { bills, loading: billsLoading, fetchBills } = useBills(canViewReports, { limit: 10 });
+    const { accounts } = useAccounts();
 
-    const lowStockCount = useMemo(() => items.filter((entry) => isLowStock(entry)).length, [items]);
-    const recentBills = useMemo(
-        () => [...bills]
-            .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
-            .slice(0, 8),
-        [bills]
+    const activeCurrency = normalizeCurrencyCode(user?.currency ?? 'INR');
+    const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 80);
+
+    // Financial Stats
+    const totalCash = useMemo(() =>
+        accounts.filter(a => a.type === 'CASH').reduce((sum, a) => sum + (a.balance ?? 0), 0),
+        [accounts]
+    );
+
+    const totalBank = useMemo(() =>
+        accounts.filter(a => a.type === 'BANK').reduce((sum, a) => sum + (a.balance ?? 0), 0),
+        [accounts]
     );
 
     const refreshDashboardData = useCallback(async () => {
         if (!canViewDashboard) return;
-        await Promise.allSettled([
-            canViewReports ? fetchBills() : Promise.resolve(),
-            canManageInventory ? fetchItems() : Promise.resolve(),
-            fetchOffers(),
-        ]);
-    }, [canManageInventory, canViewDashboard, canViewReports, fetchBills, fetchItems, fetchOffers]);
+        await fetchBills();
+    }, [canViewDashboard, fetchBills]);
 
-    useFocusRefresh(refreshDashboardData, {
-        enabled: canViewDashboard,
-        minIntervalMs: 8_000,
-        delayMs: 120,
-    });
+    useFocusRefresh(refreshDashboardData, { enabled: canViewDashboard });
 
-    React.useEffect(() => {
-        if (!user || !primaryOffer) return;
-        void analyticsService.logEvent({
-            userId: user.uid,
-            eventType: 'offer_impression',
-            source: 'dashboard_banner',
-            offerId: primaryOffer.id,
-        });
-    }, [primaryOffer, user]);
-
-    const showSkeleton = billsLoading && bills.length === 0;
-
-    if (!canViewDashboard) {
-        return (
-            <ScreenWrapper>
-                <View style={styles.centeredWrap}>
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.blockedTitle}>
-                            Dashboard access is disabled
-                        </Text>
-                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                            Ask owner/admin to enable dashboard permission for your account.
-                        </Text>
-                    </AppCard>
-                </View>
-            </ScreenWrapper>
-        );
-    }
+    if (!canViewDashboard) return null; // Or blocked UI
 
     return (
         <ScreenWrapper>
+            <View style={styles.header}>
+                <View>
+                    <Text variant="headlineSmall" style={styles.greeting}>Hello, {user?.displayName?.split(' ')[0]}</Text>
+                    <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                        {user?.businessName || 'Your Business'} Overview
+                    </Text>
+                </View>
+                <IconButton icon="bell-outline" onPress={() => { }} />
+            </View>
+
             <ScrollView
                 contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]}
                 showsVerticalScrollIndicator={false}
+                refreshControl={<RefreshControl refreshing={billsLoading} onRefresh={refreshDashboardData} />}
             >
-                <View style={[styles.contentInner, isDesktop && styles.contentInnerDesktop]}>
-                    <PageHeaderCard
-                        title="Dashboard"
-                        subtitle="Revenue, activity and quick actions"
-                        right={(
-                            <AppButton mode="outlined" compact onPress={() => { void refreshDashboardData(); }}>
-                                Refresh
-                            </AppButton>
-                        )}
-                    />
-
-                    <View style={[styles.kpiGrid, isTablet && styles.kpiGridTablet]}>
-                        {showSkeleton ? (
-                            Array.from({ length: 4 }).map((_, index) => (
-                                <AppCard key={`kpi-skeleton-${index}`} style={[styles.kpiCard, isTablet && styles.kpiCardTablet]}>
-                                    <AppSkeleton width="56%" height={12} />
-                                    <AppSkeleton width="80%" height={26} style={{ marginTop: 10 }} />
-                                    <AppSkeleton width="46%" height={11} style={{ marginTop: 10 }} />
-                                </AppCard>
-                            ))
-                        ) : (
-                            <>
-                                <AppCard style={[styles.kpiCard, isTablet && styles.kpiCardTablet]}>
-                                    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Today Sales</Text>
-                                    <Text variant="headlineSmall" style={styles.kpiValue}>
-                                        {formatCurrency(stats.todaySales, activeCurrency)}
-                                    </Text>
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        {stats.todayOrders} orders today
-                                    </Text>
-                                </AppCard>
-                                <AppCard style={[styles.kpiCard, isTablet && styles.kpiCardTablet]}>
-                                    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Last 7 Days</Text>
-                                    <Text variant="headlineSmall" style={styles.kpiValue}>
-                                        {formatCurrency(stats.weeklySales, activeCurrency)}
-                                    </Text>
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        Revenue this week
-                                    </Text>
-                                </AppCard>
-                                <AppCard style={[styles.kpiCard, isTablet && styles.kpiCardTablet]}>
-                                    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Avg Order</Text>
-                                    <Text variant="headlineSmall" style={styles.kpiValue}>
-                                        {formatCurrency(stats.averageOrderValue, activeCurrency)}
-                                    </Text>
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        Per invoice value
-                                    </Text>
-                                </AppCard>
-                                <AppCard style={[styles.kpiCard, isTablet && styles.kpiCardTablet]}>
-                                    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Total Revenue</Text>
-                                    <Text variant="headlineSmall" style={styles.kpiValue}>
-                                        {formatCurrency(stats.totalRevenue, activeCurrency)}
-                                    </Text>
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        {stats.totalOrders} total invoices
-                                    </Text>
-                                </AppCard>
-                            </>
-                        )}
-                    </View>
-
-                    <View style={[styles.mainGrid, isDesktop && styles.mainGridDesktop]}>
-                        <View style={styles.mainLeft}>
-                            <AppCard>
-                                <Text variant="titleSmall" style={styles.sectionTitle}>Quick Actions</Text>
-                                <View style={styles.actionsGrid}>
-                                    {(canOpenBilling && (canCreateSale || canCreatePurchase)) && (
-                                        <AppButton mode="contained" compact style={styles.actionButton} onPress={() => router.push('/(main)/(tabs)/billing')}>
-                                            New Bill
-                                        </AppButton>
-                                    )}
-                                    {canManageInventory && (
-                                        <AppButton mode="contained-tonal" compact style={styles.actionButton} onPress={() => router.push('/(main)/(tabs)/stock')}>
-                                            Inventory
-                                        </AppButton>
-                                    )}
-                                    {canViewReports && (
-                                        <AppButton mode="outlined" compact style={styles.actionButton} onPress={() => router.push('/(main)/(tabs)/reports')}>
-                                            Reports
-                                        </AppButton>
-                                    )}
-                                    <AppButton mode="outlined" compact style={styles.actionButton} onPress={() => router.push('/transaction/settlements' as never)}>
-                                        Settlements
-                                    </AppButton>
-                                </View>
-                            </AppCard>
-
-                            {lowStockCount > 0 && (
-                                <AppCard>
-                                    <Text variant="titleSmall" style={styles.sectionTitle}>Inventory Alert</Text>
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        {lowStockCount} items are low in stock.
-                                    </Text>
-                                    <AppButton
-                                        mode="contained-tonal"
-                                        compact
-                                        style={{ marginTop: 10, alignSelf: 'flex-start' }}
-                                        onPress={() => router.push('/(main)/(tabs)/stock')}
-                                        disabled={stockLoading}
-                                    >
-                                        Open Inventory
-                                    </AppButton>
-                                </AppCard>
-                            )}
-
-                            {primaryOffer && (
-                                <AppCard>
-                                    <Text variant="titleSmall" style={styles.sectionTitle}>{primaryOffer.title}</Text>
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        {primaryOffer.message}
-                                    </Text>
-                                    {primaryOffer.ctaText ? (
-                                        <AppButton
-                                            mode="contained"
-                                            compact
-                                            style={{ marginTop: 10, alignSelf: 'flex-start' }}
-                                            onPress={() => {
-                                                if (user) {
-                                                    void analyticsService.logEvent({
-                                                        userId: user.uid,
-                                                        eventType: 'offer_click',
-                                                        source: 'dashboard_banner',
-                                                        offerId: primaryOffer.id,
-                                                    });
-                                                }
-                                                router.push((primaryOffer.ctaRoute || '/subscription') as never);
-                                            }}
-                                        >
-                                            {primaryOffer.ctaText}
-                                        </AppButton>
-                                    ) : null}
-                                </AppCard>
-                            )}
+                {/* Hero Cards - Financials */}
+                <View style={styles.heroRow}>
+                    <Surface style={[styles.heroCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={2}>
+                        <View style={styles.cardIconRow}>
+                            <Icon source="cash" size={24} color={theme.colors.primary} />
+                            <Text variant="labelMedium" style={{ color: theme.colors.primary }}>CASH IN HAND</Text>
                         </View>
+                        <Text variant="headlineMedium" style={styles.heroValue}>
+                            {formatCurrency(totalCash, activeCurrency)}
+                        </Text>
+                    </Surface>
 
-                        <View style={styles.mainRight}>
-                            <AppCard>
-                                <View style={styles.sectionHeaderRow}>
-                                    <Text variant="titleSmall" style={styles.sectionTitle}>Recent Bills</Text>
-                                    <Chip compact>{recentBills.length}</Chip>
-                                </View>
-
-                                {showSkeleton ? (
-                                    Array.from({ length: 6 }).map((_, index) => (
-                                        <View key={`bill-skeleton-${index}`} style={styles.billSkeletonRow}>
-                                            <View style={{ flex: 1 }}>
-                                                <AppSkeleton width="44%" height={12} />
-                                                <AppSkeleton width="74%" height={10} style={{ marginTop: 8 }} />
-                                            </View>
-                                            <AppSkeleton width={84} height={26} borderRadius={DesignSystem.radius.pill} />
-                                        </View>
-                                    ))
-                                ) : recentBills.length === 0 ? (
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        No invoices available yet.
-                                    </Text>
-                                ) : (
-                                    recentBills.map((bill) => {
-                                        const status = billStatusLabel(bill);
-                                        const statusColors = getStatusColors(status, theme.colors);
-                                        return (
-                                            <Pressable
-                                                key={bill.id}
-                                                style={[
-                                                    styles.billRow,
-                                                    { backgroundColor: theme.colors.surfaceVariant },
-                                                ]}
-                                                onPress={() => router.push('/transaction/settlements' as never)}
-                                            >
-                                                <View style={{ flex: 1, marginRight: 10 }}>
-                                                    <Text variant="titleSmall" style={{ fontWeight: '700' }}>
-                                                        Bill #{bill.billNumber?.trim() || bill.id.slice(0, 8).toUpperCase()}
-                                                    </Text>
-                                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                                        {bill.customerName || 'Walk-in customer'} | {formatDate(bill.createdAt)}
-                                                    </Text>
-                                                    <Text variant="labelMedium" style={{ marginTop: 4 }}>
-                                                        {formatCurrency(bill.total, bill.currency || activeCurrency)}
-                                                    </Text>
-                                                </View>
-                                                <Chip
-                                                    compact
-                                                    style={{ backgroundColor: statusColors.bg }}
-                                                    textStyle={{ color: statusColors.fg, fontWeight: '700' }}
-                                                >
-                                                    {status}
-                                                </Chip>
-                                            </Pressable>
-                                        );
-                                    })
-                                )}
-                            </AppCard>
+                    <Surface style={[styles.heroCard, { backgroundColor: theme.colors.secondaryContainer }]} elevation={2}>
+                        <View style={styles.cardIconRow}>
+                            <Icon source="bank" size={24} color={theme.colors.secondary} />
+                            <Text variant="labelMedium" style={{ color: theme.colors.secondary }}>BANK BALANCE</Text>
                         </View>
-                    </View>
+                        <Text variant="headlineMedium" style={styles.heroValue}>
+                            {formatCurrency(totalBank, activeCurrency)}
+                        </Text>
+                    </Surface>
                 </View>
+
+                {/* Quick Actions */}
+                <Text variant="titleMedium" style={styles.sectionTitle}>Quick Actions</Text>
+                <View style={styles.actionsRow}>
+                    <QuickAction
+                        icon="plus-circle"
+                        label="New Bill"
+                        color={theme.colors.primary}
+                        onPress={() => router.push('/(main)/(tabs)/billing')}
+                    />
+                    <QuickAction
+                        icon="cube-outline"
+                        label="Stock"
+                        color={theme.colors.tertiary}
+                        onPress={() => router.push('/(main)/(tabs)/stock')} 
+                    />
+                    <QuickAction
+                        icon="chart-box-outline"
+                        label="Reports"
+                        color={theme.colors.secondary}
+                        onPress={() => router.push('/(main)/(tabs)/reports')}
+                    />
+                    <QuickAction
+                        icon="swap-horizontal"
+                        label="Transfer"
+                        color={Colors.light.error}
+                        onPress={() => { }}
+                    />
+                </View>
+
+                {/* Recent Activity */}
+                <View style={styles.recentHeader}>
+                    <Text variant="titleMedium" style={styles.sectionTitle}>Recent Transactions</Text>
+                    <Text variant="labelLarge" style={{ color: theme.colors.primary }} onPress={() => router.push('/transaction/settlements' as never)}>See All</Text>
+                </View>
+
+                {bills.slice(0, 5).map((bill) => (
+                    <Surface key={bill.id} style={styles.transactionCard} elevation={0}>
+                        <View style={styles.transIcon}>
+                            <Icon source="arrow-bottom-left" size={24} color={theme.colors.primary} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                            <Text variant="titleSmall" style={{ fontWeight: 'bold' }}>{bill.customerName || 'Walk-in'}</Text>
+                            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{bill.billNumber}</Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                            <Text variant="titleSmall" style={{ fontWeight: 'bold' }}>
+                                +{formatCurrency(bill.total, activeCurrency)}
+                            </Text>
+                            <Text variant="labelSmall" style={{ color: theme.colors.outline }}>
+                                {new Date(bill.createdAt).toLocaleDateString()}
+                            </Text>
+                        </View>
+                    </Surface>
+                ))}
+
             </ScrollView>
+
+            {canOpenBilling && (
+                <FAB
+                    icon="plus"
+                    style={[styles.fab, { bottom: bottomSpacing + 20 }]}
+                    onPress={() => router.push('/(main)/(tabs)/billing')}
+                    label="New Bill"
+                />
+            )}
         </ScreenWrapper>
     );
 };
 
+const QuickAction = ({ icon, label, color, onPress }: any) => (
+    <Surface style={styles.actionCard} elevation={1} onTouchEnd={onPress}>
+        <View style={[styles.actionIconCircle, { backgroundColor: color + '20' }]}>
+            <Icon source={icon} size={28} color={color} />
+        </View>
+        <Text variant="labelMedium" style={{ marginTop: 8 }}>{label}</Text>
+    </Surface>
+);
+
 const styles = StyleSheet.create({
-    centeredWrap: {
-        flex: 1,
-        justifyContent: 'center',
-    },
-    blockedTitle: {
-        fontWeight: '700',
-        marginBottom: 8,
-    },
-    content: {
-        paddingTop: DesignSystem.layout.pageTop,
-        alignItems: 'center',
-    },
-    contentInner: {
-        width: '100%',
-        gap: 10,
-    },
-    contentInnerDesktop: {
-        maxWidth: DesignSystem.layout.dashboardMaxWidth,
-    },
-    kpiGrid: {
-        flexDirection: 'column',
-        gap: 10,
-    },
-    kpiGridTablet: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-    },
-    kpiCard: {
-        marginBottom: 0,
-    },
-    kpiCardTablet: {
-        width: '49%',
-    },
-    kpiValue: {
-        fontWeight: '800',
-        marginTop: 4,
-    },
-    mainGrid: {
-        gap: 10,
-    },
-    mainGridDesktop: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-    },
-    mainLeft: {
-        flex: 1,
-    },
-    mainRight: {
-        flex: 1.1,
-    },
-    sectionTitle: {
-        fontWeight: '700',
-    },
-    sectionHeaderRow: {
+    header: {
+        paddingHorizontal: DesignSystem.spacing.xl, // 24
+        paddingTop: DesignSystem.spacing.sm, // 10
+        paddingBottom: DesignSystem.spacing.sm,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8,
     },
-    actionsGrid: {
-        marginTop: 10,
+    greeting: {
+        fontWeight: 'bold',
+    },
+    content: {
+        paddingHorizontal: DesignSystem.spacing.xl,
+        paddingTop: DesignSystem.spacing.sm,
+    },
+    heroRow: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
+        gap: DesignSystem.spacing.md, // 14
+        marginBottom: DesignSystem.spacing.xl,
     },
-    actionButton: {
-        minWidth: 120,
+    heroCard: {
+        flex: 1,
+        padding: DesignSystem.spacing.md,
+        borderRadius: DesignSystem.radius.lg, // 20
+        justifyContent: 'space-between',
     },
-    billRow: {
+    cardIconRow: {
         flexDirection: 'row',
         alignItems: 'center',
+        gap: DesignSystem.spacing.xs,
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    heroValue: {
+        fontWeight: '800',
+    },
+    sectionTitle: {
+        fontWeight: '700',
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    actionsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: DesignSystem.spacing.xl,
+    },
+    actionCard: {
+        width: '23%',
+        aspectRatio: 1,
+        borderRadius: DesignSystem.radius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'white',
+    },
+    actionIconCircle: {
+        width: 48,
+        height: 48,
+        borderRadius: DesignSystem.radius.pill,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    recentHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: DesignSystem.spacing.sm,
+    },
+    transactionCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: DesignSystem.spacing.sm,
+        marginBottom: DesignSystem.spacing.xs,
         borderRadius: DesignSystem.radius.sm,
-        paddingHorizontal: 10,
-        paddingVertical: 10,
-        marginBottom: 8,
+        backgroundColor: 'white',
+        borderWidth: 1,
+        borderColor: '#EEE',
     },
-    billSkeletonRow: {
-        flexDirection: 'row',
+    transIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: DesignSystem.radius.pill,
+        backgroundColor: '#F0F0F0',
         alignItems: 'center',
-        paddingVertical: 10,
-        gap: 10,
+        justifyContent: 'center',
+    },
+    fab: {
+        position: 'absolute',
+        right: DesignSystem.spacing.xl,
     },
 });

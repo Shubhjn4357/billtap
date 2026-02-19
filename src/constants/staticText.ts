@@ -473,6 +473,19 @@ export const SITEMAP_TEXT = {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
     {
+        version: '3.0.1',
+        releasedOn: '2026-02-18',
+        highlights: [
+            'Full stability + layout sweep across client screens: normalized responsive content shells and compact spacing in shared headers / screen wrappers.',
+            'Fixed centered action button alignment in bottom navigation and improved tab shell positioning.',
+            'Improved scroll / layout consistency for Admin, Info pages, Business Suite pages, Billing, and route-level shells.',
+            'Treated transient backend failures (429, 5xx) as network-like for silent fallback behavior.',
+            'Reduced repeated organization context sync calls with throttled refresh in main layout.',
+            'Kept route structure stable with accounting stack registration updates.',
+            'Improved checkout drawer responsiveness - QR size adapts by viewport, actions wrap on narrow screens.',
+        ]
+    },
+    {
         version: '2.0.0',
         releasedOn: '2026-02-16',
         highlights: [

@@ -164,18 +164,26 @@ export const useSettingsStore = create<SettingsState>()(
 interface NetworkState {
     isConnected: boolean | null;
     isInternetReachable: boolean | null;
+    syncStatus: 'IDLE' | 'SYNCING' | 'ERROR';
+    lastSyncTime: string | null;
     setNetworkState: (payload: { isConnected: boolean | null; isInternetReachable: boolean | null }) => void;
+    setSyncStatus: (status: 'IDLE' | 'SYNCING' | 'ERROR') => void;
+    setLastSyncTime: (time: string) => void;
 }
 
 export const useNetworkStore = create<NetworkState>((set) => ({
     isConnected: true,
     isInternetReachable: true,
+    syncStatus: 'IDLE',
+    lastSyncTime: null,
     setNetworkState: ({ isConnected, isInternetReachable }) => set((state) => {
         if (state.isConnected === isConnected && state.isInternetReachable === isInternetReachable) {
             return state;
         }
         return { isConnected, isInternetReachable };
     }),
+    setSyncStatus: (status) => set({ syncStatus: status }),
+    setLastSyncTime: (time) => set({ lastSyncTime: time }),
 }));
 
 interface OrganizationContextState {
@@ -197,6 +205,8 @@ interface OrganizationState {
     } | null) => void;
     setOrganizationSettings: (settings: Record<string, unknown>) => void;
     clearOrganizationContext: () => void;
+    hasHydrated: boolean;
+    setHydrated: (hydrated: boolean) => void;
 }
 
 export const useOrganizationStore = create<OrganizationState>()(
@@ -269,6 +279,8 @@ export const useOrganizationStore = create<OrganizationState>()(
                     },
                 };
             }),
+            hasHydrated: false,
+            setHydrated: (hydrated) => set({ hasHydrated: hydrated }),
         }),
         {
             name: 'organization-storage',
@@ -277,9 +289,35 @@ export const useOrganizationStore = create<OrganizationState>()(
                 selectedOrganizationId: state.selectedOrganizationId,
                 context: state.context,
             }),
+            onRehydrateStorage: () => (state) => {
+                state?.setHydrated(true);
+            },
         }
     )
 );
+
+export const waitForHydration = async () => {
+    const check = () => {
+        return useUserStore.getState().hasHydrated &&
+            useSettingsStore.getState().hasHydrated &&
+            useOrganizationStore.getState().hasHydrated;
+    };
+
+    if (check()) return;
+
+    return new Promise<void>((resolve) => {
+        const interval = setInterval(() => {
+            if (check()) {
+                clearInterval(interval);
+                resolve();
+            }
+        }, 200);
+        setTimeout(() => {
+            clearInterval(interval);
+            resolve();
+        }, 5000);
+    });
+};
 
 interface StockState {
     items: Item[];

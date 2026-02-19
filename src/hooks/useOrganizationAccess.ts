@@ -193,7 +193,7 @@ export const useOrganizationAccess = () => {
     const canAccessOperations = canByModule('operations') && canManageStaff;
     const canAccessBusinessSuite = canByModule('businessSuite')
         && (isOwnerOrAdmin || canManageTemplates || canManagePayments || canManageStaff || canManageSubscription);
-    const canAccessAdminPanel = canByModule('admin') && isOwnerOrAdmin;
+    const canAccessAdminPanel = false; // Admin panel removed strictly per user request
 
     const refreshOrganizationContext = useCallback(async (forcedOrganizationId?: string) => {
         if (!user) {

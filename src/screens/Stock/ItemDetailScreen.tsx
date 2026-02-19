@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { Text, useTheme, SegmentedButtons, TextInput } from 'react-native-paper';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Text, useTheme, SegmentedButtons, TextInput, Avatar, IconButton } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -18,6 +18,7 @@ import { useOrganizationStore } from '../../store';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { itemSchema } from '../../validation/forms';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 
 export const ItemDetailScreen = () => {
     const params = useLocalSearchParams<{ id?: string | string[]; barcode?: string | string[]; scanned?: string }>();
@@ -27,6 +28,7 @@ export const ItemDetailScreen = () => {
     const { addItem, updateItem, deleteItem, allItems, loading } = useStock();
     const { selectedOrganizationId } = useOrganizationStore();
     const { canManageInventory } = useOrganizationAccess();
+    const { alert, show } = useAppDialog();
     const router = useRouter();
     const theme = useTheme();
     const { width } = useWindowDimensions();
@@ -92,7 +94,7 @@ export const ItemDetailScreen = () => {
         try {
             const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (!permission.granted) {
-                Alert.alert(COMMON_TEXT.alerts.error, 'Media library permission is required.');
+                alert(COMMON_TEXT.alerts.error, 'Media library permission is required.');
                 return;
             }
 
@@ -123,7 +125,7 @@ export const ItemDetailScreen = () => {
 
             setForm((prev) => ({ ...prev, imageUrl: uploaded.fileUrl }));
         } catch (error: unknown) {
-            Alert.alert(
+            alert(
                 COMMON_TEXT.alerts.error,
                 error instanceof Error ? error.message : 'Failed to upload product image.'
             );
@@ -134,17 +136,17 @@ export const ItemDetailScreen = () => {
 
     const handleSubmit = async () => {
         if (!form.name || !form.price || !form.stock) {
-            return Alert.alert(COMMON_TEXT.alerts.error, STOCK_TEXT.itemDetail.alerts.fillRequired);
+            return alert(COMMON_TEXT.alerts.error, STOCK_TEXT.itemDetail.alerts.fillRequired);
         }
 
         const parsedPrice = Number(form.price);
         const parsedStock = Number(form.stock);
 
         if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
-            return Alert.alert(COMMON_TEXT.alerts.error, STOCK_TEXT.itemDetail.alerts.invalidPrice);
+            return alert(COMMON_TEXT.alerts.error, STOCK_TEXT.itemDetail.alerts.invalidPrice);
         }
         if (!Number.isInteger(parsedStock) || parsedStock < 0) {
-            return Alert.alert(COMMON_TEXT.alerts.error, STOCK_TEXT.itemDetail.alerts.invalidStock);
+            return alert(COMMON_TEXT.alerts.error, STOCK_TEXT.itemDetail.alerts.invalidStock);
         }
 
         const parsedPurchasePrice = form.purchasePrice ? Number(form.purchasePrice) : undefined;
@@ -167,7 +169,7 @@ export const ItemDetailScreen = () => {
             imageUrl: form.imageUrl,
         });
         if (!validation.success) {
-            return Alert.alert(COMMON_TEXT.alerts.error, validation.error.issues[0]?.message || STOCK_TEXT.itemDetail.alerts.saveFailed);
+            return alert(COMMON_TEXT.alerts.error, validation.error.issues[0]?.message || STOCK_TEXT.itemDetail.alerts.saveFailed);
         }
         const values = validation.data;
 
@@ -191,26 +193,26 @@ export const ItemDetailScreen = () => {
         try {
             if (isNew) {
                 await addItem({ ...payload, openingStock: parsedStock });
-                Alert.alert(COMMON_TEXT.alerts.success, STOCK_TEXT.itemDetail.alerts.itemAdded);
+                alert(COMMON_TEXT.alerts.success, STOCK_TEXT.itemDetail.alerts.itemAdded);
                 router.back();
             } else {
                 if (!itemId) throw new Error(STOCK_TEXT.itemDetail.alerts.invalidItemId);
                 await updateItem(itemId, payload);
-                Alert.alert(COMMON_TEXT.alerts.success, STOCK_TEXT.itemDetail.alerts.itemUpdated);
+                alert(COMMON_TEXT.alerts.success, STOCK_TEXT.itemDetail.alerts.itemUpdated);
                 router.back();
             }
         } catch (error: unknown) {
-            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : STOCK_TEXT.itemDetail.alerts.saveFailed);
+            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : STOCK_TEXT.itemDetail.alerts.saveFailed);
         }
     };
 
     const handleDelete = () => {
         if (isNew || !itemId) return;
 
-        Alert.alert(
-            STOCK_TEXT.itemDetail.alerts.deleteTitle,
-            STOCK_TEXT.itemDetail.alerts.deleteBody,
-            [
+        show({
+            title: STOCK_TEXT.itemDetail.alerts.deleteTitle,
+            message: STOCK_TEXT.itemDetail.alerts.deleteBody,
+            actions: [
                 { text: COMMON_TEXT.actions.cancel, style: 'cancel' },
                 {
                     text: COMMON_TEXT.actions.delete,
@@ -218,230 +220,241 @@ export const ItemDetailScreen = () => {
                     onPress: async () => {
                         try {
                             await deleteItem(itemId);
-                            Alert.alert(STOCK_TEXT.itemDetail.alerts.deletedTitle, STOCK_TEXT.itemDetail.alerts.deletedBody);
+                            alert(STOCK_TEXT.itemDetail.alerts.deletedTitle, STOCK_TEXT.itemDetail.alerts.deletedBody);
                             router.back();
                         } catch (error: unknown) {
-                            Alert.alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : STOCK_TEXT.itemDetail.alerts.deleteFailed);
+                            alert(COMMON_TEXT.alerts.error, error instanceof Error ? error.message : STOCK_TEXT.itemDetail.alerts.deleteFailed);
                         }
                     },
                 },
-            ]
-        );
+            ],
+            dismissable: true,
+        });
     };
+
+    if (!canManageInventory) {
+        return (
+            <ScreenWrapper>
+                <View style={styles.blockedContainer}>
+                    <View style={{ alignItems: 'center', padding: 20 }}>
+                        <IconButton icon="lock-outline" size={48} iconColor={theme.colors.outline} />
+                        <Text variant="titleMedium" style={{ marginTop: 16, fontWeight: 'bold' }}>
+                            Access Restricted
+                        </Text>
+                        <Text variant="bodyMedium" style={{ color: theme.colors.outline, textAlign: 'center', marginTop: 8 }}>
+                            You do not have permission to manage inventory.
+                        </Text>
+                    </View>
+                </View>
+            </ScreenWrapper>
+        );
+    }
 
     return (
         <ScreenWrapper>
-            {!canManageInventory ? (
-                <View style={styles.blockedContainer}>
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
-                        title="Inventory access disabled"
-                        subtitle="Ask owner/admin to enable inventory permissions."
+                        title={isNew ? STOCK_TEXT.itemDetail.addTitle : STOCK_TEXT.itemDetail.editTitle}
+                        subtitle="Configure pricing, stock controls, tax and identifiers."
                     />
-                </View>
-            ) : (
-                <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-                    <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                        <PageHeaderCard
-                            title={isNew ? STOCK_TEXT.itemDetail.addTitle : STOCK_TEXT.itemDetail.editTitle}
-                            subtitle="Configure pricing, stock controls, tax and identifiers."
-                        />
 
-                        <Section title="Basic Details">
-                            <AppInput
-                                label={STOCK_TEXT.itemDetail.fields.itemName}
-                                value={form.name}
-                                onChangeText={t => setForm({ ...form, name: t })}
-                                inputType="name"
-                            />
-                            <View style={styles.row}>
-                                <AppInput
-                                    label="Category"
-                                    value={form.category}
-                                    onChangeText={t => setForm({ ...form, category: t })}
-                                    style={styles.halfInput}
-                                    inputType="text"
-                                />
-                                <AppInput
-                                    label="Subcategory"
-                                    value={form.subcategory}
-                                    onChangeText={t => setForm({ ...form, subcategory: t })}
-                                    style={styles.halfInput}
-                                    inputType="text"
-                                />
-                            </View>
-                            {Boolean(form.imageUrl) && (
-                                <View style={[styles.imagePreviewWrap, { borderColor: theme.colors.outline }]}>
-                                    <Image
-                                        source={{ uri: form.imageUrl }}
-                                        resizeMode="cover"
-                                        style={[styles.imagePreview, { backgroundColor: theme.colors.surfaceVariant }]}
-                                    />
-                                </View>
-                            )}
-                            <AppInput
-                                label="Product Image URL"
-                                value={form.imageUrl}
-                                onChangeText={t => setForm({ ...form, imageUrl: t })}
-                                placeholder="https://..."
-                                inputType="url"
-                            />
-                            <View style={styles.row}>
-                                <AppButton
-                                    mode="contained-tonal"
-                                    onPress={() => { void handlePickAndUploadImage(); }}
-                                    loading={uploadingImage}
-                                    style={styles.halfInput}
-                                >
-                                    Upload Product Image
-                                </AppButton>
-                                {Boolean(form.imageUrl) && (
-                                    <AppButton
-                                        mode="outlined"
-                                        onPress={() => setForm((prev) => ({ ...prev, imageUrl: '' }))}
-                                        style={styles.halfInput}
-                                    >
-                                        Remove Image
-                                    </AppButton>
-                                )}
-                            </View>
-                        </Section>
-
-                        <Section title="Pricing & Tax">
-                            <View style={styles.row}>
-                                <AppInput
-                                    label={STOCK_TEXT.itemDetail.fields.price}
-                                    value={form.price}
-                                    onChangeText={t => setForm({ ...form, price: t })}
-                                    inputType="decimal"
-                                    style={styles.halfInput}
-                                />
-                                <AppInput
-                                    label="MRP"
-                                    value={form.mrp}
-                                    onChangeText={t => setForm({ ...form, mrp: t })}
-                                    inputType="decimal"
-                                    style={styles.halfInput}
-                                />
-                            </View>
-                            <View style={styles.row}>
-                                <AppInput
-                                    label="Purchase Price"
-                                    value={form.purchasePrice}
-                                    onChangeText={t => setForm({ ...form, purchasePrice: t })}
-                                    inputType="decimal"
-                                    style={styles.halfInput}
-                                />
-                                <AppInput
-                                    label="HSN Code"
-                                    value={form.hsn}
-                                    onChangeText={t => setForm({ ...form, hsn: t })}
-                                    style={styles.halfInput}
-                                    inputType="text"
-                                />
-                            </View>
-                            <View style={styles.gstSection}>
-                                <Text variant="bodySmall" style={styles.gstLabel}>GST Rate (%)</Text>
-                                <SegmentedButtons
-                                    value={form.gstPercentage.toString()}
-                                    onValueChange={val => setForm({ ...form, gstPercentage: Number(val) })}
-                                    buttons={Config.gstRates.map(rate => ({
-                                        value: rate.toString(),
-                                        label: `${rate}%`,
-                                    }))}
-                                    density="small"
-                                />
-                            </View>
-                        </Section>
-
-                        <Section title="Stock & Inventory">
-                            <View style={styles.row}>
-                                <AppInput
-                                    label={STOCK_TEXT.itemDetail.fields.stock}
-                                    value={form.stock}
-                                    onChangeText={t => setForm({ ...form, stock: t })}
-                                    inputType="number"
-                                    style={styles.halfInput}
-                                />
-                                <AppInput
-                                    label="Min Stock"
-                                    value={form.minimumStock}
-                                    onChangeText={t => setForm({ ...form, minimumStock: t })}
-                                    inputType="number"
-                                    style={styles.halfInput}
-                                />
-                            </View>
-                            <View style={styles.row}>
-                                <AppInput
-                                    label="Unit"
-                                    value={form.unit}
-                                    onChangeText={t => setForm({ ...form, unit: t })}
-                                    style={styles.halfInput}
-                                    inputType="text"
-                                />
-                                <AppInput
-                                    label="Location"
-                                    value={form.location}
-                                    onChangeText={t => setForm({ ...form, location: t })}
-                                    style={styles.halfInput}
-                                    inputType="text"
-                                />
-                            </View>
-                        </Section>
-
-                        <Section title="Identifiers">
-                            <AppInput
-                                label={STOCK_TEXT.itemDetail.fields.barcode}
-                                value={form.barcode}
-                                onChangeText={t => setForm({ ...form, barcode: t })}
-                                inputType="text"
-                                right={<TextInput.Icon icon="barcode-scan" onPress={() => router.push({
-                                    pathname: '/scan',
-                                    params: {
-                                        target: 'item_detail',
-                                        returnPath: isNew ? '/item/new' : `/item/${itemId}`
-                                    }
-                                })} />}
-                            />
-                        </Section>
-
-                        <AppButton
-                            mode="contained"
-                            onPress={handleSubmit}
-                            loading={loading}
-                            style={styles.primaryAction}
-                        >
-                            {isNew ? STOCK_TEXT.itemDetail.actions.saveItem : STOCK_TEXT.itemDetail.actions.updateItem}
-                        </AppButton>
-
-                        {!isNew && (
-                            <AppButton
-                                mode="outlined"
-                                onPress={handleDelete}
-                                loading={loading}
-                                style={styles.secondaryAction}
-                                textColor={theme.colors.error}
-                                icon="delete"
-                            >
-                                {STOCK_TEXT.itemDetail.actions.deleteItem}
-                            </AppButton>
+                    <View style={styles.avatarContainer}>
+                        {form.imageUrl ? (
+                            <Avatar.Image source={{ uri: form.imageUrl }} size={100} />
+                        ) : (
+                            <Avatar.Icon icon="package-variant-closed" size={100} style={{ backgroundColor: theme.colors.surfaceVariant }} />
                         )}
+                        <AppButton
+                            mode="text"
+                            compact
+                            onPress={() => { void handlePickAndUploadImage() }}
+                            loading={uploadingImage}
+                            style={{ marginTop: 8 }}
+                        >
+                            {form.imageUrl ? 'Change Image' : 'Upload Image'}
+                        </AppButton>
                     </View>
-                </ScrollView>
-            )}
+
+                    <Section title="Basic Details">
+                        <AppInput
+                            label={STOCK_TEXT.itemDetail.fields.itemName}
+                            value={form.name}
+                            onChangeText={t => setForm({ ...form, name: t })}
+                            inputType="name"
+                            left={<TextInput.Icon icon="tag-outline" />}
+                        />
+                        <View style={styles.row}>
+                            <AppInput
+                                label="Category"
+                                value={form.category}
+                                onChangeText={t => setForm({ ...form, category: t })}
+                                style={styles.halfInput}
+                                inputType="text"
+                                left={<TextInput.Icon icon="shape-outline" />}
+                            />
+                            <AppInput
+                                label="Subcategory"
+                                value={form.subcategory}
+                                onChangeText={t => setForm({ ...form, subcategory: t })}
+                                style={styles.halfInput}
+                                inputType="text"
+                                left={<TextInput.Icon icon="shape-plus-outline" />}
+                            />
+                        </View>
+                    </Section>
+
+                    <Section title="Pricing & Tax">
+                        <View style={styles.row}>
+                            <AppInput
+                                label={STOCK_TEXT.itemDetail.fields.price}
+                                value={form.price}
+                                onChangeText={t => setForm({ ...form, price: t.replace(/[^0-9.]/g, '') })}
+                                inputType="decimal"
+                                style={styles.halfInput}
+                                left={<TextInput.Icon icon="currency-inr" />}
+                            />
+                            <AppInput
+                                label="MRP"
+                                value={form.mrp}
+                                onChangeText={t => setForm({ ...form, mrp: t.replace(/[^0-9.]/g, '') })}
+                                inputType="decimal"
+                                style={styles.halfInput}
+                                left={<TextInput.Icon icon="tag-text-outline" />}
+                            />
+                        </View>
+                        <View style={styles.row}>
+                            <AppInput
+                                label="Purchase Price"
+                                value={form.purchasePrice}
+                                onChangeText={t => setForm({ ...form, purchasePrice: t.replace(/[^0-9.]/g, '') })}
+                                inputType="decimal"
+                                style={styles.halfInput}
+                                left={<TextInput.Icon icon="cart-outline" />}
+                            />
+                            <AppInput
+                                label="HSN Code"
+                                value={form.hsn}
+                                onChangeText={t => setForm({ ...form, hsn: t })}
+                                style={styles.halfInput}
+                                inputType="text"
+                                left={<TextInput.Icon icon="barcode" />}
+                            />
+                        </View>
+                        <View style={styles.gstSection}>
+                            <Text variant="bodySmall" style={[styles.gstLabel, { color: theme.colors.onSurfaceVariant }]}>GST Rate (%)</Text>
+                            <SegmentedButtons
+                                value={form.gstPercentage.toString()}
+                                onValueChange={val => setForm({ ...form, gstPercentage: Number(val) })}
+                                buttons={Config.gstRates.map(rate => ({
+                                    value: rate.toString(),
+                                    label: `${rate}%`,
+                                }))}
+                                density="medium"
+                            />
+                        </View>
+                    </Section>
+
+                    <Section title="Stock & Inventory">
+                        <View style={styles.row}>
+                            <AppInput
+                                label={STOCK_TEXT.itemDetail.fields.stock}
+                                value={form.stock}
+                                onChangeText={t => setForm({ ...form, stock: t.replace(/[^0-9]/g, '') })}
+                                inputType="number"
+                                style={styles.halfInput}
+                                left={<TextInput.Icon icon="package-variant" />}
+                            />
+                            <AppInput
+                                label="Min Stock"
+                                value={form.minimumStock}
+                                onChangeText={t => setForm({ ...form, minimumStock: t.replace(/[^0-9]/g, '') })}
+                                inputType="number"
+                                style={styles.halfInput}
+                                left={<TextInput.Icon icon="alert-octagon-outline" />}
+                            />
+                        </View>
+                        <View style={styles.row}>
+                            <AppInput
+                                label="Unit"
+                                value={form.unit}
+                                onChangeText={t => setForm({ ...form, unit: t })}
+                                style={styles.halfInput}
+                                inputType="text"
+                                left={<TextInput.Icon icon="ruler" />}
+                            />
+                            <AppInput
+                                label="Location"
+                                value={form.location}
+                                onChangeText={t => setForm({ ...form, location: t })}
+                                style={styles.halfInput}
+                                inputType="text"
+                                left={<TextInput.Icon icon="map-marker-outline" />}
+                            />
+                        </View>
+                    </Section>
+
+                    <Section title="Identifiers">
+                        <AppInput
+                            label={STOCK_TEXT.itemDetail.fields.barcode}
+                            value={form.barcode}
+                            onChangeText={t => setForm({ ...form, barcode: t })}
+                            inputType="text"
+                            left={<TextInput.Icon icon="barcode-scan" />}
+                            right={<TextInput.Icon icon="camera" onPress={() => router.push({
+                                pathname: '/scan',
+                                params: {
+                                    target: 'item_detail',
+                                    returnPath: isNew ? '/item/new' : `/item/${itemId}`
+                                }
+                            })} />}
+                        />
+                    </Section>
+
+                    <AppButton
+                        mode="contained"
+                        onPress={handleSubmit}
+                        loading={loading}
+                        style={styles.primaryAction}
+                        icon="check"
+                    >
+                        {isNew ? STOCK_TEXT.itemDetail.actions.saveItem : STOCK_TEXT.itemDetail.actions.updateItem}
+                    </AppButton>
+
+                    {!isNew && (
+                        <AppButton
+                            mode="outlined"
+                            onPress={handleDelete}
+                            loading={loading}
+                            style={[styles.secondaryAction, { borderColor: theme.colors.error }]}
+                            textColor={theme.colors.error}
+                            icon="delete"
+                        >
+                            {STOCK_TEXT.itemDetail.actions.deleteItem}
+                        </AppButton>
+                    )}
+                </View>
+            </ScrollView>
         </ScreenWrapper>
     );
 };
 
-const Section = ({ title, children }: { title: string, children: React.ReactNode }) => (
-    <AppCard style={styles.section}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>{title}</Text>
-        {children}
-    </AppCard>
-);
+const Section = ({ title, children }: { title: string, children: React.ReactNode }) => {
+    const theme = useTheme();
+    return (
+        <AppCard style={styles.section}>
+            <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>{title}</Text>
+            {children}
+        </AppCard>
+    );
+};
 
 const styles = StyleSheet.create({
     blockedContainer: {
+        flex: 1,
         paddingTop: DesignSystem.layout.pageTop,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     content: {
         paddingTop: DesignSystem.layout.pageTop,
@@ -450,9 +463,15 @@ const styles = StyleSheet.create({
     },
     contentInner: {
         width: '100%',
+        paddingHorizontal: DesignSystem.spacing.xs,
     },
     contentInnerWide: {
-        maxWidth: DesignSystem.layout.pageMaxWidth,
+        maxWidth: DesignSystem.layout.formMaxWidth,
+        paddingHorizontal: 0,
+    },
+    avatarContainer: {
+        alignItems: 'center',
+        marginBottom: DesignSystem.spacing.md,
     },
     section: { marginBottom: DesignSystem.spacing.xs },
     sectionTitle: { marginBottom: DesignSystem.spacing.sm, fontWeight: '700' },
@@ -463,21 +482,13 @@ const styles = StyleSheet.create({
     },
     gstLabel: {
         marginBottom: DesignSystem.spacing.xs,
-    },
-    imagePreviewWrap: {
-        marginBottom: DesignSystem.spacing.sm,
-        borderRadius: DesignSystem.radius.sm,
-        overflow: 'hidden',
-        borderWidth: 1,
-    },
-    imagePreview: {
-        width: '100%',
-        height: 160,
+        fontWeight: '600'
     },
     primaryAction: {
-        marginTop: DesignSystem.spacing.sm,
+        marginTop: DesignSystem.spacing.md,
     },
     secondaryAction: {
-        marginTop: DesignSystem.spacing.xs,
+        marginTop: DesignSystem.spacing.sm,
+        borderWidth: 1,
     },
 });
