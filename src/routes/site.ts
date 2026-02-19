@@ -28,7 +28,7 @@ const API_ENDPOINTS: ApiEndpoint[] = [
     { group: 'Auth', method: 'POST', path: '/api/auth/logout', access: 'Bearer Token', description: 'Logout current user.' },
 
     { group: 'Users', method: 'GET', path: '/api/users/me', access: 'Bearer Token', description: 'Current user details.' },
-    { group: 'Users', method: 'PATCH', path: '/api/users/me', access: 'Bearer Token', description: 'Update current user.', sampleBody: { businessName: 'BillTap Mart', gstEnabled: true } },
+  { group: 'Users', method: 'PATCH', path: '/api/users/me', access: 'Bearer Token', description: 'Update current user.', sampleBody: { businessName: 'Vahi Mart', gstEnabled: true } },
 
     { group: 'Items', method: 'GET', path: '/api/items?q=&limit=', access: 'Bearer Token', description: 'List items with optional search.' },
     { group: 'Items', method: 'GET', path: '/api/items/{id}', access: 'Bearer Token', description: 'Get item by id.' },
@@ -301,9 +301,9 @@ const buildOpenApiSpec = () => {
     return {
         openapi: '3.0.3',
         info: {
-            title: 'BillTap API',
+          title: 'Vahi API',
             version: '1.0.0',
-            description: 'BillTap business suite API for billing, inventory, staff, accounting and admin operations.',
+          description: 'Vahi business suite API for billing, inventory, staff, accounting and admin operations.',
         },
         servers: [
             { url: '/', description: 'Current deployment' },
@@ -507,7 +507,7 @@ const homeContent = () => {
 
     return `
       <section class="hero">
-        <h1>BillTap API Console</h1>
+        <h1>Vahi API Console</h1>
         <p>Cloudflare-optimized server homepage for API docs, interactive testing, and quick integration checks.</p>
         <div class="actions">
           <a class="btn primary" href="/docs">Open API Docs</a>
@@ -629,7 +629,7 @@ const playgroundContent = () => `
 const swaggerContent = () => `
   <section class="hero">
     <h1>Swagger UI</h1>
-    <p>Interactive OpenAPI explorer generated from BillTap endpoint catalog.</p>
+    <p>Interactive OpenAPI explorer generated from Vahi endpoint catalog.</p>
   </section>
   <section class="card">
     <div id="swagger-ui"></div>
@@ -825,22 +825,22 @@ siteRoute.use('*', async (c, next) => {
 
 siteRoute.get('/', (c) => {
     c.header('Cache-Control', 'public, max-age=60, s-maxage=120');
-    return c.html(buildLayout('BillTap API Console', homeContent()));
+  return c.html(buildLayout('Vahi API Console', homeContent()));
 });
 
 siteRoute.get('/docs', (c) => {
     c.header('Cache-Control', 'public, max-age=120, s-maxage=300');
-    return c.html(buildLayout('BillTap API Docs', docsContent(), docsSearchScript));
+  return c.html(buildLayout('Vahi API Docs', docsContent(), docsSearchScript));
 });
 
 siteRoute.get('/docs/swagger', (c) => {
     c.header('Cache-Control', 'public, max-age=60, s-maxage=120');
-    return c.html(buildLayout('BillTap Swagger UI', swaggerContent(), swaggerScript));
+  return c.html(buildLayout('Vahi Swagger UI', swaggerContent(), swaggerScript));
 });
 
 siteRoute.get('/playground', (c) => {
     c.header('Cache-Control', 'no-store');
-    return c.html(buildLayout('BillTap API Playground', playgroundContent(), playgroundScript));
+  return c.html(buildLayout('Vahi API Playground', playgroundContent(), playgroundScript));
 });
 
 siteRoute.get('/docs/openapi.json', (c) => {
@@ -852,7 +852,7 @@ siteRoute.get('/docs/catalog.json', (c) => {
     c.header('Cache-Control', 'public, max-age=60, s-maxage=120');
     return c.json({
         ok: true,
-        service: 'billtap-api-docs',
+      service: 'vahi-api-docs',
         endpointCount: API_ENDPOINTS.length,
         generatedAt: new Date().toISOString(),
         endpoints: API_ENDPOINTS,

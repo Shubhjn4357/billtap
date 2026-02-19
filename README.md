@@ -1,6 +1,6 @@
-# BillTap Backend
+# Vahi Backend
 
-Cloudflare Worker backend for BillTap business suite.
+Cloudflare Worker backend for Vahi business suite.
 
 ## Stack
 
@@ -42,7 +42,7 @@ Workflow file:
 Behavior:
 
 - PR to `dev`/`main`: validate only (typecheck + build)
-- Push to `dev`: validate + deploy to Cloudflare Worker `billtap-api-dev` (`--env dev`)
+- Push to `dev`: validate + deploy to Cloudflare Worker `vahi-api-dev` (`--env dev`)
 - Push to `main`: validate + deploy to Cloudflare (production environment)
 - Manual run: choose `dev` or `production`, optionally run `db:push`
 

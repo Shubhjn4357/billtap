@@ -63,8 +63,8 @@ app.use('*', async (c, next) => {
     return corsMiddleware(c, next);
 });
 
-app.get('/', (c) => c.json({ ok: true, service: 'billtap-api', now: new Date().toISOString() }));
-app.get('/health', (c) => c.json({ ok: true, service: 'billtap-api', now: new Date().toISOString() }));
+app.get('/', (c) => c.json({ ok: true, service: 'vahi-api', now: new Date().toISOString() }));
+app.get('/health', (c) => c.json({ ok: true, service: 'vahi-api', now: new Date().toISOString() }));
 
 // Database Middleware for all API business routes.
 apiRoutes.use(async (c, next) => {
@@ -82,7 +82,7 @@ apiRoutes.use(async (c, next) => {
 });
 
 // Mount routes on both `/` and `/api` so clients using either base path work.
-apiRoutes.get('/health', (c) => c.json({ ok: true, service: 'billtap-api', now: new Date().toISOString() }));
+apiRoutes.get('/health', (c) => c.json({ ok: true, service: 'vahi-api', now: new Date().toISOString() }));
 apiRoutes.route('/auth', authRoute);
 apiRoutes.route('/items', itemsRoute);
 apiRoutes.route('/parties', partiesRoute);

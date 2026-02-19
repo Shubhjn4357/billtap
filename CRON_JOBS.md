@@ -1,4 +1,4 @@
-# BillTap - Vercel Cron Jobs Configuration
+# Vahi - Vercel Cron Jobs Configuration
 
 > **⚠️ IMPORTANT: Cron Job Tier Limitations**
 > 

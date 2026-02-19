@@ -493,7 +493,7 @@ export const evaluateFeatureGate = async (
             allowed: false,
             used: 0,
             limit: 0,
-            message: "You've hit the limit! Upgrade to BillTap Pro to unlock premium templates.",
+            message: "You've hit the limit! Upgrade to Vahi Pro to unlock premium templates.",
         };
     }
 
@@ -508,7 +508,7 @@ export const evaluateFeatureGate = async (
             allowed,
             used,
             limit: limits.stores,
-            message: allowed ? undefined : "You've hit the limit! Upgrade to BillTap Pro to add more stores.",
+            message: allowed ? undefined : "You've hit the limit! Upgrade to Vahi Pro to add more stores.",
         };
     }
 
@@ -526,7 +526,7 @@ export const evaluateFeatureGate = async (
             allowed,
             used,
             limit: limits.staff,
-            message: allowed ? undefined : "You've hit the limit! Upgrade to BillTap Pro to add more staff.",
+            message: allowed ? undefined : "You've hit the limit! Upgrade to Vahi Pro to add more staff.",
         };
     }
 
@@ -549,7 +549,7 @@ export const evaluateFeatureGate = async (
         allowed,
         used,
         limit: limits.billsPerMonth,
-        message: allowed ? undefined : "You've hit the limit! Upgrade to BillTap Pro for unlimited bills.",
+        message: allowed ? undefined : "You've hit the limit! Upgrade to Vahi Pro for unlimited bills.",
     };
 };
 

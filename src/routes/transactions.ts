@@ -627,9 +627,15 @@ transactionsRoute.post(
         });
 
         return c.json({ ok: true, id });
-    } catch (error: unknown) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Transaction failed.' }, 400);
-    }
+    } catch (error: any) {
+            console.error('Transaction create error:', error);
+            return c.json({
+                ok: false,
+                message: error.message || 'Transaction failed.',
+                cause: error.cause,
+                detail: error.detail || error.routine ? JSON.stringify({ detail: error.detail, routine: error.routine, code: error.code }) : undefined,
+            }, 400);
+        }
     }
 );
 

@@ -1,5 +1,5 @@
 {
-  "name": "billtap-api",
+  "name": "vahi-api",
   "main": "src/server.ts",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": [
@@ -12,7 +12,7 @@
   },
   "env": {
     "dev": {
-      "name": "billtap-api-dev",
+      "name": "vahi-api-dev",
       "triggers": {
         "crons": [
           "0 2 * * *"
