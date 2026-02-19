@@ -17,7 +17,7 @@ export interface SitemapEntry {
 }
 
 export const BRAND = {
-    productName: 'BillTap',
+    productName: 'Vahi',
     companyName: 'AutoLoop',
     legalEntityName: 'AutoLoop Technologies',
     supportEmail: 'support@autoloop.app',

@@ -1,5 +1,5 @@
 {
-  "name": "billtap",
+  "name": "vahi",
   "main": "expo-router/entry",
   "version": "3.0.1",
   "scripts": {
@@ -93,6 +93,7 @@
     "@types/node": "^25.2.3",
     "@types/react": "~19.1.17",
     "@vitest/coverage-v8": "^4.0.18",
+    "babel-plugin-inline-import": "^3.0.0",
     "drizzle-kit": "^0.31.9",
     "eslint": "^9.39.2",
     "eslint-config-expo": "~10.0.0",

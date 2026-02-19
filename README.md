@@ -1,4 +1,4 @@
-# BillTap Client
+# Vahi Client
 
 Expo app for billing, inventory, accounting, staff, and admin modules.
 
@@ -95,6 +95,6 @@ Optional smoke secrets:
 
 ## Google OAuth Console Values
 
-- Android package: `com.autoloop.billtap`
-- Native redirect scheme: `billtap://oauthredirect`
+- Android package: `com.autoloop.vahi`
+- Native redirect scheme: `vahi://oauthredirect`
 - Web redirects: `/oauthredirect` on your web origin(s)

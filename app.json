@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "billtap",
-    "slug": "billtap",
+    "name": "vahi",
+    "slug": "vahi",
     "version": "3.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "billtap",
+    "scheme": "vahi",
     "userInterfaceStyle": "automatic",
     "jsEngine": "hermes",
     "runtimeVersion": {
@@ -17,16 +17,16 @@
     },
     "newArchEnabled": true,
     "ios": {
-      "bundleIdentifier": "com.autoloop.billtap",
+      "bundleIdentifier": "com.autoloop.vahi",
       "supportsTablet": true,
       "buildNumber": "12",
-      "icon": "./assets/images/ios-icon.png"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
-      "package": "com.autoloop.billtap",
+      "package": "com.autoloop.vahi",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
-        "backgroundImage": "./assets/images/android-icon-background.png"
+        "backgroundImage": "./assets/images/icon.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -57,7 +57,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow BillTap to access your camera to scan barcodes."
+          "cameraPermission": "Allow Vahi to access your camera to scan barcodes."
         }
       ],
       [
@@ -83,6 +83,6 @@
         "projectId": "fd215eac-ce72-4485-b640-37d2c7774b75"
       }
     },
-    "owner": "pixelatedvibe"
+    "owner": "shubhamjain"
   }
 }

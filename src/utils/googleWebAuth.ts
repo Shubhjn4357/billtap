@@ -33,7 +33,7 @@ export const useWebGoogleAuth = ({
     iosClientId,
 }: UseWebGoogleAuthInput): UseWebGoogleAuthResult => {
     const redirectUri = makeRedirectUri({
-        scheme: 'billtap',
+        scheme: 'vahi',
         path: 'oauthredirect',
     });
 

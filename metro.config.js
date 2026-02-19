@@ -10,6 +10,7 @@ config.transformer.getTransformOptions = async () => ({
 });
 
 config.resolver.sourceExts.push('sql'); // Add SQL support
+config.resolver.assetExts.push('wasm'); // Add WASM support
 
 module.exports = config;
 

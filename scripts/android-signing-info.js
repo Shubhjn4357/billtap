@@ -110,7 +110,7 @@ try {
   }
 
   printSection('GOOGLE CONSOLE VALUES');
-  console.log('Android package name: com.autoloop.billtap');
+  console.log('Android package name: com.autoloop.vahi');
   console.log('Use debug_sha1 and release_sha1 in Google Cloud OAuth Android client(s).');
   console.log('Use release_sha256 for Play Integrity / advanced checks if needed.');
 

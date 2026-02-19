@@ -4,7 +4,7 @@ export const API_CONFIG = {
     baseUrl: (() => {
         const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
         const developmentDefault = 'http://localhost:3000/api';
-        const productionDefault = 'https://billtap-api.shubhamjain-com-in.workers.dev/api';
+        const productionDefault = 'https://vahi-api.shubhamjain-com-in.workers.dev/api';
         const configured = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? '').trim();
         const fallback = isDev ? developmentDefault : productionDefault;
         const initial = (configured || fallback).replace(/\/$/, '');

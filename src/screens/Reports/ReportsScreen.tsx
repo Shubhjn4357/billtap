@@ -206,7 +206,7 @@ export const ReportsScreen = () => {
                 start: start ? start.toISOString() : undefined,
             });
             await Share.share({
-                title: mode === 'json' ? 'BillTap Transactions JSON Export' : 'BillTap Transactions CSV Export',
+                title: mode === 'json' ? 'Vahi Transactions JSON Export' : 'Vahi Transactions CSV Export',
                 message: typeof exported === 'string' ? exported : JSON.stringify(exported, null, 2),
             });
         } catch (exportError: unknown) {

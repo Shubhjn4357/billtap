@@ -309,7 +309,7 @@ export const SettingsScreen = () => {
                                 <List.Section style={styles.sectionNoMargin}>
                                     <List.Subheader>Application</List.Subheader>
                                     <List.Item
-                                        title="About BillTap"
+                                        title="About Vahi"
                                         left={(props) => <List.Icon {...props} icon="information-outline" />}
                                         onPress={() => router.push('/about' as never)}
                                     />

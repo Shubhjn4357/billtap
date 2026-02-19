@@ -239,7 +239,7 @@ export const LoginScreen = () => {
                                     </View>
                                     <View style={styles.brandTextWrap}>
                                         <Text variant="labelLarge" style={[styles.brandLabel, { color: theme.colors.primary }]}>
-                                            BillTap OS 2026
+                                                Vahi OS 2026
                                         </Text>
                                         <Text variant="headlineSmall" style={[styles.title, { color: theme.colors.onSurface }]}>
                                             Secure Sign-In

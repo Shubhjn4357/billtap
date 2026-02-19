@@ -7,7 +7,7 @@ const clientRoot = path.resolve(scriptDir, '..');
 const workspaceRoot = path.resolve(clientRoot, '..');
 
 const resolveBackendRoot = () => {
-    const candidates = ['backend', 'billtap'];
+    const candidates = ['backend', 'vahi'];
     for (const candidate of candidates) {
         const root = path.join(workspaceRoot, candidate);
         const srcDir = path.join(root, 'src');

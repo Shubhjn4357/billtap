@@ -85,7 +85,7 @@ export const OnboardingScreen = () => {
         <ScreenWrapper>
             <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
                 <PageHeaderCard
-                    title="BillTap Quick Start"
+                    title="Vahi Quick Start"
                     subtitle="Set up billing, stock, and reports in under a minute."
                 />
 
