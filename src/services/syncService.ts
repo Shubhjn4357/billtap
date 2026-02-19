@@ -255,8 +255,6 @@ class SyncService {
 
 export const syncService = new SyncService();
 
-
-
 // Register the background task
 TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
   try {
