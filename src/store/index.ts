@@ -4,8 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Config } from '../constants/Config';
 import type { UserProfile, Party, Transaction, Item } from '../types';
 
-// Force CommonJS middleware build so web bundles don't include `import.meta` from ESM devtools code.
-const { createJSONStorage, persist } = require('zustand/middleware') as typeof import('zustand/middleware');
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 interface UserState {
     user: UserProfile | null;

@@ -17,6 +17,9 @@ importers:
       '@expo/vector-icons':
         specifier: ^15.0.3
         version: 15.0.3(expo-font@14.0.11(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      '@lottiefiles/dotlottie-react':
+        specifier: ^0.18.1
+        version: 0.18.1(react@19.1.0)
       '@react-native-async-storage/async-storage':
         specifier: ^2.2.0
         version: 2.2.0(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))
@@ -139,7 +142,7 @@ importers:
         version: 25.8.13(typescript@5.9.3)
       lottie-react-native:
         specifier: ^7.3.6
-        version: 7.3.6(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+        version: 7.3.6(@lottiefiles/dotlottie-react@0.18.1(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       moti:
         specifier: ^0.30.0
         version: 0.30.0(react-dom@19.1.0(react@19.1.0))(react-native-reanimated@4.1.6(@babel/core@7.29.0)(react-native-worklets@0.5.1(@babel/core@7.29.0)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react@19.1.0)
@@ -1689,6 +1692,14 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@lottiefiles/dotlottie-react@0.18.1':
+    resolution: {integrity: sha512-Dxb1sdnbw5CugFMlr/mf5NmUMxyUE17fgm2akhY9UwUqm7UujjAtqyrmkB15DgGz7Zjp3YeduY5J8vDpWWU1Lg==}
+    peerDependencies:
+      react: ^17 || ^18 || ^19
+
+  '@lottiefiles/dotlottie-web@0.64.1':
+    resolution: {integrity: sha512-G+FwVITIh8uladYex+I0KsSVj4AX9nVBZ+fjFzthUbUdCx3rJ+BzGS5qxHJZoiCeblL2c2nV9SCb7ms5t46uCw==}
 
   '@motionone/animation@10.18.0':
     resolution: {integrity: sha512-9z2p5GFGCm0gBsZbi8rVMOAJCtw1WqBTIPw3ozk06gDvZInBPIsQcHgYogEJ4yuHJ+akuW8g1SEIOpTOvYs8hw==}
@@ -7912,6 +7923,13 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@lottiefiles/dotlottie-react@0.18.1(react@19.1.0)':
+    dependencies:
+      '@lottiefiles/dotlottie-web': 0.64.1
+      react: 19.1.0
+
+  '@lottiefiles/dotlottie-web@0.64.1': {}
+
   '@motionone/animation@10.18.0':
     dependencies:
       '@motionone/easing': 10.18.0
@@ -11033,10 +11051,12 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
-  lottie-react-native@7.3.6(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
+  lottie-react-native@7.3.6(@lottiefiles/dotlottie-react@0.18.1(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
+    optionalDependencies:
+      '@lottiefiles/dotlottie-react': 0.18.1(react@19.1.0)
 
   lru-cache@10.4.3: {}
 

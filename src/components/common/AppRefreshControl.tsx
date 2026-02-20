@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { RefreshControl, RefreshControlProps } from 'react-native';
 import LottieView from 'lottie-react-native';
-import { useTheme } from 'react-native-paper';
+
 import AppAnimation from "@/assets/animations/moneytransfer.json";
 export interface AppRefreshControlProps extends Omit<RefreshControlProps, 'refreshing'> {
     refreshing: boolean;
@@ -10,7 +10,6 @@ export interface AppRefreshControlProps extends Omit<RefreshControlProps, 'refre
 
 export const AppRefreshControl = ({ refreshing, onRefresh, ...props }: AppRefreshControlProps) => {
     const animationRef = useRef<LottieView>(null);
-    const theme = useTheme();
 
     useEffect(() => {
         if (refreshing) {
