@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { type StoredBill } from '../api/billService';
 import { billRepository } from '../repositories/billRepository';
 import { useOrganizationStore } from '../store';
+import type { TransactionType } from '../types';
 import { calculateBillStats } from '../utils/billStats';
 import { isNetworkLikeError } from '../utils/errorGuards';
 import type { DbTransaction } from '../types/db';
@@ -14,7 +15,7 @@ interface UseBillsOptions {
 }
 
 const mapTransactionToBill = (tx: DbTransaction): StoredBill => {
-    let items: any[] = [];
+    let items: import('../types').BillItem[] = [];
     try {
         items = tx.itemsSnapshot ? JSON.parse(tx.itemsSnapshot) : [];
     } catch {
@@ -35,8 +36,8 @@ const mapTransactionToBill = (tx: DbTransaction): StoredBill => {
         total: tx.totalAmount,
         createdAt: tx.billDate ?? tx.createdAt,
         taxAmount: tx.taxAmount ?? 0,
-        type: tx.type as any,
-        billMode: tx.billMode as any,
+        type: tx.type as TransactionType,
+        billMode: tx.billMode as 'GST' | 'ESTIMATE',
     };
 };
 

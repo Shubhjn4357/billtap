@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { Text, useTheme, SegmentedButtons, IconButton, Divider, Menu, Button } from 'react-native-paper';
+import { Text, useTheme, SegmentedButtons, IconButton, Divider, Menu, Button, List } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
@@ -23,6 +23,7 @@ import type { NewDbTransaction } from '../../types/db';
 import { taskNotificationService } from '../../services/taskNotificationService';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
 import { useAppDialog } from '../../components/providers/DialogProvider';
+import { shareViaWhatsApp, shareViaSMS } from '../../utils/shareIntent';
 // import { transactionCreditSchema } from '../../validation/forms';
 // import { isNetworkLikeError } from '../../utils/errorGuards';
 import { billRepository } from '../../repositories/billRepository';
@@ -112,6 +113,47 @@ export const TransactionScreen = () => {
         const newItems = [...items];
         newItems.splice(index, 1);
         setItems(newItems);
+    };
+
+    const handleShareReminder = async (platform: 'whatsapp' | 'sms') => {
+        const phoneToUse = deliveryContactPhone || (selectedParty?.phone ?? null);
+
+        if (!phoneToUse) {
+            dialog.alert('No Phone Number', 'Please select a party with a phone number or enter a delivery contact phone first.');
+            return;
+        }
+
+        const dueAmount = Math.max(totals.total - Number(paidAmountInput || 0), 0);
+        if (dueAmount <= 0) {
+            dialog.alert('No Due Amount', 'This transaction is fully paid.');
+            return;
+        }
+
+        const billName = user?.businessName || 'Us';
+
+        const message = `Hello${selectedParty?.name ? ` ${selectedParty.name}` : ''},\n\nThis is a friendly reminder from ${billName} regarding your bill (${billNo}).\n\nTotal Amount: ${formatCurrency(totals.total, activeCurrency)}\nDue Amount: ${formatCurrency(dueAmount, activeCurrency)}\n\nPlease pay at your earliest convenience.\nThank you!`;
+
+        try {
+            if (platform === 'whatsapp') {
+                await shareViaWhatsApp(phoneToUse, message);
+            } else {
+                await shareViaSMS(phoneToUse, message);
+            }
+        } catch (error: any) {
+            dialog.alert('Error', error.message || `Failed to open ${platform}`);
+        }
+    };
+
+    const handleDelete = () => {
+        if (!id) return;
+        dialog.confirm('Delete Transaction', 'Are you sure you want to delete this transaction? This action cannot be undone.', async () => {
+            try {
+                await billRepository.delete(id);
+                router.back();
+            } catch (e: any) {
+                dialog.alert('Error', e.message || 'Failed to delete transaction');
+            }
+        });
     };
 
     // Effect to load existing transaction
@@ -246,7 +288,7 @@ export const TransactionScreen = () => {
 
             // Navigate to Success Screen on Creation (not necessarily edit, or maybe both? usually creation)
             if (!isEditMode) {
-                router.replace({ pathname: '/bill-success', params: { id: dbPayload.id } } as any);
+                router.replace({ pathname: '/bill-success', params: { id: dbPayload.id } });
             } else {
                 dialog.alert(COMMON_TEXT.alerts.success, 'Transaction saved successfully.');
                 router.back();
@@ -279,144 +321,158 @@ export const TransactionScreen = () => {
                         />
                     </AppCard>
 
-                    <View style={styles.section}>
-                        <Text variant="titleMedium" style={styles.label}>Party</Text>
-                        <Menu
-                            visible={showPartyMenu}
-                            onDismiss={() => setShowPartyMenu(false)}
-                            anchor={(
-                                <Button mode="outlined" onPress={() => setShowPartyMenu(true)} style={styles.selector}>
-                                    {selectedParty ? selectedParty.name : 'Select Party'}
-                                </Button>
-                            )}
-                        >
-                            {parties.map((party) => (
-                                <Menu.Item
-                                    key={party.id}
-                                    onPress={() => { setSelectedParty(party); setShowPartyMenu(false); }}
-                                    title={party.name}
-                                />
-                            ))}
-                            <Menu.Item onPress={() => { setShowPartyMenu(false); router.push('/party/new' as never); }} title="+ Add New Party" />
-                        </Menu>
-                    </View>
+                    <List.AccordionGroup>
+                        <AppCard style={styles.sectionCard}>
+                            <List.Accordion title="Party & Logistics" id="1" left={props => <List.Icon {...props} icon="truck-fast-outline" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                <View style={styles.accordionContent}>
+                                    <View style={styles.section}>
+                                        <Text variant="titleMedium" style={styles.label}>Party</Text>
+                                        <Menu
+                                            visible={showPartyMenu}
+                                            onDismiss={() => setShowPartyMenu(false)}
+                                            anchor={(
+                                                <Button mode="outlined" onPress={() => setShowPartyMenu(true)} style={styles.selector}>
+                                                    {selectedParty ? selectedParty.name : 'Select Party'}
+                                                </Button>
+                                            )}
+                                        >
+                                            {parties.map((party) => (
+                                                <Menu.Item
+                                                    key={party.id}
+                                                    onPress={() => { setSelectedParty(party); setShowPartyMenu(false); }}
+                                                    title={party.name}
+                                                />
+                                            ))}
+                                            <Menu.Item onPress={() => { setShowPartyMenu(false); router.push('/party/new' as never); }} title="+ Add New Party" />
+                                        </Menu>
+                                    </View>
 
-                    {/* Delivery Address Section */}
-                    <View style={styles.section}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                            <IconButton
-                                icon={sameAsBilling ? "checkbox-marked" : "checkbox-blank-outline"}
-                                size={20}
-                                onPress={() => setSameAsBilling(!sameAsBilling)}
-                                iconColor={theme.colors.primary}
-                                style={{ margin: 0 }}
-                            />
-                            <Text variant="bodyMedium" onPress={() => setSameAsBilling(!sameAsBilling)} style={{ marginLeft: 4 }}>
-                                Same as billing address
-                            </Text>
-                        </View>
-                        {!sameAsBilling && (
-                            <View style={{ gap: DesignSystem.spacing.sm }}>
-                                <AppInput
-                                    label="Delivery Address"
-                                    value={deliveryAddress}
-                                    onChangeText={setDeliveryAddress}
-                                    inputType="text"
-                                    multiline
-                                    numberOfLines={2}
-                                />
-                                <AppInput
-                                    label="Contact Name (Optional)"
-                                    value={deliveryContactName}
-                                    onChangeText={setDeliveryContactName}
-                                    inputType="text"
-                                />
-                                <AppInput
-                                    label="Contact Phone (Optional)"
-                                    value={deliveryContactPhone}
-                                    onChangeText={setDeliveryContactPhone}
-                                    inputType="phone"
-                                    maxLength={10}
-                                />
-                            </View>
-                        )}
-                    </View>
+                                    {/* Delivery Address Section */}
+                                    <View style={styles.section}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                            <IconButton
+                                                icon={sameAsBilling ? "checkbox-marked" : "checkbox-blank-outline"}
+                                                size={20}
+                                                onPress={() => setSameAsBilling(!sameAsBilling)}
+                                                iconColor={theme.colors.primary}
+                                                style={{ margin: 0 }}
+                                            />
+                                            <Text variant="bodyMedium" onPress={() => setSameAsBilling(!sameAsBilling)} style={{ marginLeft: 4 }}>
+                                                Same as billing address
+                                            </Text>
+                                        </View>
+                                        {!sameAsBilling && (
+                                            <View style={{ gap: DesignSystem.spacing.sm }}>
+                                                <AppInput
+                                                    label="Delivery Address"
+                                                    value={deliveryAddress}
+                                                    onChangeText={setDeliveryAddress}
+                                                    inputType="text"
+                                                    multiline
+                                                    numberOfLines={2}
+                                                />
+                                                <AppInput
+                                                    label="Contact Name (Optional)"
+                                                    value={deliveryContactName}
+                                                    onChangeText={setDeliveryContactName}
+                                                    inputType="text"
+                                                />
+                                                <AppInput
+                                                    label="Contact Phone (Optional)"
+                                                    value={deliveryContactPhone}
+                                                    onChangeText={setDeliveryContactPhone}
+                                                    inputType="phone"
+                                                    maxLength={10}
+                                                />
+                                            </View>
+                                        )}
+                                    </View>
+                                </View>
+                            </List.Accordion>
+                        </AppCard>
 
-                    <View style={styles.section}>
-                        <AppInput
-                            label="Bill Number"
-                            value={billNo}
-                            onChangeText={(value) => setBillNo(value.toUpperCase().replace(/\s+/g, ''))}
-                            inputType="text"
-                        />
-                        <AppDateField
-                            label="Bill Date"
-                            value={billDate}
-                            onChange={setBillDate}
-                        />
-                    </View>
+                        <AppCard style={styles.sectionCard}>
+                            <List.Accordion title="Billing & Payment" id="2" left={props => <List.Icon {...props} icon="receipt-text-outline" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                <View style={styles.accordionContent}>
+                                    <View style={styles.section}>
+                                        <AppInput
+                                            label="Bill Number"
+                                            value={billNo}
+                                            onChangeText={(value) => setBillNo(value.toUpperCase().replace(/\s+/g, ''))}
+                                            inputType="text"
+                                        />
+                                        <AppDateField
+                                            label="Bill Date"
+                                            value={billDate}
+                                            onChange={setBillDate}
+                                        />
+                                    </View>
 
-                    <View style={styles.section}>
-                        <Text variant="titleMedium" style={styles.label}>Payment Mode</Text>
-                        <SegmentedButtons
-                            value={paymentMode}
-                            onValueChange={(value) => {
-                                const nextMode = value as 'CASH' | 'CREDIT';
-                                setPaymentMode(nextMode);
-                                if (nextMode === 'CASH') {
-                                    setDueDate(undefined);
-                                    setPaidAmountInput('');
-                                }
-                            }}
-                            buttons={[
-                                { value: 'CASH', label: 'Cash' },
-                                { value: 'CREDIT', label: 'Credit' },
-                            ]}
-                        />
-                        {paymentMode === 'CREDIT' && (
-                            <View style={styles.creditSection}>
-                                <AppInput
-                                    label="Paid Amount (optional)"
-                                    value={paidAmountInput}
-                                    onChangeText={setPaidAmountInput}
-                                    inputType="decimal"
-                                />
-                                <AppButton
-                                    mode="outlined"
-                                    onPress={() => setShowDueDatePicker(true)}
-                                    icon="calendar"
-                                    contentStyle={{ justifyContent: 'flex-start' }}
-                                >
-                                    {dueDate ? dueDate.toLocaleDateString() : 'Select Due Date'}
-                                </AppButton>
-                                {showDueDatePicker && (
-                                    <DateTimePicker
-                                        value={dueDate ?? new Date()}
-                                        mode="date"
-                                        display="default"
-                                        onChange={(_event, selectedDate) => {
-                                            setShowDueDatePicker(false);
-                                            if (selectedDate) {
-                                                setDueDate(selectedDate);
-                                            }
-                                        }}
-                                    />
-                                )}
-                                <AppInput
-                                    label="Reminder Every (Days)"
-                                    value={reminderFrequencyDays}
-                                    onChangeText={setReminderFrequencyDays}
-                                    inputType="number"
-                                />
-                                <Button
-                                    mode={reminderEnabled ? 'contained-tonal' : 'outlined'}
-                                    onPress={() => setReminderEnabled((current) => !current)}
-                                >
-                                    {reminderEnabled ? 'Reminder Enabled' : 'Enable Reminder'}
-                                </Button>
-                            </View>
-                        )}
-                    </View>
+                                    <View style={styles.section}>
+                                        <Text variant="titleMedium" style={styles.label}>Payment Mode</Text>
+                                        <SegmentedButtons
+                                            value={paymentMode}
+                                            onValueChange={(value) => {
+                                                const nextMode = value as 'CASH' | 'CREDIT';
+                                                setPaymentMode(nextMode);
+                                                if (nextMode === 'CASH') {
+                                                    setDueDate(undefined);
+                                                    setPaidAmountInput('');
+                                                }
+                                            }}
+                                            buttons={[
+                                                { value: 'CASH', label: 'Cash' },
+                                                { value: 'CREDIT', label: 'Credit' },
+                                            ]}
+                                        />
+                                        {paymentMode === 'CREDIT' && (
+                                            <View style={styles.creditSection}>
+                                                <AppInput
+                                                    label="Paid Amount (optional)"
+                                                    value={paidAmountInput}
+                                                    onChangeText={setPaidAmountInput}
+                                                    inputType="decimal"
+                                                />
+                                                <AppButton
+                                                    mode="outlined"
+                                                    onPress={() => setShowDueDatePicker(true)}
+                                                    icon="calendar"
+                                                    contentStyle={{ justifyContent: 'flex-start' }}
+                                                >
+                                                    {dueDate ? dueDate.toLocaleDateString() : 'Select Due Date'}
+                                                </AppButton>
+                                                {showDueDatePicker && (
+                                                    <DateTimePicker
+                                                        value={dueDate ?? new Date()}
+                                                        mode="date"
+                                                        display="default"
+                                                        onChange={(_event, selectedDate) => {
+                                                            setShowDueDatePicker(false);
+                                                            if (selectedDate) {
+                                                                setDueDate(selectedDate);
+                                                            }
+                                                        }}
+                                                    />
+                                                )}
+                                                <AppInput
+                                                    label="Reminder Every (Days)"
+                                                    value={reminderFrequencyDays}
+                                                    onChangeText={setReminderFrequencyDays}
+                                                    inputType="number"
+                                                />
+                                                <Button
+                                                    mode={reminderEnabled ? 'contained-tonal' : 'outlined'}
+                                                    onPress={() => setReminderEnabled((current) => !current)}
+                                                >
+                                                    {reminderEnabled ? 'Reminder Enabled' : 'Enable Reminder'}
+                                                </Button>
+                                            </View>
+                                        )}
+                                    </View>
+                                </View>
+                            </List.Accordion>
+                        </AppCard>
+                    </List.AccordionGroup>
 
                     <View style={styles.section}>
                         <View style={styles.itemsHeaderRow}>
@@ -501,6 +557,18 @@ export const TransactionScreen = () => {
                         style={styles.remarksInput}
                     />
 
+                    {isEditMode && (
+                        <AppButton
+                            mode="outlined"
+                            textColor={theme.colors.error}
+                            style={{ borderColor: theme.colors.error, marginBottom: DesignSystem.spacing.md }}
+                            onPress={handleDelete}
+                            icon="delete-outline"
+                        >
+                            Delete Transaction
+                        </AppButton>
+                    )}
+
                     <AppButton
                         mode="contained"
                         onPress={handleSave}
@@ -509,6 +577,29 @@ export const TransactionScreen = () => {
                     >
                         Save {type === 'SALE' ? 'Sale' : 'Purchase'}
                     </AppButton>
+
+                    {isEditMode && paymentMode === 'CREDIT' && Math.max(totals.total - Number(paidAmountInput || 0), 0) > 0 && (
+                        <View style={styles.shareRow}>
+                            <AppButton
+                                mode="contained-tonal"
+                                onPress={() => void handleShareReminder('whatsapp')}
+                                icon="whatsapp"
+                                style={[styles.actionBtn, styles.flexBtn]}
+                                buttonColor="#25D366" // Optional brand coloring
+                                textColor="#FFF"
+                            >
+                                WhatsApp Reminder
+                            </AppButton>
+                            <AppButton
+                                mode="contained-tonal"
+                                onPress={() => void handleShareReminder('sms')}
+                                icon="message-text-outline"
+                                style={[styles.actionBtn, styles.flexBtn]}
+                            >
+                                SMS Reminder
+                            </AppButton>
+                        </View>
+                    )}
                 </View>
             </ScrollView>
         </ScreenWrapper>
@@ -529,6 +620,18 @@ const styles = StyleSheet.create({
     },
     section: {
         marginBottom: DesignSystem.spacing.md + 2,
+    },
+    sectionCard: {
+        marginBottom: DesignSystem.spacing.xs,
+        padding: 0,
+        overflow: 'hidden',
+    },
+    accordionHeader: {
+        backgroundColor: 'transparent',
+    },
+    accordionContent: {
+        paddingHorizontal: DesignSystem.spacing.md,
+        paddingBottom: DesignSystem.spacing.md,
     },
     label: {
         marginBottom: DesignSystem.spacing.xs,
@@ -597,4 +700,16 @@ const styles = StyleSheet.create({
     saveButton: {
         marginTop: DesignSystem.spacing.xl + 6,
     },
+    shareRow: {
+        flexDirection: 'row',
+        gap: DesignSystem.spacing.md,
+        width: '100%',
+        marginTop: DesignSystem.spacing.md,
+    },
+    actionBtn: {
+        marginBottom: DesignSystem.spacing.md,
+    },
+    flexBtn: {
+        flex: 1,
+    }
 });

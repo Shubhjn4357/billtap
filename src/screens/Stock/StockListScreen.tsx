@@ -269,12 +269,12 @@ export const StockListScreen = () => {
                         <View style={styles.searchRow}>
                                 <Searchbar
                                     placeholder="Search by name or barcode"
-                                onChangeText={setSearchQuery}
+                                    onChangeText={setSearchQuery}
                                     value={searchQuery}
-                                style={styles.searchInput}
+                                    style={[styles.searchInput, { backgroundColor: theme.colors.surfaceVariant }]}
                                     inputStyle={{ minHeight: 0 }}
                                     elevation={0}
-                            />
+                                />
                                 <IconButton
                                 icon="barcode-scan"
                                     mode="contained"
@@ -483,7 +483,6 @@ const styles = StyleSheet.create({
     },
     searchInput: {
         flex: 1,
-        backgroundColor: '#F5F5F5',
         borderRadius: DesignSystem.radius.lg,
     },
     scanAction: {

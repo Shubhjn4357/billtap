@@ -12,6 +12,7 @@ import { DesignSystem } from '../../constants/DesignSystem';
 import type { Account, AccountType } from '../../types';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 
 const ACCOUNT_TYPES: AccountType[] = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'];
 
@@ -91,7 +92,11 @@ export const AccountsScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<AppRefreshControl refreshing={accountsQuery.isFetching} onRefresh={() => { void refetchAccounts(); }} />}
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
                         title="Chart Of Accounts"

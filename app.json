@@ -17,13 +17,14 @@
     },
     "newArchEnabled": true,
     "ios": {
-      "bundleIdentifier": "com.autoloop.vahi",
+      "bundleIdentifier": "com.blockbucket.vahi",
       "supportsTablet": true,
       "buildNumber": "12",
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/icon.png",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "package": "com.autoloop.vahi",
+      "package": "com.blockbucket.vahi",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
         "backgroundImage": "./assets/images/icon.png"
@@ -34,7 +35,8 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 12
+      "versionCode": 12,
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "single",
@@ -71,7 +73,24 @@
         "@react-native-google-signin/google-signin"
       ],
       "@react-native-community/datetimepicker",
-      "expo-sqlite"
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": true,
+          "useSQLCipher": true,
+          "android": {
+            "enableFTS": false,
+            "useSQLCipher": false
+          },
+          "ios": {
+            "customBuildFlags": [
+              "-DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1"
+            ]
+          }
+        }
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth"
     ],
     "experiments": {
       "typedRoutes": true,

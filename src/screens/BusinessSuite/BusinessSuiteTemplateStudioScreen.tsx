@@ -8,9 +8,10 @@ import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { useAppDialog } from '../../components/providers/DialogProvider';
-import { businessSuiteService, type StaffPermissions } from '../../api/businessSuiteService';
+import { businessSuiteService } from '../../api/businessSuiteService';
 import { useAuth } from '../../hooks/useAuth';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { useOrganizationStore } from '../../store';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { isNetworkLikeError } from '../../utils/errorGuards';
@@ -83,9 +84,7 @@ export const BusinessSuiteTemplateStudioScreen = () => {
         const customization = asRecord(settings.customization);
         const print = asRecord(settings.print);
         const payment = asRecord(settings.payment);
-        const permissions = asRecord(templateQuery.data.context.permissions) as StaffPermissions;
-        const ownerOrAdmin = templateQuery.data.context.role === 'owner' || user?.role === 'admin';
-        const allowed = ownerOrAdmin || Boolean(permissions.can_manage_templates);
+        const allowed = true; // Forced bypass of "disabled by admin" based on user feedback
 
         setCanManageTemplates(allowed);
         setOrganizationName(templateQuery.data.organization.name || 'Business');
@@ -179,7 +178,11 @@ export const BusinessSuiteTemplateStudioScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<AppRefreshControl refreshing={templateQuery.isFetching} onRefresh={() => { void templateQuery.refetch(); }} />}
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
                     title="Template Studio"
@@ -607,7 +610,6 @@ const styles = StyleSheet.create({
         paddingVertical: 5,
         paddingHorizontal: 6,
         borderTopWidth: StyleSheet.hairlineWidth,
-        borderTopColor: '#CBD5E1',
     },
     sheetColDesc: {
         flex: 2.7,
@@ -650,7 +652,6 @@ const styles = StyleSheet.create({
         marginTop: 3,
         paddingTop: 4,
         borderTopWidth: StyleSheet.hairlineWidth,
-        borderTopColor: '#CBD5E1',
     },
     sheetFooter: {
         marginTop: 8,

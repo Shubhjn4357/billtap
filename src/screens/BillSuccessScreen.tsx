@@ -9,9 +9,12 @@ import { DesignSystem } from '../constants/DesignSystem';
 import { billRepository } from '../repositories/billRepository';
 import { formatCurrency, normalizeCurrencyCode } from '../utils/formatters';
 import { shareBillPDF } from '../utils/pdfGenerator';
-import { useSettingsStore } from '../store';
+import { useSettingsStore, usePartyStore } from '../store';
 import { useAuth } from '../hooks/useAuth';
 import QRCode from 'react-native-qrcode-svg';
+import { shareViaWhatsApp, shareViaSMS } from '../utils/shareIntent';
+import { useAppDialog } from '../components/providers/DialogProvider';
+import type { DbTransaction } from '../types/db';
 
 export const BillSuccessScreen = () => {
     const router = useRouter();
@@ -19,10 +22,12 @@ export const BillSuccessScreen = () => {
     const params = useLocalSearchParams<{ id: string }>();
     const { id } = params;
 
-    const [transaction, setTransaction] = useState<any>(null);
+    const [transaction, setTransaction] = useState<DbTransaction | null>(null);
     const [loading, setLoading] = useState(true);
     const { currencySymbol } = useSettingsStore();
+    const { parties } = usePartyStore();
     const { user } = useAuth();
+    const dialog = useAppDialog();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? 'INR');
 
     useEffect(() => {
@@ -38,7 +43,15 @@ export const BillSuccessScreen = () => {
     const handleViewBill = async () => {
         if (!transaction) return;
         try {
-            await shareBillPDF(transaction);
+            const parsedItems = transaction.itemsSnapshot ? JSON.parse(transaction.itemsSnapshot) : [];
+            const billToShare = {
+                ...transaction,
+                items: parsedItems,
+                userId: transaction.accountId || '',
+                total: transaction.totalAmount
+            };
+            // Ignore type strictness on the mapper strictly for PDF generation
+            await shareBillPDF(billToShare as any);
         } catch (error) {
             console.error('Failed to share PDF', error);
         }
@@ -47,6 +60,32 @@ export const BillSuccessScreen = () => {
     const handleHome = () => {
         router.dismissAll();
         router.replace('/(main)/(tabs)/home');
+    };
+
+    const handleShareReminder = async (platform: 'whatsapp' | 'sms') => {
+        if (!transaction) return;
+        const partyPhone = transaction.partyId ? parties.find(p => p.id === transaction.partyId)?.phone : null;
+        const phoneToUse = partyPhone || transaction.deliveryContactPhone;
+
+        if (!phoneToUse) {
+            dialog.alert('No Phone Number', 'This transaction does not have a phone number attached.');
+            return;
+        }
+
+        const dueAmount = transaction.totalAmount - (transaction.paidAmount || 0);
+        const billName = user?.businessName || 'Us';
+
+        const message = `Hello${transaction.partyName ? ` ${transaction.partyName}` : ''},\n\nThis is a reminder from ${billName} regarding your recent bill (${transaction.billNumber}).\n\nTotal Amount: ${formatCurrency(transaction.totalAmount, activeCurrency)}\nDue Amount: ${formatCurrency(dueAmount, activeCurrency)}\n\nPlease pay at your earliest convenience.\nThank you!`;
+
+        try {
+            if (platform === 'whatsapp') {
+                await shareViaWhatsApp(phoneToUse, message);
+            } else {
+                await shareViaSMS(phoneToUse, message);
+            }
+        } catch (error: any) {
+            dialog.alert('Error', error.message || `Failed to open ${platform}`);
+        }
     };
 
     if (loading) {
@@ -75,7 +114,7 @@ export const BillSuccessScreen = () => {
     // For now, we can use a placeholder or real if settings exist.
     // Assuming we might have UPI settings in the future.
     // For now, let's construct a basic UPI string if user has one, else just show Bill ID QR.
-    const upiId = (user as any)?.upiId || '';
+    const upiId = user?.upiId || '';
     const qrData = upiId
         ? `upi://pay?pa=${upiId}&pn=${user?.businessName || 'Merchant'}&am=${transaction.totalAmount}&cu=INR`
         : `BILL:${transaction.billNumber}`;
@@ -99,9 +138,9 @@ export const BillSuccessScreen = () => {
                         {formatCurrency(transaction.totalAmount, activeCurrency)}
                     </Text>
 
-                    <View style={styles.divider} />
+                    <View style={[styles.divider, { backgroundColor: theme.colors.surfaceVariant }]} />
 
-                    <View style={styles.qrContainer}>
+                    <View style={[styles.qrContainer, { backgroundColor: theme.colors.elevation.level1 }]}>
                         {/* We use QRCode SVG if available, else fallback text */}
                         <QRCode
                             value={qrData}
@@ -134,6 +173,30 @@ export const BillSuccessScreen = () => {
                         >
                             View Bill / Print
                         </AppButton>
+
+                        {transaction.paymentStatus !== 'PAID' && ((transaction.partyId ? parties.find(p => p.id === transaction.partyId)?.phone : null) || transaction.deliveryContactPhone) && (
+                            <View style={styles.shareRow}>
+                                <AppButton
+                                    mode="contained-tonal"
+                                    onPress={() => void handleShareReminder('whatsapp')}
+                                    icon="whatsapp"
+                                    style={[styles.actionBtn, styles.flexBtn]}
+                                    buttonColor="#25D366" // Optional brand coloring
+                                    textColor="#FFF"
+                                >
+                                    WhatsApp
+                                </AppButton>
+                                <AppButton
+                                    mode="contained-tonal"
+                                    onPress={() => void handleShareReminder('sms')}
+                                    icon="message-text-outline"
+                                    style={[styles.actionBtn, styles.flexBtn]}
+                                >
+                                    SMS
+                                </AppButton>
+                            </View>
+                        )}
+
                         <AppButton
                             mode="outlined"
                             onPress={handleHome}
@@ -172,7 +235,6 @@ const styles = StyleSheet.create({
     },
     divider: {
         height: 1,
-        backgroundColor: '#E0E0E0',
         width: '100%',
         marginVertical: DesignSystem.spacing.lg,
     },
@@ -180,7 +242,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: DesignSystem.spacing.lg,
         padding: 16,
-        backgroundColor: '#FFF',
         borderRadius: 8,
     },
     infoRow: {
@@ -195,5 +256,13 @@ const styles = StyleSheet.create({
     },
     actionBtn: {
         marginBottom: DesignSystem.spacing.md,
+    },
+    shareRow: {
+        flexDirection: 'row',
+        gap: DesignSystem.spacing.md,
+        width: '100%',
+    },
+    flexBtn: {
+        flex: 1,
     }
 });

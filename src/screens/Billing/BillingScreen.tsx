@@ -10,8 +10,7 @@ import { useCartStore } from '../../store/cartStore';
 import { useSettingsStore } from '../../store';
 import { Config } from '../../constants/Config';
 import { normalizeCurrencyCode } from '../../utils/formatters';
-import { BillingCart } from './components/BillingCart';
-import { BillingCatalog } from './components/BillingCatalog';
+
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { billRepository } from '../../repositories/billRepository';
@@ -21,6 +20,8 @@ import { BILLING_TEXT } from '../../constants/staticText';
 import { billingCheckoutSchema } from '../../validation/forms';
 import { useShallow } from 'zustand/react/shallow';
 import { useRouter } from 'expo-router';
+const BillingCart: any = React.lazy(() => import('./components/BillingCart').then(mod => ({ default: mod.BillingCart as any })));
+const BillingCatalog: any = React.lazy(() => import('./components/BillingCatalog').then(mod => ({ default: mod.BillingCatalog as any })));
 
 export const BillingScreen = () => {
     const theme = useTheme();
@@ -144,10 +145,10 @@ export const BillingScreen = () => {
             // Navigate to Success Screen instead of just alert
             // dialog.alert('Success', 'Bill created successfully!');
            
-            router.push({ pathname: '/bill-success', params: { id: newBillId } } as any);
+            router.push({ pathname: '/bill-success', params: { id: newBillId } });
 
-        } catch (e: any) {
-            dialog.alert('Error', e.message || 'Checkout failed');
+        } catch (e: unknown) {
+            dialog.alert('Error', e instanceof Error ? e.message : 'Checkout failed');
         } finally {
             setCheckoutLoading(false);
         }
@@ -180,32 +181,36 @@ export const BillingScreen = () => {
                                 Scan / Select Items
                             </Text>
                         </View>
-                        <BillingCatalog
-                            items={allItems}
-                            onAddItem={handleAddItem}
-                            stockMap={stockById}
-                            currencySymbol={activeCurrency}
-                            transactionType={transactionType}
-                        />
+                        <React.Suspense fallback={<Text style={{ padding: 16 }}>Loading Catalog...</Text>}>
+                            <BillingCatalog
+                                items={allItems}
+                                onAddItem={handleAddItem}
+                                stockMap={stockById}
+                                currencySymbol={activeCurrency}
+                                transactionType={transactionType}
+                            />
+                        </React.Suspense>
                     </AppCard>
                 </View>
 
                 {/* Cart Section (Destination) */}
                 <View style={[styles.section, styles.cartSection, isWide ? { flex: 0.4 } : { flex: 1, marginTop: 16 }]}>
                     <AppCard style={{ flex: 1, borderColor: theme.colors.outlineVariant, borderWidth: 1 }}>
-                        <BillingCart
-                            currencySymbol={currencySymbol}
-                            activeCurrency={activeCurrency}
-                            onCheckout={handleCheckout}
-                            checkoutLoading={checkoutLoading}
-                            transactionType={transactionType}
-                            stockMap={stockById}
-                            isGstBill={isGstBill}
-                            sameAsBilling={sameAsBilling}
-                            setSameAsBilling={setSameAsBilling}
-                            deliveryAddress={deliveryAddress}
-                            setDeliveryAddress={setDeliveryAddress}
-                        />
+                        <React.Suspense fallback={<Text style={{ padding: 16 }}>Loading Cart...</Text>}>
+                            <BillingCart
+                                currencySymbol={currencySymbol}
+                                activeCurrency={activeCurrency}
+                                onCheckout={handleCheckout}
+                                checkoutLoading={checkoutLoading}
+                                transactionType={transactionType}
+                                stockMap={stockById}
+                                isGstBill={isGstBill}
+                                sameAsBilling={sameAsBilling}
+                                setSameAsBilling={setSameAsBilling}
+                                deliveryAddress={deliveryAddress}
+                                setDeliveryAddress={setDeliveryAddress}
+                            />
+                        </React.Suspense>
                     </AppCard>
                 </View>
             </View>

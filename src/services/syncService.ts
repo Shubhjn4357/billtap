@@ -240,6 +240,11 @@ class SyncService {
         await apiClient.put(`/transactions/${payload.id}`, payload);
         break;
       }
+      case 'DELETE_TRANSACTION': {
+        const payload = data as { id: string };
+        await apiClient.delete(`/transactions/${payload.id}`);
+        break;
+      }
 
       case 'UPDATE_SETTINGS': {
         const payload = data as { key: string; value: string };

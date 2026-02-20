@@ -441,7 +441,7 @@ export const ReportsScreen = () => {
                                                         mode="text"
                                                         compact
                                                         icon="pencil"
-                                                        onPress={() => router.push({ pathname: '/transaction', params: { id: item.id } } as any)}
+                                                        onPress={() => router.push({ pathname: '/transaction', params: { id: item.id } })}
                                                     >
                                                         Edit
                                                     </AppButton>

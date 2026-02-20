@@ -22,6 +22,8 @@ export const subscriptionService = {
             intentId?: string;
             checkoutUrl?: string;
             provider?: string;
+            providerOrderId?: string;
+            razorpayKeyId?: string;
             message?: string;
         }>('/subscription/checkout', {
             planId: plan.id,

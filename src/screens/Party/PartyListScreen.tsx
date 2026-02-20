@@ -250,7 +250,6 @@ const styles = StyleSheet.create({
     },
     itemCard: {
         marginBottom: 10,
-        backgroundColor: '#fff', // Or explicit surface color
     },
     itemCardContent: {
         paddingVertical: 12,

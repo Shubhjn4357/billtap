@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "762596815663",
+    "project_id": "vahi-ede9c",
+    "storage_bucket": "vahi-ede9c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:762596815663:android:f42b79e6d31413ee99a7da",
+        "android_client_info": {
+          "package_name": "com.blockbucket.vahi"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "762596815663-l3t5icili06c3gbssvjn27116fsd43tm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCnHEXGWyIeb-luQxxwebEZxYadQUU8ohk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "762596815663-l3t5icili06c3gbssvjn27116fsd43tm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

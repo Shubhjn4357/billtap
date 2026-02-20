@@ -11,6 +11,7 @@ import { userService } from '../../api/userService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { Config } from '../../constants/Config';
@@ -248,7 +249,11 @@ export const SettingsScreen = () => {
                 />
             </View>
 
-            <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<AppRefreshControl refreshing={isSyncing} onRefresh={runManualSync} />}
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
 
                     {activeTab === 'profile' && (
@@ -327,7 +332,7 @@ export const SettingsScreen = () => {
                                 </List.Section>
                             </AppCard>
 
-                            <AppButton mode="outlined" icon="logout" onPress={signOut} style={styles.signOutButton}>
+                            <AppButton mode="outlined" icon="logout" onPress={signOut} style={[styles.signOutButton, { borderColor: theme.colors.error }]} textColor={theme.colors.error}>
                                 Sign Out
                             </AppButton>
                         </View>
@@ -551,7 +556,6 @@ const styles = StyleSheet.create({
     signOutButton: {
         marginTop: DesignSystem.spacing.sm,
         marginBottom: DesignSystem.spacing.xl,
-        borderColor: '#FF5252', // Hardcoded error color or use theme.colors.error if accessible in styles (it's not usually, so hardcode or use a constant)
     },
     moduleList: {
         marginBottom: DesignSystem.spacing.md,

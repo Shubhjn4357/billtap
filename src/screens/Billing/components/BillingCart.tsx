@@ -213,7 +213,6 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
         borderWidth: 1,
         borderStyle: 'dashed',
-        borderColor: '#E0E0E0',
     },
     header: {
         flexDirection: 'row',
@@ -268,7 +267,6 @@ const styles = StyleSheet.create({
         marginBottom: 16,
         paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#E0E0E0',
     },
     checkboxRow: {
         flexDirection: 'row',

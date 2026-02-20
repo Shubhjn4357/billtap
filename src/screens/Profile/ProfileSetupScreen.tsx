@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { Image, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Image, ScrollView, StyleSheet, View, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { Chip, Text, useTheme } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppButton } from '../../components/common/AppButton';
@@ -362,12 +362,13 @@ export const ProfileSetupScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView
-                contentContainerStyle={[styles.content, { paddingBottom: DesignSystem.layout.pageBottom }]}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-            >
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+                <ScrollView
+                    contentContainerStyle={[styles.content, { paddingBottom: DesignSystem.layout.pageBottom }]}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
                     title="Profile Setup"
                     subtitle={profileSubtitle}
@@ -578,6 +579,7 @@ export const ProfileSetupScreen = () => {
                 </AppCard>
                 </View>
             </ScrollView>
+            </KeyboardAvoidingView>
             <SignatureCaptureModal
                 visible={signatureModalVisible}
                 onClose={() => setSignatureModalVisible(false)}

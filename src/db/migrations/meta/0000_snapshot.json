@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "71a981df-01aa-4695-8744-e7a046c3bc14",
+  "id": "0c5d8889-1899-4d3c-a2c9-73698800db7d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "accounts": {
@@ -549,6 +549,27 @@
         },
         "remark": {
           "name": "remark",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deliveryAddress": {
+          "name": "deliveryAddress",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deliveryContactName": {
+          "name": "deliveryContactName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deliveryContactPhone": {
+          "name": "deliveryContactPhone",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

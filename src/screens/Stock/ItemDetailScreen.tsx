@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { Text, useTheme, SegmentedButtons, TextInput, Avatar, IconButton } from 'react-native-paper';
+import { ScrollView, StyleSheet, View, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { Text, useTheme, SegmentedButtons, TextInput, Avatar, IconButton, List } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -252,8 +252,9 @@ export const ItemDetailScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                    <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
                         title={isNew ? STOCK_TEXT.itemDetail.addTitle : STOCK_TEXT.itemDetail.editTitle}
                         subtitle="Configure pricing, stock controls, tax and identifiers."
@@ -276,140 +277,158 @@ export const ItemDetailScreen = () => {
                         </AppButton>
                     </View>
 
-                    <Section title="Basic Details">
-                        <AppInput
-                            label={STOCK_TEXT.itemDetail.fields.itemName}
-                            value={form.name}
-                            onChangeText={t => setForm({ ...form, name: t })}
-                            inputType="name"
-                            left={<TextInput.Icon icon="tag-outline" />}
-                        />
-                        <View style={styles.row}>
-                            <AppInput
-                                label="Category"
-                                value={form.category}
-                                onChangeText={t => setForm({ ...form, category: t })}
-                                style={styles.halfInput}
-                                inputType="text"
-                                left={<TextInput.Icon icon="shape-outline" />}
-                            />
-                            <AppInput
-                                label="Subcategory"
-                                value={form.subcategory}
-                                onChangeText={t => setForm({ ...form, subcategory: t })}
-                                style={styles.halfInput}
-                                inputType="text"
-                                left={<TextInput.Icon icon="shape-plus-outline" />}
-                            />
-                        </View>
-                    </Section>
+                        <List.AccordionGroup>
+                            <AppCard style={styles.sectionCard}>
+                                <List.Accordion title="Basic Details" id="1" left={props => <List.Icon {...props} icon="information-outline" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                    <View style={styles.accordionContent}>
+                                        <AppInput
+                                            label={STOCK_TEXT.itemDetail.fields.itemName}
+                                            value={form.name}
+                                            onChangeText={t => setForm({ ...form, name: t })}
+                                            inputType="name"
+                                            left={<TextInput.Icon icon="tag-outline" />}
+                                        />
+                                        <View style={styles.row}>
+                                            <AppInput
+                                                label="Category"
+                                                value={form.category}
+                                                onChangeText={t => setForm({ ...form, category: t })}
+                                                style={styles.halfInput}
+                                                inputType="text"
+                                                left={<TextInput.Icon icon="shape-outline" />}
+                                            />
+                                            <AppInput
+                                                label="Subcategory"
+                                                value={form.subcategory}
+                                                onChangeText={t => setForm({ ...form, subcategory: t })}
+                                                style={styles.halfInput}
+                                                inputType="text"
+                                                left={<TextInput.Icon icon="shape-plus-outline" />}
+                                            />
+                                        </View>
+                                    </View>
+                                </List.Accordion>
+                            </AppCard>
 
-                    <Section title="Pricing & Tax">
-                        <View style={styles.row}>
-                            <AppInput
-                                label={STOCK_TEXT.itemDetail.fields.price}
-                                value={form.price}
-                                onChangeText={t => setForm({ ...form, price: t.replace(/[^0-9.]/g, '') })}
-                                inputType="decimal"
-                                style={styles.halfInput}
-                                left={<TextInput.Icon icon="currency-inr" />}
-                            />
-                            <AppInput
-                                label="MRP"
-                                value={form.mrp}
-                                onChangeText={t => setForm({ ...form, mrp: t.replace(/[^0-9.]/g, '') })}
-                                inputType="decimal"
-                                style={styles.halfInput}
-                                left={<TextInput.Icon icon="tag-text-outline" />}
-                            />
-                        </View>
-                        <View style={styles.row}>
-                            <AppInput
-                                label="Purchase Price"
-                                value={form.purchasePrice}
-                                onChangeText={t => setForm({ ...form, purchasePrice: t.replace(/[^0-9.]/g, '') })}
-                                inputType="decimal"
-                                style={styles.halfInput}
-                                left={<TextInput.Icon icon="cart-outline" />}
-                            />
-                            <AppInput
-                                label="HSN Code"
-                                value={form.hsn}
-                                onChangeText={t => setForm({ ...form, hsn: t })}
-                                style={styles.halfInput}
-                                inputType="text"
-                                left={<TextInput.Icon icon="barcode" />}
-                            />
-                        </View>
-                        <View style={styles.gstSection}>
-                            <Text variant="bodySmall" style={[styles.gstLabel, { color: theme.colors.onSurfaceVariant }]}>GST Rate (%)</Text>
-                            <SegmentedButtons
-                                value={form.gstPercentage.toString()}
-                                onValueChange={val => setForm({ ...form, gstPercentage: Number(val) })}
-                                buttons={Config.gstRates.map(rate => ({
-                                    value: rate.toString(),
-                                    label: `${rate}%`,
-                                }))}
-                                density="medium"
-                            />
-                        </View>
-                    </Section>
+                            <AppCard style={styles.sectionCard}>
+                                <List.Accordion title="Pricing & Tax" id="2" left={props => <List.Icon {...props} icon="currency-inr" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                    <View style={styles.accordionContent}>
+                                        <View style={styles.row}>
+                                            <AppInput
+                                                label={STOCK_TEXT.itemDetail.fields.price}
+                                                value={form.price}
+                                                onChangeText={t => setForm({ ...form, price: t.replace(/[^0-9.]/g, '') })}
+                                                inputType="decimal"
+                                                style={styles.halfInput}
+                                                left={<TextInput.Icon icon="currency-inr" />}
+                                            />
+                                            <AppInput
+                                                label="MRP"
+                                                value={form.mrp}
+                                                onChangeText={t => setForm({ ...form, mrp: t.replace(/[^0-9.]/g, '') })}
+                                                inputType="decimal"
+                                                style={styles.halfInput}
+                                                left={<TextInput.Icon icon="tag-text-outline" />}
+                                            />
+                                        </View>
+                                        <View style={styles.row}>
+                                            <AppInput
+                                                label="Purchase Price"
+                                                value={form.purchasePrice}
+                                                onChangeText={t => setForm({ ...form, purchasePrice: t.replace(/[^0-9.]/g, '') })}
+                                                inputType="decimal"
+                                                style={styles.halfInput}
+                                                left={<TextInput.Icon icon="cart-outline" />}
+                                            />
+                                            <AppInput
+                                                label="HSN Code"
+                                                value={form.hsn}
+                                                onChangeText={t => setForm({ ...form, hsn: t })}
+                                                style={styles.halfInput}
+                                                inputType="text"
+                                                left={<TextInput.Icon icon="barcode" />}
+                                            />
+                                        </View>
+                                        <View style={styles.gstSection}>
+                                            <Text variant="bodySmall" style={[styles.gstLabel, { color: theme.colors.onSurfaceVariant }]}>GST Rate (%)</Text>
+                                            <SegmentedButtons
+                                                value={form.gstPercentage.toString()}
+                                                onValueChange={val => setForm({ ...form, gstPercentage: Number(val) })}
+                                                buttons={Config.gstRates.map(rate => ({
+                                                    value: rate.toString(),
+                                                    label: `${rate}%`,
+                                                }))}
+                                                density="medium"
+                                            />
+                                        </View>
+                                    </View>
+                                </List.Accordion>
+                            </AppCard>
 
-                    <Section title="Stock & Inventory">
-                        <View style={styles.row}>
-                            <AppInput
-                                label={STOCK_TEXT.itemDetail.fields.stock}
-                                value={form.stock}
-                                onChangeText={t => setForm({ ...form, stock: t.replace(/[^0-9]/g, '') })}
-                                inputType="number"
-                                style={styles.halfInput}
-                                left={<TextInput.Icon icon="package-variant" />}
-                            />
-                            <AppInput
-                                label="Min Stock"
-                                value={form.minimumStock}
-                                onChangeText={t => setForm({ ...form, minimumStock: t.replace(/[^0-9]/g, '') })}
-                                inputType="number"
-                                style={styles.halfInput}
-                                left={<TextInput.Icon icon="alert-octagon-outline" />}
-                            />
-                        </View>
-                        <View style={styles.row}>
-                            <AppInput
-                                label="Unit"
-                                value={form.unit}
-                                onChangeText={t => setForm({ ...form, unit: t })}
-                                style={styles.halfInput}
-                                inputType="text"
-                                left={<TextInput.Icon icon="ruler" />}
-                            />
-                            <AppInput
-                                label="Location"
-                                value={form.location}
-                                onChangeText={t => setForm({ ...form, location: t })}
-                                style={styles.halfInput}
-                                inputType="text"
-                                left={<TextInput.Icon icon="map-marker-outline" />}
-                            />
-                        </View>
-                    </Section>
+                            <AppCard style={styles.sectionCard}>
+                                <List.Accordion title="Stock & Inventory" id="3" left={props => <List.Icon {...props} icon="package-variant-closed" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                    <View style={styles.accordionContent}>
+                                        <View style={styles.row}>
+                                            <AppInput
+                                                label={STOCK_TEXT.itemDetail.fields.stock}
+                                                value={form.stock}
+                                                onChangeText={t => setForm({ ...form, stock: t.replace(/[^0-9]/g, '') })}
+                                                inputType="number"
+                                                style={styles.halfInput}
+                                                left={<TextInput.Icon icon="package-variant" />}
+                                            />
+                                            <AppInput
+                                                label="Min Stock"
+                                                value={form.minimumStock}
+                                                onChangeText={t => setForm({ ...form, minimumStock: t.replace(/[^0-9]/g, '') })}
+                                                inputType="number"
+                                                style={styles.halfInput}
+                                                left={<TextInput.Icon icon="alert-octagon-outline" />}
+                                            />
+                                        </View>
+                                        <View style={styles.row}>
+                                            <AppInput
+                                                label="Unit"
+                                                value={form.unit}
+                                                onChangeText={t => setForm({ ...form, unit: t })}
+                                                style={styles.halfInput}
+                                                inputType="text"
+                                                left={<TextInput.Icon icon="ruler" />}
+                                            />
+                                            <AppInput
+                                                label="Location"
+                                                value={form.location}
+                                                onChangeText={t => setForm({ ...form, location: t })}
+                                                style={styles.halfInput}
+                                                inputType="text"
+                                                left={<TextInput.Icon icon="map-marker-outline" />}
+                                            />
+                                        </View>
+                                    </View>
+                                </List.Accordion>
+                            </AppCard>
 
-                    <Section title="Identifiers">
-                        <AppInput
-                            label={STOCK_TEXT.itemDetail.fields.barcode}
-                            value={form.barcode}
-                            onChangeText={t => setForm({ ...form, barcode: t })}
-                            inputType="text"
-                            left={<TextInput.Icon icon="barcode-scan" />}
-                            right={<TextInput.Icon icon="camera" onPress={() => router.push({
-                                pathname: '/scan',
-                                params: {
-                                    target: 'item_detail',
-                                    returnPath: isNew ? '/item/new' : `/item/${itemId}`
-                                }
-                            })} />}
-                        />
-                    </Section>
+                            <AppCard style={styles.sectionCard}>
+                                <List.Accordion title="Identifiers" id="4" left={props => <List.Icon {...props} icon="barcode-scan" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                    <View style={styles.accordionContent}>
+                                        <AppInput
+                                            label={STOCK_TEXT.itemDetail.fields.barcode}
+                                            value={form.barcode}
+                                            onChangeText={t => setForm({ ...form, barcode: t })}
+                                            inputType="text"
+                                            left={<TextInput.Icon icon="barcode-scan" />}
+                                            right={<TextInput.Icon icon="camera" onPress={() => router.push({
+                                                pathname: '/scan',
+                                                params: {
+                                                    target: 'item_detail',
+                                                    returnPath: isNew ? '/item/new' : `/item/${itemId}`
+                                                }
+                                            })} />}
+                                        />
+                                    </View>
+                                </List.Accordion>
+                            </AppCard>
+                        </List.AccordionGroup>
 
                     <AppButton
                         mode="contained"
@@ -435,19 +454,12 @@ export const ItemDetailScreen = () => {
                     )}
                 </View>
             </ScrollView>
+            </KeyboardAvoidingView>
         </ScreenWrapper>
     );
 };
 
-const Section = ({ title, children }: { title: string, children: React.ReactNode }) => {
-    const theme = useTheme();
-    return (
-        <AppCard style={styles.section}>
-            <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>{title}</Text>
-            {children}
-        </AppCard>
-    );
-};
+
 
 const styles = StyleSheet.create({
     blockedContainer: {
@@ -473,8 +485,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: DesignSystem.spacing.md,
     },
-    section: { marginBottom: DesignSystem.spacing.xs },
-    sectionTitle: { marginBottom: DesignSystem.spacing.sm, fontWeight: '700' },
+    sectionCard: {
+        marginBottom: DesignSystem.spacing.xs,
+        padding: 0,
+        overflow: 'hidden',
+    },
+    accordionHeader: {
+        backgroundColor: 'transparent',
+    },
+    accordionContent: {
+        paddingHorizontal: DesignSystem.spacing.md,
+        paddingBottom: DesignSystem.spacing.md,
+    },
     row: { flexDirection: 'row', gap: DesignSystem.spacing.sm },
     halfInput: { flex: 1 },
     gstSection: {

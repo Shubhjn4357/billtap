@@ -160,21 +160,28 @@ export default function MainLayout() {
         return <Redirect href="/(main)/business-setup" />;
     }
 
+    if (!user?.phoneNumber && currentSegment !== 'phone-setup') {
+        // Enforce phone number linking after business setup
+        return <Redirect href={"/(main)/phone-setup" as any} />;
+    }
+
     return (
         <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="business-setup" options={{ headerShown: true, title: 'Business Setup' }} />
+            <Stack.Screen name="phone-setup" options={{ headerShown: true, title: 'Verify Phone', headerBackVisible: false }} />
             <Stack.Screen name="subscription" options={{ headerShown: true, title: 'Subscription' }} />
             <Stack.Screen name="admin" options={{ headerShown: true, title: 'Admin Panel' }} />
             <Stack.Screen name="operations" options={{ headerShown: true, title: 'Operations Controls' }} />
             <Stack.Screen name="profile" options={{ headerShown: true, title: 'Profile Setup' }} />
-            <Stack.Screen name="accounting/index" options={{ headerShown: false }} />
+            <Stack.Screen name="accounting" options={{ headerShown: false }} />
             <Stack.Screen name="business-suite" options={{ headerShown: true, title: 'Business Suite' }} />
             <Stack.Screen name="business-suite-template" options={{ headerShown: true, title: 'Template Studio' }} />
             <Stack.Screen name="business-suite-business-card" options={{ headerShown: true, title: 'Business Card Studio' }} />
             <Stack.Screen name="item/new" options={{ headerShown: true, title: 'Add Item' }} />
             <Stack.Screen name="item/[id]" options={{ headerShown: true, title: 'Item Details' }} />
             <Stack.Screen name="scan" options={{ title: 'Scan Barcode' }} />
+            <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
         </Stack>
     );
 }

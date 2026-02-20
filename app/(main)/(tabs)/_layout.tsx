@@ -1,7 +1,9 @@
 
 import React, { useEffect, useMemo } from 'react';
 import { Tabs, useRouter, useSegments } from 'expo-router';
-import { CurvedBottomBar } from '../../../src/components/layout/CurvedBottomBar';
+import { AnimatedTabBar } from '../../../src/components/navigation/AnimatedTabBar';
+
+// CurvedBottomBar import removed
 import { TopProfilePill } from '../../../src/components/layout/TopProfilePill';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { TAB_TITLES } from '../../../src/constants/staticText';
@@ -61,7 +63,7 @@ export default function TabLayout() {
   return (
     <>
       <Tabs
-        tabBar={(props) => <CurvedBottomBar {...props} />}
+        tabBar={(props) => <AnimatedTabBar {...props} />}
         screenOptions={{
           headerShown: false,
           lazy: true,

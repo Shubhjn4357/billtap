@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>762596815663-nhqic0h9egjmn0isugid7acuddpv1afu.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.762596815663-nhqic0h9egjmn0isugid7acuddpv1afu</string>
+	<key>API_KEY</key>
+	<string>AIzaSyB6XyHuwTBrVqPxaOlQMkQ2a_ZRNCUvAWY</string>
+	<key>GCM_SENDER_ID</key>
+	<string>762596815663</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.blockbucket.vahi</string>
+	<key>PROJECT_ID</key>
+	<string>vahi-ede9c</string>
+	<key>STORAGE_BUCKET</key>
+	<string>vahi-ede9c.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:762596815663:ios:0ae2a2ef9fe2e8ae99a7da</string>
+</dict>
+</plist>

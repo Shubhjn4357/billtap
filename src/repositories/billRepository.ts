@@ -78,6 +78,14 @@ export class BillRepository extends BaseRepository {
         // 2. Sync Queue
         await this.enqueueAction('UPDATE_TRANSACTION', data);
     }
+
+    async delete(id: string) {
+        // 1. Local Delete
+        await db.delete(transactions).where(eq(transactions.id, id));
+
+        // 2. Sync Queue
+        await this.enqueueAction('DELETE_TRANSACTION', { id });
+    }
 }
 
 export const billRepository = new BillRepository();

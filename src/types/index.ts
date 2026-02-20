@@ -35,8 +35,8 @@ export interface UserProfile {
     subscriptionPlanName?: string;
     subscriptionAmountMonthly?: number;
     subscriptionCurrency?: string;
-    subscriptionStartsAt?: FirestoreDate;
     subscriptionEndsAt?: FirestoreDate;
+    upiId?: string;
 }
 
 export interface SubscriptionPlan {

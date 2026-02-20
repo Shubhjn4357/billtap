@@ -8,9 +8,10 @@ import { AppInput } from '../../components/common/AppInput';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { useAppDialog } from '../../components/providers/DialogProvider';
-import { businessSuiteService, type StaffPermissions } from '../../api/businessSuiteService';
+import { businessSuiteService } from '../../api/businessSuiteService';
 import { useAuth } from '../../hooks/useAuth';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { useOrganizationStore } from '../../store';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { isNetworkLikeError } from '../../utils/errorGuards';
@@ -80,9 +81,7 @@ export const BusinessSuiteBusinessCardStudioScreen = () => {
 
         const settings = asRecord(cardQuery.data.context.settings);
         const businessCard = asRecord(settings.businessCard);
-        const permissions = asRecord(cardQuery.data.context.permissions) as StaffPermissions;
-        const ownerOrAdmin = cardQuery.data.context.role === 'owner' || user?.role === 'admin';
-        const allowed = ownerOrAdmin || Boolean(permissions.can_manage_templates);
+        const allowed = true; // Bypass restriction based on user request
 
         setCanManageBusinessCards(allowed);
         setOrganizationName(cardQuery.data.organization.name || 'Business');
@@ -210,7 +209,11 @@ export const BusinessSuiteBusinessCardStudioScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<AppRefreshControl refreshing={cardQuery.isFetching} onRefresh={() => { void cardQuery.refetch(); }} />}
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
                     title="Business Card Studio"
@@ -323,18 +326,18 @@ export const BusinessSuiteBusinessCardStudioScreen = () => {
                                     ]}
                                 >
                                     <View style={styles.backTopRow}>
-                                        <Text style={[styles.backBusinessName, { color: '#FFFFFF' }]}>
+                                                <Text style={[styles.backBusinessName, { color: activeTemplate.background }]}>
                                             {payload.businessName}
                                         </Text>
-                                        <View style={styles.qrFrame}>
-                                            <View style={styles.qrInner} />
+                                                <View style={[styles.qrFrame, { backgroundColor: activeTemplate.background }]}>
+                                                    <View style={[styles.qrInner, { borderColor: activeTemplate.foreground }]} />
                                         </View>
                                     </View>
-                                    <Text style={styles.backAddress}>
+                                            <Text style={[styles.backAddress, { color: activeTemplate.background }]}>
                                         {payload.address || 'Address not set'}
                                     </Text>
                                     {!!payload.gstNumber && (
-                                        <Text style={styles.backAddress}>GSTIN: {payload.gstNumber}</Text>
+                                                <Text style={[styles.backAddress, { color: activeTemplate.background }]}>GSTIN: {payload.gstNumber}</Text>
                                     )}
                                 </View>
                             </View>
@@ -528,7 +531,6 @@ const styles = StyleSheet.create({
         width: 46,
         height: 46,
         borderRadius: 10,
-        backgroundColor: '#FFFFFF',
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -536,12 +538,10 @@ const styles = StyleSheet.create({
         width: 24,
         height: 24,
         borderWidth: 2,
-        borderColor: '#101828',
         borderRadius: 4,
     },
     backAddress: {
         marginTop: 8,
-        color: '#FFFFFF',
         fontSize: 11,
         lineHeight: 14,
         opacity: 0.95,

@@ -1,7 +1,7 @@
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { db } from '../src/db/client';
-import { migrationData } from '../src/db/migrations/index';
+import migrations from '../src/db/migrations/migrations.js';
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 import { syncService } from '../src/services/syncService';
 import * as SplashScreen from 'expo-splash-screen';
@@ -25,6 +25,7 @@ import { isNetworkLikeMessage } from '../src/utils/errorGuards';
 import { normalizeCurrencyCode } from '../src/utils/formatters';
 import { useNetworkStore, useSettingsStore, useUserStore } from '../src/store';
 import { LoadingScreen } from '../src/components/common/LoadingScreen';
+import { SQLiteProvider } from 'expo-sqlite';
 
 if (Platform.OS !== 'web') {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -56,7 +57,7 @@ export default function RootLayout() {
     const userId = user?.uid;
     const userSubscriptionStatus = user?.subscriptionStatus;
 
-    const { success: migrationSuccess, error: migrationError } = useMigrations(db, migrationData);
+    const { success: migrationSuccess, error: migrationError } = useMigrations(db, migrations);
 
     useEffect(() => {
         const originalAlert = Alert.alert;
@@ -128,10 +129,6 @@ export default function RootLayout() {
                 // Managed by useMigrations hook now
                 // await migrateDb(expoDb); // Removed manual migration
 
-                // Start background sync
-                syncService.startSync();
-                void syncService.registerBackgroundSync();
-
                 const profile = await authService.getCurrentUser();
 
                 if (!isMounted) return;
@@ -141,6 +138,10 @@ export default function RootLayout() {
                     setLoading(false);
                     return;
                 }
+
+                // Start background sync now that auth is confirmed
+                syncService.startSync();
+                void syncService.registerBackgroundSync();
                 // ... rest of the code ...
 
                 const profileCurrency = normalizeCurrencyCode(profile.currency ?? Config.defaultCurrency);
@@ -254,6 +255,8 @@ export default function RootLayout() {
     }, [setNetworkState, userId]);
 
     useEffect(() => {
+        if (!userId) return;
+
         const interaction = InteractionManager.runAfterInteractions(() => {
             offlineSyncService.startAutoSync();
         });
@@ -262,7 +265,7 @@ export default function RootLayout() {
             interaction.cancel();
             offlineSyncService.stopAutoSync();
         };
-    }, []);
+    }, [userId]);
 
     // Hide splash screen when ready
     useEffect(() => {
@@ -293,7 +296,7 @@ export default function RootLayout() {
 
     // Show loading screen while fonts load or auth is bootstrapping
     if (!loaded || !userHydrated || !settingsHydrated || !startupReady || !migrationSuccess) {
-        const errorMsg = migrationError ? `Migration Error: ${migrationError.message}` : "Initializing...";
+        const errorMsg = migrationError ? `Migration Error: ${migrationError.message}` : undefined;
         return (
             <AppThemeProvider>
                 <LoadingScreen message={errorMsg} />
@@ -303,6 +306,9 @@ export default function RootLayout() {
 
     return (
         <AppThemeProvider>
+            <SQLiteProvider
+                databaseName="vahi.db"
+                options={{ enableChangeListener: true }}>
             <AppQueryProvider>
                 <DialogProvider>
                     <Stack>
@@ -318,6 +324,7 @@ export default function RootLayout() {
                     </Stack>
                 </DialogProvider>
             </AppQueryProvider>
+            </SQLiteProvider>
         </AppThemeProvider>
     );
 }

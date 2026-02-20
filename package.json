@@ -29,11 +29,14 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@codearcade/expo-razorpay": "^1.5.0",
     "@docren/react-native-markdown": "^0.8.5",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/netinfo": "^11.4.1",
+    "@react-native-firebase/app": "^23.8.6",
+    "@react-native-firebase/auth": "^23.8.6",
     "@react-native-google-signin/google-signin": "^16.1.1",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
@@ -69,6 +72,7 @@
     "expo-updates": "~29.0.16",
     "expo-web-browser": "~15.0.10",
     "i18next": "^25.8.7",
+    "lottie-react-native": "^7.3.6",
     "moti": "^0.30.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",

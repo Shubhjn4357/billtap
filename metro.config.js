@@ -4,13 +4,19 @@ const config = getDefaultConfig(__dirname);
 
 config.transformer.getTransformOptions = async () => ({
     transform: {
+        // unstable_allowRequireContext: true,
         experimentalImportSupport: false,
         inlineRequires: true,
     },
 });
-
-config.resolver.sourceExts.push('sql'); // Add SQL support
-config.resolver.assetExts.push('wasm'); // Add WASM support
+config.resolver.assetExts.push('wasm');
+config.server.enhanceMiddleware = (middleware) => {
+    return (req, res, next) => {
+        res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+        middleware(req, res, next);
+    };
+};
 
 module.exports = config;
 

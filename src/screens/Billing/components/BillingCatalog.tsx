@@ -164,7 +164,6 @@ const styles = StyleSheet.create({
     },
     itemCard: {
         marginBottom: 8,
-        backgroundColor: '#fff',
     },
     itemRow: {
         flexDirection: 'row',

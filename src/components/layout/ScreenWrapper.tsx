@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, StyleSheet, StatusBar, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+import { View, StyleSheet, StatusBar, useWindowDimensions, KeyboardAvoidingView, Platform, type StyleProp, type ViewStyle } from 'react-native';
 import { useSegments } from 'expo-router';
 import { useTheme } from 'react-native-paper';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getTabAwareBottomSpacing, getTabAwareLeftSpacing, shouldUseSidebarNavigation } from './tabBarMetrics';
 import { DesignSystem } from '../../constants/DesignSystem';
+import { View as MotiView } from 'moti';
 
 interface ScreenWrapperProps {
     children: React.ReactNode;
@@ -51,7 +52,19 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({ children, style, d
                         },
                     ]}
                 >
-                    {children}
+                    <KeyboardAvoidingView
+                        style={{ flex: 1 }}
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    >
+                        <MotiView
+                            from={{ opacity: 0, translateY: 15 }}
+                            animate={{ opacity: 1, translateY: 0 }}
+                            transition={{ type: 'timing', duration: 400 }}
+                            style={{ flex: 1 }}
+                        >
+                            {children}
+                        </MotiView>
+                    </KeyboardAvoidingView>
                 </View>
             </View>
         </SafeAreaView>

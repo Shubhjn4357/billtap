@@ -154,7 +154,6 @@ export const AdminPanelScreen = () => {
             subscriptionPlanName: activeGrowthPlan.name,
             subscriptionAmountMonthly: activeGrowthPlan.monthlyPrice,
             subscriptionCurrency: activeGrowthPlan.currency,
-            subscriptionStartsAt: startsAt,
             subscriptionEndsAt: endsAt,
         };
 

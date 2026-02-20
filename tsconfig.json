@@ -8,5 +8,5 @@
     }
   },
   "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "types/**/*.ts", ".expo/types/**/*.ts", "expo-env.d.ts"],
-  "exclude": ["backend/**/*"]
+  "exclude": ["server/**/*","client-admin/**/*"]
 }

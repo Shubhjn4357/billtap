@@ -5,7 +5,6 @@ import { Config } from '../constants/Config';
 import type { UserProfile, Party, Transaction, Item } from '../types';
 
 // Force CommonJS middleware build so web bundles don't include `import.meta` from ESM devtools code.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { createJSONStorage, persist } = require('zustand/middleware') as typeof import('zustand/middleware');
 
 interface UserState {
@@ -110,31 +109,33 @@ export const useSettingsStore = create<SettingsState>()(
                 hasSeenOnboarding: state.hasSeenOnboarding,
                 notificationSoundEnabled: state.notificationSoundEnabled,
             }),
-            migrate: (persistedState: any, version: number) => {
+            migrate: (persistedState: unknown, version: number) => {
                 if (version === 0) {
-                    return { ...persistedState, hasSeenOnboarding: false };
+                    return { ...(persistedState as Partial<SettingsState>), hasSeenOnboarding: false };
                 }
 
                 if (version === 1) {
-                    const nextThemeMode = persistedState?.autoTheme
+                    const state = persistedState as Partial<SettingsState>;
+                    const nextThemeMode = state?.autoTheme
                         ? 'system'
-                        : (persistedState?.themeMode === 'dark' ? 'dark' : 'light');
+                        : (state?.themeMode === 'dark' ? 'dark' : 'light');
 
                     return {
-                        ...persistedState,
+                        ...state,
                         themeMode: nextThemeMode,
                     };
                 }
 
                 if (!persistedState || typeof persistedState !== 'object') {
-                    return persistedState;
+                    return persistedState as Partial<SettingsState>;
                 }
 
+                const state = persistedState as Partial<SettingsState>;
                 return {
-                    ...persistedState,
-                    themeMode: persistedState.themeMode === 'dark'
+                    ...state,
+                    themeMode: state.themeMode === 'dark'
                         ? 'dark'
-                        : persistedState.themeMode === 'light'
+                        : state.themeMode === 'light'
                             ? 'light'
                             : 'system',
                 };

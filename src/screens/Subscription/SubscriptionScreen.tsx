@@ -7,6 +7,7 @@ import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { useUserStore } from '../../store';
@@ -14,6 +15,7 @@ import type { SubscriptionPlan } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { useAppDialog } from '../../components/providers/DialogProvider';
+import { useRazorpay } from '@codearcade/expo-razorpay';
 
 export const SubscriptionScreen = () => {
     const theme = useTheme();
@@ -22,6 +24,7 @@ export const SubscriptionScreen = () => {
     const { user } = useUserStore();
     const dialog = useAppDialog();
     const [processing, setProcessing] = useState<string | null>(null);
+    const { openCheckout, RazorpayUI } = useRazorpay();
 
     const plansQuery = useQuery({
         queryKey: ['subscription-plans'] as const,
@@ -43,11 +46,51 @@ export const SubscriptionScreen = () => {
 
     const handleSubscribe = async (plan: SubscriptionPlan) => {
         setProcessing(plan.id);
-        // Mock Payment Flow
-        setTimeout(() => {
+        try {
+            const session = await subscriptionService.createCheckoutSession(plan);
+
+            if (session.provider === 'razorpay' && session.providerOrderId && session.razorpayKeyId) {
+                const options = {
+                    description: `Subscription to ${plan.name}`,
+                    image: 'https://vahi.test/logo.png', // Optional logo
+                    currency: plan.currency,
+                    key: session.razorpayKeyId,
+                    amount: Math.round(plan.monthlyPrice * 100),
+                    name: 'Vahi App',
+                    order_id: session.providerOrderId,
+                    prefill: {
+                        email: user?.email || '',
+                        contact: user?.phoneNumber || '',
+                        name: user?.displayName || user?.businessName || '',
+                    },
+                    theme: { color: theme.colors.primary }
+                };
+
+                openCheckout(options, {
+                    onSuccess: (data) => {
+                        console.log('Razorpay Success:', data);
+                        dialog.alert('Payment Successful', 'Your subscription has been activated successfully! Please refresh to see changes.');
+                        void plansQuery.refetch();
+                        setProcessing(null);
+                    },
+                    onFailure: (razorpayError) => {
+                        console.error('Razorpay Error:', razorpayError);
+                        dialog.alert('Payment Failed', razorpayError?.description || 'Payment was cancelled or failed.');
+                        setProcessing(null);
+                    },
+                    onClose: () => {
+                        setProcessing(null);
+                    }
+                });
+            } else {
+                // Mock Flow
+                dialog.alert('Mock Payment', 'This is a mock payment flow. Subscription would be activated here.');
+                setProcessing(null);
+            }
+        } catch (error: any) {
+            dialog.alert('Error', error.message || 'Failed to start payment.');
             setProcessing(null);
-            dialog.alert('Mock Payment', 'This is a mock payment flow. Subscription would be activated here.');
-        }, 1500);
+        }
     };
 
     const currentPlanId = user?.subscriptionPlanId || 'plan_free';
@@ -58,7 +101,11 @@ export const SubscriptionScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<AppRefreshControl refreshing={plansQuery.isFetching} onRefresh={() => { void plansQuery.refetch(); }} />}
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
                         title="Subscription Plans"
@@ -120,6 +167,7 @@ export const SubscriptionScreen = () => {
                     )}
                 </View>
             </ScrollView>
+            {RazorpayUI}
         </ScreenWrapper>
     );
 };

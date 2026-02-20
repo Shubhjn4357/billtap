@@ -12,6 +12,7 @@ import { useAppDialog } from '../../components/providers/DialogProvider';
 import { operationsService, type AccountingPeriod, type ApprovalRequest, type AuditLogEntry, type BusinessControls } from '../../api/operationsService';
 import { useAuth } from '../../hooks/useAuth';
 import { isNetworkLikeError } from '../../utils/errorGuards';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { DesignSystem } from '../../constants/DesignSystem';
 
 interface OperationsControlsPayload {
@@ -167,7 +168,10 @@ export const OperationsControlsScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                refreshControl={<AppRefreshControl refreshing={loading} onRefresh={() => { void loadData(); }} />}
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
                         title="Operations Controls"

@@ -1,12 +1,10 @@
 import React from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Chip, Text, useTheme } from 'react-native-paper';
-import { AppButton } from '../../components/common/AppButton';
+import { List, Divider } from 'react-native-paper';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
-import { useAuth } from '../../hooks/useAuth';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { useOrganizationStore } from '../../store';
@@ -51,17 +49,14 @@ const BASE_CARDS: SuiteCard[] = [
 ];
 
 export const BusinessSuiteHubScreen = () => {
-    const theme = useTheme();
     const router = useRouter();
     const { width } = useWindowDimensions();
-    const { user } = useAuth();
     const {
         canManageTemplates,
         canManageSubscription,
         canManageStaff,
         canAccessSettings,
         canAccessOperations,
-        canAccessBusinessSuite,
         isOwnerOrAdmin,
     } = useOrganizationAccess();
     const { selectedOrganizationId, context } = useOrganizationStore();
@@ -90,70 +85,40 @@ export const BusinessSuiteHubScreen = () => {
         return output;
     }, [canAccessOperations, canAccessSettings, canManageStaff, canManageSubscription, canManageTemplates, isOwnerOrAdmin]);
 
-    if (!canAccessBusinessSuite) {
-        return (
-            <ScreenWrapper>
-                <AppCard>
-                    <Text variant="titleSmall" style={{ fontWeight: '700' }}>
-                        Business Suite is disabled
-                    </Text>
-                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 6 }}>
-                        Ask owner/admin to enable Business Suite for this store.
-                    </Text>
-                </AppCard>
-            </ScreenWrapper>
-        );
-    }
-
     return (
         <ScreenWrapper>
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
                     title="Business Suite"
-                    subtitle="Split modules for faster load and cleaner workflow."
+                        subtitle="Advanced controls and operations"
                 />
 
-                <AppCard animationDelay={30}>
-                    <Text variant="titleMedium" style={styles.sectionTitle}>
-                        Workspace
-                    </Text>
-                    <View style={styles.chipRow}>
-                        <Chip compact icon="office-building-outline">
-                            {selectedOrganizationId ? `Org: ${selectedOrganizationId.slice(0, 8)}` : 'Org: auto'}
-                        </Chip>
-                        <Chip compact icon="account-badge-outline">
-                            Role: {(context.role ?? 'owner').toUpperCase()}
-                        </Chip>
-                        <Chip compact icon="account-outline">
-                            {user?.displayName || user?.phoneNumber || 'User'}
-                        </Chip>
-                    </View>
-                </AppCard>
+                    <AppCard animationDelay={30} style={{ padding: 0, overflow: 'hidden' }}>
+                        <List.Section style={{ margin: 0 }}>
+                            <List.Subheader>Workspace</List.Subheader>
+                            <List.Item
+                                title={selectedOrganizationId ? `Org: ${selectedOrganizationId.slice(0, 8)}` : 'Org: auto'}
+                                description={`Role: ${(context.role ?? 'owner').toUpperCase()}`}
+                                left={props => <List.Icon {...props} icon="office-building-outline" />}
+                            />
+                            <Divider />
+                            {cards.map((card, index) => (
+                                <React.Fragment key={card.key}>
+                                    <List.Item
+                                        title={card.title}
+                                        description={card.subtitle}
+                                        left={props => <List.Icon {...props} icon={card.key === 'profile' ? 'account-outline' : card.key === 'template' ? 'palette-outline' : card.key === 'subscription' ? 'star-outline' : 'briefcase-outline'} />}
+                                        right={props => <List.Icon {...props} icon="chevron-right" />}
+                                        onPress={() => router.push(card.route as never)}
+                                        titleStyle={{ fontWeight: '600' }}
+                                    />
+                                    {index < cards.length - 1 && <Divider />}
+                                </React.Fragment>
+                            ))}
+                        </List.Section>
+                    </AppCard>
 
-                <View style={[styles.grid, isWide && styles.gridWide]}>
-                    {cards.map((card, index) => (
-                        <AppCard
-                            key={card.key}
-                            animationDelay={60 + index * 25}
-                            style={[styles.gridCard, isWide && styles.gridCardWide]}
-                        >
-                            <Text variant="titleMedium" style={styles.cardTitle}>
-                                {card.title}
-                            </Text>
-                            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
-                                {card.subtitle}
-                            </Text>
-                            <AppButton
-                                mode="contained-tonal"
-                                style={styles.cardButton}
-                                onPress={() => router.push(card.route as never)}
-                            >
-                                {card.cta}
-                            </AppButton>
-                        </AppCard>
-                    ))}
-                </View>
                 </View>
             </ScrollView>
         </ScreenWrapper>
@@ -172,34 +137,5 @@ const styles = StyleSheet.create({
     },
     contentInnerWide: {
         maxWidth: DesignSystem.layout.pageMaxWidth,
-    },
-    sectionTitle: {
-        fontWeight: '700',
-        marginBottom: 8,
-    },
-    chipRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-    },
-    grid: {
-        gap: 10,
-    },
-    gridWide: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-    },
-    gridCard: {
-        marginBottom: 0,
-    },
-    gridCardWide: {
-        width: '48%',
-    },
-    cardTitle: {
-        fontWeight: '700',
-    },
-    cardButton: {
-        marginTop: 10,
-        alignSelf: 'flex-start',
     },
 });

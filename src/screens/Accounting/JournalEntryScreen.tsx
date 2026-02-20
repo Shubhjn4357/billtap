@@ -12,6 +12,7 @@ import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { DesignSystem } from '../../constants/DesignSystem';
 import type { Account } from '../../types';
 import { isNetworkLikeError } from '../../utils/errorGuards';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 
 interface DraftLine {
     id: string;
@@ -117,7 +118,11 @@ export const JournalEntryScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<AppRefreshControl refreshing={accountsQuery.isFetching} onRefresh={() => { void accountsQuery.refetch(); }} />}
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
                         title="Journal Voucher"

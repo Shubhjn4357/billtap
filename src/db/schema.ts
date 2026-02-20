@@ -112,3 +112,13 @@ export const accounts = sqliteTable('accounts', {
     createdAt: text('createdAt').notNull(),
     updatedAt: text('updatedAt').notNull(),
 });
+
+// Notifications table (Local alert history)
+export const notifications = sqliteTable('notifications', {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    type: text('type').default('info'), // info, alert, success
+    isRead: integer('isRead', { mode: 'boolean' }).default(false),
+    createdAt: text('createdAt').notNull(),
+});

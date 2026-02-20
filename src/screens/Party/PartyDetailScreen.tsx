@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, useTheme, SegmentedButtons, Avatar, IconButton, TextInput } from 'react-native-paper';
+import { Text, useTheme, SegmentedButtons, Avatar, IconButton, TextInput, List } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppCard } from '../../components/common/AppCard';
@@ -206,71 +206,76 @@ export const PartyDetailScreen = () => {
                             />
                         </View>
 
-                        <AppCard>
-                            <Text variant="titleSmall" style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>
-                                Party Type
-                            </Text>
-                            <SegmentedButtons
-                                value={form.type}
-                                onValueChange={(val) => setForm({ ...form, type: val as PartyType })}
-                                buttons={[
-                                    { value: 'customer', label: 'Customer', icon: 'account' },
-                                    { value: 'supplier', label: 'Supplier', icon: 'truck-delivery' },
-                                ]}
-                                style={styles.segmented}
-                                density="medium"
-                            />
-                        </AppCard>
+                        <List.AccordionGroup>
+                            <AppCard style={styles.sectionCard}>
+                                <List.Accordion title="Party Type" id="1" left={props => <List.Icon {...props} icon="account-group" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                    <View style={styles.accordionContent}>
+                                        <SegmentedButtons
+                                            value={form.type}
+                                            onValueChange={(val) => setForm({ ...form, type: val as PartyType })}
+                                            buttons={[
+                                                { value: 'customer', label: 'Customer', icon: 'account' },
+                                                { value: 'supplier', label: 'Supplier', icon: 'truck-delivery' },
+                                            ]}
+                                            style={styles.segmented}
+                                            density="medium"
+                                        />
+                                    </View>
+                                </List.Accordion>
+                            </AppCard>
 
-                        <AppCard>
-                            <Text variant="titleSmall" style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>
-                                Contact Details
-                            </Text>
-                            <AppInput
-                                label="Name"
-                                value={form.name}
-                                onChangeText={(t) => setForm({ ...form, name: t })}
-                                inputType="name"
-                                left={<TextInput.Icon icon="account" />}
-                            />
-                            <AppInput
-                                label="Phone Number"
-                                value={form.phone}
-                                onChangeText={(t) => setForm({ ...form, phone: t.replace(/\D/g, '') })}
-                                inputType="phone"
-                                left={<TextInput.Icon icon="phone" />}
-                            />
-                            <AppInput
-                                label="Email (Optional)"
-                                value={form.email}
-                                onChangeText={(t) => setForm({ ...form, email: t })}
-                                inputType="email"
-                                autoCapitalize="none"
-                                left={<TextInput.Icon icon="email" />}
-                            />
-                        </AppCard>
+                            <AppCard style={styles.sectionCard}>
+                                <List.Accordion title="Contact Details" id="2" left={props => <List.Icon {...props} icon="card-account-phone-outline" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                    <View style={styles.accordionContent}>
+                                        <AppInput
+                                            label="Name"
+                                            value={form.name}
+                                            onChangeText={(t) => setForm({ ...form, name: t })}
+                                            inputType="name"
+                                            left={<TextInput.Icon icon="account" />}
+                                        />
+                                        <AppInput
+                                            label="Phone Number"
+                                            value={form.phone}
+                                            onChangeText={(t) => setForm({ ...form, phone: t.replace(/\D/g, '') })}
+                                            inputType="phone"
+                                            left={<TextInput.Icon icon="phone" />}
+                                        />
+                                        <AppInput
+                                            label="Email (Optional)"
+                                            value={form.email}
+                                            onChangeText={(t) => setForm({ ...form, email: t })}
+                                            inputType="email"
+                                            autoCapitalize="none"
+                                            left={<TextInput.Icon icon="email" />}
+                                        />
+                                    </View>
+                                </List.Accordion>
+                            </AppCard>
 
-                        <AppCard>
-                            <Text variant="titleSmall" style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>
-                                Tax & Billing
-                            </Text>
-                            <AppInput
-                                label="GST Number (Optional)"
-                                value={form.gstNumber}
-                                onChangeText={(t) => setForm({ ...form, gstNumber: t.toUpperCase().replace(/[^0-9A-Z]/g, '') })}
-                                autoCapitalize="characters"
-                                left={<TextInput.Icon icon="file-document-outline" />}
-                            />
-                            <AppInput
-                                label="Address"
-                                value={form.address}
-                                onChangeText={(t) => setForm({ ...form, address: t })}
-                                multiline
-                                numberOfLines={3}
-                                inputType="text"
-                                left={<TextInput.Icon icon="map-marker" />}
-                            />
-                        </AppCard>
+                            <AppCard style={styles.sectionCard}>
+                                <List.Accordion title="Tax & Billing" id="3" left={props => <List.Icon {...props} icon="receipt" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
+                                    <View style={styles.accordionContent}>
+                                        <AppInput
+                                            label="GST Number (Optional)"
+                                            value={form.gstNumber}
+                                            onChangeText={(t) => setForm({ ...form, gstNumber: t.toUpperCase().replace(/[^0-9A-Z]/g, '') })}
+                                            autoCapitalize="characters"
+                                            left={<TextInput.Icon icon="file-document-outline" />}
+                                        />
+                                        <AppInput
+                                            label="Address"
+                                            value={form.address}
+                                            onChangeText={(t) => setForm({ ...form, address: t })}
+                                            multiline
+                                            numberOfLines={3}
+                                            inputType="text"
+                                            left={<TextInput.Icon icon="map-marker" />}
+                                        />
+                                    </View>
+                                </List.Accordion>
+                            </AppCard>
+                        </List.AccordionGroup>
 
                         <View style={styles.actions}>
                             <AppButton
@@ -330,6 +335,18 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontWeight: '700',
         marginBottom: DesignSystem.spacing.sm,
+    },
+    sectionCard: {
+        marginBottom: DesignSystem.spacing.xs,
+        padding: 0,
+        overflow: 'hidden',
+    },
+    accordionHeader: {
+        backgroundColor: 'transparent',
+    },
+    accordionContent: {
+        paddingHorizontal: DesignSystem.spacing.md,
+        paddingBottom: DesignSystem.spacing.md,
     },
     segmented: {
         marginBottom: DesignSystem.spacing.xs,
