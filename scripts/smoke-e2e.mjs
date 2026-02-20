@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { Buffer } from 'node:buffer';
 
 const loadLocalEnv = () => {
     const envPath = '.env';
@@ -29,7 +30,7 @@ loadLocalEnv();
 
 const baseUrl = (process.env.SMOKE_API_BASE_URL ?? 'http://127.0.0.1:8787/api').replace(/\/$/, '');
 const phoneNumber = process.env.SMOKE_PHONE_NUMBER;
-const forcedOtp = process.env.SMOKE_OTP_CODE;
+
 const createSecondStore = String(process.env.SMOKE_CREATE_SECOND_STORE ?? 'true').toLowerCase() !== 'false';
 const reminderRecipientOverride = process.env.SMOKE_REMINDER_RECIPIENT;
 
@@ -90,23 +91,15 @@ const getNested = (value, path) => {
 };
 
 const main = async () => {
-    logStep('AUTH', `Sending OTP to ${phoneNumber}`);
-    const sendOtp = await apiCall('POST', '/auth/phone/send', {
-        body: { phoneNumber },
-    });
-    assert(sendOtp?.ok && sendOtp?.verificationId, sendOtp?.message || 'OTP send failed.');
+    logStep('AUTH', `Generating mock Firebase token for ${phoneNumber}`);
+    const mockPayload = { phone_number: phoneNumber };
+    const idToken = `dummyHeader.${Buffer.from(JSON.stringify(mockPayload)).toString('base64')}.dummySignature`;
 
-    const otpCode = forcedOtp || sendOtp?.testCode;
-    assert(otpCode, 'No OTP code available. Set SMOKE_OTP_CODE or enable testCode response.');
-
-    logStep('AUTH', 'Verifying OTP and creating session token');
-    const verify = await apiCall('POST', '/auth/phone/verify', {
-        body: {
-            verificationId: sendOtp.verificationId,
-            verificationCode: otpCode,
-        },
+    logStep('AUTH', 'Authenticating via Firebase endpoint');
+    const verify = await apiCall('POST', '/auth/firebase', {
+        body: { idToken },
     });
-    assert(verify?.ok && verify?.token, verify?.message || 'OTP verify failed.');
+    assert(verify?.ok && verify?.token, verify?.message || 'Firebase Auth failed.');
     const token = verify.token;
 
     logStep('ORG', 'Resolving current organization');
