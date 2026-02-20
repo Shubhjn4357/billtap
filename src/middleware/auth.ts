@@ -15,6 +15,9 @@ export type Bindings = {
     CRON_SECRET?: string;
     PAYMENT_PROVIDER?: string;
     PAYMENT_WEBHOOK_SECRET?: string;
+    RAZORPAY_KEY_ID?: string;
+    RAZORPAY_KEY_SECRET?: string;
+    RAZORPAY_WEBHOOK_SECRET?: string;
     CHECKOUT_BASE_URL?: string;
     CORS_ORIGINS?: string;
     API_JWT_SECRET?: string;

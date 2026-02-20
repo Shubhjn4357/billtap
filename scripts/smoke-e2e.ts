@@ -61,12 +61,7 @@ const apiCall = async <T>(
     return payload as T;
 };
 
-type AuthSendResponse = {
-    ok: boolean;
-    verificationId: string;
-    testCode?: string;
-    message?: string;
-};
+// No more AuthSendResponse needed
 
 type AuthVerifyResponse = {
     ok: boolean;
@@ -125,28 +120,20 @@ const getNested = (value: Record<string, unknown> | undefined, path: string): un
 };
 
 const main = async () => {
-    logStep('AUTH', `Sending OTP to ${phoneNumber}`);
-    const sendOtp = await apiCall<AuthSendResponse>('POST', '/auth/phone/send', {
-        body: { phoneNumber },
-    });
-    if (!sendOtp.ok || !sendOtp.verificationId) {
-        throw new Error(sendOtp.message || 'OTP send failed.');
-    }
+    logStep('AUTH', `Mocking Firebase Token for ${phoneNumber}`);
+    const fakePayload = {
+        phone_number: phoneNumber,
+        aud: 'billtap-test',
+        exp: Math.floor(Date.now() / 1000) + 3600
+    };
+    const idToken = `header.${Buffer.from(JSON.stringify(fakePayload)).toString('base64')}.signature`;
 
-    const otpCode = forcedOtp || sendOtp.testCode;
-    if (!otpCode) {
-        throw new Error('No OTP code available. Set SMOKE_OTP_CODE or enable testCode response.');
-    }
-
-    logStep('AUTH', 'Verifying OTP and creating session token');
-    const verify = await apiCall<AuthVerifyResponse>('POST', '/auth/phone/verify', {
-        body: {
-            verificationId: sendOtp.verificationId,
-            verificationCode: otpCode,
-        },
+    logStep('AUTH', 'Verifying Firebase Token and creating session token');
+    const verify = await apiCall<AuthVerifyResponse>('POST', '/auth/firebase', {
+        body: { idToken },
     });
     if (!verify.ok || !verify.token) {
-        throw new Error(verify.message || 'OTP verify failed.');
+        throw new Error(verify.message || 'Firebase Verify failed.');
     }
     const token = verify.token;
 

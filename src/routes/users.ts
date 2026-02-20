@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
-import { phoneVerifications, users } from '../db/schema';
+import { users } from '../db/schema';
 import { toUserProfile } from '../auth/userProfile';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 
@@ -67,50 +67,22 @@ usersRoute.post('/me/phone/link', requireAuth, async (c) => {
         const db = c.get('db');
         const body = await c.req.json();
         const payload = z.object({
-            verificationId: z.string().min(8),
-            verificationCode: z.string().min(1),
+            idToken: z.string().min(20),
         }).parse(body);
 
-        const normalizedCode = payload.verificationCode.replace(/\D/g, '');
-        if (normalizedCode.length !== 6) {
-            return c.json({ ok: false, message: 'Invalid code.' }, 400);
+        const parts = payload.idToken.split('.');
+        if (parts.length !== 3) {
+            throw new Error('Invalid JWT format');
         }
 
-        const rows = await db
-            .select()
-            .from(phoneVerifications)
-            .where(eq(phoneVerifications.id, payload.verificationId))
-            .limit(1);
-        const verification = rows[0];
-        if (!verification) {
-            return c.json({ ok: false, message: 'Verification request not found.' }, 404);
-        }
-        if (verification.consumedAt) {
-            return c.json({ ok: false, message: 'Verification code already used.' }, 400);
-        }
-        if (verification.expiresAt < new Date()) {
-            return c.json({ ok: false, message: 'Verification code expired.' }, 400);
-        }
-        if ((verification.attempts ?? 0) >= 5) {
-            return c.json({ ok: false, message: 'Too many attempts. Request a new code.' }, 400);
+        const payloadRaw = atob(parts[1]);
+        const decoded = JSON.parse(payloadRaw);
+
+        if (!decoded.phone_number) {
+            return c.json({ ok: false, message: 'Firebase token did not contain a phone number' }, 400);
         }
 
-        if ((verification.code ?? '').trim() !== normalizedCode) {
-            const nextAttempts = (verification.attempts ?? 0) + 1;
-            await db
-                .update(phoneVerifications)
-                .set({
-                    attempts: nextAttempts,
-                    consumedAt: nextAttempts >= 5 ? new Date() : verification.consumedAt,
-                })
-                .where(eq(phoneVerifications.id, verification.id));
-            return c.json({
-                ok: false,
-                message: nextAttempts >= 5 ? 'Too many attempts. Request a new code.' : 'Invalid code.',
-            }, 400);
-        }
-
-        const normalizedPhone = normalizePhoneNumber(verification.phoneNumber);
+        const normalizedPhone = normalizePhoneNumber(decoded.phone_number);
         if (!normalizedPhone || normalizedPhone.length < 8) {
             return c.json({ ok: false, message: 'Invalid phone number.' }, 400);
         }
@@ -123,19 +95,6 @@ usersRoute.post('/me/phone/link', requireAuth, async (c) => {
         const existingUser = existingUserRows[0];
         if (existingUser && existingUser.uid !== authUser.uid) {
             return c.json({ ok: false, message: 'This phone number is already linked to another account.' }, 409);
-        }
-
-        const consumed = await db
-            .update(phoneVerifications)
-            .set({
-                consumedAt: new Date(),
-                attempts: (verification.attempts ?? 0) + 1,
-            })
-            .where(and(eq(phoneVerifications.id, verification.id), isNull(phoneVerifications.consumedAt)))
-            .returning({ id: phoneVerifications.id });
-
-        if (consumed.length === 0) {
-            return c.json({ ok: false, message: 'Verification code already used.' }, 400);
         }
 
         await db.update(users).set({

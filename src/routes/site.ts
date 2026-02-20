@@ -21,8 +21,7 @@ type EndpointPathInfo = {
 const API_ENDPOINTS: ApiEndpoint[] = [
     { group: 'System', method: 'GET', path: '/api', access: 'Public', description: 'Health and service metadata.' },
     { group: 'Auth', method: 'POST', path: '/api/auth/google', access: 'Public', description: 'Google sign in.', sampleBody: { idToken: '<google_id_token>' } },
-    { group: 'Auth', method: 'POST', path: '/api/auth/phone/send', access: 'Public', description: 'Send OTP to phone.', sampleBody: { phoneNumber: '+919999999999' } },
-    { group: 'Auth', method: 'POST', path: '/api/auth/phone/verify', access: 'Public', description: 'Verify OTP and get session token.', sampleBody: { verificationId: '<id>', verificationCode: '123456' } },
+  { group: 'Auth', method: 'POST', path: '/api/auth/firebase', access: 'Public', description: 'Verify Firebase token and get session token.', sampleBody: { idToken: '<firebase_id_token>' } },
     { group: 'Auth', method: 'GET', path: '/api/auth/me', access: 'Bearer Token', description: 'Current authenticated profile.' },
     { group: 'Auth', method: 'PATCH', path: '/api/auth/me', access: 'Bearer Token', description: 'Update own profile.', sampleBody: { displayName: 'New Name' } },
     { group: 'Auth', method: 'POST', path: '/api/auth/logout', access: 'Bearer Token', description: 'Logout current user.' },

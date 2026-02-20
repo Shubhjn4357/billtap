@@ -81,8 +81,7 @@ wrangler secret put APK_OWNER_UID
 ## Important Endpoints
 
 - `POST /api/auth/google`
-- `POST /api/auth/phone/send`
-- `POST /api/auth/phone/verify`
+- `POST /api/auth/firebase`
 - `GET /api/items`
 - `POST /api/transactions`
 - `PATCH /api/transactions/:id/payment`

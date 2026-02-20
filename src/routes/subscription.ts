@@ -146,6 +146,33 @@ subscriptionRoute.post('/checkout', requireAuth, async (c) => {
         const now = new Date();
         const db = c.get('db');
 
+        let providerReference = null;
+        if (provider === 'razorpay') {
+            const keyId = c.env.RAZORPAY_KEY_ID;
+            const keySecret = c.env.RAZORPAY_KEY_SECRET;
+            if (keyId && keySecret) {
+                const rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Basic ${btoa(`${keyId}:${keySecret}`)}`
+                    },
+                    body: JSON.stringify({
+                        amount: Math.round(payload.amount * 100),
+                        currency: payload.currency.toUpperCase(),
+                        receipt: intentId,
+                    })
+                });
+
+                if (rzpRes.ok) {
+                    const rzpBody = await rzpRes.json() as { id: string };
+                    providerReference = rzpBody.id;
+                } else {
+                    console.error('Razorpay order creation failed:', await rzpRes.text());
+                }
+            }
+        }
+
         await db.insert(paymentIntents).values({
             id: intentId,
             userId: authUser.uid,
@@ -156,11 +183,19 @@ subscriptionRoute.post('/checkout', requireAuth, async (c) => {
             provider,
             status: 'pending',
             checkoutUrl,
+            providerReference,
             createdAt: now,
             updatedAt: now,
         });
 
-        return c.json({ ok: true, intentId, checkoutUrl, provider });
+        return c.json({
+            ok: true,
+            intentId,
+            checkoutUrl,
+            provider,
+            providerOrderId: providerReference,
+            razorpayKeyId: provider === 'razorpay' ? c.env.RAZORPAY_KEY_ID : undefined
+        });
     } catch (error: unknown) {
         return c.json({ ok: false, message: 'Checkout failed' }, 400);
     }
@@ -186,6 +221,99 @@ subscriptionRoute.get('/intents/:intentId/status', requireAuth, async (c) => {
         status: intent.status,
         provider: intent.provider,
     });
+});
+
+// Helper to verify Razorpay signature using Web Crypto API
+async function verifyRazorpaySignature(body: string, signature: string, secret: string) {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+    const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+    const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    return signatureHex === signature;
+}
+
+// POST /razorpay/webhook - Razorpay Webhook
+subscriptionRoute.post('/razorpay/webhook', async (c) => {
+    const secret = c.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) return c.json({ ok: false, message: 'Webhook not configured.' }, 500);
+
+    const signature = c.req.header('x-razorpay-signature');
+    if (!signature) return c.json({ ok: false, message: 'Missing signature.' }, 401);
+
+    const rawBody = await c.req.text();
+    const isValid = await verifyRazorpaySignature(rawBody, signature, secret);
+
+    if (!isValid) return c.json({ ok: false, message: 'Invalid signature.' }, 401);
+
+    try {
+        const payload = JSON.parse(rawBody);
+
+        // Razorpay sends payment.captured or order.paid
+        if (payload.event === 'payment.captured' || payload.event === 'order.paid') {
+            const paymentEntity = payload.payload.payment?.entity;
+            const orderId = paymentEntity?.order_id || payload.payload.order?.entity?.id;
+
+            if (!orderId) {
+                return c.json({ ok: true, message: 'No order ID found.' });
+            }
+
+            const db = c.get('db');
+            const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.providerReference, orderId)).limit(1);
+            const intent = rows[0];
+            if (!intent) return c.json({ ok: false, message: 'Intent not found.' }, 404);
+
+            if (intent.status === 'succeeded') return c.json({ ok: true, message: 'Already processed.' });
+
+            const now = new Date();
+            await withTransaction(db, async (tx) => {
+                await tx.update(paymentIntents)
+                    .set({
+                        status: 'succeeded',
+                        providerReference: orderId,
+                        updatedAt: now,
+                    })
+                    .where(eq(paymentIntents.id, intent.id));
+
+                const startsAt = now;
+                const endsAt = new Date(now);
+                endsAt.setMonth(endsAt.getMonth() + 1);
+
+                await tx.update(users).set({
+                    subscriptionStatus: 'active',
+                    subscriptionPlanId: intent.planId,
+                    subscriptionPlanName: intent.planName,
+                    subscriptionAmountMonthly: intent.amount,
+                    subscriptionCurrency: intent.currency,
+                    subscriptionStartsAt: startsAt,
+                    subscriptionEndsAt: endsAt,
+                    updatedAt: now,
+                }).where(eq(users.uid, intent.userId));
+
+                await tx.insert(analyticsEvents).values({
+                    id: nanoid(),
+                    userId: intent.userId,
+                    eventType: 'payment_success',
+                    source: 'razorpay_webhook',
+                    planId: intent.planId,
+                    value: intent.amount,
+                    currency: intent.currency,
+                    metadata: { provider: 'razorpay', intentId: intent.id, orderId },
+                    createdAt: now,
+                });
+            });
+        }
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: 'Webhook processing failed' }, 400);
+    }
 });
 
 // POST /webhook - Payment Webhook
