@@ -14,7 +14,7 @@ import { normalizeCurrencyCode } from '../../utils/formatters';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { billRepository } from '../../repositories/billRepository';
-import { nanoid } from 'nanoid/non-secure';
+import { randomUUID } from 'expo-crypto';
 import type { NewDbTransaction } from '../../types/db';
 import { BILLING_TEXT } from '../../constants/staticText';
 import { billingCheckoutSchema } from '../../validation/forms';
@@ -90,7 +90,7 @@ export const BillingScreen = () => {
         setCheckoutLoading(true);
         try {
             // 1. Validation
-            const normalizedBillNumber = billNumber?.trim() || `INV-${nanoid(8).toUpperCase()}`;
+            const normalizedBillNumber = billNumber?.trim() || `INV-${randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`;
             const validation = billingCheckoutSchema.safeParse({
                 billNumber: normalizedBillNumber,
                 customerName: customerName || 'Walk-in Customer',
@@ -114,7 +114,7 @@ export const BillingScreen = () => {
             const taxTotal = isGstBill ? cart.reduce((sum, i) => sum + (i.price * i.quantity * (i.tax || 0)) / 100, 0) : 0;
             const total = subtotal + taxTotal;
 
-            const newBillId = nanoid();
+            const newBillId = randomUUID();
             const now = new Date().toISOString();
 
             const dbPayload: NewDbTransaction = {

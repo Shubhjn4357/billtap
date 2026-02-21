@@ -6,7 +6,7 @@ import type { Item } from '../types';
 import { useAuth } from './useAuth';
 import { useDebouncedValue } from './useDebouncedValue';
 // import { isNetworkLikeError } from '../utils/errorGuards';
-import { nanoid } from 'nanoid/non-secure';
+import { randomUUID } from 'expo-crypto';
 import type { NewDbItem } from '../types/db';
 import { mapDbItemToAppItem } from '../utils/mappers';
 
@@ -138,7 +138,7 @@ export const useStock = () => {
         setActionLoading(true);
         setError(null);
         try {
-            const id = nanoid();
+            const id = randomUUID();
             // Map to DB Schema
             const fullItem: NewDbItem = {
                 id,

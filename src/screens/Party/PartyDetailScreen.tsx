@@ -20,7 +20,7 @@ import { partySchema } from '../../validation/forms';
 
 import type { NewDbParty } from '../../types/db';
 import { partyRepository } from '../../repositories/partyRepository';
-import { nanoid } from 'nanoid/non-secure';
+import { randomUUID } from 'expo-crypto';
 
 export const PartyDetailScreen = () => {
     const params = useLocalSearchParams<{ id?: string | string[] }>();
@@ -81,7 +81,7 @@ export const PartyDetailScreen = () => {
 
         try {
             if (isNew) {
-                const newId = nanoid();
+                const newId = randomUUID();
                 const now = new Date().toISOString();
 
                 const newParty: NewDbParty = {

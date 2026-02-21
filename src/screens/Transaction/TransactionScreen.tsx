@@ -14,7 +14,7 @@ import { DesignSystem } from '../../constants/DesignSystem';
 import { usePartyStore, useSettingsStore, useTransactionStore } from '../../store';
 import { useStock } from '../../hooks/useStock';
 import { COMMON_TEXT } from '../../constants/staticText';
-import { nanoid } from 'nanoid/non-secure';
+import { randomUUID } from 'expo-crypto';
 import type { TransactionItem, Party, Item } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 // import { transactionService } from '../../api/transactionService';
@@ -253,7 +253,7 @@ export const TransactionScreen = () => {
             : totals.total;
 
         const dbPayload: NewDbTransaction = {
-            id: id || nanoid(),
+            id: id || randomUUID(),
             organizationId: user.uid,
             type,
             partyId: selectedParty.id,

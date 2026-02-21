@@ -182,6 +182,7 @@ export default function MainLayout() {
             <Stack.Screen name="item/[id]" options={{ headerShown: true, title: 'Item Details' }} />
             <Stack.Screen name="scan" options={{ title: 'Scan Barcode' }} />
             <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+            <Stack.Screen name="categories" options={{ headerShown: true, title: 'Manage Categories' }} />
         </Stack>
     );
 }

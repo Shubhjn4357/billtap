@@ -463,6 +463,16 @@ export const SettingsScreen = () => {
                                             onPress={() => router.push('/business-suite' as never)}
                                         />
                                     )}
+                                    <Divider />
+                                    <List.Item
+                                        title="Manage Categories"
+                                        description="Add or remove item categories"
+                                        titleStyle={{ color: theme.colors.onSurface }}
+                                        descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                        left={(props) => <List.Icon {...props} icon="tag-multiple-outline" color={theme.colors.onSurfaceVariant} />}
+                                        right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
+                                        onPress={() => router.push('/categories' as never)}
+                                    />
                                 </List.Section>
                             </AppCard>
 
