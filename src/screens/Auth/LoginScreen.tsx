@@ -7,14 +7,14 @@ import {
     StyleSheet,
     View,
     useWindowDimensions,
+    Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MotionView } from '../../components/motion/Motion';
 import { ActivityIndicator, Divider, Text, useTheme, type MD3Theme } from 'react-native-paper';
-import { AppCard } from '../../components/common/AppCard';
 import { AppButton } from '../../components/common/AppButton';
 import { OtpInput } from '../../components/forms/OtpInput';
 import { PhoneNumberInput } from '../../components/forms/PhoneNumberInput';
-import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { DEFAULT_COUNTRY_DIAL_CODE } from '../../constants/countryDialCodes';
 import { DesignSystem } from '../../constants/DesignSystem';
@@ -29,7 +29,12 @@ import { useWebGoogleAuth } from '../../utils/googleWebAuth';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { buildE164PhoneNumber, sanitizePhoneLocal } from '../../utils/phone';
 
-const LOGIN_CAPABILITY_BADGES = ['GST + Estimate', 'Offline Safe', 'Multi-Store'] as const;
+const FEATURE_BADGES = [
+    { icon: '🧾', label: 'GST + Estimate' },
+    { icon: '📡', label: 'Offline Safe' },
+    { icon: '🏪', label: 'Multi-Store' },
+    { icon: '📊', label: 'Analytics' },
+] as const;
 
 export const LoginScreen = () => {
     const { signInWithGoogle, sendPhoneVerification, confirmPhoneVerification, loading: authLoading } = useAuth();
@@ -43,6 +48,28 @@ export const LoginScreen = () => {
     const googleSignInInFlightRef = useRef(false);
     const sendOtpInFlightRef = useRef(false);
     const verifyOtpInFlightRef = useRef(false);
+
+    // Animated card slide-up
+    const cardSlide = useRef(new Animated.Value(60)).current;
+    const cardOpacity = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        Animated.parallel([
+            Animated.spring(cardSlide, {
+                toValue: 0,
+                useNativeDriver: true,
+                tension: 60,
+                friction: 10,
+                delay: 200,
+            }),
+            Animated.timing(cardOpacity, {
+                toValue: 1,
+                duration: 400,
+                useNativeDriver: true,
+                delay: 200,
+            }),
+        ]).start();
+    }, [cardSlide, cardOpacity]);
 
     const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
     const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
@@ -121,7 +148,6 @@ export const LoginScreen = () => {
             googleSignInInFlightRef.current = true;
             setLoading(true);
 
-            // Separate async function to isolate errors
             (async () => {
                 let idToken: string;
                 try {
@@ -136,8 +162,6 @@ export const LoginScreen = () => {
 
                 try {
                     const user = await signInWithGoogle(idToken);
-
-                    // Unified Auth: If user doesn't have a phone number, prompt for it
                     if (!user.phoneNumber) {
                         dialog.alert(
                             'Add Phone Number',
@@ -206,217 +230,191 @@ export const LoginScreen = () => {
 
     return (
         <ScreenWrapper>
-            <View style={styles.container}>
-                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboard}>
-                    <ScrollView
-                        contentContainerStyle={styles.scrollContent}
-                        keyboardShouldPersistTaps="handled"
-                        showsVerticalScrollIndicator={false}
+            {/* Full-screen gradient hero background */}
+            <LinearGradient
+                colors={['#1a0533', '#2d1065', '#0f2a6b']}
+                start={{ x: 0.1, y: 0 }}
+                end={{ x: 0.9, y: 1 }}
+                style={styles.gradientBackground}
+            />
+
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboard}>
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                >
+                    {/* Hero Section */}
+                    <MotionView
+                        from={{ opacity: 0, translateY: -20 }}
+                        animate={{ opacity: 1, translateY: 0 }}
+                        transition={{ type: 'timing', duration: 500 }}
+                        style={styles.heroSection}
                     >
-                        <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                        <PageHeaderCard
-                            title={AUTH_TEXT.login.title}
-                            subtitle={AUTH_TEXT.login.subtitle}
-                        />
+                        <View style={styles.logoWrapper}>
+                            <Image
+                                source={require('../../../assets/images/icon.png')}
+                                style={styles.logoImage}
+                            />
+                        </View>
+                        <Text variant="displaySmall" style={styles.heroTitle}>Vahi</Text>
+                        <Text variant="bodyMedium" style={styles.heroSubtitle}>
+                            Smart Billing & Business Suite
+                        </Text>
+                        <View style={styles.badgeRow}>
+                            {FEATURE_BADGES.map((b) => (
+                                <View key={b.label} style={styles.badge}>
+                                    <Text style={styles.badgeText}>{b.icon} {b.label}</Text>
+                                </View>
+                            ))}
+                        </View>
+                    </MotionView>
 
-                        <MotionView
-                            from={{ opacity: 0, translateY: 12 }}
-                            animate={{ opacity: 1, translateY: 0 }}
-                            transition={{ type: 'timing', duration: 260 }}
-                        >
-                            <AppCard disableMotion style={styles.heroPanel}>
-                                <View style={styles.brandRow}>
-                                    <View
-                                        style={[
-                                            styles.logoFrame,
-                                            {
-                                                backgroundColor: theme.colors.surface,
-                                                borderColor: theme.colors.primary,
-                                            },
-                                        ]}
-                                    >
-                                        <Image source={require('../../../assets/images/icon.png')} style={styles.logo} />
-                                    </View>
-                                    <View style={styles.brandTextWrap}>
-                                        <Text variant="labelLarge" style={[styles.brandLabel, { color: theme.colors.primary }]}>
-                                                Vahi OS 2026
-                                        </Text>
-                                        <Text variant="headlineSmall" style={[styles.title, { color: theme.colors.onSurface }]}>
-                                            Secure Sign-In
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View style={styles.capabilityRow}>
-                                    {LOGIN_CAPABILITY_BADGES.map((badge) => (
-                                        <View
-                                            key={badge}
-                                        style={[
-                                            styles.capabilityBadge,
-                                            {
-                                                backgroundColor: theme.colors.surfaceVariant,
-                                                borderColor: theme.colors.outlineVariant,
-                                            },
-                                        ]}
-                                    >
-                                            <Text variant="labelSmall" style={{ color: theme.colors.onSurface }}>
-                                                {badge}
-                                            </Text>
-                                        </View>
-                                    ))}
-                                </View>
-                            </AppCard>
-                        </MotionView>
-
-                        <MotionView
-                            from={{ opacity: 0, translateY: 18, scale: 0.98 }}
-                            animate={{ opacity: 1, translateY: 0, scale: 1 }}
-                            transition={{ type: 'timing', duration: 280, delay: 80 }}
-                        >
-                            <AppCard
-                                disableMotion
-                                style={[
-                                    styles.authCard,
-                                    {
-                                        backgroundColor: theme.colors.surface,
-                                        borderColor: theme.colors.outlineVariant,
-                                    },
-                                ]}
-                            >
-                            <View style={styles.modeRow}>
-                                <View
-                                    style={[
-                                        styles.modeChip,
-                                        {
-                                            backgroundColor: theme.colors.primaryContainer,
-                                            borderColor: theme.colors.primary,
-                                        },
-                                    ]}
-                                >
-                                    <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>
-                                        {phoneMode ? (isOtpStep ? 'Phone OTP' : 'Phone Login') : 'Google Login'}
-                                    </Text>
-                                </View>
-                                {phoneMode && (
-                                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        {isOtpStep ? 'Verification code step' : 'Phone number step'}
-                                    </Text>
-                                )}
-                            </View>
-                            {phoneMode ? (
+                    {/* Auth Card */}
+                    <Animated.View
+                        style={[
+                            styles.authCard,
+                            {
+                                transform: [{ translateY: cardSlide }],
+                                opacity: cardOpacity,
+                            },
+                        ]}
+                    >
+                        <View style={[styles.authCardInner, isWide && styles.authCardWide]}>
+                            {!phoneMode ? (
+                                /* ── Method Selection ── */
                                 <>
-                                    <View
-                                        style={[
-                                            styles.stepBadge,
-                                            { backgroundColor: theme.colors.primaryContainer },
-                                        ]}
-                                    >
-                                        <Text variant="labelMedium" style={{ color: theme.colors.onPrimaryContainer }}>
-                                            {isOtpStep ? 'Step 2 of 2' : 'Step 1 of 2'}
-                                        </Text>
-                                    </View>
-
-                                    <Text variant="titleMedium" style={{ color: theme.colors.onSurface, marginBottom: 6 }}>
-                                        {isOtpStep ? AUTH_TEXT.login.verificationCodeLabel : AUTH_TEXT.login.phoneNumberLabel}
-                                    </Text>
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 16 }}>
-                                        {isOtpStep
-                                            ? 'Enter the 6-digit code sent to your number.'
-                                            : 'Use your country code. Example: +1 555 123 4567'}
+                                    <Text variant="titleLarge" style={styles.cardTitle}>Sign in to continue</Text>
+                                    <Text variant="bodySmall" style={styles.cardSubtitle}>
+                                        Choose your preferred sign-in method
                                     </Text>
 
-                                    {!isOtpStep ? (
-                                        <>
-                                            <PhoneNumberInput
-                                                dialCode={countryDialCode}
-                                                onDialCodeChange={setCountryDialCode}
-                                                phoneNumber={phoneNumber}
-                                                onPhoneNumberChange={(next) => setPhoneNumber(sanitizePhoneLocal(next))}
-                                                label={AUTH_TEXT.login.phoneNumberLabel}
-                                                placeholder="9876543210"
-                                            />
-                                            <AppButton
-                                                mode="contained"
-                                                icon="message-text-outline"
-                                                onPress={handleSendVerification}
-                                                loading={loading}
-                                                disabled={isBusy}
-                                                contentStyle={styles.primaryButtonContent}
-                                            >
-                                                {AUTH_TEXT.login.sendCodeButton}
-                                            </AppButton>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <OtpInput
-                                                value={verificationCode}
-                                                onChange={setVerificationCode}
-                                                label={AUTH_TEXT.login.verificationCodeLabel}
-                                            />
-                                            <AppButton
-                                                mode="contained"
-                                                icon="check-circle-outline"
-                                                onPress={handleConfirmVerification}
-                                                loading={loading}
-                                                disabled={isBusy || verificationCode.replace(/\D/g, '').length !== 6}
-                                                contentStyle={styles.primaryButtonContent}
-                                            >
-                                                {AUTH_TEXT.login.verifyCodeButton}
-                                            </AppButton>
-                                        </>
-                                    )}
-
-                                    <View style={styles.footerRow}>
-                                        <AppButton
-                                            mode="text"
-                                            onPress={handleBackToMethodSelection}
-                                            disabled={isBusy}
-                                        >
-                                            {COMMON_TEXT.actions.back}
-                                        </AppButton>
-                                        {isOtpStep && (
-                                            <ResendTimer onResend={handleSendVerification} disabled={isBusy} />
-                                        )}
-                                    </View>
-                                </>
-                            ) : (
-                                <>
                                     <AppButton
-                                        mode="outlined"
+                                        mode="contained"
                                         icon="google"
                                         onPress={handleGoogleSignIn}
                                         disabled={googleButtonDisabled}
-                                        contentStyle={styles.primaryButtonContent}
+                                        contentStyle={styles.buttonContent}
+                                        style={styles.googleButton}
                                     >
-                                        {AUTH_TEXT.login.signInWithGoogleButton}
+                                        Continue with Google
                                     </AppButton>
 
                                     <View style={styles.separatorRow}>
                                         <Divider style={styles.separator} />
-                                        <Text variant="labelSmall" style={[styles.separatorLabel, { color: theme.colors.onSurfaceVariant }]}>
-                                            or
-                                        </Text>
+                                        <Text variant="labelSmall" style={styles.separatorLabel}>OR</Text>
                                         <Divider style={styles.separator} />
                                     </View>
 
                                     <AppButton
-                                        mode="contained"
+                                        mode="outlined"
                                         icon="phone"
                                         onPress={() => setPhoneMode(true)}
                                         disabled={isBusy}
-                                        contentStyle={styles.primaryButtonContent}
+                                        contentStyle={styles.buttonContent}
+                                        style={styles.phoneButton}
                                     >
-                                        {AUTH_TEXT.login.signInWithPhoneButton}
+                                        Continue with Phone
                                     </AppButton>
+
+                                    {isBusy && <ActivityIndicator style={styles.loadingIndicator} />}
+                                </>
+                            ) : (
+                                /* ── Phone OTP Flow ── */
+                                <>
+                                    {/* Step indicator */}
+                                    <View style={styles.stepRow}>
+                                        <View style={[styles.stepDot, styles.stepDotActive]} />
+                                        <View style={[styles.stepLine, isOtpStep && styles.stepLineActive]} />
+                                        <View style={[styles.stepDot, isOtpStep && styles.stepDotActive]} />
+                                    </View>
+                                    <Text variant="labelSmall" style={styles.stepLabel}>
+                                        {isOtpStep ? 'Step 2 of 2 — Enter OTP' : 'Step 1 of 2 — Enter Phone'}
+                                    </Text>
+
+                                        <MotionView
+                                            key={isOtpStep ? 'otp' : 'phone'}
+                                            from={{ opacity: 0, translateX: isOtpStep ? 30 : -30 }}
+                                            animate={{ opacity: 1, translateX: 0 }}
+                                            transition={{ type: 'timing', duration: 260 }}
+                                        >
+                                            <Text variant="titleLarge" style={styles.cardTitle}>
+                                                {isOtpStep ? 'Enter verification code' : 'Enter your phone number'}
+                                            </Text>
+                                            <Text variant="bodySmall" style={styles.cardSubtitle}>
+                                                {isOtpStep
+                                                    ? 'We sent a 6-digit code to your number.'
+                                                    : 'We\'ll send a one-time code via SMS.'}
+                                            </Text>
+
+                                            {!isOtpStep ? (
+                                                <>
+                                                    <PhoneNumberInput
+                                                        dialCode={countryDialCode}
+                                                        onDialCodeChange={setCountryDialCode}
+                                                        phoneNumber={phoneNumber}
+                                                        onPhoneNumberChange={(next) => setPhoneNumber(sanitizePhoneLocal(next))}
+                                                        label={AUTH_TEXT.login.phoneNumberLabel}
+                                                        placeholder="9876543210"
+                                                    />
+                                                    <AppButton
+                                                        mode="contained"
+                                                        icon="message-text-outline"
+                                                        onPress={handleSendVerification}
+                                                        loading={loading}
+                                                        disabled={isBusy || phoneNumber.length < 6}
+                                                        contentStyle={styles.buttonContent}
+                                                        style={styles.googleButton}
+                                                    >
+                                                        Send Code
+                                                    </AppButton>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <OtpInput
+                                                        value={verificationCode}
+                                                        onChange={setVerificationCode}
+                                                        label={AUTH_TEXT.login.verificationCodeLabel}
+                                                    />
+                                                    <AppButton
+                                                        mode="contained"
+                                                        icon="check-circle-outline"
+                                                        onPress={handleConfirmVerification}
+                                                        loading={loading}
+                                                        disabled={isBusy || verificationCode.replace(/\D/g, '').length !== 6}
+                                                            contentStyle={styles.buttonContent}
+                                                            style={styles.googleButton}
+                                                        >
+                                                        Verify & Sign In
+                                                    </AppButton>
+                                                </>
+                                            )}
+
+                                            <View style={styles.footerRow}>
+                                                <AppButton
+                                                    mode="text"
+                                                    onPress={handleBackToMethodSelection}
+                                                    disabled={isBusy}
+                                                >
+                                                    ← Back
+                                                </AppButton>
+                                                {isOtpStep && (
+                                                    <ResendTimer onResend={handleSendVerification} disabled={isBusy} />
+                                                )}
+                                            </View>
+                                        </MotionView>
+
+                                        {isBusy && <ActivityIndicator style={styles.loadingIndicator} />}
                                 </>
                             )}
 
-                            {isBusy && <ActivityIndicator style={styles.loadingIndicator} />}
-                            </AppCard>
-                        </MotionView>
+                            <Text variant="labelSmall" style={styles.legalText}>
+                                By continuing, you agree to our Terms of Service and Privacy Policy.
+                            </Text>
                         </View>
-                    </ScrollView>
-                </KeyboardAvoidingView>
-            </View>
+                    </Animated.View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </ScreenWrapper>
     );
 };
@@ -456,101 +454,127 @@ const ResendTimer = ({ onResend, disabled = false }: { onResend: () => void; dis
 
 const createStyles = (theme: MD3Theme) =>
     StyleSheet.create({
-        container: {
-            flex: 1,
+        gradientBackground: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
         },
         keyboard: {
             flex: 1,
         },
         scrollContent: {
             flexGrow: 1,
-            justifyContent: 'center',
-            paddingVertical: DesignSystem.layout.pageTop,
+            justifyContent: 'flex-end',
+        },
+
+        // Hero
+        heroSection: {
             alignItems: 'center',
-        },
-        contentInner: {
-            width: '100%',
-        },
-        contentInnerWide: {
-            maxWidth: DesignSystem.layout.compactMaxWidth,
-        },
-        heroPanel: {
-            marginBottom: DesignSystem.spacing.xs,
-        },
-        brandRow: {
-            flexDirection: 'row',
-            alignItems: 'center',
-        },
-        brandTextWrap: {
+            paddingTop: 48,
+            paddingBottom: DesignSystem.spacing.xl,
+            paddingHorizontal: DesignSystem.spacing.xl,
             flex: 1,
-            marginLeft: DesignSystem.spacing.sm,
+            justifyContent: 'center',
         },
-        brandLabel: {
-            fontWeight: '700',
-            letterSpacing: 0.4,
-        },
-        logoFrame: {
-            width: 72,
-            height: 72,
+        logoWrapper: {
+            width: 80,
+            height: 80,
             borderRadius: 22,
-            borderWidth: 2,
+            backgroundColor: 'rgba(255,255,255,0.12)',
+            borderWidth: 1.5,
+            borderColor: 'rgba(255,255,255,0.25)',
             alignItems: 'center',
             justifyContent: 'center',
-            shadowColor: theme.colors.primary,
+            marginBottom: DesignSystem.spacing.md,
+            shadowColor: '#a78bfa',
             shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.16,
-            shadowRadius: 18,
-            elevation: 4,
+            shadowOpacity: 0.5,
+            shadowRadius: 20,
+            elevation: 10,
         },
-        logo: {
-            width: 52,
-            height: 52,
+        logoImage: {
+            width: 56,
+            height: 56,
             borderRadius: 14,
         },
-        title: {
-            fontWeight: '700',
+        heroTitle: {
+            color: '#ffffff',
+            fontWeight: '800',
+            letterSpacing: 1,
+            marginBottom: 4,
         },
-        subtitle: {
-            marginTop: DesignSystem.spacing.xs,
+        heroSubtitle: {
+            color: 'rgba(255,255,255,0.65)',
+            marginBottom: DesignSystem.spacing.md,
+            textAlign: 'center',
         },
-        capabilityRow: {
+        badgeRow: {
             flexDirection: 'row',
             flexWrap: 'wrap',
-            marginTop: DesignSystem.spacing.sm,
             gap: DesignSystem.spacing.xs,
+            justifyContent: 'center',
         },
-        capabilityBadge: {
+        badge: {
+            backgroundColor: 'rgba(255,255,255,0.1)',
             borderRadius: 999,
             borderWidth: 1,
-            paddingHorizontal: DesignSystem.spacing.sm,
+            borderColor: 'rgba(255,255,255,0.2)',
+            paddingHorizontal: 10,
             paddingVertical: 5,
         },
+        badgeText: {
+            color: 'rgba(255,255,255,0.85)',
+            fontSize: 12,
+            fontWeight: '500',
+        },
+
+        // Auth card
         authCard: {
-            marginBottom: DesignSystem.spacing.xs,
+            backgroundColor: theme.colors.surface,
+            borderTopLeftRadius: 32,
+            borderTopRightRadius: 32,
+            paddingTop: DesignSystem.spacing.xl,
+            paddingBottom: DesignSystem.spacing.xl,
+            paddingHorizontal: DesignSystem.spacing.xl,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -8 },
+            shadowOpacity: 0.15,
+            shadowRadius: 24,
+            elevation: 12,
         },
-        modeRow: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+        authCardInner: {
+            width: '100%',
+        },
+        authCardWide: {
+            maxWidth: 420,
+            alignSelf: 'center',
+        },
+
+        // Typography
+        cardTitle: {
+            fontWeight: '700',
+            color: theme.colors.onSurface,
+            marginBottom: 4,
+        },
+        cardSubtitle: {
+            color: theme.colors.onSurfaceVariant,
+            marginBottom: DesignSystem.spacing.lg,
+        },
+
+        // Buttons
+        buttonContent: {
+            minHeight: 52,
+        },
+        googleButton: {
             marginBottom: DesignSystem.spacing.sm,
-            gap: DesignSystem.spacing.xs,
         },
-        modeChip: {
-            borderRadius: 999,
-            borderWidth: 1,
-            paddingHorizontal: DesignSystem.spacing.sm,
-            paddingVertical: 5,
+        phoneButton: {
+            borderColor: theme.colors.outline,
         },
-        stepBadge: {
-            alignSelf: 'flex-start',
-            borderRadius: 999,
-            paddingHorizontal: DesignSystem.spacing.sm,
-            paddingVertical: 4,
-            marginBottom: DesignSystem.spacing.sm,
-        },
-        primaryButtonContent: {
-            minHeight: 48,
-        },
+
+        // Separator
         separatorRow: {
             flexDirection: 'row',
             alignItems: 'center',
@@ -561,9 +585,40 @@ const createStyles = (theme: MD3Theme) =>
         },
         separatorLabel: {
             marginHorizontal: DesignSystem.spacing.sm,
-            textTransform: 'uppercase',
-            letterSpacing: 0.5,
+            color: theme.colors.onSurfaceVariant,
+            letterSpacing: 1,
         },
+
+        // Step indicator
+        stepRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: DesignSystem.spacing.xs,
+        },
+        stepDot: {
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            backgroundColor: theme.colors.surfaceVariant,
+        },
+        stepDotActive: {
+            backgroundColor: theme.colors.primary,
+        },
+        stepLine: {
+            flex: 1,
+            height: 2,
+            backgroundColor: theme.colors.surfaceVariant,
+            marginHorizontal: 4,
+        },
+        stepLineActive: {
+            backgroundColor: theme.colors.primary,
+        },
+        stepLabel: {
+            color: theme.colors.onSurfaceVariant,
+            marginBottom: DesignSystem.spacing.md,
+        },
+
+        // Footer
         footerRow: {
             marginTop: DesignSystem.spacing.sm,
             flexDirection: 'row',
@@ -573,5 +628,10 @@ const createStyles = (theme: MD3Theme) =>
         },
         loadingIndicator: {
             marginTop: DesignSystem.spacing.sm,
+        },
+        legalText: {
+            color: theme.colors.outline,
+            textAlign: 'center',
+            marginTop: DesignSystem.spacing.lg,
         },
     });

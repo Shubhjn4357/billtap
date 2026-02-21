@@ -239,9 +239,8 @@ const styles = StyleSheet.create({
     },
     searchBar: {
         marginBottom: 16,
-        backgroundColor: DesignSystem.glass.light.panel,
         borderWidth: 1,
-        borderColor: DesignSystem.glass.light.border,
+        borderColor: 'transparent',
         height: 50,
         borderRadius: DesignSystem.radius.lg,
     },

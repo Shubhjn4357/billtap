@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx expo install:*)",
+      "Bash(npx expo config:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.expo.dev)",
+      "WebFetch(domain:stackoverflow.com)",
+      "Bash(pnpm list:*)",
+      "Bash(npx expo prebuild:*)",
+      "Bash(npx expo-modules-autolinking:*)"
+    ]
+  }
+}

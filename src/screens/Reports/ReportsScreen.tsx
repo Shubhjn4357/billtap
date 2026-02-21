@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState, useTransition } from 'react';
-import { RefreshControl, ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { useRouter } from 'expo-router';
 import { Chip, SegmentedButtons, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -240,7 +241,7 @@ export const ReportsScreen = () => {
         <ScreenWrapper>
             <ScrollView
                 contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />}
+                refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >

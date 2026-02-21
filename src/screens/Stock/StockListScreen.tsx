@@ -1,7 +1,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, FlatList, RefreshControl, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import { View, FlatList, StyleSheet, useWindowDimensions, Platform } from 'react-native';
 import { Chip, Text, FAB, SegmentedButtons, useTheme, Searchbar, Avatar, IconButton } from 'react-native-paper';
+import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStock } from '../../hooks/useStock';
@@ -316,7 +317,7 @@ export const StockListScreen = () => {
                                         keyExtractor={item => item.id}
                                         renderItem={renderItem}
                                         refreshControl={
-                                            <RefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />
+                                            <AppRefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />
                                         }
                                         keyboardShouldPersistTaps="handled"
                                         initialNumToRender={12}

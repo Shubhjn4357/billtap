@@ -1,20 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { accountRepository } from '../repositories/accountRepository';
-import { useAuth } from './useAuth';
+import { useOrganizationStore } from '../store';
 import type { NewDbAccount } from '../types/db';
+import type { AccountType } from '../types';
 
 export const useAccounts = () => {
-    const { user } = useAuth();
     const queryClient = useQueryClient();
-    const organizationId = user?.uid ?? '';
+    const organizationId = useOrganizationStore(s => s.selectedOrganizationId);
 
     const { data: accounts = [], isLoading } = useQuery({
         queryKey: ['accounts', organizationId],
         queryFn: async () => {
+            if (!organizationId) return [];
             const data = await accountRepository.getAll(organizationId);
             return data.map(acc => ({
                 ...acc,
-                type: acc.type as any, // Cast to App AccountType
+                type: acc.type as AccountType,
                 isActive: acc.isActive ?? true,
                 isSystem: acc.isSystem ?? false,
             }));

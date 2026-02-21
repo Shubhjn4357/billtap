@@ -10,6 +10,8 @@ import { AppInput } from '../../components/common/AppInput';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
+import { CategorySelector } from '../../components/forms/CategorySelector';
+import { UnitSelector } from '../../components/forms/UnitSelector';
 import { COMMON_TEXT, STOCK_TEXT } from '../../constants/staticText';
 import { useStock } from '../../hooks/useStock';
 import { Config } from '../../constants/Config';
@@ -288,24 +290,20 @@ export const ItemDetailScreen = () => {
                                             inputType="name"
                                             left={<TextInput.Icon icon="tag-outline" />}
                                         />
-                                        <View style={styles.row}>
-                                            <AppInput
-                                                label="Category"
-                                                value={form.category}
-                                                onChangeText={t => setForm({ ...form, category: t })}
-                                                style={styles.halfInput}
-                                                inputType="text"
-                                                left={<TextInput.Icon icon="shape-outline" />}
-                                            />
-                                            <AppInput
-                                                label="Subcategory"
-                                                value={form.subcategory}
-                                                onChangeText={t => setForm({ ...form, subcategory: t })}
-                                                style={styles.halfInput}
-                                                inputType="text"
-                                                left={<TextInput.Icon icon="shape-plus-outline" />}
-                                            />
-                                        </View>
+                                        <CategorySelector
+                                            value={form.category}
+                                            onChange={(key) => setForm({ ...form, category: key })}
+                                            label="Category"
+                                            style={styles.selectorField}
+                                        />
+                                        <AppInput
+                                            label="Subcategory (optional)"
+                                            value={form.subcategory}
+                                            onChangeText={t => setForm({ ...form, subcategory: t })}
+                                            style={styles.fullInput}
+                                            inputType="text"
+                                            left={<TextInput.Icon icon="shape-plus-outline" />}
+                                        />
                                     </View>
                                 </List.Accordion>
                             </AppCard>
@@ -386,24 +384,20 @@ export const ItemDetailScreen = () => {
                                                 left={<TextInput.Icon icon="alert-octagon-outline" />}
                                             />
                                         </View>
-                                        <View style={styles.row}>
-                                            <AppInput
-                                                label="Unit"
-                                                value={form.unit}
-                                                onChangeText={t => setForm({ ...form, unit: t })}
-                                                style={styles.halfInput}
-                                                inputType="text"
-                                                left={<TextInput.Icon icon="ruler" />}
-                                            />
-                                            <AppInput
-                                                label="Location"
-                                                value={form.location}
-                                                onChangeText={t => setForm({ ...form, location: t })}
-                                                style={styles.halfInput}
-                                                inputType="text"
-                                                left={<TextInput.Icon icon="map-marker-outline" />}
-                                            />
-                                        </View>
+                                        <UnitSelector
+                                            value={form.unit}
+                                            onChange={(key) => setForm({ ...form, unit: key })}
+                                            label="Unit of Measurement"
+                                            style={styles.selectorField}
+                                        />
+                                        <AppInput
+                                            label="Location / Shelf"
+                                            value={form.location}
+                                            onChangeText={t => setForm({ ...form, location: t })}
+                                            style={styles.fullInput}
+                                            inputType="text"
+                                            left={<TextInput.Icon icon="map-marker-outline" />}
+                                        />
                                     </View>
                                 </List.Accordion>
                             </AppCard>
@@ -499,6 +493,8 @@ const styles = StyleSheet.create({
     },
     row: { flexDirection: 'row', gap: DesignSystem.spacing.sm },
     halfInput: { flex: 1 },
+    fullInput: { flex: 1 },
+    selectorField: { marginBottom: DesignSystem.spacing.sm },
     gstSection: {
         marginBottom: DesignSystem.spacing.md,
     },

@@ -19,7 +19,7 @@ import { Colors } from '../../constants/Colors';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { useSettingsStore } from '../../store';
 
-type AppTheme = MD3Theme & NavigationTheme;
+type AppTheme = MD3Theme & Omit<NavigationTheme, 'fonts'>;
 
 const appFontConfig = {
     bodyLarge: { fontFamily: 'System', fontWeight: '400', lineHeight: 24, letterSpacing: 0.1, fontSize: 16 },
@@ -77,7 +77,7 @@ export const AppThemeProvider = ({ children }: { children: React.ReactNode }) =>
 
     return (
         <PaperProvider theme={theme}>
-            <NavigationThemeProvider value={theme}>
+            <NavigationThemeProvider value={theme as unknown as NavigationTheme}>
                 {children}
             </NavigationThemeProvider>
         </PaperProvider>

@@ -1,71 +1,139 @@
+/**
+ * Vahi Design System — Color Tokens (Material 3 Soft Palette)
+ *
+ * Philosophy: Soft, sophisticated, readable. Avoid garish primaries.
+ * Light: warm off-white surfaces, muted indigo primary, soft teal accent.
+ * Dark:  deep navy surfaces, pastel primaries.
+ */
 
 export const Colors = {
     light: {
-        primary: '#2962FF', // Vibrant Blue
+        // Primary — Muted Indigo
+        primary: '#5C6BC0',
         onPrimary: '#FFFFFF',
-        primaryContainer: '#E6F0FF',
-        onPrimaryContainer: '#00298B',
-        secondary: '#00B0FF', // Sky Blue Accent
+        primaryContainer: '#E8EAF6',
+        onPrimaryContainer: '#1A237E',
+
+        // Secondary — Soft Teal
+        secondary: '#26A69A',
         onSecondary: '#FFFFFF',
-        secondaryContainer: '#D1F0FF',
-        onSecondaryContainer: '#003957',
-        tertiary: '#651FFF', // Deep Purple Accent
+        secondaryContainer: '#E0F2F1',
+        onSecondaryContainer: '#004D40',
+
+        // Tertiary — Muted Violet
+        tertiary: '#7E57C2',
         onTertiary: '#FFFFFF',
-        tertiaryContainer: '#EAEOFF',
-        onTertiaryContainer: '#22005D',
-        error: '#D32F2F',
+        tertiaryContainer: '#EDE7F6',
+        onTertiaryContainer: '#311B92',
+
+        // Error
+        error: '#C62828',
         onError: '#FFFFFF',
-        errorContainer: '#FFDAD6',
-        onErrorContainer: '#410002',
-        background: '#F0F4F8', // Subtle Blue-Grey Background
-        onBackground: '#1A1C1E',
-        surface: '#FFFFFF', // Pure White Surface
-        onSurface: '#1A1C1E',
-        surfaceVariant: '#DEE3EB',
-        onSurfaceVariant: '#42474E',
-        outline: '#72777F',
-        outlineVariant: '#C2C7CF',
+        errorContainer: '#FFCDD2',
+        onErrorContainer: '#B71C1C',
+
+        // Success (custom)
+        success: '#2E7D32',
+        successContainer: '#E8F5E9',
+        onSuccessContainer: '#1B5E20',
+
+        // Warning (custom)
+        warning: '#E65100',
+        warningContainer: '#FBE9E7',
+        onWarningContainer: '#BF360C',
+
+        // Backgrounds & Surfaces
+        background: '#F5F6FA',
+        onBackground: '#1C1B1F',
+        surface: '#FFFFFF',
+        onSurface: '#1C1B1F',
+        surfaceVariant: '#F0F1F6',
+        onSurfaceVariant: '#44464F',
+
+        // Borders
+        outline: '#767680',
+        outlineVariant: '#CAC4D0',
+
+        // Inverse
+        inverseSurface: '#313033',
+        inverseOnSurface: '#F4EFF4',
+        inversePrimary: '#BABFE8',
+
+        // Scrim / Shadow
+        scrim: '#000000',
+
         elevation: {
             level0: 'transparent',
-            level1: '#F5F8FC',
-            level2: '#EEF4FA',
-            level3: '#E8F0F9',
-            level4: '#E6EFF8',
-            level5: '#E2EDF7',
+            level1: '#F2F3FA',
+            level2: '#ECEEF6',
+            level3: '#E6E8F3',
+            level4: '#E4E6F2',
+            level5: '#E0E3F0',
         },
     },
     dark: {
-        primary: '#82B1FF', // Light Blue
-        onPrimary: '#00297B',
-        primaryContainer: '#003EA2',
-        onPrimaryContainer: '#D5E3FF',
-        secondary: '#40C4FF',
-        onSecondary: '#00344F',
-        secondaryContainer: '#004C70',
-        onSecondaryContainer: '#C1E8FF',
-        tertiary: '#B388FF',
-        onTertiary: '#3A0094',
-        tertiaryContainer: '#5300CC',
-        onTertiaryContainer: '#EADBFF',
-        error: '#FFB4AB',
-        onError: '#690005',
-        errorContainer: '#93000A',
-        onErrorContainer: '#FFDAD6',
-        background: '#0B1219', // Deep Blue-Black
-        onBackground: '#E2E2E6',
-        surface: '#111820', // Dark Blue-Grey Surface
-        onSurface: '#E2E2E6',
-        surfaceVariant: '#42474E',
-        onSurfaceVariant: '#C2C7CF',
-        outline: '#8C9199',
-        outlineVariant: '#42474E',
+        // Primary — Pastel Indigo
+        primary: '#9FA8DA',
+        onPrimary: '#1A237E',
+        primaryContainer: '#283593',
+        onPrimaryContainer: '#C5CAE9',
+
+        // Secondary — Pastel Teal
+        secondary: '#80CBC4',
+        onSecondary: '#004D40',
+        secondaryContainer: '#00695C',
+        onSecondaryContainer: '#B2DFDB',
+
+        // Tertiary — Pastel Violet
+        tertiary: '#CE93D8',
+        onTertiary: '#4A148C',
+        tertiaryContainer: '#6A1B9A',
+        onTertiaryContainer: '#E1BEE7',
+
+        // Error
+        error: '#EF9A9A',
+        onError: '#B71C1C',
+        errorContainer: '#C62828',
+        onErrorContainer: '#FFCDD2',
+
+        // Success
+        success: '#A5D6A7',
+        successContainer: '#1B5E20',
+        onSuccessContainer: '#C8E6C9',
+
+        // Warning
+        warning: '#FFAB91',
+        warningContainer: '#BF360C',
+        onWarningContainer: '#FFCCBC',
+
+        // Backgrounds & Surfaces
+        background: '#0E1117',
+        onBackground: '#E6E1E5',
+        surface: '#1C1F2E',
+        onSurface: '#E6E1E5',
+        surfaceVariant: '#252836',
+        onSurfaceVariant: '#CAC4D0',
+
+        // Borders
+        outline: '#938F99',
+        outlineVariant: '#332D41',
+
+        // Inverse
+        inverseSurface: '#E6E1E5',
+        inverseOnSurface: '#313033',
+        inversePrimary: '#5C6BC0',
+
+        scrim: '#000000',
+
         elevation: {
             level0: 'transparent',
-            level1: '#18212D',
-            level2: '#1D2836',
-            level3: '#222E3F',
-            level4: '#243042',
-            level5: '#273447',
+            level1: '#22253A',
+            level2: '#272A42',
+            level3: '#2C2F4A',
+            level4: '#2E314C',
+            level5: '#323552',
         },
     },
-};
+} as const;
+
+export type ColorRole = keyof typeof Colors.light;

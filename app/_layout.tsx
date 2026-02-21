@@ -6,7 +6,7 @@ import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 import { syncService } from '../src/services/syncService';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, InteractionManager, Platform } from 'react-native';
+import { Alert, InteractionManager, LogBox, Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Updates from 'expo-updates';
 
@@ -14,6 +14,15 @@ import { authService } from '../src/api/authService';
 import { ApiError } from '../src/api/httpClient';
 import { offlineSyncService } from '../src/api/offlineSyncService';
 import { paymentReminderService } from '../src/services/paymentReminderService';
+import {
+    registerBackgroundSync as registerBgSync,
+    startForegroundSync,
+    stopForegroundSync,
+} from '../src/services/backgroundSyncService';
+import {
+    requestNotificationPermissions,
+    registerAndroidChannels,
+} from '../src/services/notificationService';
 import { userService } from '../src/api/userService';
 import { AppThemeProvider } from '../src/components/providers/AppThemeProvider';
 import { AppQueryProvider } from '../src/components/providers/AppQueryProvider';
@@ -26,6 +35,12 @@ import { normalizeCurrencyCode } from '../src/utils/formatters';
 import { useNetworkStore, useSettingsStore, useUserStore } from '../src/store';
 import { LoadingScreen } from '../src/components/common/LoadingScreen';
 import { SQLiteProvider } from 'expo-sqlite';
+
+LogBox.ignoreLogs([
+    'SafeAreaView has been deprecated', // react-native-paper internal usage
+    'native view manager for module', // stale native build; fixed by prebuild --clean
+    'Unable to get the view config', // related ExpoLinearGradient warning
+]);
 
 if (Platform.OS !== 'web') {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -142,6 +157,12 @@ export default function RootLayout() {
                 // Start background sync now that auth is confirmed
                 syncService.startSync();
                 void syncService.registerBackgroundSync();
+                startForegroundSync(60_000);
+                void registerBgSync();
+                // Notifications
+                void requestNotificationPermissions().then(async (granted) => {
+                    if (granted) await registerAndroidChannels();
+                });
                 // ... rest of the code ...
 
                 const profileCurrency = normalizeCurrencyCode(profile.currency ?? Config.defaultCurrency);

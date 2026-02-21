@@ -1,9 +1,9 @@
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import React, { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
-import { Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View, useWindowDimensions, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { List, Switch, Text, useTheme, SegmentedButtons, Icon, Button } from 'react-native-paper';
+import { List, Switch, Text, useTheme, Icon, Divider } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { businessSuiteService } from '../../api/businessSuiteService';
 import { syncService } from '../../services/syncService';
@@ -21,23 +21,20 @@ import { normalizeCurrencyCode } from '../../utils/formatters';
 import { useAuth } from '../../hooks/useAuth';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 import { useOrganizationStore, useSettingsStore, useUserStore } from '../../store';
-import { useOrganizationAccess, DEFAULT_APP_MODULE_ACCESS, type AppModuleAccessMap, type AppModuleKey } from '../../hooks/useOrganizationAccess';
+import {
+    useOrganizationAccess,
+    DEFAULT_APP_MODULE_ACCESS,
+    type AppModuleAccessMap,
+    type AppModuleKey,
+} from '../../hooks/useOrganizationAccess';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 
 type UpdateState = 'idle' | 'checking' | 'downloading' | 'upToDate' | 'downloaded' | 'disabled' | 'error';
 type SettingsTab = 'profile' | 'business';
 
-
-
-
-
-
-
-
 export const SettingsScreen = () => {
     const { user, signOut } = useAuth();
     const {
-        canAccessSettings,
         canManageSubscription,
         canAccessAccounting,
         canAccessOperations,
@@ -67,10 +64,7 @@ export const SettingsScreen = () => {
     const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
     const [updateState, setUpdateState] = useState<UpdateState>('idle');
     const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
-
     const [pendingSyncCount, setPendingSyncCount] = useState(0);
-
-    const [storageBackend, setStorageBackend] = useState<'sqlite-drizzle' | 'async-storage' | 'SQLite'>('async-storage');
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState<string>(SETTINGS_TEXT.dataSync.idleMessage);
     const [moduleAccessDraft, setModuleAccessDraft] = useState<AppModuleAccessMap>(DEFAULT_APP_MODULE_ACCESS);
@@ -82,24 +76,28 @@ export const SettingsScreen = () => {
     const subscriptionLabel = user?.subscriptionStatus === 'active'
         ? `${user.subscriptionPlanName ?? 'Plan'} ${SETTINGS_TEXT.account.subscriptionActiveSuffix}`
         : SETTINGS_TEXT.account.subscriptionInactive;
-
     const appVersion = Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? 'Unknown';
     const buildVersion = Constants.nativeBuildVersion ?? 'N/A';
     const canCheckUpdates = Platform.OS !== 'web' && !__DEV__ && Updates.isEnabled;
     const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 24);
     const isWide = width >= 960;
 
-
+    const initials = useMemo(() => {
+        const source = user?.displayName?.trim() ?? user?.email ?? user?.phoneNumber ?? 'U';
+        const parts = source.split(/\s+/).filter(Boolean);
+        if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }, [user?.displayName, user?.email, user?.phoneNumber]);
 
     const moduleFields = useMemo<{ key: AppModuleKey; title: string; description: string }[]>(() => ([
-        { key: 'billingPurchase', title: 'Purchase Ledger', description: 'Disable purchase entry and inward ledger.' },
-        { key: 'billingSale', title: 'Sales Ledger', description: 'Disable sales invoice creation.' },
-        { key: 'parties', title: 'Party Ledger', description: 'Hide customer/supplier ledger.' },
-        { key: 'payments', title: 'Payment Settlements', description: 'Hide payment in/out settlement pages.' },
-        { key: 'expenses', title: 'Expense Tracking', description: 'Hide expense screens and actions.' },
-        { key: 'accounting', title: 'Accounting Suite', description: 'Hide accounting pages from app.' },
-        { key: 'reports', title: 'Reports', description: 'Hide analytics and exports.' },
-        { key: 'stock', title: 'Inventory', description: 'Hide stock/inventory module.' },
+        { key: 'billingPurchase', title: 'Purchase Ledger', description: 'Inward entries and purchase invoices.' },
+        { key: 'billingSale', title: 'Sales Ledger', description: 'Outward sales invoice creation.' },
+        { key: 'parties', title: 'Party Ledger', description: 'Customer and supplier ledger.' },
+        { key: 'payments', title: 'Payment Settlements', description: 'Payment in/out settlement flow.' },
+        { key: 'expenses', title: 'Expense Tracking', description: 'Expense screens and quick actions.' },
+        { key: 'accounting', title: 'Accounting Suite', description: 'Accounts, journals, and tax reports.' },
+        { key: 'reports', title: 'Reports', description: 'Analytics and exports.' },
+        { key: 'stock', title: 'Inventory', description: 'Stock and inventory management.' },
     ]), []);
 
     const handleCurrencyChange = async (currency: string) => {
@@ -109,7 +107,6 @@ export const SettingsScreen = () => {
             setCurrency(normalized);
             if (user) setUser({ ...user, currency: normalized });
         });
-
         if (!user) return;
         try {
             const updatedUser = await userService.updateCurrentUser({ currency: normalized });
@@ -120,36 +117,23 @@ export const SettingsScreen = () => {
                 if (user) setUser({ ...user, currency: previousCurrency });
             });
             if (!isNetworkLikeError(error)) {
-                dialog.alert(SETTINGS_TEXT.errors.generic, error instanceof Error ? error.message : SETTINGS_TEXT.errors.currencySaveFailed);
+                dialog.alert(
+                    SETTINGS_TEXT.errors.generic,
+                    error instanceof Error ? error.message : SETTINGS_TEXT.errors.currencySaveFailed
+                );
             }
         }
     };
 
     const checkForUpdates = useCallback(async () => {
-
-        if (!canCheckUpdates) {
-            setUpdateState('disabled');
-
-            return;
-        }
-
+        if (!canCheckUpdates) { setUpdateState('disabled'); return; }
         setUpdateState('checking');
-
-
         try {
             const update = await Updates.checkForUpdateAsync();
-            if (!update.isAvailable) {
-                setUpdateState('upToDate');
-
-                return;
-            }
-
+            if (!update.isAvailable) { setUpdateState('upToDate'); return; }
             setUpdateState('downloading');
-
             await Updates.fetchUpdateAsync();
-
             setUpdateState('downloaded');
-
         } catch {
             setUpdateState('error');
         }
@@ -171,7 +155,6 @@ export const SettingsScreen = () => {
         try {
             const stats = await syncService.getQueueStats();
             setPendingSyncCount(stats.pendingCount);
-
             setSyncMessage(stats.pendingCount > 0 ? SETTINGS_TEXT.dataSync.queuedMessage : SETTINGS_TEXT.dataSync.idleMessage);
         } catch { }
     }, []);
@@ -183,8 +166,7 @@ export const SettingsScreen = () => {
         try {
             await syncService.flushQueue();
             const stats = await syncService.getQueueStats();
-
-            setSyncMessage(stats.pendingCount > 0 ? `Synced recent items. ${stats.pendingCount} pending.` : SETTINGS_TEXT.dataSync.idleMessage);
+            setSyncMessage(stats.pendingCount > 0 ? `${stats.pendingCount} changes still pending.` : SETTINGS_TEXT.dataSync.idleMessage);
         } catch {
             setSyncMessage('Sync failed. Please try again.');
         } finally {
@@ -211,42 +193,49 @@ export const SettingsScreen = () => {
 
     useEffect(() => { void checkForUpdates(); }, [checkForUpdates]);
     useEffect(() => { setModuleAccessDraft((current) => ({ ...current, ...appModuleAccess })); }, [appModuleAccess]);
-    useEffect(() => {
-        void refreshQueueStats();
-        setStorageBackend('SQLite');
-    }, [refreshQueueStats]);
+    useEffect(() => { void refreshQueueStats(); }, [refreshQueueStats]);
+    useFocusRefresh(refreshQueueStats, { minIntervalMs: 8_000 });
 
-    useFocusRefresh(refreshQueueStats, { enabled: canAccessSettings, minIntervalMs: 8_000 });
-
-    if (!canAccessSettings) {
-        return (
-            <ScreenWrapper>
-                <View style={styles.centerContainer}>
-                    <Text variant="titleMedium" style={styles.titleBold}>Access Restricted</Text>
-                    <Text variant="bodyMedium" style={{ color: theme.colors.outline, marginTop: 8 }}>
-                        You do not have permission to view settings.
-                    </Text>
-                    <AppButton mode="outlined" onPress={signOut} style={styles.marginTop}>
-                        {SETTINGS_TEXT.actions.signOut}
-                    </AppButton>
-                </View>
-            </ScreenWrapper>
-        );
-    }
+    // Render — both tabs visible to ALL authenticated users.
+    // Only module config section is gated to owner/admin.
 
     return (
         <ScreenWrapper>
-            <View style={styles.header}>
-                <Text variant="headlineMedium" style={styles.headerTitle}>Settings</Text>
-                <SegmentedButtons
-                    value={activeTab}
-                    onValueChange={(val) => setActiveTab(val as SettingsTab)}
-                    buttons={[
-                        { value: 'profile', label: 'Profile', icon: 'account' },
-                        { value: 'business', label: 'Business', icon: 'domain' },
-                    ]}
-                    style={styles.tabs}
-                />
+            {/* ── Tab Selector ─────────────────────────────────────────── */}
+            <View style={[styles.tabRow, { borderBottomColor: theme.colors.outlineVariant }]}>
+                {(['profile', 'business'] as SettingsTab[]).map((tab) => {
+                    const isActive = activeTab === tab;
+                    return (
+                        <Pressable
+                            key={tab}
+                            style={styles.tabItem}
+                            onPress={() => setActiveTab(tab)}
+                        >
+                            <Text
+                                variant="labelLarge"
+                                style={[
+                                    styles.tabText,
+                                    {
+                                        color: isActive
+                                            ? theme.colors.primary
+                                            : theme.colors.onSurfaceVariant,
+                                        fontWeight: isActive ? '700' : '400',
+                                    },
+                                ]}
+                            >
+                                {tab === 'profile' ? 'Profile' : 'Business'}
+                            </Text>
+                            {isActive && (
+                                <View
+                                    style={[
+                                        styles.activeTabLine,
+                                        { backgroundColor: theme.colors.primary },
+                                    ]}
+                                />
+                            )}
+                        </Pressable>
+                    );
+                })}
             </View>
 
             <ScrollView
@@ -254,25 +243,34 @@ export const SettingsScreen = () => {
                 showsVerticalScrollIndicator={false}
                 refreshControl={<AppRefreshControl refreshing={isSyncing} onRefresh={runManualSync} />}
             >
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                <View style={[styles.inner, isWide && { maxWidth: DesignSystem.layout.workspaceMaxWidth, alignSelf: 'center', width: '100%' }]}>
 
+                    {/* ══ PROFILE TAB ══════════════════════════════════════ */}
                     {activeTab === 'profile' && (
                         <View style={styles.tabContent}>
-                            {/* Profile Hero */}
+
+                            {/* Avatar Hero */}
                             <AppCard style={styles.heroCard}>
-                                <View style={styles.profileRow}>
-                                    <View style={[styles.avatarPlaceholder, { backgroundColor: theme.colors.primaryContainer }]}>
-                                        <Text variant="headlineSmall" style={{ color: theme.colors.primary }}>
-                                            {user?.displayName?.[0] || 'U'}
+                                <View style={styles.heroRow}>
+                                    <View style={[styles.avatar, { backgroundColor: theme.colors.primaryContainer }]}>
+                                        <Text variant="headlineSmall" style={{ color: theme.colors.primary, fontWeight: '700' }}>
+                                            {initials}
                                         </Text>
                                     </View>
-                                    <View style={styles.profileInfo}>
-                                        <Text variant="titleMedium" style={styles.titleBold}>{user?.displayName || 'User'}</Text>
-                                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>{user?.email || user?.phoneNumber}</Text>
+                                    <View style={styles.heroInfo}>
+                                        <Text variant="titleMedium" style={[styles.bold, { color: theme.colors.onSurface }]}>
+                                            {user?.displayName ?? 'Your Name'}
+                                        </Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                            {user?.email ?? user?.phoneNumber ?? ''}
+                                        </Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                            Role: {user?.role ?? 'Staff'}
+                                        </Text>
                                         <AppButton
                                             mode="text"
                                             compact
-                                            style={styles.editProfileBtn}
+                                            style={styles.editBtn}
                                             onPress={() => router.push('/profile' as never)}
                                         >
                                             Edit Profile
@@ -283,196 +281,265 @@ export const SettingsScreen = () => {
 
                             {/* Appearance */}
                             <AppCard>
-                                <List.Section style={styles.sectionNoMargin}>
-                                    <List.Subheader>Appearance</List.Subheader>
+                                <List.Section style={styles.noMargin}>
+                                    <List.Subheader style={{ color: theme.colors.primary }}>
+                                        {SETTINGS_TEXT.sections.appearance}
+                                    </List.Subheader>
                                     <List.Item
                                         title={SETTINGS_TEXT.appearance.useSystemTheme}
+                                        titleStyle={{ color: theme.colors.onSurface }}
+                                        left={(props) => <List.Icon {...props} icon="theme-light-dark" color={theme.colors.onSurfaceVariant} />}
                                         right={() => (
                                             <Switch
                                                 value={isSystemTheme}
-                                                onValueChange={(val) => setThemeMode(val ? 'system' : (effectiveDark ? 'dark' : 'light'))}
+                                                onValueChange={(val) =>
+                                                    setThemeMode(val ? 'system' : effectiveDark ? 'dark' : 'light')
+                                                }
+                                                thumbColor={isSystemTheme ? theme.colors.primary : theme.colors.outline}
                                             />
                                         )}
-                                        left={(props) => <List.Icon {...props} icon="theme-light-dark" />}
                                     />
+                                    <Divider />
                                     <List.Item
                                         title={SETTINGS_TEXT.appearance.darkMode}
+                                        titleStyle={{ color: isSystemTheme ? theme.colors.onSurfaceVariant : theme.colors.onSurface }}
                                         disabled={isSystemTheme}
+                                        left={(props) => <List.Icon {...props} icon="weather-night" color={theme.colors.onSurfaceVariant} />}
                                         right={() => (
                                             <Switch
                                                 value={effectiveDark}
+                                                disabled={isSystemTheme}
                                                 onValueChange={(val) => setThemeMode(val ? 'dark' : 'light')}
+                                                thumbColor={effectiveDark ? theme.colors.primary : theme.colors.outline}
                                             />
                                         )}
-                                        left={(props) => <List.Icon {...props} icon="weather-night" />}
                                     />
                                 </List.Section>
                             </AppCard>
 
-                            {/* About / Info */}
+                            {/* Sound */}
                             <AppCard>
-                                <List.Section style={styles.sectionNoMargin}>
-                                    <List.Subheader>Application</List.Subheader>
+                                <List.Section style={styles.noMargin}>
+                                    <List.Subheader style={{ color: theme.colors.primary }}>Notifications & Sound</List.Subheader>
+                                    <List.Item
+                                        title="Sound Effects"
+                                        titleStyle={{ color: theme.colors.onSurface }}
+                                        left={(props) => <List.Icon {...props} icon="volume-high" color={theme.colors.onSurfaceVariant} />}
+                                        right={() => (
+                                            <Switch
+                                                value={notificationSoundEnabled}
+                                                onValueChange={toggleNotificationSound}
+                                                thumbColor={notificationSoundEnabled ? theme.colors.primary : theme.colors.outline}
+                                            />
+                                        )}
+                                    />
+                                </List.Section>
+                            </AppCard>
+
+                            {/* App Info */}
+                            <AppCard>
+                                <List.Section style={styles.noMargin}>
+                                    <List.Subheader style={{ color: theme.colors.primary }}>
+                                        {SETTINGS_TEXT.updateCard.title}
+                                    </List.Subheader>
                                     <List.Item
                                         title="About Vahi"
-                                        left={(props) => <List.Icon {...props} icon="information-outline" />}
+                                        titleStyle={{ color: theme.colors.onSurface }}
+                                        left={(props) => <List.Icon {...props} icon="information-outline" color={theme.colors.onSurfaceVariant} />}
+                                        right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
                                         onPress={() => router.push('/about' as never)}
                                     />
+                                    <Divider />
                                     <List.Item
-                                        title="Update Check"
-                                        description={`${appVersion} (${buildVersion})`}
-                                        left={(props) => <List.Icon {...props} icon="cloud-download-outline" />}
+                                        title="Check for Updates"
+                                        description={`v${appVersion} (${buildVersion})`}
+                                        titleStyle={{ color: theme.colors.onSurface }}
+                                        descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                        left={(props) => <List.Icon {...props} icon="cloud-download-outline" color={theme.colors.onSurfaceVariant} />}
                                         onPress={() => void checkForUpdates()}
                                     />
                                     {updateState === 'downloaded' && (
-                                        <AppButton mode="contained" onPress={() => void applyDownloadedUpdate()} loading={isApplyingUpdate}>
-                                            Restart & Update
+                                        <AppButton mode="contained" onPress={() => void applyDownloadedUpdate()} loading={isApplyingUpdate} style={styles.updateBtn}>
+                                            {SETTINGS_TEXT.updateCard.applyButton}
                                         </AppButton>
                                     )}
                                 </List.Section>
                             </AppCard>
 
-                            <AppButton mode="outlined" icon="logout" onPress={signOut} style={[styles.signOutButton, { borderColor: theme.colors.error }]} textColor={theme.colors.error}>
-                                Sign Out
+                            {/* Sign Out */}
+                            <AppButton
+                                mode="outlined"
+                                icon="logout"
+                                onPress={signOut}
+                                style={[styles.signOut, { borderColor: theme.colors.error }]}
+                                textColor={theme.colors.error}
+                            >
+                                {SETTINGS_TEXT.actions.signOut}
                             </AppButton>
                         </View>
                     )}
 
+                    {/* ══ BUSINESS TAB ═════════════════════════════════════ */}
                     {activeTab === 'business' && (
                         <View style={styles.tabContent}>
+
                             {/* Business Hero */}
                             <AppCard style={styles.heroCard}>
-                                <View style={styles.profileRow}>
-                                    <View style={[styles.avatarPlaceholder, { backgroundColor: theme.colors.tertiaryContainer }]}>
+                                <View style={styles.heroRow}>
+                                    <View style={[styles.avatar, { backgroundColor: theme.colors.tertiaryContainer }]}>
                                         <Icon source="domain" size={32} color={theme.colors.tertiary} />
                                     </View>
-                                    <View style={styles.profileInfo}>
-                                        <Text variant="titleMedium" style={styles.titleBold}>{user?.businessName || 'My Business'}</Text>
-                                        <Text variant="bodySmall" style={{ color: theme.colors.outline }}>Role: {user?.role || 'Staff'}</Text>
-                                        <AppButton 
+                                    <View style={styles.heroInfo}>
+                                        <Text variant="titleMedium" style={[styles.bold, { color: theme.colors.onSurface }]}>
+                                            {user?.businessName ?? 'My Business'}
+                                        </Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                            GST: {user?.gstNumber ?? 'Not set'}
+                                        </Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                            {user?.address ?? 'Address not set'}
+                                        </Text>
+                                        <AppButton
                                             mode="text"
                                             compact
-                                            style={styles.editProfileBtn}
+                                            style={styles.editBtn}
                                             onPress={() => router.push('/business-setup' as never)}
                                         >
-                                            Business Details
+                                            Edit Business Details
                                         </AppButton>
                                     </View>
                                 </View>
                             </AppCard>
 
-                            {/* Modules & Feature Links */}
+                            {/* Business Modules */}
                             <AppCard>
-                                <List.Section style={styles.sectionNoMargin}>
-                                    <List.Subheader>Business Modules</List.Subheader>
+                                <List.Section style={styles.noMargin}>
+                                    <List.Subheader style={{ color: theme.colors.primary }}>Modules & Features</List.Subheader>
 
                                     {(isOwnerOrAdmin || canManageSubscription) && (
                                         <List.Item
-                                            title="Subscription Plan"
+                                            title={SETTINGS_TEXT.account.subscriptionTitle}
                                             description={subscriptionLabel}
-                                            left={(props) => <List.Icon {...props} icon="credit-card-outline" />}
+                                            titleStyle={{ color: theme.colors.onSurface }}
+                                            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                            left={(props) => <List.Icon {...props} icon="credit-card-outline" color={theme.colors.onSurfaceVariant} />}
+                                            right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
                                             onPress={() => router.push('/subscription' as never)}
                                         />
                                     )}
-
+                                    {canAccessAccounting && <Divider />}
                                     {canAccessAccounting && (
                                         <List.Item
                                             title="Accounting"
-                                            description="Chart of accounts, Journals, Tax"
-                                            left={(props) => <List.Icon {...props} icon="book-open-variant" />}
+                                            description="Accounts, journals, and tax reports"
+                                            titleStyle={{ color: theme.colors.onSurface }}
+                                            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                            left={(props) => <List.Icon {...props} icon="book-open-variant" color={theme.colors.onSurfaceVariant} />}
+                                            right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
                                             onPress={() => router.push('/accounting' as never)}
                                         />
                                     )}
-
+                                    {canAccessOperations && <Divider />}
                                     {canAccessOperations && (
                                         <List.Item
                                             title="Operations"
-                                            description="Staff, Audit, Approvals"
-                                            left={(props) => <List.Icon {...props} icon="shield-check-outline" />}
+                                            description="Staff, audit, and approvals"
+                                            titleStyle={{ color: theme.colors.onSurface }}
+                                            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                            left={(props) => <List.Icon {...props} icon="shield-check-outline" color={theme.colors.onSurfaceVariant} />}
+                                            right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
                                             onPress={() => router.push('/operations' as never)}
                                         />
                                     )}
-
+                                    {canAccessBusinessSuite && <Divider />}
                                     {canAccessBusinessSuite && (
                                         <List.Item
                                             title="Enterprise Suite"
-                                            description="Payroll, Treasury, Compliance"
-                                            left={(props) => <List.Icon {...props} icon="briefcase-variant-outline" />}
+                                            description="Payroll, treasury, and compliance"
+                                            titleStyle={{ color: theme.colors.onSurface }}
+                                            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                            left={(props) => <List.Icon {...props} icon="briefcase-variant-outline" color={theme.colors.onSurfaceVariant} />}
+                                            right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
                                             onPress={() => router.push('/business-suite' as never)}
                                         />
                                     )}
                                 </List.Section>
                             </AppCard>
 
-                            {/* Preferences */}
+                            {/* Currency */}
                             <AppCard>
-                                <List.Section style={styles.sectionNoMargin}>
-                                    <List.Subheader>Preferences</List.Subheader>
+                                <List.Section style={styles.noMargin}>
+                                    <List.Subheader style={{ color: theme.colors.primary }}>{SETTINGS_TEXT.sections.billingPreferences}</List.Subheader>
                                     <List.Accordion
-                                        title={`Currency: ${activeCurrency}`}
-                                        left={(props) => <List.Icon {...props} icon="cash-multiple" />}
+                                        title={`${SETTINGS_TEXT.billing.currencyPrefix} ${activeCurrency}`}
+                                        titleStyle={{ color: theme.colors.onSurface }}
+                                        left={(props) => <List.Icon {...props} icon="cash-multiple" color={theme.colors.onSurfaceVariant} />}
                                     >
                                         {Config.supportedCurrencies.map((entry) => (
                                             <List.Item
                                                 key={entry.code}
-                                                title={`${entry.code} - ${entry.label}`}
+                                                title={`${entry.code} — ${entry.label}`}
+                                                titleStyle={{ color: theme.colors.onSurface }}
                                                 onPress={() => void handleCurrencyChange(entry.code)}
-                                                right={(props) => entry.code === activeCurrency ? <List.Icon {...props} icon="check" /> : null}
+                                                right={(props) =>
+                                                    entry.code === activeCurrency
+                                                        ? <List.Icon {...props} icon="check" color={theme.colors.primary} />
+                                                        : null
+                                                }
                                             />
                                         ))}
                                     </List.Accordion>
-                                    <List.Item
-                                        title="Sound Effects"
-                                        right={() => <Switch value={notificationSoundEnabled} onValueChange={toggleNotificationSound} />}
-                                        left={(props) => <List.Icon {...props} icon="volume-high" />}
-                                    />
                                 </List.Section>
                             </AppCard>
 
-                            {/* Data Sync */}
+                            {/* Sync Status */}
                             <AppCard>
-                                <List.Section style={styles.sectionNoMargin}>
-                                    <List.Subheader>Data & Sync</List.Subheader>
+                                <List.Section style={styles.noMargin}>
+                                    <List.Subheader style={{ color: theme.colors.primary }}>
+                                        {SETTINGS_TEXT.sections.dataSync}
+                                    </List.Subheader>
                                     <List.Item
-                                        title="Sync Status"
-                                        description={`${syncMessage} (Pending: ${pendingSyncCount})`}
-                                        left={(props) => <List.Icon {...props} icon="cloud-sync" />}
+                                        title={SETTINGS_TEXT.dataSync.title}
+                                        description={`${syncMessage} (${pendingSyncCount} pending)`}
+                                        titleStyle={{ color: theme.colors.onSurface }}
+                                        descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                        left={(props) => <List.Icon {...props} icon="cloud-sync" color={theme.colors.onSurfaceVariant} />}
                                         right={() => (
-                                            <Button mode="text" onPress={() => void runManualSync()} loading={isSyncing} disabled={isSyncing}>
-                                                Sync Now
-                                            </Button>
+                                            <AppButton mode="text" onPress={() => void runManualSync()} loading={isSyncing} disabled={isSyncing}>
+                                                {SETTINGS_TEXT.dataSync.syncNowButton}
+                                            </AppButton>
                                         )}
                                     />
-                                    <List.Item
-                                        title="Storage"
-                                        description={`Backend: ${storageBackend}`}
-                                        left={(props) => <List.Icon {...props} icon="database" />}
-                                    />
                                 </List.Section>
                             </AppCard>
 
-                            {/* Module Visibility (Owner Only) */}
+                            {/* Module Configuration (Owner Only) */}
                             {isOwnerOrAdmin && (
                                 <AppCard>
-                                    <List.Section style={styles.sectionNoMargin}>
-                                        <List.Subheader>Module Configuration</List.Subheader>
-                                        <View style={styles.moduleList}>
-                                            {moduleFields.map((field) => (
+                                    <List.Section style={styles.noMargin}>
+                                        <List.Subheader style={{ color: theme.colors.primary }}>Module Configuration</List.Subheader>
+                                        {moduleFields.map((field, idx) => (
+                                            <React.Fragment key={field.key}>
+                                                {idx > 0 && <Divider />}
                                                 <List.Item
-                                                    key={field.key}
                                                     title={field.title}
                                                     description={field.description}
+                                                    titleStyle={{ color: theme.colors.onSurface }}
+                                                    descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
                                                     right={() => (
                                                         <Switch
                                                             value={moduleAccessDraft[field.key] !== false}
-                                                            onValueChange={(val) => setModuleAccessDraft(curr => ({ ...curr, [field.key]: val }))}
+                                                            onValueChange={(val) =>
+                                                                setModuleAccessDraft((curr) => ({ ...curr, [field.key]: val }))
+                                                            }
+                                                            thumbColor={moduleAccessDraft[field.key] !== false ? theme.colors.primary : theme.colors.outline}
                                                         />
                                                     )}
                                                 />
-                                            ))}
-                                        </View>
+                                            </React.Fragment>
+                                        ))}
                                         <AppButton
-                                            mode="contained" 
+                                            mode="contained"
                                             onPress={() => void saveModuleAccess()}
                                             loading={savingModuleAccess}
                                             style={styles.saveBtn}
@@ -491,34 +558,33 @@ export const SettingsScreen = () => {
 };
 
 const styles = StyleSheet.create({
-    header: {
-        paddingHorizontal: DesignSystem.spacing.xl,
-        paddingTop: DesignSystem.spacing.lg,
-        gap: DesignSystem.spacing.md,
+    tabRow: {
+        flexDirection: 'row',
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
-    headerTitle: {
-        fontWeight: 'bold',
-    },
-    tabs: {
-        marginBottom: DesignSystem.spacing.sm,
-    },
-    centerContainer: {
+    tabItem: {
         flex: 1,
-        justifyContent: 'center',
         alignItems: 'center',
-        padding: DesignSystem.spacing.xl,
+        paddingVertical: DesignSystem.spacing.sm,
+        position: 'relative',
+    },
+    tabText: {
+        letterSpacing: 0.2,
+    },
+    activeTabLine: {
+        position: 'absolute',
+        bottom: 0,
+        left: 16,
+        right: 16,
+        height: 2,
+        borderRadius: 1,
     },
     content: {
         paddingTop: DesignSystem.spacing.md,
     },
-    contentInner: {
-        width: '100%',
+    inner: {
         paddingHorizontal: DesignSystem.spacing.md,
         gap: DesignSystem.spacing.md,
-    },
-    contentInnerWide: {
-        maxWidth: DesignSystem.layout.workspaceMaxWidth,
-        alignSelf: 'center',
     },
     tabContent: {
         gap: DesignSystem.spacing.md,
@@ -526,44 +592,44 @@ const styles = StyleSheet.create({
     heroCard: {
         padding: 0,
     },
-    profileRow: {
+    heroRow: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         padding: DesignSystem.spacing.md,
         gap: DesignSystem.spacing.md,
     },
-    avatarPlaceholder: {
+    avatar: {
         width: 64,
         height: 64,
         borderRadius: 32,
         alignItems: 'center',
         justifyContent: 'center',
+        flexShrink: 0,
     },
-    profileInfo: {
+    heroInfo: {
         flex: 1,
+        gap: 2,
     },
-    editProfileBtn: {
+    bold: {
+        fontWeight: '700',
+    },
+    editBtn: {
         alignSelf: 'flex-start',
         marginLeft: -8,
+        marginTop: DesignSystem.spacing.xs,
     },
-    titleBold: {
-        fontWeight: 'bold',
-    },
-    sectionNoMargin: {
+    noMargin: {
         marginVertical: 0,
         paddingVertical: 0,
     },
-    signOutButton: {
+    signOut: {
         marginTop: DesignSystem.spacing.sm,
         marginBottom: DesignSystem.spacing.xl,
     },
-    moduleList: {
-        marginBottom: DesignSystem.spacing.md,
+    updateBtn: {
+        margin: DesignSystem.spacing.md,
     },
     saveBtn: {
-        marginTop: DesignSystem.spacing.sm,
-    },
-    marginTop: {
-        marginTop: DesignSystem.spacing.lg,
+        margin: DesignSystem.spacing.md,
     },
 });

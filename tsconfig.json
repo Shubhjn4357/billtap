@@ -3,6 +3,14 @@
   "compilerOptions": {
     "strict": true,
     "skipLibCheck": true,
+    // Explicitly declare these so the IDE doesn't have to resolve them from expo/tsconfig.base.
+    // These values match what expo/tsconfig.base sets — making them explicit prevents false
+    // "Dynamic imports not supported" squiggles from some IDE TypeScript language servers.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM"],
+    "jsx": "react-native",
     "paths": {
       "@/*": ["./*"]
     }
@@ -10,3 +18,4 @@
   "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "types/**/*.ts", ".expo/types/**/*.ts", "expo-env.d.ts"],
   "exclude": ["server/**/*","client-admin/**/*"]
 }
+
