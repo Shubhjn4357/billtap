@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import {
     billTemplates,
+    organizationCategories,
     organizationMembers,
     organizations,
     organizationSettings,
@@ -812,6 +813,150 @@ organizationsRoute.post(
             .where(and(eq(signatures.id, id), eq(signatures.userId, ownerUserId), eq(signatures.organizationId, organizationId)))
             .returning({ id: signatures.id });
         if (!updated[0]) return c.json({ ok: false, message: 'Signature not found.' }, 404);
+
+        return c.json({ ok: true });
+    }
+);
+
+// ---------- Custom Categories CRUD ----------
+
+// GET /organizations/categories — list custom categories for current org
+organizationsRoute.get(
+    '/categories',
+    requireAuth,
+    withOrganizationContext,
+    async (c) => {
+        const organizationId = c.get('organizationId');
+        const ownerUserId = c.get('organizationOwnerId');
+        if (!organizationId || !ownerUserId) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+
+        const db = c.get('db');
+        const rows = await db
+            .select()
+            .from(organizationCategories)
+            .where(
+                and(
+                    eq(organizationCategories.organizationId, organizationId),
+                    eq(organizationCategories.userId, ownerUserId),
+                    eq(organizationCategories.isActive, true),
+                )
+            )
+            .orderBy(asc(organizationCategories.name));
+
+        return c.json({ ok: true, categories: rows });
+    }
+);
+
+// POST /organizations/categories — create a custom category
+organizationsRoute.post(
+    '/categories',
+    requireAuth,
+    withOrganizationContext,
+    requirePermission('can_manage_inventory'),
+    async (c) => {
+        const organizationId = c.get('organizationId');
+        const ownerUserId = c.get('organizationOwnerId');
+        const authUser = c.get('authUser');
+        if (!organizationId || !ownerUserId || !authUser) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+
+        const db = c.get('db');
+        const body = await c.req.json();
+        const schema = z.object({
+            name: z.string().min(1).max(100),
+            emoji: z.string().max(10).default('📦'),
+        });
+
+        const payload = schema.parse(body);
+        const id = nanoid(16);
+        const now = new Date();
+
+        // Check for duplicate name within org
+        const existing = await db
+            .select({ id: organizationCategories.id })
+            .from(organizationCategories)
+            .where(
+                and(
+                    eq(organizationCategories.organizationId, organizationId),
+                    eq(organizationCategories.userId, ownerUserId),
+                    sql`lower(${organizationCategories.name}) = ${payload.name.toLowerCase()}`,
+                    eq(organizationCategories.isActive, true),
+                )
+            )
+            .limit(1);
+
+        if (existing.length > 0) {
+            return c.json({ ok: false, message: 'A category with this name already exists.' }, 409);
+        }
+
+        await db.insert(organizationCategories).values({
+            id,
+            organizationId,
+            userId: ownerUserId,
+            name: payload.name.trim(),
+            emoji: payload.emoji,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await writeAuditLog(db, {
+            userId: ownerUserId,
+            actorUid: authUser.uid,
+            actorRole: authUser.role,
+            module: 'inventory',
+            action: 'category.created',
+            entityType: 'category',
+            entityId: id,
+            before: null,
+            after: { name: payload.name, emoji: payload.emoji },
+            metadata: null,
+        });
+
+        return c.json({ ok: true, id, name: payload.name, emoji: payload.emoji });
+    }
+);
+
+// DELETE /organizations/categories/:id — soft-delete a custom category
+organizationsRoute.delete(
+    '/categories/:id',
+    requireAuth,
+    withOrganizationContext,
+    requirePermission('can_manage_inventory'),
+    async (c) => {
+        const organizationId = c.get('organizationId');
+        const ownerUserId = c.get('organizationOwnerId');
+        const authUser = c.get('authUser');
+        if (!organizationId || !ownerUserId || !authUser) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+
+        const db = c.get('db');
+        const id = c.req.param('id');
+
+        const updated = await db
+            .update(organizationCategories)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(
+                and(
+                    eq(organizationCategories.id, id),
+                    eq(organizationCategories.organizationId, organizationId),
+                    eq(organizationCategories.userId, ownerUserId),
+                )
+            )
+            .returning({ id: organizationCategories.id, name: organizationCategories.name });
+
+        if (!updated[0]) return c.json({ ok: false, message: 'Category not found.' }, 404);
+
+        await writeAuditLog(db, {
+            userId: ownerUserId,
+            actorUid: authUser.uid,
+            actorRole: authUser.role,
+            module: 'inventory',
+            action: 'category.deleted',
+            entityType: 'category',
+            entityId: id,
+            before: { name: updated[0].name },
+            after: null,
+            metadata: null,
+        });
 
         return c.json({ ok: true });
     }

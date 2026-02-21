@@ -966,6 +966,21 @@ export const feeReminderLogs = pgTable('fee_reminder_logs', {
     statusIndex: index('fee_reminder_logs_status_idx').on(table.status),
 }));
 
+export const organizationCategories = pgTable('organization_categories', {
+    id: text('id').primaryKey(),
+    organizationId: text('organizationId').notNull(),
+    userId: text('userId').notNull(), // owner uid
+    name: text('name').notNull(),
+    emoji: text('emoji').default('📦').notNull(),
+    isActive: boolean('isActive').default(true).notNull(),
+    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+}, (table) => ({
+    organizationIndex: index('org_categories_org_idx').on(table.organizationId),
+    userIndex: index('org_categories_user_idx').on(table.userId),
+    nameIndex: index('org_categories_name_idx').on(table.organizationId, table.name),
+}));
+
 export type UserRow = typeof users.$inferSelect;
 export type PlanRow = typeof plans.$inferSelect;
 export type OfferRow = typeof offers.$inferSelect;

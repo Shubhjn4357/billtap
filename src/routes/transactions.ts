@@ -834,4 +834,65 @@ transactionsRoute.get(
     }
 );
 
+// GET /transactions/stats/today — today's sales + purchase totals
+transactionsRoute.get(
+    '/stats/today',
+    requireAuth,
+    withOrganizationContext,
+    async (c) => {
+        const effectiveUserId = c.get('organizationOwnerId');
+        const organizationId = c.get('organizationId');
+        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+
+        const db = c.get('db');
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+        const rows = await db
+            .select({
+                type: transactions.type,
+                totalAmount: sql<number>`coalesce(sum(${transactions.totalAmount}), 0)`,
+                count: sql<number>`count(*)`,
+            })
+            .from(transactions)
+            .where(
+                and(
+                    eq(transactions.userId, effectiveUserId),
+                    eq(transactions.organizationId, organizationId),
+                    gte(transactions.billDate, todayStart),
+                    lte(transactions.billDate, todayEnd),
+                )
+            )
+            .groupBy(transactions.type);
+
+        let salesToday = 0;
+        let salesCount = 0;
+        let purchasesToday = 0;
+        let purchasesCount = 0;
+
+        for (const row of rows) {
+            if (row.type === 'SALE') {
+                salesToday = Number(row.totalAmount);
+                salesCount = Number(row.count);
+            } else if (row.type === 'PURCHASE') {
+                purchasesToday = Number(row.totalAmount);
+                purchasesCount = Number(row.count);
+            }
+        }
+
+        return c.json({
+            ok: true,
+            stats: {
+                salesToday: roundAmount(salesToday),
+                salesCount,
+                purchasesToday: roundAmount(purchasesToday),
+                purchasesCount,
+                netCashFlow: roundAmount(salesToday - purchasesToday),
+                date: todayStart.toISOString().slice(0, 10),
+            },
+        });
+    }
+);
+
 export default transactionsRoute;

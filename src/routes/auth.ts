@@ -10,6 +10,56 @@ import type { UserRow } from '../db/schema';
 
 const authRoute = new Hono<AppEnv>();
 
+// ---------- Rate Limiter (sliding window, per-IP) ----------
+const AUTH_RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const AUTH_RATE_LIMIT_MAX = 5; // max 5 requests per window
+
+const rateLimitStore = new Map<string, number[]>();
+
+// Periodic cleanup to prevent memory growth (runs lazily)
+let lastCleanup = Date.now();
+const cleanupRateLimitStore = () => {
+    const now = Date.now();
+    if (now - lastCleanup < AUTH_RATE_LIMIT_WINDOW_MS * 2) return;
+    lastCleanup = now;
+    const cutoff = now - AUTH_RATE_LIMIT_WINDOW_MS;
+    for (const [key, timestamps] of rateLimitStore) {
+        const valid = timestamps.filter((ts) => ts > cutoff);
+        if (valid.length === 0) {
+            rateLimitStore.delete(key);
+        } else {
+            rateLimitStore.set(key, valid);
+        }
+    }
+};
+
+authRoute.use('/*', async (c, next) => {
+    // Only rate-limit mutating auth endpoints (POST)
+    if (c.req.method !== 'POST') return next();
+
+    cleanupRateLimitStore();
+
+    const ip =
+        c.req.header('cf-connecting-ip') ??
+        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
+        'unknown';
+
+    const now = Date.now();
+    const cutoff = now - AUTH_RATE_LIMIT_WINDOW_MS;
+    const timestamps = rateLimitStore.get(ip) ?? [];
+    const recentHits = timestamps.filter((ts) => ts > cutoff);
+
+    if (recentHits.length >= AUTH_RATE_LIMIT_MAX) {
+        const retryAfterSec = Math.ceil((recentHits[0] + AUTH_RATE_LIMIT_WINDOW_MS - now) / 1000);
+        c.header('Retry-After', String(Math.max(retryAfterSec, 1)));
+        return c.json({ ok: false, message: 'Too many requests. Please try again later.' }, 429);
+    }
+
+    recentHits.push(now);
+    rateLimitStore.set(ip, recentHits);
+    return next();
+});
+
 const normalizePhoneNumber = (raw: string) => {
     const digits = raw.replace(/\D/g, '');
     if (!digits) return '';

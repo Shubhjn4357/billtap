@@ -373,4 +373,44 @@ itemsRoute.post('/:id/adjust', requireAuth, withOrganizationContext, requirePerm
     }
 });
 
+// GET /items/low-stock — items where stock is at or below threshold
+itemsRoute.get('/low-stock', requireAuth, withOrganizationContext, async (c) => {
+    const effectiveUserId = c.get('organizationOwnerId');
+    const organizationId = c.get('organizationId');
+    const authUser = c.get('authUser');
+    const db = c.get('db');
+
+    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!canAccessItemCatalog(c)) {
+        return c.json({ ok: false, message: 'Item catalog access denied.' }, 403);
+    }
+    if (!hasModulePermission(authUser, 'inventory', 'view')) {
+        return c.json({ ok: false, message: 'Inventory access denied.' }, 403);
+    }
+
+    const threshold = Math.max(Number(c.req.query('threshold') || 5), 0);
+    const limit = Math.min(Number(c.req.query('limit') || 100), 500);
+
+    const data = await db
+        .select()
+        .from(items)
+        .where(
+            and(
+                eq(items.userId, effectiveUserId),
+                eq(items.organizationId, organizationId),
+                sql`coalesce(${items.isActive}, true) = true`,
+                sql`${items.stock} <= ${threshold}`,
+            )
+        )
+        .orderBy(asc(items.stock))
+        .limit(limit);
+
+    return c.json({
+        ok: true,
+        items: data,
+        threshold,
+        count: data.length,
+    });
+});
+
 export default itemsRoute;
