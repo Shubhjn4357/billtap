@@ -7,12 +7,29 @@ export interface StoredBill extends Bill {
     createdAt: string | Date | number;
 }
 
+/**
+ * CachedBill — what offlineSyncService.upsertCachedBill actually writes.
+ * Extends StoredBill with runtime payment, tax, and type fields that are
+ * included when a bill is saved locally but not part of the base Bill type.
+ */
+export interface CachedBill extends StoredBill {
+    paymentStatus?: 'PAID' | 'PARTIAL' | 'PENDING';
+    paidAmount?: number;
+    dueAmount?: number;
+    paymentMode?: 'CASH' | 'CREDIT';
+    taxAmount?: number;
+    partyId?: string;
+    partyName?: string;
+}
+
 type ServerTransaction = Transaction & {
     billDate?: string | Date;
     createdAt?: string | Date;
 };
 
-const toIso = (value: unknown, fallback: string): string => {
+type RawDate = string | number | Date | null | undefined;
+
+const toIso = (value: RawDate, fallback: string): string => {
     if (value instanceof Date) return value.toISOString();
     if (typeof value === 'string') {
         const parsed = new Date(value);

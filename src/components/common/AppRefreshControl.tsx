@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { RefreshControl, RefreshControlProps, View, StyleSheet } from 'react-native';
 import { useTheme } from 'react-native-paper';
 import Animated, {

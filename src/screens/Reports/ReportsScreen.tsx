@@ -4,7 +4,7 @@ import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { useRouter } from 'expo-router';
 import { Chip, SegmentedButtons, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { StoredBill } from '../../api/billService';
+import type { CachedBill, StoredBill } from '../../api/billService';
 import { reportingService } from '../../api/reportingService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
@@ -36,10 +36,6 @@ const RANGE_LABELS: Record<RangePreset, string> = {
     all: REPORTS_TEXT.ranges.all,
 };
 
-const asRecord = (value: unknown): Record<string, unknown> => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-    return value as Record<string, unknown>;
-};
 
 const getRangeStart = (range: RangePreset): Date | null => {
     const now = new Date();
@@ -58,15 +54,11 @@ const getRangeStart = (range: RangePreset): Date | null => {
     return null;
 };
 
-const getBillStatus = (bill: StoredBill): 'Paid' | 'Partial' | 'Unpaid' => {
-    const raw = asRecord(bill);
-    const paymentStatus = typeof raw.paymentStatus === 'string' ? raw.paymentStatus.toUpperCase() : '';
-    if (paymentStatus === 'PAID') return 'Paid';
-    if (paymentStatus === 'PARTIAL') return 'Partial';
-
-    const paidAmount = typeof raw.paidAmount === 'number' ? raw.paidAmount : 0;
-    if (paidAmount >= bill.total) return 'Paid';
-    if (paidAmount > 0) return 'Partial';
+const getBillStatus = (bill: CachedBill): 'Paid' | 'Partial' | 'Unpaid' => {
+    if (bill.paymentStatus === 'PAID') return 'Paid';
+    if (bill.paymentStatus === 'PARTIAL') return 'Partial';
+    const paid = bill.paidAmount ?? 0;
+    if (paid > 0) return paid >= bill.total ? 'Paid' : 'Partial';
     return 'Unpaid';
 };
 
@@ -99,7 +91,8 @@ export const ReportsScreen = () => {
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
     const { canViewReports, canAccessAccounting } = useOrganizationAccess();
-    const { bills, loading, error, fetchBills } = useBills(canViewReports, { limit: 400 });
+    const { bills: rawBills, loading, error, fetchBills } = useBills(canViewReports, { limit: 400 });
+    const bills = rawBills as CachedBill[];
     const [range, setRange] = useState<RangePreset>('7d');
     const [statusFilter, setStatusFilter] = useState<StatusPreset>('all');
     const [rangePending, startRangeTransition] = useTransition();

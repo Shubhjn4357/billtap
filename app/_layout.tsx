@@ -210,6 +210,7 @@ export default function RootLayout() {
 
         return () => {
             isMounted = false;
+            stopForegroundSync();
         };
     }, [setCurrency, setLoading, setUser, settingsHydrated, userHydrated]);
 

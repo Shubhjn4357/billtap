@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { useRouter } from 'expo-router';
-import { Text, useTheme, Icon } from 'react-native-paper';
+import { Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { SummaryCard } from '../../components/common/SummaryCard';
@@ -23,18 +23,15 @@ import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 import { useAccounts } from '../../hooks/useAccounts';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
+import type { CachedBill } from '../../api/billService';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-const asRecord = (v: unknown): Record<string, unknown> =>
-    !v || typeof v !== 'object' || Array.isArray(v) ? {} : v as Record<string, unknown>;
-
-const getBillPaymentStatus = (bill: unknown): 'PAID' | 'PARTIAL' | 'PENDING' => {
-    const raw = asRecord(bill);
-    const ps = typeof raw.paymentStatus === 'string' ? raw.paymentStatus.toUpperCase() : '';
-    if (ps === 'PAID') return 'PAID';
-    if (ps === 'PARTIAL') return 'PARTIAL';
-    return 'PENDING';
+/** Derive StatusBadge status from a CachedBill — fully typed, no runtime cast. */
+const getPaymentStatus = (bill: CachedBill): 'paid' | 'partial' | 'pending' => {
+    if (bill.paymentStatus === 'PAID') return 'paid';
+    if (bill.paymentStatus === 'PARTIAL') return 'partial';
+    return 'pending';
 };
 
 // ─── Quick Actions ─────────────────────────────────────────────────────────────
@@ -60,15 +57,6 @@ const QuickActionCard: React.FC<{
             case 'tertiary': return theme.colors.tertiaryContainer;
             case 'error': return theme.colors.errorContainer;
             default: return theme.colors.primaryContainer;
-        }
-    })();
-
-    const iconColor = (() => {
-        switch (item.tone) {
-            case 'secondary': return theme.colors.onSecondaryContainer;
-            case 'tertiary': return theme.colors.onTertiaryContainer;
-            case 'error': return theme.colors.onErrorContainer;
-            default: return theme.colors.onPrimaryContainer;
         }
     })();
 
@@ -119,7 +107,10 @@ export const DashboardScreen = () => {
     } = useOrganizationAccess();
 
     // Data
-    const { bills, loading: billsLoading, fetchBills } = useBills(canViewReports, { limit: 20 });
+    // Data — cast to CachedBill[] since offlineSyncService always includes paymentStatus, type etc.
+    const { bills: rawBills, loading: billsLoading, fetchBills } = useBills(canViewReports, { limit: 20 });
+    const bills = rawBills as CachedBill[];
+
     const { accounts } = useAccounts();
 
     const [refreshing, setRefreshing] = useState(false);
@@ -410,12 +401,7 @@ export const DashboardScreen = () => {
                                                 {formatCurrency(bill.total, activeCurrency)}
                                             </Text>
                                             <StatusBadge
-                                                status={(() => {
-                                                    const ps = getBillPaymentStatus(bill);
-                                                    if (ps === 'PAID') return 'paid' as const;
-                                                    if (ps === 'PARTIAL') return 'partial' as const;
-                                                    return 'pending' as const;
-                                                })()}
+                                                status={getPaymentStatus(bill)}
                                                 compact
                                             />
                                         </View>
