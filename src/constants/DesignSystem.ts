@@ -77,5 +77,5 @@ export const DesignSystem = {
     },
 } as const;
 
-export type DesignSpacing = keyof typeof DesignSystem.spacing;
-export type DesignRadius = keyof typeof DesignSystem.radius;
+export type DesignSpacing = 'xxs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'xxxl';
+export type DesignRadius = 'xxs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'pill';

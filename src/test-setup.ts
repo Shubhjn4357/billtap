@@ -1,16 +1,17 @@
 import { vi } from 'vitest';
 
 // Provide basic window/document stubs for libraries that expect them
-if (typeof global.window === 'undefined') {
-    (global as any).window = {};
+// Provide basic window/document stubs for libraries that expect them
+if (typeof globalThis.window === 'undefined') {
+    (globalThis as any).window = {};
 }
-if (typeof global.document === 'undefined') {
-    (global as any).document = {
+if (typeof globalThis.document === 'undefined') {
+    (globalThis as any).document = {
         createElement: () => ({}),
     };
 }
-if (typeof global.navigator === 'undefined') {
-    (global as any).navigator = {
+if (typeof globalThis.navigator === 'undefined') {
+    (globalThis as any).navigator = {
         userAgent: 'node',
     };
 }
