@@ -390,6 +390,24 @@ transactionsRoute.post(
             grouped.set(line.id, (grouped.get(line.id) ?? 0) + line.quantity);
         }
 
+        // Deep-Level Sync Duplicate Protection
+        // If the client retries syncing an offline transaction, we must not run side-effects twice.
+        if (payload.id) {
+            const existingSync = await db
+                .select({ id: transactions.id })
+                .from(transactions)
+                .where(and(
+                    eq(transactions.id, payload.id),
+                    eq(transactions.userId, effectiveUserId),
+                    eq(transactions.organizationId, organizationId)
+                ))
+                .limit(1);
+
+            if (existingSync[0]) {
+                return c.json({ ok: true, id: payload.id, message: 'Transaction already synced.' });
+            }
+        }
+
         await withTransaction(db, async (tx) => {
             if (normalizedBillNumber) {
                 const existingBill = await tx

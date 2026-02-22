@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { and, eq, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
-import { items, offers, phoneVerifications, transactions, users } from '../db/schema';
+import { items, offers, phoneVerifications, transactions, users, auditLogs, analyticsEvents } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import type { AppEnv } from '../middleware/auth';
 
@@ -76,6 +76,24 @@ jobsRoute.post('/run-all', async (c) => {
             .delete(items)
             .where(and(eq(items.autoDeleteEnabled, true), isNotNull(items.autoDeleteAt), lte(items.autoDeleteAt, now)))
             .returning({ id: items.id });
+
+        // Cleanup: Keeping max 20 latest audit logs per user
+        await tx.execute(sql`
+            WITH ranked_audit AS (
+                SELECT id, ROW_NUMBER() OVER(PARTITION BY "userId" ORDER BY "createdAt" DESC) as rn
+                FROM audit_logs
+            )
+            DELETE FROM audit_logs WHERE id IN (SELECT id FROM ranked_audit WHERE rn > 20)
+        `);
+
+        // Cleanup: Keeping max 20 latest analytics events per user
+        await tx.execute(sql`
+            WITH ranked_analytics AS (
+                SELECT id, ROW_NUMBER() OVER(PARTITION BY "userId" ORDER BY "createdAt" DESC) as rn
+                FROM analytics_events
+            )
+            DELETE FROM analytics_events WHERE id IN (SELECT id FROM ranked_analytics WHERE rn > 20)
+        `);
 
         const pendingCreditTx = await tx
             .select({

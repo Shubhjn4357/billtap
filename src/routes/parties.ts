@@ -72,7 +72,7 @@ partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('
         const id = payload.id ?? nanoid();
         const now = new Date();
 
-        await db.insert(parties).values({
+        const insertPayload = {
             id,
             userId: effectiveUserId,
             organizationId,
@@ -86,6 +86,11 @@ partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('
             isActive: payload.isActive,
             createdAt: now,
             updatedAt: now,
+        };
+
+        await db.insert(parties).values(insertPayload).onConflictDoUpdate({
+            target: parties.id,
+            set: { ...insertPayload, createdAt: sql`parties."createdAt"` } // Preserve original createdAt
         });
 
         return c.json({ ok: true, id });

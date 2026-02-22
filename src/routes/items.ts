@@ -136,12 +136,6 @@ itemsRoute.post('/', requireAuth, withOrganizationContext, requirePermission('ca
         const id = payload.id ?? nanoid();
         const now = new Date();
 
-        // Check for duplicate ID (rare with nanoid but possible if user provides one)
-        if (payload.id) {
-            const existing = await db.select({ id: items.id }).from(items).where(eq(items.id, id)).limit(1);
-            if (existing[0]) return c.json({ ok: false, message: 'Item ID already exists.' }, 409);
-        }
-
         // Check for duplicate Barcode (optional but good practice)
         if (payload.barcode) {
             const existingBarcode = await db
@@ -153,10 +147,10 @@ itemsRoute.post('/', requireAuth, withOrganizationContext, requirePermission('ca
                     eq(items.organizationId, organizationId)
                 ))
                 .limit(1);
-            if (existingBarcode[0]) return c.json({ ok: false, message: 'Barcode already used.' }, 409);
+            if (existingBarcode[0] && existingBarcode[0].id !== id) return c.json({ ok: false, message: 'Barcode already used.' }, 409);
         }
 
-        await db.insert(items).values({
+        const insertPayload = {
             id,
             userId: effectiveUserId,
             organizationId,
@@ -183,6 +177,11 @@ itemsRoute.post('/', requireAuth, withOrganizationContext, requirePermission('ca
             isActive: payload.isActive,
             createdAt: now,
             updatedAt: now,
+        };
+
+        await db.insert(items).values(insertPayload).onConflictDoUpdate({
+            target: items.id,
+            set: { ...insertPayload, createdAt: sql`items."createdAt"` } // Preserve original createdAt
         });
 
         return c.json({ ok: true, id });
