@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, useTheme, SegmentedButtons, TextInput, Avatar, IconButton, List } from 'react-native-paper';
+import { Text, useTheme, SegmentedButtons, TextInput, Avatar, IconButton } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -279,10 +279,10 @@ export const ItemDetailScreen = () => {
                         </AppButton>
                     </View>
 
-                        <List.AccordionGroup>
+                       
                             <AppCard style={styles.sectionCard}>
-                                <List.Accordion title="Basic Details" id="1" left={props => <List.Icon {...props} icon="information-outline" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                    <View style={styles.accordionContent}>
+                               
+                                    <View style={styles.inputContent}>
                                         <AppInput
                                             label={STOCK_TEXT.itemDetail.fields.itemName}
                                             value={form.name}
@@ -305,12 +305,9 @@ export const ItemDetailScreen = () => {
                                             left={<TextInput.Icon icon="shape-plus-outline" />}
                                         />
                                     </View>
-                                </List.Accordion>
-                            </AppCard>
-
-                            <AppCard style={styles.sectionCard}>
-                                <List.Accordion title="Pricing & Tax" id="2" left={props => <List.Icon {...props} icon="currency-inr" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                    <View style={styles.accordionContent}>
+                           
+                                 
+                                    <View style={styles.inputContent}>
                                         <View style={styles.row}>
                                             <AppInput
                                                 label={STOCK_TEXT.itemDetail.fields.price}
@@ -360,12 +357,11 @@ export const ItemDetailScreen = () => {
                                             />
                                         </View>
                                     </View>
-                                </List.Accordion>
-                            </AppCard>
+                                
+                           
 
-                            <AppCard style={styles.sectionCard}>
-                                <List.Accordion title="Stock & Inventory" id="3" left={props => <List.Icon {...props} icon="package-variant-closed" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                    <View style={styles.accordionContent}>
+                               
+                                    <View style={styles.inputContent}>
                                         <View style={styles.row}>
                                             <AppInput
                                                 label={STOCK_TEXT.itemDetail.fields.stock}
@@ -399,12 +395,9 @@ export const ItemDetailScreen = () => {
                                             left={<TextInput.Icon icon="map-marker-outline" />}
                                         />
                                     </View>
-                                </List.Accordion>
-                            </AppCard>
-
-                            <AppCard style={styles.sectionCard}>
-                                <List.Accordion title="Identifiers" id="4" left={props => <List.Icon {...props} icon="barcode-scan" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                    <View style={styles.accordionContent}>
+                               
+                         
+                                    <View style={styles.inputContent}>
                                         <AppInput
                                             label={STOCK_TEXT.itemDetail.fields.barcode}
                                             value={form.barcode}
@@ -420,9 +413,9 @@ export const ItemDetailScreen = () => {
                                             })} />}
                                         />
                                     </View>
-                                </List.Accordion>
+                               
                             </AppCard>
-                        </List.AccordionGroup>
+
 
                     <AppButton
                         mode="contained"
@@ -484,10 +477,8 @@ const styles = StyleSheet.create({
         padding: 0,
         overflow: 'hidden',
     },
-    accordionHeader: {
-        backgroundColor: 'transparent',
-    },
-    accordionContent: {
+   
+    inputContent: {
         paddingHorizontal: DesignSystem.spacing.md,
         paddingBottom: DesignSystem.spacing.md,
     },

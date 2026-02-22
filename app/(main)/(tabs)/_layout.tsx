@@ -2,8 +2,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import { AnimatedTabBar } from '../../../src/components/navigation/AnimatedTabBar';
-
-// CurvedBottomBar import removed
 import { TopProfilePill } from '../../../src/components/layout/TopProfilePill';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { TAB_TITLES } from '../../../src/constants/staticText';

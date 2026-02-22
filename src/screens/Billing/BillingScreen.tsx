@@ -20,8 +20,8 @@ import { BILLING_TEXT } from '../../constants/staticText';
 import { billingCheckoutSchema } from '../../validation/forms';
 import { useShallow } from 'zustand/react/shallow';
 import { useRouter } from 'expo-router';
-const BillingCart: any = React.lazy(() => import('./components/BillingCart').then(mod => ({ default: mod.BillingCart as any })));
-const BillingCatalog: any = React.lazy(() => import('./components/BillingCatalog').then(mod => ({ default: mod.BillingCatalog as any })));
+import { BillingCart } from './components/BillingCart';
+import { BillingCatalog } from './components/BillingCatalog';
 
 export const BillingScreen = () => {
     const theme = useTheme();
@@ -57,7 +57,11 @@ export const BillingScreen = () => {
     // Local State
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [sameAsBilling, setSameAsBilling] = useState(true);
+    const [billingAddress, setBillingAddress] = useState(user?.address || '');
     const [deliveryAddress, setDeliveryAddress] = useState('');
+
+    // Sync delivery with billing if requested
+    const effectiveDeliveryAddress = sameAsBilling ? billingAddress : deliveryAddress;
 
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
 
@@ -132,7 +136,8 @@ export const BillingScreen = () => {
                 paymentStatus: 'PENDING',
                 billMode: isGstBill ? 'GST' : 'ESTIMATE',
                 partyName: customerName || 'Walk-in',
-                deliveryAddress: sameAsBilling ? null : deliveryAddress, // Logic for delivery address
+                billingAddress: billingAddress,
+                deliveryAddress: effectiveDeliveryAddress,
                 currency: activeCurrency,
                 createdAt: now,
                 updatedAt: now,
@@ -171,70 +176,104 @@ export const BillingScreen = () => {
                 subtitle={transactionType === 'SALE' ? 'New Sale' : 'Purchase Entry'}
             />
 
-            <View style={[styles.container, isWide && styles.containerWide]}>
-
-                {/* Catalog Section (Source) */}
-                <View style={[styles.section, styles.catalogSection, isWide ? { flex: 0.6, marginRight: 16 } : { flex: 1 }]}>
-                    <AppCard style={{ flex: 1, backgroundColor: theme.colors.elevation.level1 }} contentStyle={{ padding: 0 }}>
-                        <View style={{ padding: 16, paddingBottom: 0 }}>
-                            <Text variant="titleMedium" style={{ marginBottom: 12, fontWeight: 'bold' }}>
-                                Scan / Select Items
-                            </Text>
+            <View style={{ flex: 1 }}>
+                {isWide ? (
+                    // ── Wide: side-by-side layout ─────────────────────────────────
+                    <View key="billing-wide" style={styles.containerWide}>
+                        <View style={{ flex: 0.6, marginRight: 16 }}>
+                            <AppCard style={{ flex: 1, backgroundColor: theme.colors.elevation.level1 }} contentStyle={{ padding: 0 }}>
+                                <View style={{ padding: 16, paddingBottom: 0 }}>
+                                    <Text variant="titleMedium" style={{ marginBottom: 12, fontWeight: 'bold' }}>
+                                        Scan / Select Items
+                                    </Text>
+                                </View>
+                                <BillingCatalog
+                                    items={allItems}
+                                    onAddItem={handleAddItem}
+                                    stockMap={stockById}
+                                    currencySymbol={activeCurrency}
+                                    transactionType={transactionType}
+                                />
+                            </AppCard>
                         </View>
-                        <React.Suspense fallback={<Text style={{ padding: 16 }}>Loading Catalog...</Text>}>
-                            <BillingCatalog
-                                items={allItems}
-                                onAddItem={handleAddItem}
-                                stockMap={stockById}
-                                currencySymbol={activeCurrency}
-                                transactionType={transactionType}
-                            />
-                        </React.Suspense>
-                    </AppCard>
-                </View>
+                        <View style={{ flex: 0.4 }}>
+                            <AppCard style={{ flex: 1, borderColor: theme.colors.outlineVariant, borderWidth: 1 }}>
+                                <BillingCart
+                                    currencySymbol={currencySymbol}
+                                    activeCurrency={activeCurrency}
+                                    onCheckout={handleCheckout}
+                                    checkoutLoading={checkoutLoading}
+                                    transactionType={transactionType}
+                                    stockMap={stockById}
+                                    isGstBill={isGstBill}
+                                    sameAsBilling={sameAsBilling}
+                                    setSameAsBilling={setSameAsBilling}
+                                    billingAddress={billingAddress}
+                                    setBillingAddress={setBillingAddress}
+                                    deliveryAddress={deliveryAddress}
+                                    setDeliveryAddress={setDeliveryAddress}
+                                />
+                            </AppCard>
+                        </View>
+                    </View>
+                ) : (
+                    // ── Mobile: stacked layout ────────────────────────────────────
+                    <View key="billing-mobile" style={{ flex: 1 }}>
+                        {/* Catalog section */}
+                        <View style={{ flex: 1, marginBottom: 16 }}>
+                            <AppCard
+                                style={{ flex: 1, backgroundColor: theme.colors.elevation.level1 }}
+                                contentStyle={{ padding: 0, flex: 1 }}
+                            >
+                                <View style={{ padding: 16, paddingBottom: 0 }}>
+                                    <Text variant="titleMedium" style={{ marginBottom: 12, fontWeight: 'bold' }}>
+                                        Scan / Select Items
+                                    </Text>
+                                </View>
+                                <BillingCatalog
+                                    items={allItems}
+                                    onAddItem={handleAddItem}
+                                    stockMap={stockById}
+                                    currencySymbol={activeCurrency}
+                                    transactionType={transactionType}
+                                />
+                                </AppCard>
+                            </View>
 
-                {/* Cart Section (Destination) */}
-                <View style={[styles.section, styles.cartSection, isWide ? { flex: 0.4 } : { flex: 1, marginTop: 16 }]}>
-                    <AppCard style={{ flex: 1, borderColor: theme.colors.outlineVariant, borderWidth: 1 }}>
-                        <React.Suspense fallback={<Text style={{ padding: 16 }}>Loading Cart...</Text>}>
-                            <BillingCart
-                                currencySymbol={currencySymbol}
-                                activeCurrency={activeCurrency}
-                                onCheckout={handleCheckout}
-                                checkoutLoading={checkoutLoading}
-                                transactionType={transactionType}
-                                stockMap={stockById}
-                                isGstBill={isGstBill}
-                                sameAsBilling={sameAsBilling}
-                                setSameAsBilling={setSameAsBilling}
-                                deliveryAddress={deliveryAddress}
-                                setDeliveryAddress={setDeliveryAddress}
-                            />
-                        </React.Suspense>
-                    </AppCard>
-                </View>
+                            {/* Cart section */}
+                            <View style={{ flex: 1 }}>
+                                <AppCard
+                                    style={{ flex: 1, borderColor: theme.colors.outlineVariant, borderWidth: 1 }}
+                                    contentStyle={{ flex: 1 }}
+                                >
+                                    <BillingCart
+                                        currencySymbol={currencySymbol}
+                                        activeCurrency={activeCurrency}
+                                        onCheckout={handleCheckout}
+                                        checkoutLoading={checkoutLoading}
+                                        transactionType={transactionType}
+                                        stockMap={stockById}
+                                        isGstBill={isGstBill}
+                                        sameAsBilling={sameAsBilling}
+                                        setSameAsBilling={setSameAsBilling}
+                                        billingAddress={billingAddress}
+                                        setBillingAddress={setBillingAddress}
+                                        deliveryAddress={deliveryAddress}
+                                        setDeliveryAddress={setDeliveryAddress}
+                                    />
+                                </AppCard>
+                            </View>
+                    </View>
+                )}
             </View>
         </ScreenWrapper>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        flexDirection: 'column',
-    },
     containerWide: {
+        flex: 1,
         flexDirection: 'row',
-        alignItems: 'flex-start',
-        height: '100%', // Take full height in wide mode
+        alignItems: 'stretch',
     },
-    section: {
-    // minHeight: 400,
-    },
-    catalogSection: {
-        flex: 1,
-    },
-    cartSection: {
-        flex: 1,
-    }
 });

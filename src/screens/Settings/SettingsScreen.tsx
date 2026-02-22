@@ -239,6 +239,7 @@ export const SettingsScreen = () => {
             </View>
 
             <ScrollView
+                style={{ flex: 1 }}
                 contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]}
                 showsVerticalScrollIndicator={false}
                 refreshControl={<AppRefreshControl refreshing={isSyncing} onRefresh={runManualSync} />}
@@ -591,6 +592,7 @@ const styles = StyleSheet.create({
     },
     content: {
         paddingTop: DesignSystem.spacing.md,
+        flexGrow: 1,
     },
     inner: {
         paddingHorizontal: DesignSystem.spacing.md,

@@ -73,6 +73,7 @@ export const transactions = sqliteTable('transactions', {
     billMode: text('billMode').default('ESTIMATE'), // GST, ESTIMATE
     dueDate: text('dueDate'),
     remark: text('remark'),
+    billingAddress: text('billingAddress'), // NEW: Billing address
     deliveryAddress: text('deliveryAddress'), // NEW: Delivery location
     deliveryContactName: text('deliveryContactName'), // NEW: Delivery contact name
     deliveryContactPhone: text('deliveryContactPhone'), // NEW: Delivery contact phone

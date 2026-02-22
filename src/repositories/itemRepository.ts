@@ -9,7 +9,7 @@ export class ItemRepository extends BaseRepository {
     return await db.select().from(items).where(
       and(
         eq(items.organizationId, organizationId),
-        eq(items.isActive, true)
+        // eq(items.isActive, true) // Removing strict active check to ensure data loads if flag is missing
       )
     );
   }

@@ -21,6 +21,8 @@ interface BillingCartProps {
     transactionType: 'SALE' | 'PURCHASE';
     sameAsBilling: boolean;
     setSameAsBilling: (val: boolean) => void;
+    billingAddress: string;
+    setBillingAddress: (val: string) => void;
     deliveryAddress: string;
     setDeliveryAddress: (val: string) => void;
 }
@@ -34,6 +36,8 @@ export const BillingCart = ({
     transactionType,
     sameAsBilling,
     setSameAsBilling,
+    billingAddress,
+    setBillingAddress,
     deliveryAddress,
     setDeliveryAddress,
 }: BillingCartProps) => {
@@ -140,24 +144,40 @@ export const BillingCart = ({
             </ScrollView>
 
             <View style={[styles.footer, { backgroundColor: theme.colors.elevation.level2 }]}>
-                {/* Delivery Address Section */}
+                {/* Address Section */}
                 <View style={styles.deliverySection}>
+                    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>Addresses</Text>
+
+                    <View style={styles.addressInputContainer}>
+                        <AppInput
+                            label="Billing Address"
+                            placeholder="Enter business location..."
+                            value={billingAddress}
+                            onChangeText={setBillingAddress}
+                            inputType="text"
+                            multiline
+                            numberOfLines={2}
+                        />
+                    </View>
+
                     <View style={styles.checkboxRow}>
                         <IconButton
                             icon={sameAsBilling ? "checkbox-marked" : "checkbox-blank-outline"}
                             size={20}
                             onPress={() => setSameAsBilling(!sameAsBilling)}
                             iconColor={theme.colors.primary}
-                            style={{ margin: 0, padding: 0 }}
+                            style={{ margin: 0, paddingLeft: 0 }}
                         />
-                        <Text variant="bodyMedium" onPress={() => setSameAsBilling(!sameAsBilling)} style={{ marginLeft: 4 }}>
-                            Same as billing address
+                        <Text variant="bodySmall" onPress={() => setSameAsBilling(!sameAsBilling)} style={{ color: theme.colors.outline }}>
+                            Delivery is same as billing address
                         </Text>
                     </View>
+
                     {!sameAsBilling && (
                         <View style={styles.addressInputContainer}>
                             <AppInput
                                 label="Delivery Address"
+                                placeholder="Where should items be sent?"
                                 value={deliveryAddress}
                                 onChangeText={setDeliveryAddress}
                                 inputType="text"

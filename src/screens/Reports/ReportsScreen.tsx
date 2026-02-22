@@ -1,9 +1,9 @@
 import React, { useCallback, useMemo, useState, useTransition } from 'react';
 import { ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppRefreshControl } from '../../components/common/AppRefreshControl';
 import { useRouter } from 'expo-router';
 import { Chip, SegmentedButtons, Text, useTheme } from 'react-native-paper';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CachedBill, StoredBill } from '../../api/billService';
 import { reportingService } from '../../api/reportingService';
 import { AppButton } from '../../components/common/AppButton';
@@ -20,11 +20,13 @@ import { useAuth } from '../../hooks/useAuth';
 import { useBills } from '../../hooks/useBills';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import { SkeletonCardRow, SkeletonList } from '../../components/common/SkeletonList';
 import { useSettingsStore } from '../../store';
 import { toDateSafe } from '../../utils/date';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { formatCurrency, formatDate, normalizeCurrencyCode } from '../../utils/formatters';
 import { shareBillPDF, shareSalesReportPDF } from '../../utils/pdfGenerator';
+
 
 type RangePreset = 'today' | '7d' | '30d' | 'all';
 type StatusPreset = 'all' | 'paid' | 'partial' | 'unpaid';
@@ -225,6 +227,18 @@ export const ReportsScreen = () => {
                     </AppCard>
                 </View>
             </ScreenWrapper>
+        );
+    }
+
+    if (loading) {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+                <PageHeaderCard title="Business Reports" />
+                <ScrollView contentContainerStyle={styles.content}>
+                    <SkeletonCardRow style={{ marginBottom: 20 }} />
+                    <SkeletonList count={10} />
+                </ScrollView>
+            </SafeAreaView>
         );
     }
 
@@ -467,6 +481,9 @@ export const ReportsScreen = () => {
 };
 
 const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
     centeredWrap: {
         flex: 1,
         justifyContent: 'center',
@@ -512,6 +529,7 @@ const styles = StyleSheet.create({
     },
     mainColumn: {
         flex: 1,
+        minWidth: 0,
     },
     sectionTitle: {
         fontWeight: '700',

@@ -4,6 +4,8 @@ import { transactions } from '../db/schema';
 import { eq, and, desc, ne } from 'drizzle-orm';
 import type { DbTransaction, NewDbTransaction } from '../types/db';
 
+export { DbTransaction, NewDbTransaction };
+
 export class BillRepository extends BaseRepository {
     async getAll(organizationId: string): Promise<DbTransaction[]> {
         return await db.select().from(transactions)
@@ -18,8 +20,10 @@ export class BillRepository extends BaseRepository {
 
     async create(transaction: NewDbTransaction) {
         const now = new Date().toISOString();
+        // ensure we always have a snapshot string; avoids undefined during sync
         const data = {
             ...transaction,
+            itemsSnapshot: transaction.itemsSnapshot ?? JSON.stringify([]),
             createdAt: now,
             updatedAt: now,
         };
@@ -67,6 +71,7 @@ export class BillRepository extends BaseRepository {
         const now = new Date().toISOString();
         const data = {
             ...transaction,
+            itemsSnapshot: transaction.itemsSnapshot ?? JSON.stringify([]),
             updatedAt: now,
         };
 

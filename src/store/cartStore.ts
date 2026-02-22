@@ -66,14 +66,18 @@ export const useCartStore = create<CartState>((set, get) => ({
         if (existingItem) {
             newItems = items.map(i => 
                 i.id === item.id 
-                    ? { ...i, quantity: i.quantity + 1 }
+                    ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * i.price }
                     : i
             );
         } else {
-            // For Purchase, we might want price to be purchasePrice. 
-            // But item object passed in likely has 'price' as selling price.
-            // We should handle this logic in UI before calling addItem.
-            newItems = [...items, { id: item.id, name: item.name, price: item.price, quantity: 1, tax: item.gstPercentage }];
+            newItems = [...items, {
+                id: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: 1,
+                tax: item.gstPercentage,
+                total: item.price
+            }];
         }
 
         const total = newItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
@@ -81,7 +85,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         set({ items: newItems, total, itemCount });
     },
 
-    addItemWithPrice: (item, price) => { // New helper for custom price (Purchase)
+    addItemWithPrice: (item, price) => {
         const { items } = get();
         const existingItem = items.find(i => i.id === item.id);
 
@@ -89,11 +93,18 @@ export const useCartStore = create<CartState>((set, get) => ({
         if (existingItem) {
             newItems = items.map(i =>
                 i.id === item.id
-                    ? { ...i, quantity: i.quantity + 1 } // Keep existing price? Or update? usually keep
+                    ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * i.price }
                     : i
             );
         } else {
-            newItems = [...items, { id: item.id, name: item.name, price: price, quantity: 1, tax: item.gstPercentage }];
+            newItems = [...items, {
+                id: item.id,
+                name: item.name,
+                price: price,
+                quantity: 1,
+                tax: item.gstPercentage,
+                total: price
+            }];
         }
 
         const total = newItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
@@ -114,7 +125,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         const newItems = items.map(i => {
             if (i.id === itemId) {
                 const newQty = Math.max(0, i.quantity + delta);
-                return { ...i, quantity: newQty };
+                return { ...i, quantity: newQty, total: newQty * i.price };
             }
             return i;
         }).filter(i => i.quantity > 0); 

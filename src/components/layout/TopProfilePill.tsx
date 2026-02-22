@@ -19,6 +19,7 @@ export const TopProfilePill: React.FC = () => {
 
     const [menuVisible, setMenuVisible] = React.useState(false);
     const [drawerVisible, setDrawerVisible] = React.useState(false);
+    const [orgMenuVisible, setOrgMenuVisible] = React.useState(false);
 
     const isOffline = isConnected === false || isInternetReachable === false;
 
@@ -128,14 +129,63 @@ export const TopProfilePill: React.FC = () => {
                     />
                 </View>
 
-                {/* Center Title / Greeting */}
-                <View style={{ flex: 1, paddingHorizontal: 12 }}>
-                    <Text variant="titleMedium" numberOfLines={1} style={{ fontWeight: '700', color: theme.colors.onSurface }}>
-                        {user?.businessName || 'Your Business'}
-                    </Text>
-                    <Text variant="labelSmall" numberOfLines={1} style={{ color: theme.colors.onSurfaceVariant }}>
-                        Hello, {user?.displayName?.split(' ')[0] || 'User'}
-                    </Text>
+                {/* Center Title / Org Switcher */}
+                <View style={styles.centerSection}>
+                    <Menu
+                        visible={orgMenuVisible}
+                        onDismiss={() => setOrgMenuVisible(false)}
+                        anchorPosition="bottom"
+                        contentStyle={[
+                            styles.menuContent,
+                            { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
+                        ]}
+                        anchor={
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Switch organization"
+                                onPress={() => setOrgMenuVisible(true)}
+                                style={[styles.orgPressable, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}
+                            >
+                                <Text
+                                    variant="titleSmall"
+                                    numberOfLines={1}
+                                    style={{ fontWeight: '700', color: theme.colors.onSurface }}
+                                >
+                                    {user?.businessName || 'Your Business'} ▾
+                                </Text>
+                                <Text
+                                    variant="labelSmall"
+                                    numberOfLines={1}
+                                    style={{ color: theme.colors.onSurfaceVariant }}
+                                >
+                                    Hello, {user?.displayName?.split(' ')[0] || 'User'}
+                                </Text>
+                            </Pressable>
+                        }
+                    >
+                        <Menu.Item
+                            leadingIcon="check-circle"
+                            title={user?.businessName || 'Current Organization'}
+                            titleStyle={{ fontWeight: '700' }}
+                            onPress={() => setOrgMenuVisible(false)}
+                        />
+                        <Menu.Item
+                            leadingIcon="swap-horizontal"
+                            title="Switch Organization"
+                            onPress={() => {
+                                setOrgMenuVisible(false);
+                                router.push('/org-select' as never);
+                            }}
+                        />
+                        <Menu.Item
+                            leadingIcon="domain-plus"
+                            title="Create Organization"
+                            onPress={() => {
+                                setOrgMenuVisible(false);
+                                router.push('/org-create' as never);
+                            }}
+                        />
+                    </Menu>
                 </View>
 
                 {/* Right Side: Notifications & Profile */}
@@ -253,6 +303,22 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        shadowColor: '#020617',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.15,
+        shadowRadius: 10,
+        elevation: 8,
+    },
+    centerSection: {
+        flex: 1,
+        marginHorizontal: 10,
+    },
+    orgPressable: {
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        borderRadius: 21,
+        borderWidth: 1,
+        justifyContent: 'center',
         shadowColor: '#020617',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.15,

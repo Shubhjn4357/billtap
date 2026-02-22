@@ -1,5 +1,5 @@
 import { apiClient } from './httpClient';
-import { offlineSyncService } from './offlineSyncService';
+import { offlineSyncService } from './syncService';
 import { isNetworkLikeError } from '../utils/errorGuards';
 import {
     getOrgCachedValue,

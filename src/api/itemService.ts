@@ -1,13 +1,13 @@
 import type { BillItem, Item } from '../types';
 import { apiClient } from './httpClient';
-import { offlineSyncService } from './offlineSyncService';
+import { offlineSyncService } from './syncService';
 import { isOnline } from '../utils/network';
 import { shouldThrowClientApiError } from '../utils/errorGuards';
 
 const toItem = (raw: Item): Item => ({
     ...raw,
-    nameLowercase: raw.nameLowercase ?? raw.name.toLowerCase(),
-    updatedAt: raw.updatedAt ?? new Date().toISOString(),
+    nameLowercase: (raw.nameLowercase && raw.nameLowercase.trim()) || raw.name.toLowerCase(),
+    updatedAt: raw.updatedAt || new Date().toISOString(),
 });
 
 export const itemService = {
@@ -18,46 +18,24 @@ export const itemService = {
             id: localId,
         });
 
+        // 1. If Online: Attempt direct creation
         const online = await isOnline();
         if (online) {
             try {
                 await offlineSyncService.flushQueue();
-                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/items', {
-                    id: localId,
-                    name: item.name,
-                    price: item.price,
-                    purchasePrice: item.purchasePrice,
-                    mrp: item.mrp,
-                    stock: item.stock,
-                    minimumStock: item.minimumStock,
-                    openingStock: item.openingStock,
-                    unit: item.unit,
-                    hsn: item.hsn,
-                    gstPercentage: item.gstPercentage,
-                    category: item.category,
-                    subcategory: item.subcategory,
-                    location: item.location,
-                    barcode: item.barcode,
-                    imageUrl: item.imageUrl,
-                    isActive: item.isActive,
-                });
-
-                if (!response.ok || !response.id) {
-                    throw new Error(response.message || 'Failed to add item.');
+                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/items', normalized);
+                if (response.ok && response.id) {
+                    const finalItem = toItem({ ...normalized, id: response.id });
+                    await offlineSyncService.upsertCachedItem(finalItem);
+                    return response.id;
                 }
-
-                await offlineSyncService.upsertCachedItem({
-                    ...normalized,
-                    id: response.id,
-                });
-                return response.id;
+                if (!response.ok) throw new Error(response.message || 'Failed to sync item.');
             } catch (error: unknown) {
-                if (shouldThrowClientApiError(error)) {
-                    throw error;
-                }
+                if (shouldThrowClientApiError(error)) throw error;
             }
         }
 
+        // 2. Offline Fallback
         await offlineSyncService.upsertCachedItem(normalized);
         await offlineSyncService.enqueueMutation({
             type: 'upsert_item',
@@ -84,6 +62,7 @@ export const itemService = {
 
         return localId;
     },
+
 
     async updateItem(id: string, updates: Partial<Item>): Promise<void> {
         const current = await this.getItem(id);

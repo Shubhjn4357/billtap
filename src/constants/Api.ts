@@ -2,7 +2,7 @@ export const API_CONFIG = {
     // Set your deployed API URL via EXPO_PUBLIC_API_BASE_URL.
     // In production builds, localhost is auto-replaced to avoid device-side dead endpoints.
     baseUrl: (() => {
-        const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
+        const isDev = typeof (global as any).__DEV__ !== 'undefined' ? (global as any).__DEV__ : process.env.NODE_ENV !== 'production';
         const developmentDefault = 'http://localhost:3000/api';
         const productionDefault = 'https://vahi-api.shubhamjain-com-in.workers.dev/api';
         const configured = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? '').trim();

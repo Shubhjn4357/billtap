@@ -15,7 +15,7 @@ describe('generateSalesReportHTML', () => {
                     userId: 'u1',
                     items: [{ id: '1', name: 'Pen', price: 10, quantity: 5 }],
                     total: 50,
-                    createdAt: new Date(2026, 1, 13),
+                    createdAt: new Date(2026, 1, 13).toISOString(),
                 },
             ],
         });

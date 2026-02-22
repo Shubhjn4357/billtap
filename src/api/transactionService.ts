@@ -2,7 +2,7 @@ import type { Transaction, TransactionType } from '../types';
 import { isOnline } from '../utils/network';
 import { isNetworkLikeError } from '../utils/errorGuards';
 import { apiClient } from './httpClient';
-import { offlineSyncService } from './offlineSyncService';
+import { offlineSyncService } from './syncService';
 
 type ReminderRow = {
     id: string;

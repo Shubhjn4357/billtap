@@ -1,11 +1,12 @@
+import { Platform } from 'react-native';
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { itemRepository } from '../repositories/itemRepository';
+import { itemService } from '../api/itemService';
 import { useStockStore } from '../store';
 import type { Item } from '../types';
 import { useAuth } from './useAuth';
 import { useDebouncedValue } from './useDebouncedValue';
-// import { isNetworkLikeError } from '../utils/errorGuards';
 import { randomUUID } from 'expo-crypto';
 import type { NewDbItem } from '../types/db';
 import { mapDbItemToAppItem } from '../utils/mappers';
@@ -47,16 +48,16 @@ export const useStock = () => {
         queryKey,
         queryFn: async (): Promise<Item[]> => {
             if (!user || !organizationId) return [];
-            // import { mapDbItemToAppItem } from '../utils/mappers'; // Moved to top
 
-            // ...
+            if (Platform.OS === 'web') {
+                return await itemService.getUserItems(user.uid);
+            }
 
             // Load from SQLite Repository
             const localItems = await itemRepository.getAll(organizationId);
             return sortItemsByName(localItems.map(mapDbItemToAppItem));
         },
         enabled: Boolean(user),
-        // Stale time can be short because it's local DB
         staleTime: 5000, 
         placeholderData: (previous) => previous,
     });
@@ -121,7 +122,11 @@ export const useStock = () => {
         setError(null);
         try {
             deleteFromStore(id);
-            await itemRepository.delete(id, organizationId);
+            if (Platform.OS === 'web') {
+                await itemService.deleteItem(id);
+            } else {
+                await itemRepository.delete(id, organizationId);
+            }
             invalidateStock();
         } catch (err: unknown) {
             const message = getErrorMessage(err);
@@ -161,10 +166,13 @@ export const useStock = () => {
                 createdAt: new Date().toISOString(),
             };
 
-            // Remove 'as any' since types should match NewDbItem
-            await itemRepository.create(fullItem);
+            if (Platform.OS === 'web') {
+                await itemService.addItem(itemPayload as any);
+            } else {
+                await itemRepository.create(fullItem);
+            }
 
-            addToStore(fullItem as any); // Store might still use Item interface, keep cast for store if needed or update store types later
+            addToStore(fullItem as any);
             invalidateStock();
         } catch (err: unknown) {
             const message = getErrorMessage(err);
@@ -209,7 +217,11 @@ export const useStock = () => {
                 createdAt: originalItem.createdAt ? new Date(originalItem.createdAt).toISOString() : new Date().toISOString(),
             };
 
-            await itemRepository.update(mergedItem.id, mergedItem);
+            if (Platform.OS === 'web') {
+                await itemService.updateItem(id, updates as any);
+            } else {
+                await itemRepository.update(mergedItem.id, mergedItem);
+            }
             updateInStore(id, mergedItem as any);
             invalidateStock();
         } catch (err: unknown) {
@@ -254,7 +266,11 @@ export const useStock = () => {
                     updatedAt: new Date().toISOString()
                 };
 
-                await itemRepository.update(updatedItem.id, updatedItem);
+                if (Platform.OS === 'web') {
+                    await itemService.updateStock(id, qty, type, reason);
+                } else {
+                    await itemRepository.update(updatedItem.id, updatedItem);
+                }
                 updateInStore(id, { stock: nextStock });
             }
             invalidateStock();

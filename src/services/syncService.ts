@@ -179,9 +179,28 @@ class SyncService {
         await this.processItem(item.action as SyncActionType, payload);
 
         await db.delete(syncQueue).where(eq(syncQueue.id, item.id));
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Failed to process sync item ${item.id}`, error);
-        // Increment retry or keep pending
+
+        const errorMessage = String(error?.message || error || '').toLowerCase();
+
+        // If the server says it already exists, we can safely remove it from our local queue
+        // to unblock the rest of the sync.
+        if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
+          console.log(`Discarding sync item ${item.id} because it already exists on server.`);
+          await db.delete(syncQueue).where(eq(syncQueue.id, item.id)).catch(err => console.error('Delete failed:', err));
+        } else {
+          // Mark as FAILED to prevent infinite recursion in the same sync cycle.
+          // It can be retried later or fixed manually.
+          await db.update(syncQueue)
+            .set({
+              status: 'FAILED',
+              updatedAt: new Date().toISOString(),
+              retryCount: (item.retryCount || 0) + 1
+            })
+            .where(eq(syncQueue.id, item.id))
+            .catch(err => console.error('Update failed:', err));
+        }
       }
     }
 
@@ -230,14 +249,51 @@ class SyncService {
 
       case 'CREATE_TRANSACTION': {
         const payload = data as NewDbTransaction;
-        // Prepare payload for API (remove internal fields if any)
-        // The API likely expects 'items' array which we have in data
-        await apiClient.post('/transactions', payload);
+        // The backend expects a top‑level `items` array, whereas locally
+        // we store a JSON string in `itemsSnapshot`.  Convert now and
+        // guarantee we never send undefined.
+        let itemsArray: unknown[] = [];
+        try {
+          itemsArray = payload.itemsSnapshot ? JSON.parse(payload.itemsSnapshot) : [];
+        } catch {
+          itemsArray = [];
+        }
+        const apiPayload = {
+          ...payload,
+          items: Array.isArray(itemsArray)
+            ? itemsArray.map((i: any) => ({
+              ...i,
+              total: typeof i.total === 'number' ? i.total : (i.price * i.quantity) || 0
+            }))
+            : [],
+        } as any;
+        // drop our internal snapshot field so the server doesn’t complain
+        delete apiPayload.itemsSnapshot;
+
+        await apiClient.post('/transactions', apiPayload);
         break;
       }
       case 'UPDATE_TRANSACTION': {
         const payload = data as Partial<NewDbTransaction> & { id: string };
-        await apiClient.put(`/transactions/${payload.id}`, payload);
+        let itemsArray: unknown[] = [];
+        try {
+          if (payload.itemsSnapshot) {
+            itemsArray = JSON.parse(payload.itemsSnapshot as string);
+          }
+        } catch {
+          itemsArray = [];
+        }
+        const apiPayload: any = {
+          ...payload,
+          items: Array.isArray(itemsArray)
+            ? itemsArray.map((i: any) => ({
+              ...i,
+              total: typeof i.total === 'number' ? i.total : (i.price * i.quantity) || 0
+            }))
+            : [],
+        };
+        delete apiPayload.itemsSnapshot;
+        await apiClient.put(`/transactions/${payload.id}`, apiPayload);
         break;
       }
       case 'DELETE_TRANSACTION': {

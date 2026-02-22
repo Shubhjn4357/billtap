@@ -1,6 +1,6 @@
 import type { UserProfile } from '../types';
 import { apiClient, ApiError } from './httpClient';
-import { offlineSyncService } from './offlineSyncService';
+import { offlineSyncService } from './syncService';
 import { clearSessionToken, getSessionToken, setSessionToken } from './session';
 
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';

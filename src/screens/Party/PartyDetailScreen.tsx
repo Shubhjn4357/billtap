@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, useTheme, SegmentedButtons, Avatar, IconButton, TextInput, List } from 'react-native-paper';
+import { Text, useTheme, SegmentedButtons, Avatar, IconButton, TextInput } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppCard } from '../../components/common/AppCard';
@@ -206,10 +206,10 @@ export const PartyDetailScreen = () => {
                             />
                         </View>
 
-                        <List.AccordionGroup>
+                       
                             <AppCard style={styles.sectionCard}>
-                                <List.Accordion title="Party Type" id="1" left={props => <List.Icon {...props} icon="account-group" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                    <View style={styles.accordionContent}>
+                                
+                                    <View style={styles.inputContent}>
                                         <SegmentedButtons
                                             value={form.type}
                                             onValueChange={(val) => setForm({ ...form, type: val as PartyType })}
@@ -221,12 +221,9 @@ export const PartyDetailScreen = () => {
                                             density="medium"
                                         />
                                     </View>
-                                </List.Accordion>
-                            </AppCard>
+                             
 
-                            <AppCard style={styles.sectionCard}>
-                                <List.Accordion title="Contact Details" id="2" left={props => <List.Icon {...props} icon="card-account-phone-outline" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                    <View style={styles.accordionContent}>
+                             <View style={styles.inputContent}>
                                         <AppInput
                                             label="Name"
                                             value={form.name}
@@ -249,13 +246,8 @@ export const PartyDetailScreen = () => {
                                             autoCapitalize="none"
                                             left={<TextInput.Icon icon="email" />}
                                         />
-                                    </View>
-                                </List.Accordion>
-                            </AppCard>
-
-                            <AppCard style={styles.sectionCard}>
-                                <List.Accordion title="Tax & Billing" id="3" left={props => <List.Icon {...props} icon="receipt" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                    <View style={styles.accordionContent}>
+                                        </View>
+                                <View style={styles.inputContent}>
                                         <AppInput
                                             label="GST Number (Optional)"
                                             value={form.gstNumber}
@@ -273,9 +265,9 @@ export const PartyDetailScreen = () => {
                                             left={<TextInput.Icon icon="map-marker" />}
                                         />
                                     </View>
-                                </List.Accordion>
+                               
                             </AppCard>
-                        </List.AccordionGroup>
+                        
 
                         <View style={styles.actions}>
                             <AppButton
@@ -341,10 +333,7 @@ const styles = StyleSheet.create({
         padding: 0,
         overflow: 'hidden',
     },
-    accordionHeader: {
-        backgroundColor: 'transparent',
-    },
-    accordionContent: {
+    inputContent: {
         paddingHorizontal: DesignSystem.spacing.md,
         paddingBottom: DesignSystem.spacing.md,
     },

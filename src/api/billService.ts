@@ -1,18 +1,21 @@
-import type { Bill, Transaction, TransactionItem } from '../types';
+import type { Bill, BillItem, Transaction, TransactionType } from '../types';
 import { isOnline } from '../utils/network';
 import { apiClient } from './httpClient';
-import { offlineSyncService } from './offlineSyncService';
+import { offlineSyncService } from './syncService';
 
-export interface StoredBill extends Bill {
-    createdAt: string | Date | number;
-}
+export type StoredBill = Bill & {
+    id: string;
+    userId: string;
+    createdAt: string;
+    total: number;
+    items: BillItem[];
+};
 
 /**
  * CachedBill — what offlineSyncService.upsertCachedBill actually writes.
- * Extends StoredBill with runtime payment, tax, and type fields that are
- * included when a bill is saved locally but not part of the base Bill type.
  */
-export interface CachedBill extends StoredBill {
+export type CachedBill = StoredBill & {
+    type?: TransactionType;
     paymentStatus?: 'PAID' | 'PARTIAL' | 'PENDING';
     paidAmount?: number;
     dueAmount?: number;
@@ -20,7 +23,9 @@ export interface CachedBill extends StoredBill {
     taxAmount?: number;
     partyId?: string;
     partyName?: string;
-}
+    customerName?: string;
+    billNumber?: string;
+};
 
 type ServerTransaction = Transaction & {
     billDate?: string | Date;
@@ -42,40 +47,25 @@ const toIso = (value: RawDate, fallback: string): string => {
     return fallback;
 };
 
-const toTransactionItem = (item: Bill['items'][number]): TransactionItem => {
-    const tax = Number(item.tax ?? 0);
-    const total = Number(item.total ?? item.price * item.quantity);
-    return {
-        id: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        tax,
-        total,
-    };
-};
 
-const toStoredBill = (entry: ServerTransaction): StoredBill => ({
-    id: entry.id,
-    userId: entry.userId,
-    billNumber: entry.billNumber,
-    customerName: entry.partyName ?? undefined,
-    customerPhone: entry.partyPhone ?? undefined,
-    businessName: undefined,
-    businessAddress: undefined,
-    gstNumber: undefined,
-    currency: entry.currency ?? 'INR',
-    items: (entry.items ?? []).map((line) => ({
-        id: line.id,
-        name: line.name,
-        quantity: line.quantity,
-        price: line.price,
-        tax: line.tax,
-        total: line.total,
-    })),
-    total: Number(entry.totalAmount ?? 0),
-    createdAt: entry.billDate ?? entry.createdAt ?? new Date().toISOString(),
-});
+const toStoredBill = (entry: ServerTransaction): StoredBill => {
+    const createdAt = toIso(entry.createdAt ?? entry.billDate, new Date().toISOString());
+    return {
+        ...entry,
+        id: entry.id,
+        userId: entry.userId,
+        billNumber: entry.billNumber,
+        customerName: entry.partyName ?? undefined,
+        customerPhone: entry.partyPhone ?? undefined,
+        businessName: undefined,
+        businessAddress: undefined,
+        gstNumber: undefined,
+        currency: entry.currency ?? 'INR',
+        items: entry.items ?? [],
+        total: Number(entry.totalAmount ?? 0),
+        createdAt,
+    } as StoredBill;
+};
 
 export const billService = {
     async createBill(bill: Omit<Bill, 'createdAt' | 'id'>): Promise<string> {
@@ -83,72 +73,16 @@ export const billService = {
         const createdAt = new Date().toISOString();
         const billDate = toIso(bill.billDate, createdAt);
         const totalAmount = Number(bill.total ?? 0);
+        const taxAmount = bill.items.reduce((sum, item) => sum + ((item.price * item.quantity * (item.tax || 0)) / 100), 0);
         const paymentMode: 'CASH' | 'CREDIT' = bill.paymentMode ?? 'CASH';
         const paidAmount = paymentMode === 'CREDIT' ? 0 : totalAmount;
         const paymentStatus: 'PAID' | 'PARTIAL' | 'PENDING' = paidAmount >= totalAmount
             ? 'PAID'
             : (paidAmount > 0 ? 'PARTIAL' : 'PENDING');
 
-        const online = await isOnline();
-        if (online) {
-            try {
-                await offlineSyncService.flushQueue();
-                const saleItems = bill.items.map(toTransactionItem);
-                const billMode = bill.billMode ?? 'GST';
-                const taxAmount = saleItems.reduce((sum, line) => {
-                    const taxable = line.quantity * line.price;
-                    return sum + (taxable * line.tax) / 100;
-                }, 0);
-                const resolvedTaxAmount = Number(bill.taxAmount ?? taxAmount);
-
-                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/transactions', {
-                    id: generatedId,
-                    type: bill.type ?? 'SALE',
-                    partyId: bill.partyId,
-                    partyName: bill.customerName,
-                    partyPhone: bill.customerPhone,
-                    billNumber: bill.billNumber,
-                    billDate,
-                    businessName: bill.businessName,
-                    businessAddress: bill.businessAddress,
-                    gstNumber: bill.gstNumber,
-                    items: saleItems,
-                    totalAmount,
-                    discountAmount: 0,
-                    taxAmount: resolvedTaxAmount,
-                    paidAmount,
-                    paymentMode,
-                    paymentStatus,
-                    billMode,
-                    affectsGst: billMode === 'GST',
-                    currency: bill.currency ?? 'INR',
-                });
-                if (!response.ok || !response.id) {
-                    throw new Error(response.message || 'Failed to create bill.');
-                }
-
-                await offlineSyncService.upsertCachedBill({
-                    ...bill,
-                    id: response.id,
-                    total: totalAmount,
-                    paidAmount,
-                    dueAmount: Math.max(0, totalAmount - paidAmount),
-                    paymentStatus,
-                    paymentMode,
-                    taxAmount: resolvedTaxAmount,
-                    billDate,
-                    createdAt,
-                });
-                return response.id;
-            } catch {
-                // Fall back to offline queue below.
-            }
-        }
-
-        await offlineSyncService.applyLocalBillStock(bill.items, bill.type ?? 'SALE');
-
-        await offlineSyncService.upsertCachedBill({
+        const offlineBill: CachedBill = {
             ...bill,
+            userId: '', // Should be filled if known, but creation will use context
             id: generatedId,
             total: totalAmount,
             billDate,
@@ -156,37 +90,47 @@ export const billService = {
             dueAmount: Math.max(0, totalAmount - paidAmount),
             paymentStatus,
             paymentMode,
+            taxAmount,
             createdAt,
-        });
+        } as CachedBill;
+
+        // 1. If Online: Attempt direct creation to get server ID
+        if (await isOnline()) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/transactions', {
+                    ...offlineBill,
+                    partyName: offlineBill.customerName,
+                    partyPhone: offlineBill.customerPhone,
+                    totalAmount: offlineBill.total,
+                });
+
+                if (response.ok && response.id) {
+                    const finalBill = { ...offlineBill, id: response.id };
+                    await offlineSyncService.upsertCachedBill(finalBill);
+                    return response.id;
+                }
+                if (!response.ok) throw new Error(response.message || 'Failed to create bill');
+            } catch (error: unknown) {
+                // If it's a structural error (4xx), throw it.
+                // If it's a network error, fall through to offline path.
+                if (error instanceof Error && (error as any).status >= 400 && (error as any).status < 500) {
+                    throw error;
+                }
+            }
+        }
+
+        // 2. Offline Fallback
+        await offlineSyncService.upsertCachedBill(offlineBill);
+        await offlineSyncService.applyLocalBillStock(bill.items, bill.type ?? 'SALE');
         await offlineSyncService.enqueueMutation({
             type: 'create_bill',
-            payload: {
-                id: generatedId,
-                type: bill.type,
-                partyId: bill.partyId,
-                customerName: bill.customerName,
-                customerPhone: bill.customerPhone,
-                businessName: bill.businessName,
-                businessAddress: bill.businessAddress,
-                gstNumber: bill.gstNumber,
-                currency: bill.currency,
-                billNumber: bill.billNumber,
-                billDate,
-                billMode: bill.billMode ?? 'GST',
-                items: bill.items,
-                total: totalAmount,
-                taxAmount: Number(bill.taxAmount ?? 0),
-                paidAmount,
-                paymentMode,
-                paymentStatus,
-                dueDate: null,
-                reminderEnabled: false,
-                createdAt,
-            },
+            payload: offlineBill as any,
         });
 
         return generatedId;
     },
+
 
     async createBillWithStockValidation(bill: Omit<Bill, 'createdAt' | 'id'>): Promise<string> {
         return await this.createBill(bill);

@@ -11,21 +11,21 @@ describe('calculateBillStats', () => {
                 userId: 'u',
                 items: [],
                 total: 100,
-                createdAt: new Date(2026, 1, 13, 10, 0, 0),
+                createdAt: new Date(2026, 1, 13, 10, 0, 0).toISOString(),
             },
             {
                 id: '2',
                 userId: 'u',
                 items: [],
                 total: 200,
-                createdAt: new Date(2026, 1, 10, 10, 0, 0),
+                createdAt: new Date(2026, 1, 10, 10, 0, 0).toISOString(),
             },
             {
                 id: '3',
                 userId: 'u',
                 items: [],
                 total: 50,
-                createdAt: new Date(2026, 0, 30, 10, 0, 0),
+                createdAt: new Date(2026, 0, 30, 10, 0, 0).toISOString(),
             },
         ];
 

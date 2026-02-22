@@ -18,7 +18,7 @@ import { randomUUID } from 'expo-crypto';
 import type { TransactionItem, Party, Item } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 // import { transactionService } from '../../api/transactionService';
-// import { offlineSyncService } from '../../api/offlineSyncService';
+// import { offlineSyncService } from '../../api/syncService';
 import type { NewDbTransaction } from '../../types/db';
 import { taskNotificationService } from '../../services/taskNotificationService';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';

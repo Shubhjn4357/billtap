@@ -70,19 +70,19 @@ export const DEFAULT_APP_MODULE_ACCESS: AppModuleAccessMap = {
     billingSale: true,
     billingPurchase: true,
     stock: true,
-    reports: false,
-    settings: false,
-    parties: false,
-    payments: false,
-    expenses: false,
-    templates: false,
-    staff: false,
-    subscription: false,
-    messages: false,
-    businessCards: false,
-    accounting: false,
-    operations: false,
-    businessSuite: false,
+    reports: true,
+    settings: true,
+    parties: true,
+    payments: true,
+    expenses: true,
+    templates: true,
+    staff: true,
+    subscription: true,
+    messages: true,
+    businessCards: true,
+    accounting: true,
+    operations: true,
+    businessSuite: true,
     admin: false,
 };
 
@@ -151,10 +151,18 @@ export const useOrganizationAccess = () => {
         return Object.keys(direct).length > 0 || Object.keys(legacy).length > 0;
     }, [organizationSettings]);
 
+    const hasExplicitPermissions = useMemo(
+        () => Object.keys(organizationPermissions).length > 0,
+        [organizationPermissions]
+    );
+
     const canByPermission = useCallback((permissionKey: string): boolean => {
         if (isOwnerOrAdmin) return true;
+        // If no explicit permissions have been configured, allow access by default
+        // (solo user / fresh setup scenario)
+        if (!hasExplicitPermissions) return true;
         return Boolean(organizationPermissions[permissionKey]);
-    }, [isOwnerOrAdmin, organizationPermissions]);
+    }, [hasExplicitPermissions, isOwnerOrAdmin, organizationPermissions]);
 
     const canByFeature = useCallback((featureKey: StaffFeatureKey): boolean => {
         if (isOwnerOrAdmin) return true;

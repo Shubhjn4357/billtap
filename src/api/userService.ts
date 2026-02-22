@@ -2,7 +2,7 @@ import { useUserStore } from '../store';
 import type { UserProfile } from '../types';
 import { isOnline } from '../utils/network';
 import { apiClient } from './httpClient';
-import { offlineSyncService } from './offlineSyncService';
+import { offlineSyncService } from './syncService';
 import { shouldThrowClientApiError } from '../utils/errorGuards';
 
 const getLocalMergedUser = (payload: Partial<UserProfile>): UserProfile | null => {

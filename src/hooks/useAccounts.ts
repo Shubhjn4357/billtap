@@ -1,5 +1,7 @@
+import { Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { accountRepository } from '../repositories/accountRepository';
+import { accountingService } from '../api/accountingService';
 import { useOrganizationStore } from '../store';
 import type { NewDbAccount } from '../types/db';
 import type { AccountType } from '../types';
@@ -12,6 +14,11 @@ export const useAccounts = () => {
         queryKey: ['accounts', organizationId],
         queryFn: async () => {
             if (!organizationId) return [];
+
+            if (Platform.OS === 'web') {
+                return await accountingService.getAccounts();
+            }
+
             const data = await accountRepository.getAll(organizationId);
             return data.map(acc => ({
                 ...acc,
@@ -24,7 +31,18 @@ export const useAccounts = () => {
     });
 
     const createAccount = useMutation({
-        mutationFn: (account: NewDbAccount) => accountRepository.create(account),
+        mutationFn: async (account: NewDbAccount) => {
+            if (Platform.OS === 'web') {
+                return await accountingService.createAccount({
+                    code: (account as any).code || '',
+                    name: account.name,
+                    type: account.type as AccountType,
+                    isActive: account.isActive ?? true,
+                });
+            }
+            const result = await accountRepository.create(account);
+            return typeof result === 'string' ? result : '';
+        },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['accounts', organizationId] });
         },

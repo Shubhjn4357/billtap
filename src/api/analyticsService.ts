@@ -1,7 +1,7 @@
 import type { AnalyticsEvent, AnalyticsEventType } from '../types';
 import { isOnline } from '../utils/network';
 import { apiClient } from './httpClient';
-import { offlineSyncService } from './offlineSyncService';
+import { offlineSyncService } from './syncService';
 import { shouldThrowClientApiError } from '../utils/errorGuards';
 
 type AnalyticsPayload = {

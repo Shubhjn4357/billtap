@@ -12,7 +12,7 @@ import * as Updates from 'expo-updates';
 
 import { authService } from '../src/api/authService';
 import { ApiError } from '../src/api/httpClient';
-import { offlineSyncService } from '../src/api/offlineSyncService';
+import { offlineSyncService } from '../src/api/syncService';
 import { paymentReminderService } from '../src/services/paymentReminderService';
 import {
     registerBackgroundSync as registerBgSync,
@@ -72,7 +72,10 @@ export default function RootLayout() {
     const userId = user?.uid;
     const userSubscriptionStatus = user?.subscriptionStatus;
 
+    const isWeb = Platform.OS === 'web';
     const { success: migrationSuccess, error: migrationError } = useMigrations(db, migrations);
+
+    const effectiveMigrationSuccess = isWeb ? true : migrationSuccess;
 
     useEffect(() => {
         const originalAlert = Alert.alert;
@@ -154,16 +157,17 @@ export default function RootLayout() {
                     return;
                 }
 
-                // Start background sync now that auth is confirmed
-                syncService.startSync();
-                void syncService.registerBackgroundSync();
-                startForegroundSync(60_000);
-                void registerBgSync();
-                // Notifications
-                void requestNotificationPermissions().then(async (granted) => {
-                    if (granted) await registerAndroidChannels();
-                });
-                // ... rest of the code ...
+                if (!isWeb) {
+                    // Start background sync now that auth is confirmed
+                    syncService.startSync();
+                    void syncService.registerBackgroundSync();
+                    startForegroundSync(120_000);
+                    void registerBgSync();
+                    // Notifications permissions
+                    void requestNotificationPermissions().then(async (granted) => {
+                        if (granted) await registerAndroidChannels();
+                    });
+                }
 
                 const profileCurrency = normalizeCurrencyCode(profile.currency ?? Config.defaultCurrency);
                 setUser({
@@ -171,7 +175,8 @@ export default function RootLayout() {
                     currency: profileCurrency,
                 });
                 setCurrency(profileCurrency);
-                void offlineSyncService.flushQueue().catch(() => {
+                void offlineSyncService.flushQueue().catch((error) => {
+                    console.log({ "que": error })
                     // Ignore transient sync failures during bootstrap.
                 });
             } catch (error: unknown) {
@@ -212,7 +217,7 @@ export default function RootLayout() {
             isMounted = false;
             stopForegroundSync();
         };
-    }, [setCurrency, setLoading, setUser, settingsHydrated, userHydrated]);
+    }, [isWeb, setCurrency, setLoading, setUser, settingsHydrated, userHydrated]);
 
     // Handle subscription expiration
     useEffect(() => {
@@ -317,8 +322,8 @@ export default function RootLayout() {
     }, []);
 
     // Show loading screen while fonts load or auth is bootstrapping
-    if (!loaded || !userHydrated || !settingsHydrated || !startupReady || !migrationSuccess) {
-        const errorMsg = migrationError ? `Migration Error: ${migrationError.message}` : undefined;
+    if (!loaded || !userHydrated || !settingsHydrated || !startupReady || !effectiveMigrationSuccess) {
+        const errorMsg = migrationError && !isWeb ? `Migration Error: ${migrationError.message}` : undefined;
         return (
             <AppThemeProvider>
                 <LoadingScreen message={errorMsg} />
@@ -326,27 +331,35 @@ export default function RootLayout() {
         );
     }
 
+    const content = (
+        <AppQueryProvider>
+            <DialogProvider>
+                <Stack>
+                    <Stack.Screen name="index" options={{ headerShown: false }} />
+                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                    <Stack.Screen name="(main)" options={{ headerShown: false }} />
+                    <Stack.Screen name="about" options={{ headerShown: true, title: STACK_ROUTE_TITLES.about }} />
+                    <Stack.Screen name="changelog" options={{ headerShown: true, title: STACK_ROUTE_TITLES.changelog }} />
+                    <Stack.Screen name="terms" options={{ title: STACK_ROUTE_TITLES.terms }} />
+                    <Stack.Screen name="privacy" options={{ title: STACK_ROUTE_TITLES.privacy }} />
+                    <Stack.Screen name="sitemap" options={{ title: STACK_ROUTE_TITLES.sitemap }} />
+                    <Stack.Screen name="+not-found" />
+                </Stack>
+            </DialogProvider>
+        </AppQueryProvider>
+    );
+
     return (
         <AppThemeProvider>
-            <SQLiteProvider
-                databaseName="vahi.db"
-                options={{ enableChangeListener: true }}>
-            <AppQueryProvider>
-                <DialogProvider>
-                    <Stack>
-                        <Stack.Screen name="index" options={{ headerShown: false }} />
-                        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                        <Stack.Screen name="(main)" options={{ headerShown: false }} />
-                        <Stack.Screen name="about" options={{ headerShown: true, title: STACK_ROUTE_TITLES.about }} />
-                        <Stack.Screen name="changelog" options={{ headerShown: true, title: STACK_ROUTE_TITLES.changelog }} />
-                        <Stack.Screen name="terms" options={{ title: STACK_ROUTE_TITLES.terms }} />
-                        <Stack.Screen name="privacy" options={{ title: STACK_ROUTE_TITLES.privacy }} />
-                        <Stack.Screen name="sitemap" options={{ title: STACK_ROUTE_TITLES.sitemap }} />
-                        <Stack.Screen name="+not-found" />
-                    </Stack>
-                </DialogProvider>
-            </AppQueryProvider>
-            </SQLiteProvider>
+            {!isWeb ? (
+                <SQLiteProvider
+                    databaseName="vahi.db"
+                    options={{ enableChangeListener: true }}>
+                    {content}
+                </SQLiteProvider>
+            ) : (
+                content
+            )}
         </AppThemeProvider>
     );
 }

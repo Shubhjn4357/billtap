@@ -2,7 +2,7 @@ import type { Party } from '../types';
 import { isOnline } from '../utils/network';
 import { isNetworkLikeError } from '../utils/errorGuards';
 import { apiClient } from './httpClient';
-import { offlineSyncService } from './offlineSyncService';
+import { offlineSyncService } from './syncService';
 
 type PartyCreatePayload = Omit<Party, 'id' | 'userId' | 'createdAt' | 'updatedAt'> & {
     id?: string;
@@ -86,54 +86,46 @@ export const partyService = {
             isActive: payload.isActive ?? true,
         };
 
-        if (await isOnline()) {
-            try {
-                await offlineSyncService.flushQueue();
-                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>(
-                    '/parties',
-                    normalizedPayload
-                );
-                if (!response.ok || !response.id) {
-                    throw new Error(response.message || 'Failed to create party.');
-                }
-
-                const nextParty = mergeParty(undefined, response.id, {
-                    ...normalizedPayload,
-                    id: response.id,
-                    userId: normalizedPayload.userId ?? '',
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                });
-                await offlineSyncService.upsertCachedParty(nextParty);
-                return response.id;
-            } catch (error: unknown) {
-                if (!isNetworkLikeError(error)) {
-                    throw error;
-                }
-            }
-        }
-
         const nextParty = mergeParty(undefined, localId, {
             ...normalizedPayload,
             userId: normalizedPayload.userId ?? '',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         });
+
+        // 1. Local-first
+        await offlineSyncService.upsertCachedParty(nextParty);
+
+        // 2. Queue mutation
+        // 1. If Online: Attempt direct creation
+        if (await isOnline()) {
+            try {
+                await offlineSyncService.flushQueue();
+                const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/parties', {
+                    ...nextParty,
+                    id: localId,
+                });
+                if (response.ok && response.id) {
+                    const finalParty = normalizeParty({ ...nextParty, id: response.id });
+                    await offlineSyncService.upsertCachedParty(finalParty);
+                    return response.id;
+                }
+                if (!response.ok) throw new Error(response.message || 'Failed to sync party.');
+            } catch (error: unknown) {
+                if (!isNetworkLikeError(error)) throw error;
+            }
+        }
+
+        // 2. Offline Fallback
         await offlineSyncService.upsertCachedParty(nextParty);
         await offlineSyncService.enqueueMutation({
             type: 'upsert_party',
             payload: {
+                ...nextParty,
                 id: localId,
-                userId: nextParty.userId,
-                name: nextParty.name,
-                type: nextParty.type,
-                phone: nextParty.phone,
-                email: nextParty.email,
-                address: nextParty.address,
-                gstNumber: nextParty.gstNumber,
-                isActive: nextParty.isActive,
             },
         });
+
         return localId;
     },
 

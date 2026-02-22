@@ -187,6 +187,8 @@ export interface Transaction {
     reminderFrequencyDays?: number;
     nextReminderAt?: FirestoreDate | null;
     lastReminderAt?: FirestoreDate | null;
+    billingAddress?: string;
+    deliveryAddress?: string;
     currency: string;
     remark?: string;
     createdAt?: FirestoreDate;
@@ -232,6 +234,8 @@ export interface Bill {
     igstAmount?: number;
     items: BillItem[];
     total: number;
+    billingAddress?: string;
+    deliveryAddress?: string;
     createdAt: FirestoreDate;
 }
 

@@ -4,7 +4,7 @@ import { Animated, Dimensions, Pressable, StyleSheet, View } from 'react-native'
 import { Surface, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const BOTTOM_PADDING = 10;
-const DOT_SIZE = 40; // width of the active background pill
+const DOT_SIZE = 60; // width of the active background pill
 
 export const AnimatedTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation }) => {
     const theme = useTheme();
@@ -132,10 +132,11 @@ const styles = StyleSheet.create({
     },
     activePill: {
         position: 'absolute',
-        top: 10,
+        top: 5,
         width: DOT_SIZE,
-        height: 40,
-        borderRadius: 20,
+        height: 50,
+        paddingTop:10,
+        borderRadius: 10,
         zIndex: 0,
     },
     tabLabel: {

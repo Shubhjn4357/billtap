@@ -116,21 +116,6 @@ export const StockListScreen = () => {
         return items.filter((item) => (stockMetaById.get(item.id)?.health ?? 'in') === 'out');
     }, [items, stockMetaById, stockScope]);
 
-    const attentionItems = useMemo(() => {
-        return items
-            .filter((item) => (stockMetaById.get(item.id)?.health ?? 'in') !== 'in')
-            .sort((a, b) => {
-                const rank = (entry: Item) => {
-                    const health = stockMetaById.get(entry.id)?.health ?? 'in';
-                    if (health === 'out') return 0;
-                    if (health === 'low') return 1;
-                    return 2;
-                };
-                return rank(a) - rank(b);
-            })
-            .slice(0, 6);
-    }, [items, stockMetaById]);
-
     const getStockStatus = useCallback((item: Item) => {
         const meta = stockMetaById.get(item.id);
         const health = meta?.health ?? getStockHealth(item);
@@ -241,152 +226,110 @@ export const StockListScreen = () => {
             ) : (
                 <View style={styles.content}>
                     <View style={[styles.contentInner, useWideWorkspace && styles.contentInnerWide]}>
-                        <PageHeaderCard
-                            title="Inventory"
-                            subtitle={`${items.length} items tracked`}
-                            right={(
-                                <AppButton mode="contained" icon="plus" onPress={() => router.push('/item/new')}>
-                                    Add New
-                                </AppButton>
-                            )}
-                        />
-                        <AppCard animationDelay={40} style={{ backgroundColor: theme.colors.primaryContainer }}>
-                            <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
-                                Inventory
-                            </Text>
-                            <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer }}>
-                                {items.length} item(s) | {inventoryStats.lowStock} low | {inventoryStats.outOfStock} out
-                            </Text>
-                            <Text variant="titleSmall" style={{ color: theme.colors.onPrimaryContainer, marginTop: 6, fontWeight: '700' }}>
-                                Stock Value: {formatCurrency(inventoryStats.stockValue, activeCurrency)}
-                            </Text>
-                            <View style={styles.heroChipRow}>
-                                <Chip compact style={{ backgroundColor: theme.colors.surface }}>In stock: {inventoryStats.inStock}</Chip>
-                                <Chip compact style={{ backgroundColor: theme.colors.surface }}>Low: {inventoryStats.lowStock}</Chip>
-                                <Chip compact style={{ backgroundColor: theme.colors.surface }}>Out: {inventoryStats.outOfStock}</Chip>
-                            </View>
-                        </AppCard>
-
-                        <View style={styles.searchRow}>
-                                <Searchbar
-                                    placeholder="Search by name or barcode"
-                                    onChangeText={setSearchQuery}
-                                    value={searchQuery}
-                                    style={[styles.searchInput, { backgroundColor: theme.colors.surfaceVariant }]}
-                                    inputStyle={{ minHeight: 0 }}
-                                    elevation={0}
-                                />
-                                <IconButton
-                                icon="barcode-scan"
-                                    mode="contained"
-                                    containerColor={theme.colors.secondaryContainer}
-                                    iconColor={theme.colors.onSecondaryContainer}
-                                    size={28}
-                                onPress={() => router.push({ pathname: '/scan', params: { target: 'stock' } })}
-                                style={styles.scanAction}
-                                />
-                        </View>
-                        {searchPending && (
-                            <Text variant="labelSmall" style={{ marginBottom: 8, color: theme.colors.outline }}>
-                                Updating search...
-                            </Text>
-                        )}
-
-                        <SegmentedButtons
-                            value={stockScope}
-                            onValueChange={(value) => setStockScope(value as StockScope)}
-                            buttons={[
-                                { value: 'all', label: 'All' },
-                                { value: 'in', label: 'In Stock' },
-                                { value: 'low', label: 'Low Stock' },
-                                { value: 'out', label: 'Out of Stock' },
-                            ]}
-                            style={styles.scopeSelector}
-                                density="medium"
-                        />
-
-                        {loading ? (
-                            <View>
-                                {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} height={80} style={{ marginBottom: 12 }} />)}
-                            </View>
-                        ) : (
-                            <View style={[styles.workspaceGrid, useWideWorkspace && styles.workspaceGridWide]}>
-                                <View style={[styles.listPane, useWideWorkspace && styles.listPaneWide]}>
-                                    <FlatList
-                                        data={scopedItems}
-                                        keyExtractor={item => item.id}
-                                        renderItem={renderItem}
-                                        refreshControl={
-                                            <AppRefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />
-                                        }
-                                        keyboardShouldPersistTaps="handled"
-                                        initialNumToRender={12}
-                                        maxToRenderPerBatch={8}
-                                        windowSize={5}
-                                        updateCellsBatchingPeriod={50}
-                                        removeClippedSubviews={Platform.OS !== 'web'}
-                                        getItemLayout={(_, index) => ({
-                                            length: STOCK_ROW_HEIGHT,
-                                            offset: STOCK_ROW_HEIGHT * index,
-                                            index,
-                                        })}
-                                        showsVerticalScrollIndicator={false}
-                                        contentContainerStyle={{ paddingBottom: listBottomPadding }}
-                                        ListEmptyComponent={(
-                                            <AppCard animationDelay={80} style={styles.emptyCard}>
-                                                <Text style={{ textAlign: 'center', color: theme.colors.outline }}>
-                                                    No items found in this scope.
-                                                </Text>
-                                                <AppButton mode="contained-tonal" onPress={() => router.push('/item/new')} style={styles.emptyAction}>
-                                                    Add Your First Item
-                                                </AppButton>
-                                            </AppCard>
+                        <FlatList
+                            data={loading ? [] : scopedItems}
+                            keyExtractor={item => item.id}
+                            renderItem={renderItem}
+                            refreshControl={
+                                <AppRefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />
+                            }
+                            keyboardShouldPersistTaps="handled"
+                            initialNumToRender={12}
+                            maxToRenderPerBatch={8}
+                            windowSize={5}
+                            updateCellsBatchingPeriod={50}
+                            removeClippedSubviews={Platform.OS !== 'web'}
+                            getItemLayout={(_, index) => ({
+                                length: STOCK_ROW_HEIGHT,
+                                offset: STOCK_ROW_HEIGHT * index,
+                                index,
+                            })}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={{ paddingBottom: listBottomPadding }}
+                            ListHeaderComponent={(
+                                <View>
+                                    <PageHeaderCard
+                                        title="Inventory"
+                                        subtitle={`${items.length} items tracked`}
+                                        right={(
+                                            <AppButton mode="contained" icon="plus" onPress={() => router.push('/item/new')}>
+                                                Add New
+                                            </AppButton>
                                         )}
                                     />
-                                </View>
+                                    <AppCard animationDelay={40} style={{ backgroundColor: theme.colors.primaryContainer }}>
+                                        <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>
+                                            Inventory
+                                        </Text>
+                                        <Text variant="bodySmall" style={{ color: theme.colors.onPrimaryContainer }}>
+                                            {items.length} item(s) | {inventoryStats.lowStock} low | {inventoryStats.outOfStock} out
+                                        </Text>
+                                        <Text variant="titleSmall" style={{ color: theme.colors.onPrimaryContainer, marginTop: 6, fontWeight: '700' }}>
+                                            Stock Value: {formatCurrency(inventoryStats.stockValue, activeCurrency)}
+                                        </Text>
+                                        <View style={styles.heroChipRow}>
+                                            <Chip compact style={{ backgroundColor: theme.colors.surface }}>In stock: {inventoryStats.inStock}</Chip>
+                                            <Chip compact style={{ backgroundColor: theme.colors.surface }}>Low: {inventoryStats.lowStock}</Chip>
+                                            <Chip compact style={{ backgroundColor: theme.colors.surface }}>Out: {inventoryStats.outOfStock}</Chip>
+                                        </View>
+                                    </AppCard>
 
-                                {useWideWorkspace && (
-                                    <View style={styles.sidePane}>
-                                        <AppCard animationDelay={90}>
-                                            <Text variant="titleSmall" style={styles.sidePaneTitle}>Inventory Health</Text>
-                                            <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                                                Keep low and out-of-stock items under control for smoother billing.
-                                            </Text>
-                                            <View style={styles.healthMetricRow}>
-                                                <Text variant="bodySmall">In stock</Text>
-                                                <Text variant="bodyMedium" style={{ fontWeight: '700' }}>{inventoryStats.inStock}</Text>
-                                            </View>
-                                            <View style={styles.healthMetricRow}>
-                                                <Text variant="bodySmall">Low stock</Text>
-                                                <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.error }}>{inventoryStats.lowStock}</Text>
-                                            </View>
-                                            <View style={styles.healthMetricRow}>
-                                                <Text variant="bodySmall">Out of stock</Text>
-                                                <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.error }}>{inventoryStats.outOfStock}</Text>
-                                            </View>
-                                        </AppCard>
-
-                                        <AppCard animationDelay={110}>
-                                            <Text variant="titleSmall" style={styles.sidePaneTitle}>Needs Attention</Text>
-                                            {attentionItems.length === 0 ? (
-                                                <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                                                    All tracked items are healthy.
-                                                </Text>
-                                            ) : (
-                                                attentionItems.map((item) => (
-                                                    <View key={`attention-${item.id}`} style={[styles.attentionRow, { borderTopColor: theme.colors.outline }]}>
-                                                        <Text variant="bodySmall" numberOfLines={1} style={{ flex: 1 }}>{item.name}</Text>
-                                                        <Text variant="labelSmall" style={{ color: theme.colors.outline }}>
-                                                            Qty {item.stock}
-                                                        </Text>
-                                                    </View>
-                                                ))
-                                            )}
-                                        </AppCard>
+                                    <View style={styles.searchRow}>
+                                        <Searchbar
+                                            placeholder="Search by name or barcode"
+                                            onChangeText={setSearchQuery}
+                                            value={searchQuery}
+                                            style={[styles.searchInput, { backgroundColor: theme.colors.surfaceVariant }]}
+                                            inputStyle={{ minHeight: 0 }}
+                                            elevation={0}
+                                        />
+                                        <IconButton
+                                            icon="barcode-scan"
+                                            mode="contained"
+                                            containerColor={theme.colors.secondaryContainer}
+                                            iconColor={theme.colors.onSecondaryContainer}
+                                            size={28}
+                                            onPress={() => router.push({ pathname: '/scan', params: { target: 'stock' } })}
+                                            style={styles.scanAction}
+                                        />
                                     </View>
-                                )}
-                            </View>
-                        )}
+                                    {searchPending && (
+                                        <Text variant="labelSmall" style={{ marginBottom: 8, color: theme.colors.outline }}>
+                                            Updating search...
+                                        </Text>
+                                    )}
+
+                                    <SegmentedButtons
+                                        value={stockScope}
+                                        onValueChange={(value) => setStockScope(value as StockScope)}
+                                        buttons={[
+                                            { value: 'all', label: 'All' },
+                                            { value: 'in', label: 'In Stock' },
+                                            { value: 'low', label: 'Low Stock' },
+                                            { value: 'out', label: 'Out of Stock' },
+                                        ]}
+                                        style={styles.scopeSelector}
+                                        density="medium"
+                                    />
+
+                                    {loading && (
+                                        <View>
+                                            {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} height={80} style={{ marginBottom: 12 }} />)}
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+                            ListEmptyComponent={!loading ? (
+                                <AppCard animationDelay={80} style={styles.emptyCard}>
+                                    <Text style={{ textAlign: 'center', color: theme.colors.outline }}>
+                                        No items found in this scope.
+                                    </Text>
+                                    <AppButton mode="contained-tonal" onPress={() => router.push('/item/new')} style={styles.emptyAction}>
+                                        Add Your First Item
+                                    </AppButton>
+                                </AppCard>
+                            ) : null}
+                        />
                     </View>
 
                     <FAB
@@ -425,9 +368,9 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         paddingTop: DesignSystem.layout.pageTop,
-        alignItems: 'center',
     },
     contentInner: {
+        flex: 1,
         width: '100%',
     },
     contentInnerWide: {
@@ -449,6 +392,7 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     workspaceGrid: {
+        flex: 1,
         gap: 12,
     },
     workspaceGridWide: {
@@ -456,6 +400,7 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
     },
     listPane: {
+        flex: 1,
         minWidth: 0,
     },
     listPaneWide: {

@@ -14,12 +14,13 @@ import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { SummaryCard } from '../../components/common/SummaryCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { EmptyState } from '../../components/common/EmptyState';
-import { SkeletonList, SkeletonCardRow } from '../../components/common/SkeletonList';
 import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { useAuth } from '../../hooks/useAuth';
 import { useBills } from '../../hooks/useBills';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
+import { PageHeaderCard } from '../../components/common/PageHeaderCard';
+import { SkeletonCardRow, SkeletonList } from '../../components/common/SkeletonList';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 import { useAccounts } from '../../hooks/useAccounts';
 import { formatCurrency, normalizeCurrencyCode } from '../../utils/formatters';
@@ -107,11 +108,9 @@ export const DashboardScreen = () => {
     } = useOrganizationAccess();
 
     // Data
-    // Data — cast to CachedBill[] since offlineSyncService always includes paymentStatus, type etc.
-    const { bills: rawBills, loading: billsLoading, fetchBills } = useBills(canViewReports, { limit: 20 });
-    const bills = rawBills as CachedBill[];
+    const { bills, loading: billsLoading, fetchBills } = useBills(canViewReports, { limit: 20 });
 
-    const { accounts } = useAccounts();
+    const { accounts, loading: accountsLoading } = useAccounts(); // Added accountsLoading
 
     const [refreshing, setRefreshing] = useState(false);
 
@@ -247,10 +246,15 @@ export const DashboardScreen = () => {
                         </Text>
                     </View>
                 </View>
-
-                {/* ── Summary Cards Row ────────────────────────────────── */}
-                {billsLoading && !refreshing ? (
-                    <SkeletonCardRow columns={isWide ? 4 : 2} style={styles.section} />
+                {billsLoading || accountsLoading ? (
+                    <View style={styles.section}>
+                        <PageHeaderCard title="Dashboard" />
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>Recent Activities</Text>
+                        </View>
+                        <SkeletonCardRow columns={isWide ? 4 : 2} style={{ marginVertical: DesignSystem.spacing.xs }} />
+                        <SkeletonList count={8} />
+                    </View>
                 ) : (
                     <View style={[styles.section, isWide ? styles.summaryRowWide : styles.summaryRow]}>
                         <SummaryCard
@@ -304,9 +308,11 @@ export const DashboardScreen = () => {
 
                 {/* ── Recent Transactions ──────────────────────────────── */}
                 <View style={styles.section}>
-                    <Text variant="titleSmall" style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-                        Recent Transactions
-                    </Text>
+                    <View style={styles.sectionHeader}>
+                        <Text variant="titleSmall" style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
+                            Recent Transactions
+                        </Text>
+                    </View>
 
                     {billsLoading && !refreshing ? (
                         <View
@@ -457,7 +463,13 @@ const styles = StyleSheet.create({
     },
     section: {
         paddingHorizontal: DesignSystem.spacing.md,
-        marginBottom: DesignSystem.spacing.lg,
+        marginVertical: DesignSystem.spacing.sm,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: DesignSystem.spacing.sm,
     },
     sectionTitle: {
         fontWeight: '700',

@@ -1,14 +1,31 @@
 import type { Account, AccountType, JournalLineInput } from '../types';
 import { apiClient } from './httpClient';
+import { isOnline } from '../utils/network';
+import { offlineSyncService } from './syncService';
 
 export const accountingService = {
     async getAccounts(type?: AccountType): Promise<Account[]> {
-        const suffix = type ? `?type=${encodeURIComponent(type)}` : '';
-        const response = await apiClient.get<{ ok: boolean; accounts?: Account[]; message?: string }>(
-            `/accounting/accounts${suffix}`
-        );
-        if (!response.ok) throw new Error(response.message || 'Failed to fetch accounts.');
-        return response.accounts ?? [];
+        const online = await isOnline();
+        if (online) {
+            try {
+                await offlineSyncService.flushQueue();
+                const suffix = type ? `?type=${encodeURIComponent(type)}` : '';
+                const response = await apiClient.get<{ ok: boolean; accounts?: Account[]; message?: string }>(
+                    `/accounting/accounts${suffix}`
+                );
+                if (response.ok && response.accounts) {
+                    await offlineSyncService.setCachedAccounts(response.accounts);
+                    return response.accounts;
+                }
+            } catch {
+                // fallback
+            }
+        }
+        const cached = await offlineSyncService.getCachedAccounts();
+        if (type) {
+            return cached.filter(a => a.type === type);
+        }
+        return cached;
     },
 
     async seedDefaultAccounts(): Promise<void> {
@@ -23,12 +40,24 @@ export const accountingService = {
         parentId?: string;
         isActive?: boolean;
     }): Promise<string> {
-        const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>(
-            '/accounting/accounts',
-            payload
-        );
-        if (!response.ok || !response.id) throw new Error(response.message || 'Failed to create account.');
-        return response.id;
+        const localId = offlineSyncService.createLocalId('acc');
+        const account = { ...payload, id: localId };
+
+        // 1. Local-first
+        await offlineSyncService.upsertCachedAccount(account);
+
+        // 2. Queue mutation
+        await offlineSyncService.enqueueMutation({
+            type: 'upsert_account',
+            payload: account,
+        });
+
+        // 3. Background sync
+        if (await isOnline()) {
+            void offlineSyncService.flushQueue().catch(() => { });
+        }
+
+        return localId;
     },
 
     async createJournalEntry(payload: {
