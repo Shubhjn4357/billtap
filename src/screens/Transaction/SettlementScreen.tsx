@@ -7,11 +7,11 @@ import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
-import { MotionPresence, MotionView } from '../../components/motion/Motion';
+
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
-import { useSettingsStore, useNetworkStore } from '../../store';
+import { useSettingsStore, useNetworkStore, useOrganizationStore } from '../../store';
 // import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 // import { transactionService } from '../../api/transactionService';
 import { formatCurrency, formatDate, normalizeCurrencyCode } from '../../utils/formatters';
@@ -35,18 +35,20 @@ export const SettlementScreen = () => {
     const [amountInput, setAmountInput] = React.useState('');
     const [saving, setSaving] = React.useState(false);
     const { user } = useAuth();
+    const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
+    const organizationId = selectedOrganizationId ?? user?.uid ?? null;
 
     const remindersQuery = useQuery({
-        queryKey: ['transaction-pending-reminders', user?.uid] as const,
+        queryKey: ['transaction-pending-reminders', organizationId] as const,
         queryFn: async () => {
-            if (!user?.uid) return [];
-            const data = await billRepository.getUnpaid(user.uid);
+            if (!organizationId) return [];
+            const data = await billRepository.getUnpaid(organizationId);
             return data.map(item => ({
                 ...item,
                 dueAmount: item.totalAmount - (item.paidAmount || 0),
             }));
         },
-        enabled: !!user,
+        enabled: !!organizationId,
         staleTime: 5000,
     });
 
@@ -78,10 +80,12 @@ export const SettlementScreen = () => {
             const currentPaid = selected.paidAmount || 0;
             const nextPaid = markAsPaid ? selected.totalAmount : (currentPaid + parsedAmount);
             const nextStatus = nextPaid >= selected.totalAmount ? 'PAID' : 'PARTIAL';
+            const nextMode = nextStatus === 'PAID' ? 'CASH' : 'CREDIT';
 
             await billRepository.updatePayment(selected.id, {
                 paidAmount: nextPaid,
-                paymentStatus: nextStatus
+                paymentStatus: nextStatus,
+                paymentMode: nextMode,
             });
 
             await remindersQuery.refetch();
@@ -167,9 +171,8 @@ export const SettlementScreen = () => {
             )}
 
             <Portal>
-                <MotionPresence>
                     {selected && (
-                        <MotionView style={[styles.drawerBackdrop, { backgroundColor: theme.colors.backdrop }]}>
+                    <View style={[styles.drawerBackdrop, { backgroundColor: theme.colors.backdrop }]}>
                             <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseSettlement} />
                             <Surface
                                 style={[
@@ -216,9 +219,8 @@ export const SettlementScreen = () => {
                                     </AppButton>
                                 </View>
                             </Surface>
-                        </MotionView>
-                    )}
-                </MotionPresence>
+                    </View>
+                )}
             </Portal>
         </ScreenWrapper>
     );

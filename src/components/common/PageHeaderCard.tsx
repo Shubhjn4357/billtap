@@ -1,6 +1,5 @@
 import React from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
-import { MotionView } from '../motion/Motion';
 import { Text, useTheme } from 'react-native-paper';
 import { AppCard } from './AppCard';
 import { SyncIndicator } from './SyncIndicator';
@@ -21,20 +20,16 @@ export const PageHeaderCard: React.FC<PageHeaderCardProps> = ({ title, subtitle,
     const backgroundColor = theme.colors.surface;
 
     return (
-        <MotionView
-            from={{ opacity: 0.85, translateY: 10 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: DesignSystem.motion.slow }}
-        >
+        <View>
             <AppCard
                 disableMotion
                 style={{
                     backgroundColor,
                 }}
             >
-
                 <View style={styles.row}>
                     <View style={[styles.titleWrap, right ? styles.titleWrapWithAction : null]}>
+                        
                         <Text
                             variant="headlineSmall"
                             style={[
@@ -61,12 +56,13 @@ export const PageHeaderCard: React.FC<PageHeaderCardProps> = ({ title, subtitle,
                                 {subtitle}
                             </Text>
                         )}
+                        <SyncIndicator />
                     </View>
-                    <SyncIndicator />
+                   
                     {right ? <View style={styles.actionWrap}>{right}</View> : null}
                 </View>
             </AppCard>
-        </MotionView>
+        </View>
     );
 };
 

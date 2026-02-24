@@ -64,6 +64,21 @@ export const businessSetupSchema = z.object({
     currency: z.string().trim().length(3, 'Currency must be a 3-letter code.'),
 });
 
+const optionalPhoneNumber = z.string().trim().optional().or(z.literal('')).refine(
+    (value) => !value || /^\+?[0-9][0-9\s()-]{6,19}$/.test(value),
+    'Enter a valid phone number.'
+);
+
+export const organizationCreateSchema = z.object({
+    name: z.string().trim().min(2, 'Organization name must have at least 2 characters.').max(120, 'Organization name is too long.'),
+    code: z.string().trim().min(2, 'Organization code is required.').max(32, 'Organization code is too long.').regex(/^[A-Z0-9_-]+$/i, 'Organization code can only contain letters, numbers, "_" and "-".'),
+    currency: z.string().trim().length(3, 'Currency must be a 3-letter code.'),
+    phoneNumber: optionalPhoneNumber,
+    email: optionalEmail,
+    gstNumber: optionalIndianGst,
+    address: z.string().trim().max(240, 'Address is too long.').optional().or(z.literal('')),
+});
+
 export const staffInviteSchema = z.object({
     phone: z.string().trim().regex(/^\+[0-9]{7,15}$/, 'Enter a valid phone with country code.'),
 });

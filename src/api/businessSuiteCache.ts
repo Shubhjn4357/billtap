@@ -36,6 +36,16 @@ export const getOrgCachedValue = async <T>(cacheKey: string, organizationId?: st
     return map[getOrgCacheSlot(organizationId)] ?? null;
 };
 
+export const getAnyOrgCachedValue = async <T>(cacheKey: string): Promise<T | null> => {
+    const map = await readOrgCacheMap<T>(cacheKey);
+    const preferredDefault = map[getOrgCacheSlot(undefined)];
+    if (preferredDefault !== undefined) {
+        return preferredDefault;
+    }
+    const firstEntry = Object.values(map)[0];
+    return firstEntry ?? null;
+};
+
 export const setOrgCachedValue = async <T>(cacheKey: string, organizationId: string | undefined, value: T): Promise<void> => {
     const map = await readOrgCacheMap<T>(cacheKey);
     map[getOrgCacheSlot(organizationId)] = value;

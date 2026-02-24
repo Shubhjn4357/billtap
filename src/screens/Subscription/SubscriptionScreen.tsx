@@ -7,7 +7,7 @@ import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { LoadingScreen } from '../../components/common/LoadingScreen';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { useUserStore } from '../../store';
@@ -101,10 +101,11 @@ export const SubscriptionScreen = () => {
 
     return (
         <ScreenWrapper>
+            <AppPullToRefresh refreshing={plansQuery.isFetching} onRefresh={() => { void plansQuery.refetch(); }}>
             <ScrollView
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<AppRefreshControl refreshing={plansQuery.isFetching} onRefresh={() => { void plansQuery.refetch(); }} />}
+                
             >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
@@ -167,6 +168,7 @@ export const SubscriptionScreen = () => {
                     )}
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
             {RazorpayUI}
         </ScreenWrapper>
     );

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     FlatList,
     Pressable,
@@ -7,11 +7,12 @@ import {
     View,
 } from 'react-native';
 import { Text, useTheme, Searchbar, Chip, IconButton } from 'react-native-paper';
+import { useRouter } from 'expo-router';
 import { DesignSystem } from '../../../constants/DesignSystem';
 import { PREDEFINED_CATEGORIES, getCategoryByKey } from '../../../constants/categories';
 import { BILLING_TEXT } from '../../../constants/staticText';
 import { EmptyState } from '../../../components/common/EmptyState';
-import type { Item } from '../../../types';
+import type { Item, TransactionType } from '../../../types';
 import { formatCurrency } from '../../../utils/formatters';
 import { getStockHealth } from '../../../utils/stockStatus';
 
@@ -20,7 +21,9 @@ interface BillingCatalogProps {
     onAddItem: (item: Item) => void;
     stockMap: Map<string, Item>;
     currencySymbol: string;
-    transactionType: 'SALE' | 'PURCHASE';
+    transactionType: TransactionType;
+    scannedSearch?: string;
+    scanSignal?: string;
 }
 
 // All of the pre-defined category keys for filter chips
@@ -34,11 +37,20 @@ export const BillingCatalog = ({
     onAddItem,
     currencySymbol,
     transactionType,
+    scannedSearch,
+    scanSignal,
 }: BillingCatalogProps) => {
     const theme = useTheme();
+    const router = useRouter();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
     const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
+
+    useEffect(() => {
+        if (scannedSearch) {
+            setSearchQuery(scannedSearch);
+        }
+    }, [scannedSearch, scanSignal]);
 
     const filteredItems = useMemo(() => {
         const query = searchQuery.toLowerCase().trim();
@@ -149,23 +161,29 @@ export const BillingCatalog = ({
 
     return (
         <View style={styles.container}>
-            {/* Search bar */}
-            <Searchbar
-                placeholder={BILLING_TEXT.searchPlaceholder}
-                onChangeText={setSearchQuery}
-                value={searchQuery}
-                style={[styles.searchBar, { backgroundColor: theme.colors.surfaceVariant }]}
-                inputStyle={{ color: theme.colors.onSurface, minHeight: 0 }}
-                iconColor={theme.colors.onSurfaceVariant}
-                placeholderTextColor={theme.colors.onSurfaceVariant}
-                elevation={0}
-            />
+            {/* Search bar & Scan */}
+            <View style={styles.searchContainer}>
+                <Searchbar
+                    placeholder={BILLING_TEXT.searchPlaceholder}
+                    onChangeText={setSearchQuery}
+                    value={searchQuery}
+                    style={[styles.searchBar, { backgroundColor: theme.colors.surfaceVariant, flex: 1 }]}
+                    inputStyle={{ color: theme.colors.onSurface, minHeight: 0 }}
+                    iconColor={theme.colors.onSurfaceVariant}
+                    traileringIcon="qrcode-scan"
+                    onTraileringIconPress={() => router.push({ pathname: '/scan', params: { target: 'billing' } })}
+                    traileringIconColor={theme.colors.primary}
+                    placeholderTextColor={theme.colors.onSurfaceVariant}
+                    elevation={0}
+                />
+            </View>
 
             {/* Category chips */}
             <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.chipRow}
+                style={{ flexGrow: 0, maxHeight: 50 }}
             >
                 {CATEGORY_FILTER_OPTIONS.slice(0, 10).map((cat) => (
                     <Chip
@@ -217,6 +235,7 @@ export const BillingCatalog = ({
                 data={filteredItems}
                 renderItem={renderItem}
                 keyExtractor={(item) => item.id}
+                style={{ flex: 1 ,marginTop: 8}}
                 contentContainerStyle={styles.list}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
@@ -236,9 +255,14 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    searchBar: {
-        margin: DesignSystem.spacing.md,
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: DesignSystem.spacing.md,
+        marginTop: DesignSystem.spacing.md,
         marginBottom: DesignSystem.spacing.xs,
+    },
+    searchBar: {
         borderRadius: DesignSystem.radius.md,
         height: 48,
     },
@@ -252,6 +276,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: DesignSystem.spacing.md,
         paddingBottom: DesignSystem.spacing.xs,
         gap: DesignSystem.spacing.xs,
+        
     },
     chip: {
         borderRadius: DesignSystem.radius.pill,

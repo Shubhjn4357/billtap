@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { View, FlatList, StyleSheet, useWindowDimensions, Animated, type ViewToken } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { View, FlatList, StyleSheet, useWindowDimensions, Animated, type ViewToken, type LayoutChangeEvent } from 'react-native';
 import { Text, useTheme, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useSettingsStore } from '../../store';
@@ -18,14 +18,13 @@ const slides = ONBOARDING_TEXT.slides.map((slide) => ({
     icon: slide.icon as IconName,
 }));
 
-const Paginator = ({ data, scrollX }: { data: typeof slides; scrollX: Animated.Value }) => {
-    const { width } = useWindowDimensions();
+const Paginator = ({ data, scrollX, pageWidth }: { data: typeof slides; scrollX: Animated.Value; pageWidth: number }) => {
     const theme = useTheme();
 
     return (
         <View style={{ flexDirection: 'row', height: 44, marginBottom: DesignSystem.spacing.sm }}>
             {data.map((_, i) => {
-                const inputRange = [(i - 1) * width, i * width, (i + 1) * width];
+                const inputRange = [(i - 1) * pageWidth, i * pageWidth, (i + 1) * pageWidth];
                 const dotWidth = scrollX.interpolate({
                     inputRange,
                     outputRange: [10, 20, 10],
@@ -55,10 +54,11 @@ export const OnboardingScreen = () => {
     const theme = useTheme();
     const router = useRouter();
     const { setHasSeenOnboarding } = useSettingsStore();
-    const { width } = useWindowDimensions();
+    const { width: windowWidth } = useWindowDimensions();
     const scrollX = useRef(new Animated.Value(0)).current;
     const slidesRef = useRef<FlatList>(null);
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [pageWidth, setPageWidth] = useState(Math.max(windowWidth - 40, 1));
 
     const viewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems && viewableItems.length > 0) {
@@ -67,6 +67,11 @@ export const OnboardingScreen = () => {
     }).current;
 
     const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+
+    const handleSlidesLayout = useCallback((event: LayoutChangeEvent) => {
+        const nextWidth = Math.max(Math.round(event.nativeEvent.layout.width), 1);
+        setPageWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+    }, []);
 
     const scrollTo = () => {
         if (currentIndex < slides.length - 1) {
@@ -89,51 +94,59 @@ export const OnboardingScreen = () => {
                     subtitle="Set up billing, stock, and reports in under a minute."
                 />
 
-                <AppCard style={styles.slidesCard}>
-                    <FlatList
-                        data={slides}
-                        renderItem={({ item }) => (
-                            <View style={[styles.slide, { width: width - 40 }]}>
-                                <View
-                                    style={[
-                                        styles.iconWrap,
-                                        {
-                                            backgroundColor: theme.colors.surfaceVariant,
-                                            borderColor: theme.colors.outlineVariant,
-                                        },
-                                    ]}
-                                >
-                                    <MaterialCommunityIcons
-                                        name={item.icon}
-                                        size={52}
-                                        color={theme.colors.primary}
-                                    />
+                <AppCard style={styles.slidesCard} contentStyle={styles.slidesCardContent}>
+                    <View style={styles.slidesViewport} onLayout={handleSlidesLayout}>
+                        <FlatList
+                            data={slides}
+                            renderItem={({ item }) => (
+                                <View style={[styles.slide, { width: pageWidth }]}>
+                                    <View
+                                        style={[
+                                            styles.iconWrap,
+                                            {
+                                                backgroundColor: theme.colors.surfaceVariant,
+                                                borderColor: theme.colors.outlineVariant,
+                                            },
+                                        ]}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={item.icon}
+                                            size={52}
+                                            color={theme.colors.primary}
+                                        />
+                                    </View>
+                                    <Text variant="headlineSmall" style={[styles.slideTitle, { color: theme.colors.onSurface }]}>
+                                        {item.title}
+                                    </Text>
+                                    <Text variant="bodyMedium" style={[styles.slideDescription, { color: theme.colors.onSurfaceVariant }]}>
+                                        {item.description}
+                                    </Text>
                                 </View>
-                                <Text variant="headlineSmall" style={[styles.slideTitle, { color: theme.colors.onSurface }]}>
-                                    {item.title}
-                                </Text>
-                                <Text variant="bodyMedium" style={[styles.slideDescription, { color: theme.colors.onSurfaceVariant }]}>
-                                    {item.description}
-                                </Text>
-                            </View>
-                        )}
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        pagingEnabled
-                        bounces={false}
-                        keyExtractor={(item) => item.id}
-                        onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
-                            useNativeDriver: false,
-                        })}
-                        scrollEventThrottle={24}
-                        onViewableItemsChanged={viewableItemsChanged}
-                        viewabilityConfig={viewConfig}
-                        ref={slidesRef}
-                    />
+                            )}
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            pagingEnabled
+                            bounces={false}
+                            keyExtractor={(item) => item.id}
+                            getItemLayout={(_, index) => ({
+                                length: pageWidth,
+                                offset: pageWidth * index,
+                                index,
+                            })}
+                            onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
+                                useNativeDriver: false,
+                            })}
+                            scrollEventThrottle={24}
+                            onViewableItemsChanged={viewableItemsChanged}
+                            viewabilityConfig={viewConfig}
+                            ref={slidesRef}
+                            style={styles.slidesList}
+                        />
+                    </View>
                 </AppCard>
 
                 <View style={styles.footer}>
-                    <Paginator data={slides} scrollX={scrollX} />
+                    <Paginator data={slides} scrollX={scrollX} pageWidth={pageWidth} />
                     <View style={styles.footerActions}>
                         <AppButton
                             mode="contained"
@@ -166,6 +179,17 @@ const styles = StyleSheet.create({
         paddingTop: DesignSystem.layout.pageTop,
     },
     slidesCard: {
+        flex: 1,
+    },
+    slidesCardContent: {
+        flex: 1,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
+    },
+    slidesViewport: {
+        flex: 1,
+    },
+    slidesList: {
         flex: 1,
     },
     slide: {

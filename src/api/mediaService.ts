@@ -1,4 +1,5 @@
 import { API_CONFIG } from '../constants/Api';
+import { Config } from '../constants/Config';
 import { apiClient } from './httpClient';
 
 export type MediaAssetType =
@@ -55,6 +56,10 @@ const toBlobFromUri = async (uri: string): Promise<Blob> => {
 
 export const mediaService = {
     async createUploadUrl(payload: CreateUploadUrlPayload, organizationId?: string): Promise<CreateUploadUrlResponse> {
+        if (!Config.features.imageUploadsEnabled) {
+            throw new Error('Image upload is temporarily disabled.');
+        }
+
         const response = await apiClient.post<{
             ok: boolean;
             uploadUrl?: string;

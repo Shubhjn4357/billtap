@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, InteractionManager, LogBox, Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Updates from 'expo-updates';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { authService } from '../src/api/authService';
 import { ApiError } from '../src/api/httpClient';
@@ -20,6 +21,8 @@ import {
     stopForegroundSync,
 } from '../src/services/backgroundSyncService';
 import {
+    ensureCoreScheduledNotifications,
+    registerNotificationListeners,
     requestNotificationPermissions,
     registerAndroidChannels,
 } from '../src/services/notificationService';
@@ -42,10 +45,7 @@ LogBox.ignoreLogs([
     'Unable to get the view config', // related ExpoLinearGradient warning
 ]);
 
-if (Platform.OS !== 'web') {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('../src/utils/reanimated.native');
-}
+
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -165,7 +165,12 @@ export default function RootLayout() {
                     void registerBgSync();
                     // Notifications permissions
                     void requestNotificationPermissions().then(async (granted) => {
-                        if (granted) await registerAndroidChannels();
+                        if (granted) {
+                            await registerAndroidChannels();
+                            await ensureCoreScheduledNotifications({
+                                businessName: profile.businessName ?? undefined,
+                            });
+                        }
                     });
                 }
 
@@ -218,6 +223,14 @@ export default function RootLayout() {
             stopForegroundSync();
         };
     }, [isWeb, setCurrency, setLoading, setUser, settingsHydrated, userHydrated]);
+
+    useEffect(() => {
+        if (Platform.OS === 'web') return;
+        const unsubscribe = registerNotificationListeners();
+        return () => {
+            unsubscribe();
+        };
+    }, []);
 
     // Handle subscription expiration
     useEffect(() => {
@@ -350,16 +363,18 @@ export default function RootLayout() {
     );
 
     return (
-        <AppThemeProvider>
-            {!isWeb ? (
-                <SQLiteProvider
-                    databaseName="vahi.db"
-                    options={{ enableChangeListener: true }}>
-                    {content}
-                </SQLiteProvider>
-            ) : (
-                content
-            )}
-        </AppThemeProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <AppThemeProvider>
+                {!isWeb ? (
+                    <SQLiteProvider
+                        databaseName="vahi.db"
+                        options={{ enableChangeListener: true }}>
+                        {content}
+                    </SQLiteProvider>
+                ) : (
+                    content
+                )}
+            </AppThemeProvider>
+        </GestureHandlerRootView>
     );
 }

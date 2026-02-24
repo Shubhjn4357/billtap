@@ -23,7 +23,12 @@ import { itemSchema } from '../../validation/forms';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 
 export const ItemDetailScreen = () => {
-    const params = useLocalSearchParams<{ id?: string | string[]; barcode?: string | string[]; scanned?: string }>();
+    const params = useLocalSearchParams<{
+        id?: string | string[];
+        barcode?: string | string[];
+        scanned?: string | string[];
+        scanAt?: string | string[];
+    }>();
     const itemId = Array.isArray(params.id) ? params.id[0] : params.id;
     // `/item/new` does not provide `id`, while `/item/[id]` passes `id`.
     const isNew = !itemId || itemId === 'new';
@@ -35,6 +40,7 @@ export const ItemDetailScreen = () => {
     const theme = useTheme();
     const { width } = useWindowDimensions();
     const isWide = width >= 980;
+    const imageUploadsEnabled = Config.features.imageUploadsEnabled;
     const [uploadingImage, setUploadingImage] = useState(false);
 
     const [form, setForm] = useState({
@@ -86,13 +92,19 @@ export const ItemDetailScreen = () => {
     }, [itemId, isNew, allItems]);
 
     useEffect(() => {
-        if (params.barcode && params.scanned === 'true') {
-            const code = Array.isArray(params.barcode) ? params.barcode[0] : params.barcode;
+        const scannedFlag = Array.isArray(params.scanned) ? params.scanned[0] : params.scanned;
+        const code = Array.isArray(params.barcode) ? params.barcode[0] : params.barcode;
+        if (code && scannedFlag === 'true') {
             setForm(prev => ({ ...prev, barcode: code }));
         }
-    }, [params.barcode, params.scanned]);
+    }, [params.barcode, params.scanned, params.scanAt]);
 
     const handlePickAndUploadImage = async () => {
+        if (!imageUploadsEnabled) {
+            alert(COMMON_TEXT.alerts.error, 'Image upload is temporarily disabled.');
+            return;
+        }
+
         try {
             const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (!permission.granted) {
@@ -268,15 +280,17 @@ export const ItemDetailScreen = () => {
                         ) : (
                             <Avatar.Icon icon="package-variant-closed" size={100} style={{ backgroundColor: theme.colors.surfaceVariant }} />
                         )}
-                        <AppButton
-                            mode="text"
-                            compact
-                            onPress={() => { void handlePickAndUploadImage() }}
-                            loading={uploadingImage}
-                            style={{ marginTop: 8 }}
-                        >
-                            {form.imageUrl ? 'Change Image' : 'Upload Image'}
-                        </AppButton>
+                        {imageUploadsEnabled ? (
+                            <AppButton
+                                mode="text"
+                                compact
+                                onPress={() => { void handlePickAndUploadImage() }}
+                                loading={uploadingImage}
+                                style={{ marginTop: 8 }}
+                            >
+                                {form.imageUrl ? 'Change Image' : 'Upload Image'}
+                            </AppButton>
+                        ) : null}
                     </View>
 
                        

@@ -20,12 +20,13 @@ export const StaffListScreen = () => {
     const { user } = useUserStore();
     const { width } = useWindowDimensions();
     const isWide = width >= 960;
+    const canManageStaff = user?.role === 'owner' || user?.role === 'admin';
     const staffQuery = useQuery({
         queryKey: ['staff-list', user?.uid ?? 'guest'] as const,
         queryFn: async (): Promise<{ staff: UserProfile[]; invites: StaffInvite[] }> => {
             return await staffService.getStaff();
         },
-        enabled: user?.role === 'owner',
+        enabled: canManageStaff,
         staleTime: 30_000,
     });
 
@@ -39,12 +40,12 @@ export const StaffListScreen = () => {
         return staffQuery.error instanceof Error ? staffQuery.error.message : 'Failed to load staff.';
     }, [staffQuery.error]);
 
-    if (user?.role !== 'owner') {
+    if (!canManageStaff) {
         return (
             <ScreenWrapper>
                 <View style={styles.centered}>
                     <AppCard style={styles.centeredCard}>
-                        <Text style={{ color: theme.colors.outline }}>Only owners can manage staff.</Text>
+                        <Text style={{ color: theme.colors.outline }}>Only owner/admin can manage staff.</Text>
                     </AppCard>
                 </View>
             </ScreenWrapper>

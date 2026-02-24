@@ -2,14 +2,14 @@
 import React, { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, useTheme, SegmentedButtons, Avatar, IconButton, TextInput } from 'react-native-paper';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
 import { AppButton } from '../../components/common/AppButton';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { DesignSystem } from '../../constants/DesignSystem';
-import { usePartyStore } from '../../store';
+import { useOrganizationStore, usePartyStore } from '../../store';
 import { COMMON_TEXT } from '../../constants/staticText';
 import type { Party, PartyType } from '../../types';
 
@@ -24,8 +24,9 @@ import { randomUUID } from 'expo-crypto';
 
 export const PartyDetailScreen = () => {
     const params = useLocalSearchParams<{ id?: string | string[] }>();
+    const pathname = usePathname();
     const partyId = Array.isArray(params.id) ? params.id[0] : params.id;
-    const isNew = partyId === 'new';
+    const isNew = partyId === 'new' || pathname.endsWith('/party/new');
     const { parties, addParty, updateParty, deleteParty, loading } = usePartyStore();
     const { user } = useAuth();
     const { canManageParties } = useOrganizationAccess();
@@ -34,6 +35,8 @@ export const PartyDetailScreen = () => {
     const { width } = useWindowDimensions();
     const isWide = width >= 960;
     const dialog = useAppDialog();
+    const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
+    const organizationId = selectedOrganizationId ?? user?.uid ?? null;
 
     const [form, setForm] = useState({
         name: '',
@@ -61,7 +64,7 @@ export const PartyDetailScreen = () => {
     }, [partyId, isNew, parties]);
 
     const handleSubmit = async () => {
-        if (!user) {
+        if (!user || !organizationId) {
             dialog.alert(COMMON_TEXT.alerts.error, 'You must be logged in.');
             return;
         }
@@ -86,7 +89,7 @@ export const PartyDetailScreen = () => {
 
                 const newParty: NewDbParty = {
                     id: newId,
-                    organizationId: user.uid,
+                    organizationId,
                     isActive: true,
                     createdAt: now,
                     updatedAt: now,
@@ -153,13 +156,13 @@ export const PartyDetailScreen = () => {
     };
 
     const handleDelete = () => {
-        if (isNew || !partyId || !user) return;
+        if (isNew || !partyId || !organizationId) return;
         dialog.confirm(
             'Delete Party',
             'Are you sure you want to delete this party?',
             async () => {
                 try {
-                    await partyRepository.delete(partyId, user.uid);
+                    await partyRepository.delete(partyId, organizationId);
                 } catch {
                     // keep local cleanup even if remote call fails logic is handled in repo/sync
                 }
@@ -190,7 +193,11 @@ export const PartyDetailScreen = () => {
     return (
         <ScreenWrapper>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-                <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                    contentContainerStyle={styles.content}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                >
                     <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                         <PageHeaderCard
                             title={isNew ? 'New Party' : 'Edit Party'}

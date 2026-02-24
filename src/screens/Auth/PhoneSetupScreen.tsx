@@ -167,6 +167,31 @@ export default function PhoneSetupScreen() {
                                 </AppButton>
                             </View>
                         ) : null}
+
+                        {__DEV__ ? (
+                            <AppButton
+                                mode="text"
+                                textColor={theme.colors.error}
+                                onPress={async () => {
+                                    setLinkingPhone(true);
+                                    try {
+                                        const updatedUser = await userService.updateCurrentUser({ phoneNumber: '+919999999999' });
+                                        setUser(updatedUser);
+                                        router.replace('/(main)/(tabs)/home' as Href);
+                                    } catch (error: unknown) {
+                                        dialog.alert(
+                                            'Dev Skip Failed',
+                                            error instanceof Error ? error.message : 'Unknown error during skip.'
+                                        );
+                                    } finally {
+                                        setLinkingPhone(false);
+                                    }
+                                }}
+                                style={{ marginTop: DesignSystem.spacing.md }}
+                            >
+                                [DEV] Skip Phone Link
+                            </AppButton>
+                        ) : null}
                     </AppCard>
 
                 </View>

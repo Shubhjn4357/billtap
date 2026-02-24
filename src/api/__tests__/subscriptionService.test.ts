@@ -5,6 +5,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SubscriptionPlan } from '../../types';
 
+import { subscriptionService } from '../subscriptionService';
+
 // ─── Hoisted mock references ────────────────────────────────────────────────────
 const mocks = vi.hoisted(() => ({
     apiGet: vi.fn(),
@@ -25,8 +27,6 @@ vi.mock('../httpClient', () => ({
         }
     },
 }));
-
-import { subscriptionService } from '../subscriptionService';
 
 // ─── Test Data ──────────────────────────────────────────────────────────────────
 

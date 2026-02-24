@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { BillItem, Item, Party } from '../types';
+import { BillItem, Item, Party, TransactionType } from '../types';
 
 interface CartState {
     items: BillItem[];
@@ -8,14 +8,14 @@ interface CartState {
     partyId?: string;
     customerGst?: string;
     customerAddress?: string;
-    transactionType: 'SALE' | 'PURCHASE';
+    transactionType: TransactionType;
     billDate?: Date;
     billNumber?: string;
     isGstBill: boolean;
 
     setCustomerDetails: (name: string, phone: string) => void;
     setCustomer: (party: Party | null) => void;
-    setTransactionType: (type: 'SALE' | 'PURCHASE') => void;
+    setTransactionType: (type: TransactionType) => void;
     setBillDetails: (date?: Date, number?: string) => void;
     setIsGstBill: (enabled: boolean) => void;
 

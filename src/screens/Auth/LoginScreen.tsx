@@ -10,7 +10,7 @@ import {
     Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MotionView } from '../../components/motion/Motion';
+
 import { ActivityIndicator, Divider, Text, useTheme, type MD3Theme } from 'react-native-paper';
 import { AppButton } from '../../components/common/AppButton';
 import { OtpInput } from '../../components/forms/OtpInput';
@@ -245,12 +245,7 @@ export const LoginScreen = () => {
                     showsVerticalScrollIndicator={false}
                 >
                     {/* Hero Section */}
-                    <MotionView
-                        from={{ opacity: 0, translateY: -20 }}
-                        animate={{ opacity: 1, translateY: 0 }}
-                        transition={{ type: 'timing', duration: 500 }}
-                        style={styles.heroSection}
-                    >
+                    <View style={styles.heroSection}>
                         <View style={styles.logoWrapper}>
                             <Image
                                 source={require('../../../assets/images/icon.png')}
@@ -268,7 +263,7 @@ export const LoginScreen = () => {
                                 </View>
                             ))}
                         </View>
-                    </MotionView>
+                    </View>
 
                     {/* Auth Card */}
                     <Animated.View
@@ -332,12 +327,7 @@ export const LoginScreen = () => {
                                         {isOtpStep ? 'Step 2 of 2 — Enter OTP' : 'Step 1 of 2 — Enter Phone'}
                                     </Text>
 
-                                        <MotionView
-                                            key={isOtpStep ? 'otp' : 'phone'}
-                                            from={{ opacity: 0, translateX: isOtpStep ? 30 : -30 }}
-                                            animate={{ opacity: 1, translateX: 0 }}
-                                            transition={{ type: 'timing', duration: 260 }}
-                                        >
+                                        <View key={isOtpStep ? 'otp' : 'phone'}>
                                             <Text variant="titleLarge" style={styles.cardTitle}>
                                                 {isOtpStep ? 'Enter verification code' : 'Enter your phone number'}
                                             </Text>
@@ -402,7 +392,7 @@ export const LoginScreen = () => {
                                                     <ResendTimer onResend={handleSendVerification} disabled={isBusy} />
                                                 )}
                                             </View>
-                                        </MotionView>
+                                        </View>
 
                                         {isBusy && <ActivityIndicator style={styles.loadingIndicator} />}
                                 </>

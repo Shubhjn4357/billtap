@@ -1,6 +1,5 @@
-import React from 'react';
-import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
-import { MotionView } from '../motion/Motion';
+import React, { useEffect, useRef } from 'react';
+import { StyleProp, StyleSheet, ViewStyle, Animated } from 'react-native';
 import { Card, useTheme } from 'react-native-paper';
 import { DesignSystem } from '../../constants/DesignSystem';
 
@@ -24,26 +23,62 @@ export const AppCard: React.FC<AppCardProps> = ({
     const shouldAnimate = !disableMotion && typeof animationDelay === 'number';
     const backgroundColor = theme.colors.surface;
     const borderColor = theme.colors.outlineVariant;
+    const flattenedStyle = StyleSheet.flatten(style) || {};
+
+    const animValue = useRef(new Animated.Value(shouldAnimate ? 0 : 1)).current;
+
+    const flexStyle = {
+        flex: (flattenedStyle as ViewStyle).flex,
+        flexGrow: (flattenedStyle as ViewStyle).flexGrow,
+        flexShrink: (flattenedStyle as ViewStyle).flexShrink,
+        height: (flattenedStyle as ViewStyle).height,
+        minHeight: (flattenedStyle as ViewStyle).minHeight,
+        maxHeight: (flattenedStyle as ViewStyle).maxHeight,
+    };
+
+    useEffect(() => {
+        if (shouldAnimate) {
+            Animated.timing(animValue, {
+                toValue: 1,
+                duration: DesignSystem.motion.slow,
+                delay: animationDelay,
+                useNativeDriver: true,
+            }).start();
+        }
+    }, [shouldAnimate, animationDelay, animValue]);
+
+    const animatedStyle = shouldAnimate ? {
+        opacity: animValue.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.9, 1]
+        }),
+        transform: [
+            {
+                translateY: animValue.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [12, 0]
+                })
+            },
+            {
+                scale: animValue.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.99, 1]
+                })
+            }
+        ]
+    } : {};
 
     return (
-        <MotionView
-            from={shouldAnimate ? { opacity: 0.9, translateY: 12, scale: 0.99 } : undefined}
-            animate={{ opacity: 1, translateY: 0, scale: 1 }}
-            transition={{
-                type: 'timing',
-                duration: shouldAnimate ? DesignSystem.motion.slow : 1,
-                delay: shouldAnimate ? animationDelay : 0,
-            }}
-        >
+        <Animated.View style={[flexStyle, animatedStyle]}>
             <Card
                 mode="elevated"
                 style={[
                     styles.card,
                     {
                         backgroundColor,
-                        borderColor,
+                        borderColor, 
                         shadowColor: theme.dark ? '#020617' : '#334155',
-                        shadowOpacity: theme.dark ? 0.14 : 0.07,
+                        shadowOpacity: theme.dark ? 0.2 : 0.07,
                     },
                     style,
                 ]}
@@ -53,7 +88,7 @@ export const AppCard: React.FC<AppCardProps> = ({
                     {children}
                 </Card.Content>
             </Card>
-        </MotionView>
+        </Animated.View>
     );
 };
 

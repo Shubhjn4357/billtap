@@ -5,17 +5,17 @@
  */
 import { vi, describe, expect, it } from 'vitest';
 
+import { DesignSystem } from '../../constants/DesignSystem';
+import { Colors } from '../../constants/Colors';
+import { lightTheme, darkTheme } from '../../constants/Theme';
+import { PREDEFINED_CATEGORIES, getCategoryByKey } from '../../constants/categories';
+import { PREDEFINED_UNITS, getUnitByKey } from '../../constants/units';
+
 // Mock react-native-paper before any imports that use it
 vi.mock('react-native-paper', () => ({
     MD3LightTheme: { colors: {}, dark: false },
     MD3DarkTheme: { colors: {}, dark: true },
 }));
-
-import { DesignSystem } from '../../constants/DesignSystem';
-import { Colors } from '../../constants/Colors';
-import { lightTheme, darkTheme } from '../../constants/Theme';
-import { PREDEFINED_CATEGORIES, getCategoryByKey, DEFAULT_CATEGORY } from '../../constants/categories';
-import { PREDEFINED_UNITS, getUnitByKey } from '../../constants/units';
 
 // --- DesignSystem ---------------------------------------------------------------
 

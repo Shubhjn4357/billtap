@@ -1,15 +1,15 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, useTheme, IconButton } from 'react-native-paper';
 import { AppButton } from '../../../components/common/AppButton';
 import { AppCard } from '../../../components/common/AppCard';
 import { AppInput } from '../../../components/common/AppInput';
+import { AppAccordion } from '../../../components/common/AppAccordion';
 import { useCartStore } from '../../../store/cartStore';
 import { useShallow } from 'zustand/react/shallow';
 import { formatCurrency } from '../../../utils/formatters';
 import { DesignSystem } from '../../../constants/DesignSystem';
-import { Item } from '../../../types';
+import { Item, TransactionType } from '../../../types';
 
 interface BillingCartProps {
     currencySymbol: string;
@@ -18,13 +18,15 @@ interface BillingCartProps {
     activeCurrency: string;
     isGstBill: boolean;
     stockMap: Map<string, Item>;
-    transactionType: 'SALE' | 'PURCHASE';
+    transactionType: TransactionType;
     sameAsBilling: boolean;
     setSameAsBilling: (val: boolean) => void;
     billingAddress: string;
     setBillingAddress: (val: string) => void;
     deliveryAddress: string;
     setDeliveryAddress: (val: string) => void;
+    onOpenPartySelector: () => void;
+    partyName?: string;
 }
 
 export const BillingCart = ({
@@ -40,8 +42,11 @@ export const BillingCart = ({
     setBillingAddress,
     deliveryAddress,
     setDeliveryAddress,
+    onOpenPartySelector,
+    partyName,
 }: BillingCartProps) => {
     const theme = useTheme();
+    const [addressExpanded, setAddressExpanded] = useState(false);
     const { items, updateQuantity, removeItem, clearCart } = useCartStore(
         useShallow((state) => ({
             items: state.items,
@@ -59,14 +64,18 @@ export const BillingCart = ({
 
     if (items.length === 0) {
         return (
-            <AppCard style={styles.emptyCartCard}>
-                <IconButton icon="cart-outline" size={48} iconColor={theme.colors.outline} />
-                <Text variant="bodyLarge" style={{ color: theme.colors.outline, marginTop: 8 }}>
-                    Cart is empty
-                </Text>
-                <Text variant="bodySmall" style={{ color: theme.colors.outlineVariant }}>
-                    Scan or select items to start billing
-                </Text>
+            <AppCard style={styles.emptyCartCard} mode="outlined">
+                <View style={styles.emptyRow}>
+                    <IconButton icon="cart-outline" size={48} iconColor={theme.colors.outline} />
+                    <View style={styles.emptyTextWrap}>
+                        <Text variant="bodyLarge" style={{ color: theme.colors.outline, marginTop: 8 }}>
+                            Cart is empty
+                        </Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.outlineVariant }}>
+                            Scan or select items to start billing
+                        </Text>
+                    </View>
+                </View>
             </AppCard>
         );
     }
@@ -74,14 +83,27 @@ export const BillingCart = ({
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>Current Bill</Text>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>
+                        {transactionType === 'SALE' ? 'Sales Bill' : transactionType === 'PURCHASE' ? 'Purchase Bill' : 'Return Bill'}
+                        {isGstBill ? ' (GST)' : ' (Estimate)'}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, flexShrink: 1 }} numberOfLines={1}>
+                            Party: {partyName || 'Walk-in'}
+                        </Text>
+                        <AppButton mode="text" compact onPress={onOpenPartySelector} style={{ marginLeft: 4 }} labelStyle={{ fontSize: 12 }}>
+                            Change
+                        </AppButton>
+                    </View>
+                </View>
                 <AppButton
                     mode="text"
                     compact
                     textColor={theme.colors.error}
                     onPress={clearCart}
                 >
-                    Clear All
+                    Clear
                 </AppButton>
             </View>
 
@@ -144,48 +166,59 @@ export const BillingCart = ({
             </ScrollView>
 
             <View style={[styles.footer, { backgroundColor: theme.colors.elevation.level2 }]}>
-                {/* Address Section */}
                 <View style={styles.deliverySection}>
-                    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>Addresses</Text>
-
-                    <View style={styles.addressInputContainer}>
-                        <AppInput
-                            label="Billing Address"
-                            placeholder="Enter business location..."
-                            value={billingAddress}
-                            onChangeText={setBillingAddress}
-                            inputType="text"
-                            multiline
-                            numberOfLines={2}
-                        />
-                    </View>
-
-                    <View style={styles.checkboxRow}>
-                        <IconButton
-                            icon={sameAsBilling ? "checkbox-marked" : "checkbox-blank-outline"}
-                            size={20}
-                            onPress={() => setSameAsBilling(!sameAsBilling)}
-                            iconColor={theme.colors.primary}
-                            style={{ margin: 0, paddingLeft: 0 }}
-                        />
-                        <Text variant="bodySmall" onPress={() => setSameAsBilling(!sameAsBilling)} style={{ color: theme.colors.outline }}>
-                            Delivery is same as billing address
-                        </Text>
-                    </View>
-
-                    {!sameAsBilling && (
+                    <AppAccordion
+                        title="Addresses"
+                        icon="map-marker-outline"
+                        expanded={addressExpanded}
+                        onExpandedChange={setAddressExpanded}
+                        containerStyle={[styles.addressAccordion, { backgroundColor: theme.colors.elevation.level1 }]}
+                        contentStyle={styles.addressAccordionBody}
+                        titleStyle={{ color: theme.colors.onSurfaceVariant, fontWeight: '600' }}
+                    >
                         <View style={styles.addressInputContainer}>
                             <AppInput
-                                label="Delivery Address"
-                                placeholder="Where should items be sent?"
-                                value={deliveryAddress}
-                                onChangeText={setDeliveryAddress}
+                                label="Billing Address"
+                                placeholder="Enter business location..."
+                                value={billingAddress}
+                                onChangeText={setBillingAddress}
                                 inputType="text"
                                 multiline
                                 numberOfLines={2}
                             />
                         </View>
-                    )}
+
+                        <View style={styles.checkboxRow}>
+                            <IconButton
+                                icon={sameAsBilling ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                                size={20}
+                                onPress={() => setSameAsBilling(!sameAsBilling)}
+                                iconColor={theme.colors.primary}
+                                style={{ margin: 0, paddingLeft: 0 }}
+                            />
+                            <Text
+                                variant="bodySmall"
+                                onPress={() => setSameAsBilling(!sameAsBilling)}
+                                style={{ color: theme.colors.outline }}
+                            >
+                                Delivery is same as billing address
+                            </Text>
+                        </View>
+
+                        {!sameAsBilling ? (
+                            <View style={styles.addressInputContainer}>
+                                <AppInput
+                                    label="Delivery Address"
+                                    placeholder="Where should items be sent?"
+                                    value={deliveryAddress}
+                                    onChangeText={setDeliveryAddress}
+                                    inputType="text"
+                                    multiline
+                                    numberOfLines={2}
+                                />
+                            </View>
+                        ) : null}
+                    </AppAccordion>
                 </View>
 
                 <View style={styles.summaryRow}>
@@ -212,7 +245,7 @@ export const BillingCart = ({
                     loading={checkoutLoading}
                     contentStyle={{ height: 48 }}
                 >
-                    Checkout · {formatCurrency(total, activeCurrency)}
+                    Checkout - {formatCurrency(total, activeCurrency)}
                 </AppButton>
             </View>
         </View>
@@ -227,12 +260,22 @@ const styles = StyleSheet.create({
     },
     emptyCartCard: {
         padding: DesignSystem.spacing.xl,
+        display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: 200, // Reasonable height for empty state
+        minHeight: 200,
         backgroundColor: 'transparent',
-        borderWidth: 1,
-        borderStyle: 'dashed',
+    },
+    emptyRow: {
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16,
+    },
+    emptyTextWrap: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
     },
     header: {
         flexDirection: 'row',
@@ -285,8 +328,16 @@ const styles = StyleSheet.create({
     },
     deliverySection: {
         marginBottom: 16,
-        paddingBottom: 16,
+        paddingBottom: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    addressAccordion: {
+        paddingHorizontal: 0,
+    },
+    addressAccordionBody: {
+        paddingHorizontal: DesignSystem.spacing.xs,
+        paddingTop: DesignSystem.spacing.xs,
+        paddingBottom: DesignSystem.spacing.sm,
     },
     checkboxRow: {
         flexDirection: 'row',

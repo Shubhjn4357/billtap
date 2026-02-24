@@ -13,8 +13,14 @@ export const mapDbItemToAppItem = (dbItem: DbItem): Item => {
         hsn: dbItem.hsn === null ? undefined : dbItem.hsn,
         gstPercentage: dbItem.gstPercentage === null ? undefined : dbItem.gstPercentage,
         minimumStock: dbItem.minimumStock === null ? undefined : dbItem.minimumStock,
+        openingStock: dbItem.openingStock === null ? undefined : dbItem.openingStock,
         category: dbItem.category === null ? undefined : dbItem.category,
+        subcategory: dbItem.subcategory === null ? undefined : dbItem.subcategory,
+        location: dbItem.location === null ? undefined : dbItem.location,
         barcode: dbItem.barcode === null ? undefined : dbItem.barcode,
+        expiresAt: dbItem.expiresAt === null ? undefined : dbItem.expiresAt,
+        autoDeleteAt: dbItem.autoDeleteAt === null ? undefined : dbItem.autoDeleteAt,
+        autoDeleteEnabled: dbItem.autoDeleteEnabled ?? false,
 
         // Handle unit (string | null -> string | undefined)
         unit: dbItem.unit === null ? undefined : dbItem.unit,

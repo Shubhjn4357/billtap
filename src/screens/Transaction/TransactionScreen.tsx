@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { Text, useTheme, SegmentedButtons, IconButton, Divider, Menu, Button, List } from 'react-native-paper';
+import { Text, useTheme, SegmentedButtons, IconButton, Divider, Menu, Button } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
@@ -9,9 +9,10 @@ import { AppInput } from '../../components/common/AppInput';
 import { AppDateField } from '../../components/common/AppDateField';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { AppAccordion } from '../../components/common/AppAccordion';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { DesignSystem } from '../../constants/DesignSystem';
-import { usePartyStore, useSettingsStore, useTransactionStore } from '../../store';
+import { useOrganizationStore, usePartyStore, useSettingsStore, useTransactionStore } from '../../store';
 import { useStock } from '../../hooks/useStock';
 import { COMMON_TEXT } from '../../constants/staticText';
 import { randomUUID } from 'expo-crypto';
@@ -35,6 +36,8 @@ export const TransactionScreen = () => {
     const isWide = width >= 980;
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
+    const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
+    const organizationId = selectedOrganizationId ?? user?.uid ?? null;
     const { parties } = usePartyStore();
     const { allItems } = useStock();
     const { loading } = useTransactionStore();
@@ -66,6 +69,8 @@ export const TransactionScreen = () => {
     const [showPartyMenu, setShowPartyMenu] = useState(false);
     const [showDueDatePicker, setShowDueDatePicker] = useState(false);
     const [showItemMenu, setShowItemMenu] = useState(false);
+    const [partyLogisticsExpanded, setPartyLogisticsExpanded] = useState(true);
+    const [billingPaymentExpanded, setBillingPaymentExpanded] = useState(false);
 
     // Computed
     const totals = useMemo(() => {
@@ -229,7 +234,7 @@ export const TransactionScreen = () => {
             dialog.alert(COMMON_TEXT.alerts.error, 'Please add at least one item.');
             return;
         }
-        if (!user) {
+        if (!user || !organizationId) {
             dialog.alert(COMMON_TEXT.alerts.error, 'You must be logged in.');
             return;
         }
@@ -241,7 +246,7 @@ export const TransactionScreen = () => {
         }
 
         if (!isEditMode) {
-            const isAvailable = await billRepository.checkBillNumberAvailability(normalizedBillNo, user.uid);
+            const isAvailable = await billRepository.checkBillNumberAvailability(normalizedBillNo, organizationId);
             if (!isAvailable) {
                 dialog.alert(COMMON_TEXT.alerts.validation, `Bill number "${normalizedBillNo}" already exists.`);
                 return;
@@ -254,7 +259,7 @@ export const TransactionScreen = () => {
 
         const dbPayload: NewDbTransaction = {
             id: id || randomUUID(),
-            organizationId: user.uid,
+            organizationId,
             type,
             partyId: selectedParty.id,
             partyName: selectedParty.name,
@@ -300,7 +305,11 @@ export const TransactionScreen = () => {
 
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
                         title="New Transaction"
@@ -321,158 +330,179 @@ export const TransactionScreen = () => {
                         />
                     </AppCard>
 
-                    <List.AccordionGroup>
-                        <AppCard style={styles.sectionCard}>
-                            <List.Accordion title="Party & Logistics" id="1" left={props => <List.Icon {...props} icon="truck-fast-outline" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                <View style={styles.accordionContent}>
-                                    <View style={styles.section}>
-                                        <Text variant="titleMedium" style={styles.label}>Party</Text>
-                                        <Menu
-                                            visible={showPartyMenu}
-                                            onDismiss={() => setShowPartyMenu(false)}
-                                            anchor={(
-                                                <Button mode="outlined" onPress={() => setShowPartyMenu(true)} style={styles.selector}>
-                                                    {selectedParty ? selectedParty.name : 'Select Party'}
-                                                </Button>
-                                            )}
-                                        >
-                                            {parties.map((party) => (
-                                                <Menu.Item
-                                                    key={party.id}
-                                                    onPress={() => { setSelectedParty(party); setShowPartyMenu(false); }}
-                                                    title={party.name}
-                                                />
-                                            ))}
-                                            <Menu.Item onPress={() => { setShowPartyMenu(false); router.push('/party/new' as never); }} title="+ Add New Party" />
-                                        </Menu>
-                                    </View>
-
-                                    {/* Delivery Address Section */}
-                                    <View style={styles.section}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                            <IconButton
-                                                icon={sameAsBilling ? "checkbox-marked" : "checkbox-blank-outline"}
-                                                size={20}
-                                                onPress={() => setSameAsBilling(!sameAsBilling)}
-                                                iconColor={theme.colors.primary}
-                                                style={{ margin: 0 }}
+                    <AppCard style={styles.sectionCard}>
+                        <AppAccordion
+                            title="Party & Logistics"
+                            icon="truck-fast-outline"
+                            expanded={partyLogisticsExpanded}
+                            onExpandedChange={(expanded) => {
+                                setPartyLogisticsExpanded(expanded);
+                                if (expanded) {
+                                    setBillingPaymentExpanded(false);
+                                }
+                            }}
+                            headerStyle={styles.accordionHeader}
+                            titleStyle={styles.accordionTitle}
+                        >
+                            <View style={styles.accordionContent}>
+                                <View style={styles.section}>
+                                    <Text variant="titleMedium" style={styles.label}>Party</Text>
+                                    <Menu
+                                        visible={showPartyMenu}
+                                        onDismiss={() => setShowPartyMenu(false)}
+                                        anchor={(
+                                            <Button mode="outlined" onPress={() => setShowPartyMenu(true)} style={styles.selector}>
+                                                {selectedParty ? selectedParty.name : 'Select Party'}
+                                            </Button>
+                                        )}
+                                    >
+                                        {parties.map((party) => (
+                                            <Menu.Item
+                                                key={party.id}
+                                                onPress={() => { setSelectedParty(party); setShowPartyMenu(false); }}
+                                                title={party.name}
                                             />
-                                            <Text variant="bodyMedium" onPress={() => setSameAsBilling(!sameAsBilling)} style={{ marginLeft: 4 }}>
-                                                Same as billing address
-                                            </Text>
+                                        ))}
+                                        <Menu.Item onPress={() => { setShowPartyMenu(false); router.push('/party/new' as never); }} title="+ Add New Party" />
+                                    </Menu>
+                                </View>
+
+                                <View style={styles.section}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                        <IconButton
+                                            icon={sameAsBilling ? "checkbox-marked" : "checkbox-blank-outline"}
+                                            size={20}
+                                            onPress={() => setSameAsBilling(!sameAsBilling)}
+                                            iconColor={theme.colors.primary}
+                                            style={{ margin: 0 }}
+                                        />
+                                        <Text variant="bodyMedium" onPress={() => setSameAsBilling(!sameAsBilling)} style={{ marginLeft: 4 }}>
+                                            Same as billing address
+                                        </Text>
+                                    </View>
+                                    {!sameAsBilling && (
+                                        <View style={{ gap: DesignSystem.spacing.sm }}>
+                                            <AppInput
+                                                label="Delivery Address"
+                                                value={deliveryAddress}
+                                                onChangeText={setDeliveryAddress}
+                                                inputType="text"
+                                                multiline
+                                                numberOfLines={2}
+                                            />
+                                            <AppInput
+                                                label="Contact Name (Optional)"
+                                                value={deliveryContactName}
+                                                onChangeText={setDeliveryContactName}
+                                                inputType="text"
+                                            />
+                                            <AppInput
+                                                label="Contact Phone (Optional)"
+                                                value={deliveryContactPhone}
+                                                onChangeText={setDeliveryContactPhone}
+                                                inputType="phone"
+                                                maxLength={10}
+                                            />
                                         </View>
-                                        {!sameAsBilling && (
-                                            <View style={{ gap: DesignSystem.spacing.sm }}>
-                                                <AppInput
-                                                    label="Delivery Address"
-                                                    value={deliveryAddress}
-                                                    onChangeText={setDeliveryAddress}
-                                                    inputType="text"
-                                                    multiline
-                                                    numberOfLines={2}
-                                                />
-                                                <AppInput
-                                                    label="Contact Name (Optional)"
-                                                    value={deliveryContactName}
-                                                    onChangeText={setDeliveryContactName}
-                                                    inputType="text"
-                                                />
-                                                <AppInput
-                                                    label="Contact Phone (Optional)"
-                                                    value={deliveryContactPhone}
-                                                    onChangeText={setDeliveryContactPhone}
-                                                    inputType="phone"
-                                                    maxLength={10}
-                                                />
-                                            </View>
-                                        )}
-                                    </View>
+                                    )}
                                 </View>
-                            </List.Accordion>
-                        </AppCard>
+                            </View>
+                        </AppAccordion>
+                    </AppCard>
 
-                        <AppCard style={styles.sectionCard}>
-                            <List.Accordion title="Billing & Payment" id="2" left={props => <List.Icon {...props} icon="receipt-text-outline" />} titleStyle={{ fontWeight: '700' }} style={styles.accordionHeader}>
-                                <View style={styles.accordionContent}>
-                                    <View style={styles.section}>
-                                        <AppInput
-                                            label="Bill Number"
-                                            value={billNo}
-                                            onChangeText={(value) => setBillNo(value.toUpperCase().replace(/\s+/g, ''))}
-                                            inputType="text"
-                                        />
-                                        <AppDateField
-                                            label="Bill Date"
-                                            value={billDate}
-                                            onChange={setBillDate}
-                                        />
-                                    </View>
-
-                                    <View style={styles.section}>
-                                        <Text variant="titleMedium" style={styles.label}>Payment Mode</Text>
-                                        <SegmentedButtons
-                                            value={paymentMode}
-                                            onValueChange={(value) => {
-                                                const nextMode = value as 'CASH' | 'CREDIT';
-                                                setPaymentMode(nextMode);
-                                                if (nextMode === 'CASH') {
-                                                    setDueDate(undefined);
-                                                    setPaidAmountInput('');
-                                                }
-                                            }}
-                                            buttons={[
-                                                { value: 'CASH', label: 'Cash' },
-                                                { value: 'CREDIT', label: 'Credit' },
-                                            ]}
-                                        />
-                                        {paymentMode === 'CREDIT' && (
-                                            <View style={styles.creditSection}>
-                                                <AppInput
-                                                    label="Paid Amount (optional)"
-                                                    value={paidAmountInput}
-                                                    onChangeText={setPaidAmountInput}
-                                                    inputType="decimal"
-                                                />
-                                                <AppButton
-                                                    mode="outlined"
-                                                    onPress={() => setShowDueDatePicker(true)}
-                                                    icon="calendar"
-                                                    contentStyle={{ justifyContent: 'flex-start' }}
-                                                >
-                                                    {dueDate ? dueDate.toLocaleDateString() : 'Select Due Date'}
-                                                </AppButton>
-                                                {showDueDatePicker && (
-                                                    <DateTimePicker
-                                                        value={dueDate ?? new Date()}
-                                                        mode="date"
-                                                        display="default"
-                                                        onChange={(_event, selectedDate) => {
-                                                            setShowDueDatePicker(false);
-                                                            if (selectedDate) {
-                                                                setDueDate(selectedDate);
-                                                            }
-                                                        }}
-                                                    />
-                                                )}
-                                                <AppInput
-                                                    label="Reminder Every (Days)"
-                                                    value={reminderFrequencyDays}
-                                                    onChangeText={setReminderFrequencyDays}
-                                                    inputType="number"
-                                                />
-                                                <Button
-                                                    mode={reminderEnabled ? 'contained-tonal' : 'outlined'}
-                                                    onPress={() => setReminderEnabled((current) => !current)}
-                                                >
-                                                    {reminderEnabled ? 'Reminder Enabled' : 'Enable Reminder'}
-                                                </Button>
-                                            </View>
-                                        )}
-                                    </View>
+                    <AppCard style={styles.sectionCard}>
+                        <AppAccordion
+                            title="Billing & Payment"
+                            icon="receipt-text-outline"
+                            expanded={billingPaymentExpanded}
+                            onExpandedChange={(expanded) => {
+                                setBillingPaymentExpanded(expanded);
+                                if (expanded) {
+                                    setPartyLogisticsExpanded(false);
+                                }
+                            }}
+                            headerStyle={styles.accordionHeader}
+                            titleStyle={styles.accordionTitle}
+                        >
+                            <View style={styles.accordionContent}>
+                                <View style={styles.section}>
+                                    <AppInput
+                                        label="Bill Number"
+                                        value={billNo}
+                                        onChangeText={(value) => setBillNo(value.toUpperCase().replace(/\s+/g, ''))}
+                                        inputType="text"
+                                    />
+                                    <AppDateField
+                                        label="Bill Date"
+                                        value={billDate}
+                                        onChange={setBillDate}
+                                    />
                                 </View>
-                            </List.Accordion>
-                        </AppCard>
-                    </List.AccordionGroup>
+
+                                <View style={styles.section}>
+                                    <Text variant="titleMedium" style={styles.label}>Payment Mode</Text>
+                                    <SegmentedButtons
+                                        value={paymentMode}
+                                        onValueChange={(value) => {
+                                            const nextMode = value as 'CASH' | 'CREDIT';
+                                            setPaymentMode(nextMode);
+                                            if (nextMode === 'CASH') {
+                                                setDueDate(undefined);
+                                                setPaidAmountInput('');
+                                            }
+                                        }}
+                                        buttons={[
+                                            { value: 'CASH', label: 'Cash' },
+                                            { value: 'CREDIT', label: 'Credit' },
+                                        ]}
+                                    />
+                                    {paymentMode === 'CREDIT' && (
+                                        <View style={styles.creditSection}>
+                                            <AppInput
+                                                label="Paid Amount (optional)"
+                                                value={paidAmountInput}
+                                                onChangeText={setPaidAmountInput}
+                                                inputType="decimal"
+                                            />
+                                            <AppButton
+                                                mode="outlined"
+                                                onPress={() => setShowDueDatePicker(true)}
+                                                icon="calendar"
+                                                contentStyle={{ justifyContent: 'flex-start' }}
+                                            >
+                                                {dueDate ? dueDate.toLocaleDateString() : 'Select Due Date'}
+                                            </AppButton>
+                                            {showDueDatePicker && (
+                                                <DateTimePicker
+                                                    value={dueDate ?? new Date()}
+                                                    mode="date"
+                                                    display="default"
+                                                    onChange={(_event, selectedDate) => {
+                                                        setShowDueDatePicker(false);
+                                                        if (selectedDate) {
+                                                            setDueDate(selectedDate);
+                                                        }
+                                                    }}
+                                                />
+                                            )}
+                                            <AppInput
+                                                label="Reminder Every (Days)"
+                                                value={reminderFrequencyDays}
+                                                onChangeText={setReminderFrequencyDays}
+                                                inputType="number"
+                                            />
+                                            <Button
+                                                mode={reminderEnabled ? 'contained-tonal' : 'outlined'}
+                                                onPress={() => setReminderEnabled((current) => !current)}
+                                            >
+                                                {reminderEnabled ? 'Reminder Enabled' : 'Enable Reminder'}
+                                            </Button>
+                                        </View>
+                                    )}
+                                </View>
+                            </View>
+                        </AppAccordion>
+                    </AppCard>
 
                     <View style={styles.section}>
                         <View style={styles.itemsHeaderRow}>
@@ -628,6 +658,10 @@ const styles = StyleSheet.create({
     },
     accordionHeader: {
         backgroundColor: 'transparent',
+        paddingHorizontal: DesignSystem.spacing.md,
+    },
+    accordionTitle: {
+        fontWeight: '700',
     },
     accordionContent: {
         paddingHorizontal: DesignSystem.spacing.md,

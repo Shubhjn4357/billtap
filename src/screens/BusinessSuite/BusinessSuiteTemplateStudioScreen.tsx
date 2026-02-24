@@ -11,7 +11,7 @@ import { useAppDialog } from '../../components/providers/DialogProvider';
 import { businessSuiteService } from '../../api/businessSuiteService';
 import { useAuth } from '../../hooks/useAuth';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 import { useOrganizationStore } from '../../store';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { isNetworkLikeError } from '../../utils/errorGuards';
@@ -178,10 +178,11 @@ export const BusinessSuiteTemplateStudioScreen = () => {
 
     return (
         <ScreenWrapper>
+            <AppPullToRefresh refreshing={templateQuery.isFetching} onRefresh={() => { void templateQuery.refetch(); }}>
             <ScrollView
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<AppRefreshControl refreshing={templateQuery.isFetching} onRefresh={() => { void templateQuery.refetch(); }} />}
+                
             >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                 <PageHeaderCard
@@ -471,6 +472,7 @@ export const BusinessSuiteTemplateStudioScreen = () => {
                 </View>
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
         </ScreenWrapper>
     );
 };

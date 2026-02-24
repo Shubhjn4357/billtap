@@ -106,7 +106,7 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({
             >
                 <KeyboardAvoidingView
                     style={styles.flex}
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 >
                     {children}
                 </KeyboardAvoidingView>

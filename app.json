@@ -2,7 +2,7 @@
   "expo": {
     "name": "vahi",
     "slug": "vahi",
-    "version": "3.0.1",
+    "version": "3.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "vahi",
@@ -19,7 +19,7 @@
     "ios": {
       "bundleIdentifier": "com.blockbucket.vahi",
       "supportsTablet": true,
-      "buildNumber": "12",
+      "buildNumber": "14",
       "icon": "./assets/images/icon.png",
       "googleServicesFile": "./GoogleService-Info.plist"
     },
@@ -35,7 +35,7 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 12,
+      "versionCode": 14,
       "googleServicesFile": "./google-services.json"
     },
     "web": {

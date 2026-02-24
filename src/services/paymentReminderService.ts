@@ -1,22 +1,10 @@
 import * as Notifications from 'expo-notifications';
 import { transactionService } from '../api/transactionService';
 import { useSettingsStore } from '../store';
+import { saveNotificationInboxEntry } from './notificationService';
 
 const REMINDER_TAG = 'billtap_payment_reminder';
 const MAX_SCHEDULE = 64;
-
-Notifications.setNotificationHandler({
-    handleNotification: async () => {
-        const soundEnabled = useSettingsStore.getState().notificationSoundEnabled;
-        return {
-            shouldShowAlert: true,
-            shouldPlaySound: soundEnabled,
-            shouldSetBadge: false,
-            shouldShowBanner: true,
-            shouldShowList: true,
-        };
-    },
-});
 
 const normalizeDate = (value?: string | null): Date | null => {
     if (!value) return null;
@@ -62,6 +50,7 @@ export const paymentReminderService = {
                         sound: soundEnabled ? 'default' : undefined,
                         data: {
                             tag: REMINDER_TAG,
+                            type: 'reminder',
                             transactionId: reminder.id,
                             paymentStatus: reminder.paymentStatus,
                             dueAmount: reminder.dueAmount,
@@ -71,6 +60,15 @@ export const paymentReminderService = {
                         type: Notifications.SchedulableTriggerInputTypes.DATE,
                         date: triggerDate,
                     },
+                });
+
+                await saveNotificationInboxEntry({
+                    id: `payment-reminder-${reminder.id}`,
+                    title: `${title} (Scheduled)`,
+                    message: `${body} Scheduled for ${triggerDate.toLocaleString()}.`,
+                    type: 'reminder',
+                    isRead: false,
+                    createdAt: new Date().toISOString(),
                 });
             }
         } catch {

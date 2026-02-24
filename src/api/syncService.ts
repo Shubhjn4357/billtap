@@ -140,8 +140,200 @@ const sortParties = (parties: Party[]): Party[] => [...parties].sort((a, b) => (
 const sortBills = <T extends { createdAt?: any }>(entries: T[]): T[] =>
     [...entries].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
+const normalizeTransactionTypeForApi = (value: unknown): 'SALE' | 'PURCHASE' => {
+    if (value === 'SALE' || value === 'PURCHASE') return value;
+    if (value === 'RETURN_OUTWARD') return 'SALE';
+    if (value === 'RETURN_INWARD') return 'PURCHASE';
+    if (typeof value === 'string') {
+        const upper = value.toUpperCase();
+        if (upper.includes('PURCHASE') || upper.includes('INWARD')) return 'PURCHASE';
+        if (upper.includes('SALE') || upper.includes('OUTWARD')) return 'SALE';
+    }
+    return 'SALE';
+};
+
+const sanitizeOptionalString = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const withOptionalOrganizationId = (path: string, organizationId: unknown): string => {
+    const normalizedOrganizationId = sanitizeOptionalString(organizationId);
+    if (!normalizedOrganizationId) return path;
+    const separator = path.includes('?') ? '&' : '?';
+    return `${path}${separator}organizationId=${encodeURIComponent(normalizedOrganizationId)}`;
+};
+
+type ServerAccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
+
+const normalizeAccountTypeForApi = (value: unknown): ServerAccountType => {
+    if (value === 'ASSET' || value === 'LIABILITY' || value === 'EQUITY' || value === 'INCOME' || value === 'EXPENSE') {
+        return value;
+    }
+    if (value === 'CASH' || value === 'BANK') {
+        return 'ASSET';
+    }
+    return 'ASSET';
+};
+
+const sanitizeAccountPayloadForApi = (payload: { id: string; code: string; name: string; type: string; isActive?: boolean }) => {
+    const code = sanitizeOptionalString(payload.code) ?? 'ACC';
+    const name = sanitizeOptionalString(payload.name) ?? 'Account';
+
+    return {
+        code: code.length >= 2 ? code.toUpperCase() : 'ACC',
+        name: name.length >= 2 ? name : 'Account',
+        type: normalizeAccountTypeForApi(payload.type),
+        isActive: payload.isActive ?? true,
+    };
+};
+
+const sanitizeMessagePayloadForApi = (payload: {
+    channel: 'WHATSAPP' | 'SMS' | 'EMAIL';
+    recipient: string;
+    message: string;
+    barcode?: string;
+    mediaUrl?: string;
+}) => {
+    return {
+        channel: payload.channel,
+        recipient: String(payload.recipient ?? '').trim(),
+        message: String(payload.message ?? '').trim(),
+        barcode: sanitizeOptionalString(payload.barcode),
+        mediaUrl: sanitizeOptionalString(payload.mediaUrl),
+    };
+};
+
+const sanitizeItemPayloadForApi = (payload: OfflineItemPayload): Record<string, unknown> => {
+    const next: Record<string, unknown> = {
+        ...payload,
+        name: String(payload.name ?? '').trim(),
+        nameLowercase: String(payload.nameLowercase ?? '').trim() || String(payload.name ?? '').trim().toLowerCase(),
+        price: Number(payload.price ?? 0),
+        stock: Number(payload.stock ?? 0),
+        purchasePrice: Number(payload.purchasePrice ?? 0),
+        mrp: Number(payload.mrp ?? 0),
+        minimumStock: Number(payload.minimumStock ?? 0),
+        gstPercentage: Number(payload.gstPercentage ?? 0),
+        isActive: payload.isActive ?? true,
+    };
+
+    next.unit = sanitizeOptionalString(payload.unit) ?? 'pcs';
+    next.hsn = sanitizeOptionalString(payload.hsn);
+    next.category = sanitizeOptionalString(payload.category);
+    next.subcategory = sanitizeOptionalString(payload.subcategory);
+    next.location = sanitizeOptionalString(payload.location);
+    next.barcode = sanitizeOptionalString(payload.barcode);
+    next.imageUrl = sanitizeOptionalString(payload.imageUrl);
+
+    return next;
+};
+
+const sanitizePartyPayloadForApi = (payload: OfflinePartyPayload): Record<string, unknown> => {
+    const next: Record<string, unknown> = {
+        ...payload,
+        name: String(payload.name ?? '').trim(),
+        type: payload.type === 'supplier' ? 'supplier' : 'customer',
+        isActive: payload.isActive ?? true,
+    };
+
+    next.phone = sanitizeOptionalString(payload.phone);
+    next.email = sanitizeOptionalString(payload.email);
+    next.address = sanitizeOptionalString(payload.address);
+    next.gstNumber = sanitizeOptionalString(payload.gstNumber);
+
+    return next;
+};
+
+const normalizeBillItemsForApi = (items: BillItem[]): {
+    id: string;
+    name: string;
+    quantity: number;
+    price: number;
+    tax: number;
+    total: number;
+}[] => {
+    if (!Array.isArray(items)) return [];
+
+    return items
+        .map((item) => {
+            const id = String(item?.id ?? '').trim();
+            const name = String(item?.name ?? '').trim();
+            const quantity = Number(item?.quantity ?? 0);
+            const price = Number(item?.price ?? 0);
+            const tax = Number(item?.tax ?? 0);
+            const computedTotal = quantity * price * (1 + tax / 100);
+            const total = Number(item?.total ?? computedTotal);
+
+            if (!id || !name || !Number.isFinite(quantity) || quantity <= 0) return null;
+
+            return {
+                id,
+                name,
+                quantity,
+                price: Number.isFinite(price) ? price : 0,
+                tax: Number.isFinite(tax) ? tax : 0,
+                total: Number.isFinite(total) ? total : 0,
+            };
+        })
+        .filter((item): item is {
+            id: string;
+            name: string;
+            quantity: number;
+            price: number;
+            tax: number;
+            total: number;
+        } => item !== null);
+};
+
+const buildCreateBillPayloadForApi = (payload: OfflineBillPayload): Record<string, unknown> => {
+    const items = normalizeBillItemsForApi(payload.items ?? []);
+    const totalAmount = Number(payload.total ?? 0);
+    const paidAmount = Number(payload.paidAmount ?? 0);
+    const paymentStatus = payload.paymentStatus
+        ?? (paidAmount >= totalAmount ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'PENDING'));
+
+    return {
+        id: payload.id,
+        type: normalizeTransactionTypeForApi(payload.type),
+        partyId: sanitizeOptionalString(payload.partyId),
+        partyName: sanitizeOptionalString(payload.customerName),
+        partyPhone: sanitizeOptionalString(payload.customerPhone),
+        businessName: sanitizeOptionalString(payload.businessName),
+        businessAddress: sanitizeOptionalString(payload.businessAddress),
+        gstNumber: sanitizeOptionalString(payload.gstNumber),
+        currency: sanitizeOptionalString(payload.currency) ?? 'INR',
+        billNumber: sanitizeOptionalString(payload.billNumber),
+        billDate: payload.billDate,
+        items,
+        totalAmount,
+        discountAmount: Number(payload.discountAmount ?? 0),
+        taxAmount: Number(payload.taxAmount ?? 0),
+        paidAmount,
+        paymentMode: payload.paymentMode === 'CREDIT' ? 'CREDIT' : 'CASH',
+        paymentStatus: paymentStatus === 'PAID' || paymentStatus === 'PARTIAL' ? paymentStatus : 'PENDING',
+        billMode: payload.billMode === 'ESTIMATE' ? 'ESTIMATE' : 'GST',
+        dueDate: payload.dueDate ?? undefined,
+        reminderEnabled: Boolean(payload.reminderEnabled),
+        reminderFrequencyDays: Math.max(1, Number(payload.reminderFrequencyDays ?? 3) || 3),
+        nextReminderAt: payload.nextReminderAt ?? undefined,
+        remark: sanitizeOptionalString(payload.remark),
+    };
+};
+
 const shouldDropMutation = (error: unknown, _m: OfflineMutation): boolean => {
-    if (error instanceof ApiError && error.status === 404) return true;
+    if (error instanceof ApiError && [400, 404, 409, 422].includes(error.status)) return true;
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    if (
+        message.includes('invalid option')
+        || message.includes('expected one of')
+        || message.includes('expected string, received null')
+        || message.includes('"code":"invalid_type"')
+        || message.includes('"code":"invalid_value"')
+    ) {
+        return true;
+    }
     return false;
 };
 
@@ -174,7 +366,8 @@ const compactQueueForEnqueue = (queue: OfflineMutation[], mutation: EnqueueMutat
 const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
     switch (mutation.type) {
         case 'upsert_item': {
-            const res = await apiClient.post<ApiResponse>('/items', mutation.payload);
+            const payload = sanitizeItemPayloadForApi(mutation.payload);
+            const res = await apiClient.post<ApiResponse>('/items', payload);
             if (res && res.ok === false) throw new Error(res.message || 'Failed to sync item.');
             return;
         }
@@ -184,7 +377,8 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
             return;
         }
         case 'upsert_party': {
-            const res = await apiClient.post<ApiResponse>('/parties', mutation.payload);
+            const payload = sanitizePartyPayloadForApi(mutation.payload);
+            const res = await apiClient.post<ApiResponse>('/parties', payload);
             if (res && res.ok === false) throw new Error(res.message || 'Failed to sync party.');
             return;
         }
@@ -194,7 +388,8 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
             return;
         }
         case 'create_bill': {
-            const res = await apiClient.post<ApiResponse>('/transactions', mutation.payload);
+            const payload = buildCreateBillPayloadForApi(mutation.payload);
+            const res = await apiClient.post<ApiResponse>('/transactions', payload);
             if (res && res.ok === false) throw new Error(res.message || 'Failed to sync bill.');
             return;
         }
@@ -215,12 +410,14 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
             return;
         }
         case 'upsert_account': {
-            const res = await apiClient.post<ApiResponse>('/accounting/accounts', mutation.payload);
+            const payload = sanitizeAccountPayloadForApi(mutation.payload);
+            const res = await apiClient.post<ApiResponse>('/accounting/accounts', payload);
             if (res && res.ok === false) throw new Error(res.message || 'Failed to sync account.');
             return;
         }
         case 'send_message': {
-            const res = await apiClient.post<ApiResponse>('/communications/messages/send', mutation.payload);
+            const payload = sanitizeMessagePayloadForApi(mutation.payload);
+            const res = await apiClient.post<ApiResponse>('/communications/messages/send', payload);
             if (res && res.ok === false) throw new Error(res.message || 'Failed to send message.');
             return;
         }
@@ -235,19 +432,26 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
             return;
         }
         case 'update_organization_settings': {
-            const path = `/organizations/settings/current?organizationId=${encodeURIComponent(mutation.payload.organizationId)}`;
+            const path = withOptionalOrganizationId('/organizations/settings/current', mutation.payload.organizationId);
             const res = await apiClient.put<ApiResponse>(path, { settings: mutation.payload.settings });
             if (res && res.ok === false) throw new Error(res.message || 'Failed to update org settings.');
             return;
         }
         case 'create_signature': {
-            const path = `/organizations/signatures/current?organizationId=${encodeURIComponent(mutation.payload.organizationId)}`;
-            const res = await apiClient.post<ApiResponse>(path, mutation.payload);
+            const path = withOptionalOrganizationId('/organizations/signatures/current', mutation.payload.organizationId);
+            const payload = {
+                name: sanitizeOptionalString(mutation.payload.name),
+                signatureData: sanitizeOptionalString(mutation.payload.signatureData),
+                signatureUrl: sanitizeOptionalString(mutation.payload.signatureUrl),
+                isDefault: Boolean(mutation.payload.isDefault),
+            };
+            const res = await apiClient.post<ApiResponse>(path, payload);
             if (res && res.ok === false) throw new Error(res.message || 'Failed to create signature.');
             return;
         }
         case 'set_default_signature': {
-            const path = `/organizations/signatures/current/${encodeURIComponent(mutation.payload.signatureId)}/default?organizationId=${encodeURIComponent(mutation.payload.organizationId)}`;
+            const signatureId = encodeURIComponent(String(mutation.payload.signatureId ?? ''));
+            const path = withOptionalOrganizationId(`/organizations/signatures/current/${signatureId}/default`, mutation.payload.organizationId);
             const res = await apiClient.post<ApiResponse>(path);
             if (res && res.ok === false) throw new Error(res.message || 'Failed to set default signature.');
             return;
@@ -358,11 +562,12 @@ class OfflineSyncService {
     async applyLocalBillStock(items: BillItem[], type: TransactionType = 'SALE'): Promise<void> {
         const current = await this.getCachedItems();
         const next = [...current];
+        const isOutflow = type === 'SALE' || type === 'RETURN_OUTWARD';
         for (const line of items) {
             const idx = next.findIndex(e => e.id === line.id);
             if (idx >= 0) {
                 const stock = Number(next[idx].stock || 0);
-                next[idx] = { ...next[idx], stock: type === 'SALE' ? stock - line.quantity : stock + line.quantity, updatedAt: new Date().toISOString() };
+                next[idx] = { ...next[idx], stock: isOutflow ? stock - line.quantity : stock + line.quantity, updatedAt: new Date().toISOString() };
             }
         }
         await this.setCachedItems(next);

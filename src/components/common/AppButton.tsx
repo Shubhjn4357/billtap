@@ -1,7 +1,6 @@
-import React from 'react';
-import { StyleSheet, type GestureResponderEvent } from 'react-native';
+import React, { useRef } from 'react';
+import { StyleSheet, Animated, type GestureResponderEvent } from 'react-native';
 import { Button, ButtonProps, useTheme } from 'react-native-paper';
-import { MotionView } from '../motion/Motion';
 import { useHaptics } from '../../hooks/useHaptics';
 import { DesignSystem } from '../../constants/DesignSystem';
 
@@ -22,7 +21,8 @@ export const AppButton: React.FC<AppButtonProps> = ({
 }) => {
     const { triggerSelection } = useHaptics();
     const theme = useTheme();
-    const [isPressed, setIsPressed] = React.useState(false);
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+
     const mode = props.mode ?? 'contained';
     const isOutlined = mode === 'outlined';
     const isText = mode === 'text';
@@ -40,20 +40,25 @@ export const AppButton: React.FC<AppButtonProps> = ({
     };
 
     const handlePressIn: NonNullable<ButtonProps['onPressIn']> = (event) => {
-        setIsPressed(true);
+        Animated.timing(scaleAnim, {
+            toValue: 0.97,
+            duration: DesignSystem.motion.fast,
+            useNativeDriver: true,
+        }).start();
         onPressIn?.(event);
     };
 
     const handlePressOut: NonNullable<ButtonProps['onPressOut']> = (event) => {
-        setIsPressed(false);
+        Animated.timing(scaleAnim, {
+            toValue: 1,
+            duration: DesignSystem.motion.fast,
+            useNativeDriver: true,
+        }).start();
         onPressOut?.(event);
     };
 
     return (
-        <MotionView
-            animate={{ scale: isPressed ? 0.97 : 1, translateY: isPressed ? 1 : 0 }}
-            transition={{ type: 'timing', duration: DesignSystem.motion.fast }}
-        >
+        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <Button
                 onPress={handlePress}
                 onPressIn={handlePressIn}
@@ -75,7 +80,7 @@ export const AppButton: React.FC<AppButtonProps> = ({
             >
                 {children}
             </Button>
-        </MotionView>
+        </Animated.View>
     );
 };
 

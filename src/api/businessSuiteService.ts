@@ -13,6 +13,7 @@ import {
     ORG_TEMPLATES_CACHE_KEY,
     setOrgCachedValue,
 } from './businessSuiteCache';
+import { useUserStore } from '../store';
 
 export interface PayrollSnapshot {
     attendanceCount: number;
@@ -162,6 +163,21 @@ const withOrgQuery = (path: string, organizationId?: string): string => {
     return `${path}${separator}organizationId=${encodeURIComponent(organizationId)}`;
 };
 
+const getCurrentUserId = (): string | undefined => {
+    const uid = useUserStore.getState().user?.uid?.trim();
+    return uid || undefined;
+};
+
+const getOrgListCacheSlot = (): string | undefined => {
+    const uid = getCurrentUserId();
+    return uid ? `user:${uid}` : '__user_unknown__';
+};
+
+const getOrgContextDefaultSlot = (): string | undefined => {
+    const uid = getCurrentUserId();
+    return uid ? `user:${uid}` : '__user_unknown__';
+};
+
 export const businessSuiteService = {
     async getPayrollSnapshot(): Promise<PayrollSnapshot> {
         const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -271,6 +287,7 @@ export const businessSuiteService = {
     },
 
     async getMyOrganizations(): Promise<OrganizationMembership[]> {
+        const listCacheSlot = getOrgListCacheSlot();
         try {
             const response = await apiClient.get<{
                 ok: boolean;
@@ -282,13 +299,13 @@ export const businessSuiteService = {
                 throw new Error(response.message || 'Failed to load organizations.');
             }
 
-            await setOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, undefined, response.organizations);
+            await setOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, listCacheSlot, response.organizations);
             return response.organizations;
         } catch (error: unknown) {
             if (!isNetworkLikeError(error)) {
                 throw error;
             }
-            const cached = await getOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, undefined);
+            const cached = await getOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, listCacheSlot);
             if (cached) return cached;
             throw error;
         }
@@ -303,6 +320,7 @@ export const businessSuiteService = {
         gstNumber?: string;
         address?: string;
     }): Promise<string> {
+        const listCacheSlot = getOrgListCacheSlot();
         const response = await apiClient.post<{
             ok: boolean;
             id?: string;
@@ -313,7 +331,7 @@ export const businessSuiteService = {
             throw new Error(response.message || 'Failed to create organization.');
         }
 
-        const cached = await getOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, undefined) ?? [];
+        const cached = await getOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, listCacheSlot) ?? [];
         const next: OrganizationMembership[] = [
             ...cached,
             {
@@ -325,7 +343,7 @@ export const businessSuiteService = {
                 permissions: {},
             },
         ];
-        await setOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, undefined, next);
+        await setOrgCachedValue<OrganizationMembership[]>(ORG_LIST_CACHE_KEY, listCacheSlot, next);
 
         return response.id;
     },
@@ -334,6 +352,7 @@ export const businessSuiteService = {
         organization: OrganizationSummary;
         context: OrganizationContextPayload;
     }> {
+        const defaultContextCacheSlot = getOrgContextDefaultSlot();
         try {
             const response = await apiClient.get<{
                 ok: boolean;
@@ -350,7 +369,9 @@ export const businessSuiteService = {
                 organization: response.organization,
                 context: response.context,
             };
-            await setOrgCachedValue(ORG_CONTEXT_CACHE_KEY, organizationId ?? response.organization.id, payload);
+            // Persist exact-org and user-scoped default slots.
+            await setOrgCachedValue(ORG_CONTEXT_CACHE_KEY, response.organization.id, payload);
+            await setOrgCachedValue(ORG_CONTEXT_CACHE_KEY, defaultContextCacheSlot, payload);
             return payload;
         } catch (error: unknown) {
             if (!isNetworkLikeError(error)) {
@@ -361,6 +382,12 @@ export const businessSuiteService = {
                 context: OrganizationContextPayload;
             }>(ORG_CONTEXT_CACHE_KEY, organizationId);
             if (cached) return cached;
+
+            const userScopedCached = await getOrgCachedValue<{
+                organization: OrganizationSummary;
+                context: OrganizationContextPayload;
+            }>(ORG_CONTEXT_CACHE_KEY, defaultContextCacheSlot);
+            if (userScopedCached) return userScopedCached;
             throw error;
         }
     },

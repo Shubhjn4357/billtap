@@ -40,6 +40,13 @@ const BASE_CARDS: SuiteCard[] = [
         cta: 'Open Operations',
     },
     {
+        key: 'staff',
+        title: 'Staff Management',
+        subtitle: 'Invite staff, review access, and manage team members.',
+        route: '/staff',
+        cta: 'Manage Staff',
+    },
+    {
         key: 'subscription',
         title: 'Subscription',
         subtitle: 'Manage current plan, limits and upgrades.',
@@ -69,6 +76,9 @@ export const BusinessSuiteHubScreen = () => {
             }
             if (card.key === 'operations') {
                 return canAccessOperations || isOwnerOrAdmin || canManageStaff || canAccessSettings;
+            }
+            if (card.key === 'staff') {
+                return isOwnerOrAdmin || canManageStaff;
             }
             if (card.key === 'subscription') {
                 return isOwnerOrAdmin || canManageSubscription;
@@ -108,7 +118,7 @@ export const BusinessSuiteHubScreen = () => {
                                     <List.Item
                                         title={card.title}
                                         description={card.subtitle}
-                                        left={props => <List.Icon {...props} icon={card.key === 'profile' ? 'account-outline' : card.key === 'template' ? 'palette-outline' : card.key === 'subscription' ? 'star-outline' : 'briefcase-outline'} />}
+                                        left={props => <List.Icon {...props} icon={card.key === 'profile' ? 'account-outline' : card.key === 'template' ? 'palette-outline' : card.key === 'subscription' ? 'star-outline' : card.key === 'staff' ? 'account-group-outline' : 'briefcase-outline'} />}
                                         right={props => <List.Icon {...props} icon="chevron-right" />}
                                         onPress={() => router.push(card.route as never)}
                                         titleStyle={{ fontWeight: '600' }}

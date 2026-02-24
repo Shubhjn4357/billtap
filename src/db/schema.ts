@@ -19,6 +19,7 @@ export const users = sqliteTable('users', {
 export const items = sqliteTable('items', {
     id: text('id').primaryKey(),
     organizationId: text('organizationId').notNull(),
+    branchId: text('branchId'),
     name: text('name').notNull(),
     nameLowercase: text('nameLowercase').notNull(),
     price: real('price').notNull(),
@@ -28,10 +29,16 @@ export const items = sqliteTable('items', {
     gstPercentage: real('gstPercentage').default(0),
     stock: integer('stock').default(0),
     minimumStock: integer('minimumStock').default(0),
+    openingStock: integer('openingStock').default(0),
     unit: text('unit').default('pcs'),
     category: text('category'),
+    subcategory: text('subcategory'),
+    location: text('location'),
     image: text('imageUrl'),
     barcode: text('barcode'),
+    expiresAt: text('expiresAt'),
+    autoDeleteAt: text('autoDeleteAt'),
+    autoDeleteEnabled: integer('autoDeleteEnabled', { mode: 'boolean' }).default(false),
     isActive: integer('isActive', { mode: 'boolean' }).default(true),
     updatedAt: text('updatedAt'),
     createdAt: text('createdAt'),
@@ -57,13 +64,20 @@ export const parties = sqliteTable('parties', {
 export const transactions = sqliteTable('transactions', {
     id: text('id').primaryKey(),
     organizationId: text('organizationId'),
+    branchId: text('branchId'),
     accountId: text('accountId'), // Link to accounts table (Cash/Bank) - NEW
     type: text('type').notNull(), // 'SALE' | 'PURCHASE'
     partyId: text('partyId'),
     partyName: text('partyName'),
+    partyPhone: text('partyPhone'),
     billNumber: text('billNumber'),
     billDate: text('billDate').notNull(),
+    businessName: text('businessName'),
+    businessAddress: text('businessAddress'),
+    gstNumber: text('gstNumber'),
     currency: text('currency').default('INR'),
+    costCenter: text('costCenter'),
+    projectCode: text('projectCode'),
     totalAmount: real('totalAmount').notNull(),
     discountAmount: real('discountAmount').default(0),
     taxAmount: real('taxAmount').default(0),
@@ -71,7 +85,13 @@ export const transactions = sqliteTable('transactions', {
     paymentMode: text('paymentMode').default('CASH'),
     paymentStatus: text('paymentStatus').default('PAID'), // PAID, PARTIAL, PENDING
     billMode: text('billMode').default('ESTIMATE'), // GST, ESTIMATE
+    affectsGst: integer('affectsGst', { mode: 'boolean' }).default(true),
+    createdByUid: text('createdByUid'),
     dueDate: text('dueDate'),
+    reminderEnabled: integer('reminderEnabled', { mode: 'boolean' }).default(false),
+    reminderFrequencyDays: integer('reminderFrequencyDays').default(3),
+    nextReminderAt: text('nextReminderAt'),
+    lastReminderAt: text('lastReminderAt'),
     remark: text('remark'),
     billingAddress: text('billingAddress'), // NEW: Billing address
     deliveryAddress: text('deliveryAddress'), // NEW: Delivery location

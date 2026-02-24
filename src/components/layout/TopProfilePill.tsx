@@ -1,29 +1,30 @@
 import { router } from 'expo-router';
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { MotionView } from '../motion/Motion';
-import { Avatar, Divider, Menu, useTheme, IconButton, Badge, Text } from 'react-native-paper';
+import { ActivityIndicator, Avatar, Divider, IconButton, Menu, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNetworkStore, useUserStore } from '../../store';
-import { useAuth } from '../../hooks/useAuth';
+
+import { businessSuiteService, OrganizationMembership } from '../../api/businessSuiteService';
 import { DesignSystem } from '../../constants/DesignSystem';
-import { SideDrawer } from '../navigation/SideDrawer';
+import { useAuth } from '../../hooks/useAuth';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
+import { useNetworkStore, useOrganizationStore, useSettingsStore, useUserStore } from '../../store';
+import { useAppDialog } from '../providers/DialogProvider';
+import { SideDrawer } from '../navigation/SideDrawer';
 
 export const TopProfilePill: React.FC = () => {
     const theme = useTheme();
     const insets = useSafeAreaInsets();
+    const dialog = useAppDialog();
     const { signOut } = useAuth();
     const user = useUserStore((state) => state.user);
     const { isConnected, isInternetReachable } = useNetworkStore();
-
-    const [menuVisible, setMenuVisible] = React.useState(false);
-    const [drawerVisible, setDrawerVisible] = React.useState(false);
-    const [orgMenuVisible, setOrgMenuVisible] = React.useState(false);
-
-    const isOffline = isConnected === false || isInternetReachable === false;
-
-    // Quick Actions Permissions
+    const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
+    const {
+        autoTheme,
+        themeMode,
+        setThemeMode,
+    } = useSettingsStore();
     const {
         canOpenBilling,
         canCreateSale,
@@ -31,7 +32,19 @@ export const TopProfilePill: React.FC = () => {
         canManageInventory,
         canManageParties,
         canAccessBusinessSuite,
+        canManageStaff,
+        isOwnerOrAdmin,
+        refreshOrganizationContext,
     } = useOrganizationAccess();
+
+    const [profileMenuVisible, setProfileMenuVisible] = useState(false);
+    const [drawerVisible, setDrawerVisible] = useState(false);
+    const [organizationMenuVisible, setOrganizationMenuVisible] = useState(false);
+    const [organizations, setOrganizations] = useState<OrganizationMembership[]>([]);
+    const [loadingOrganizations, setLoadingOrganizations] = useState(false);
+    const [switchingOrganizationId, setSwitchingOrganizationId] = useState<string | null>(null);
+
+    const isOffline = isConnected === false || isInternetReachable === false;
 
     const quickActions = useMemo(
         () => ([
@@ -72,7 +85,7 @@ export const TopProfilePill: React.FC = () => {
                 label: 'Scan Barcode',
                 subtitle: 'Capture SKU instantly',
                 icon: 'barcode-scan',
-                route: '/scan',
+                route: '/scan?target=stock',
                 enabled: canManageInventory || canOpenBilling,
             },
             {
@@ -83,6 +96,14 @@ export const TopProfilePill: React.FC = () => {
                 route: '/business-suite',
                 enabled: canAccessBusinessSuite,
             },
+            {
+                key: 'staff',
+                label: 'Staff',
+                subtitle: 'Invite and manage team',
+                icon: 'account-group-outline',
+                route: '/staff',
+                enabled: canManageStaff,
+            },
         ]).filter((entry) => entry.enabled),
         [
             canAccessBusinessSuite,
@@ -90,122 +111,109 @@ export const TopProfilePill: React.FC = () => {
             canCreateSale,
             canManageInventory,
             canManageParties,
+            canManageStaff,
             canOpenBilling,
         ]
     );
 
-    const initials = React.useMemo(() => {
+    const initials = useMemo(() => {
         const source = user?.displayName?.trim() || user?.phoneNumber || 'U';
         const parts = source.split(/\s+/).filter(Boolean);
         if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
         return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
     }, [user?.displayName, user?.phoneNumber]);
 
+    const firstName = useMemo(() => {
+        const raw = user?.displayName?.trim();
+        if (!raw) return 'User';
+        return raw.split(/\s+/)[0] || 'User';
+    }, [user?.displayName]);
+
+    const currentOrganization = useMemo(() => {
+        if (!organizations.length) return null;
+        if (selectedOrganizationId) {
+            return organizations.find((entry) => entry.id === selectedOrganizationId) ?? organizations[0];
+        }
+        return organizations[0];
+    }, [organizations, selectedOrganizationId]);
+
+    const loadOrganizations = useCallback(async (showError = false) => {
+        try {
+            setLoadingOrganizations(true);
+            const data = await businessSuiteService.getMyOrganizations();
+            setOrganizations(data);
+        } catch (error: unknown) {
+            if (showError) {
+                dialog.alert('Organization', error instanceof Error ? error.message : 'Failed to load organizations.');
+            }
+        } finally {
+            setLoadingOrganizations(false);
+        }
+    }, [dialog]);
+
+    useEffect(() => {
+        void loadOrganizations(false);
+    }, [loadOrganizations, selectedOrganizationId]);
+
+    const handleSwitchOrganization = useCallback(async (organizationId: string) => {
+        if (organizationId === selectedOrganizationId) {
+            setOrganizationMenuVisible(false);
+            return;
+        }
+
+        try {
+            setSwitchingOrganizationId(organizationId);
+            await refreshOrganizationContext(organizationId);
+            setOrganizationMenuVisible(false);
+            router.replace('/(main)/(tabs)/home');
+        } catch (error: unknown) {
+            dialog.alert('Organization', error instanceof Error ? error.message : 'Failed to switch organization.');
+        } finally {
+            setSwitchingOrganizationId(null);
+        }
+    }, [dialog, refreshOrganizationContext, selectedOrganizationId]);
+
     const handleLogout = async () => {
-        setMenuVisible(false);
+        setProfileMenuVisible(false);
         await signOut();
         router.replace('/(auth)/login');
     };
 
+    const glassBackground = theme.dark ? 'rgba(15, 23, 42, 0.72)' : 'rgba(255, 255, 255, 0.72)';
+    const glassBorder = theme.dark ? 'rgba(148, 163, 184, 0.35)' : 'rgba(148, 163, 184, 0.34)';
+    const glassInset = theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.62)';
+
     return (
         <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.overlay]}>
-            <MotionView
+            <View
                 style={[
                     styles.headerContainer,
                     { top: insets.top + 6 },
                 ]}
-                from={{ opacity: 0, translateY: -12 }}
-                animate={{ opacity: 1, translateY: 0 }}
-                transition={{ type: 'timing', duration: 240 }}
             >
-                {/* Left Side: Hamburger Menu */}
-                <View style={[styles.pillLeft, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
+                <View
+                    style={[
+                        styles.singlePill,
+                        {
+                            backgroundColor: glassBackground,
+                            borderColor: glassBorder,
+                            shadowColor: theme.dark ? '#020617' : '#0f172a',
+                        },
+                    ]}
+                >
+                    <View style={[styles.glassInset, { borderColor: glassInset }]} />
+
                     <IconButton
                         icon="menu"
-                        size={24}
+                        size={22}
                         iconColor={theme.colors.onSurface}
                         onPress={() => setDrawerVisible(true)}
-                        style={styles.iconBtn}
+                        style={styles.menuButton}
                     />
-                </View>
 
-                {/* Center Title / Org Switcher */}
-                <View style={styles.centerSection}>
                     <Menu
-                        visible={orgMenuVisible}
-                        onDismiss={() => setOrgMenuVisible(false)}
-                        anchorPosition="bottom"
-                        contentStyle={[
-                            styles.menuContent,
-                            { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-                        ]}
-                        anchor={
-                            <Pressable
-                                accessibilityRole="button"
-                                accessibilityLabel="Switch organization"
-                                onPress={() => setOrgMenuVisible(true)}
-                                style={[styles.orgPressable, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}
-                            >
-                                <Text
-                                    variant="titleSmall"
-                                    numberOfLines={1}
-                                    style={{ fontWeight: '700', color: theme.colors.onSurface }}
-                                >
-                                    {user?.businessName || 'Your Business'} ▾
-                                </Text>
-                                <Text
-                                    variant="labelSmall"
-                                    numberOfLines={1}
-                                    style={{ color: theme.colors.onSurfaceVariant }}
-                                >
-                                    Hello, {user?.displayName?.split(' ')[0] || 'User'}
-                                </Text>
-                            </Pressable>
-                        }
-                    >
-                        <Menu.Item
-                            leadingIcon="check-circle"
-                            title={user?.businessName || 'Current Organization'}
-                            titleStyle={{ fontWeight: '700' }}
-                            onPress={() => setOrgMenuVisible(false)}
-                        />
-                        <Menu.Item
-                            leadingIcon="swap-horizontal"
-                            title="Switch Organization"
-                            onPress={() => {
-                                setOrgMenuVisible(false);
-                                router.push('/org-select' as never);
-                            }}
-                        />
-                        <Menu.Item
-                            leadingIcon="domain-plus"
-                            title="Create Organization"
-                            onPress={() => {
-                                setOrgMenuVisible(false);
-                                router.push('/org-create' as never);
-                            }}
-                        />
-                    </Menu>
-                </View>
-
-                {/* Right Side: Notifications & Profile */}
-                <View style={styles.rightGroup}>
-                    {/* Notification Icon */}
-                    <View style={[styles.pillNotify, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
-                        <IconButton
-                            icon="bell-outline"
-                            size={22}
-                            iconColor={theme.colors.onSurface}
-                            onPress={() => router.push('/notifications')}
-                            style={styles.iconBtn}
-                        />
-                        <Badge size={14} style={styles.notifyBadge}>2</Badge>
-                    </View>
-
-                    {/* Profile Avatar */}
-                    <Menu
-                        visible={menuVisible}
-                        onDismiss={() => setMenuVisible(false)}
+                        visible={organizationMenuVisible}
+                        onDismiss={() => setOrganizationMenuVisible(false)}
                         anchorPosition="bottom"
                         contentStyle={[
                             styles.menuContent,
@@ -217,61 +225,163 @@ export const TopProfilePill: React.FC = () => {
                         anchor={(
                             <Pressable
                                 accessibilityRole="button"
-                                accessibilityLabel="Open profile menu"
-                                onPress={() => setMenuVisible(true)}
-                                style={[styles.pillProfile, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}
+                                accessibilityLabel="Switch organization"
+                                onPress={() => {
+                                    setOrganizationMenuVisible(true);
+                                    void loadOrganizations(true);
+                                }}
+                                style={styles.orgAnchor}
                             >
-                                {user?.photoURL ? (
-                                    <Avatar.Image size={34} source={{ uri: user.photoURL }} />
-                                ) : (
-                                    <Avatar.Text size={34} label={initials} />
-                                )}
-                                <MotionView
-                                    style={[
-                                        styles.statusDot,
-                                        {
-                                            backgroundColor: isOffline ? theme.colors.error : theme.colors.secondary,
-                                            borderColor: theme.colors.background,
-                                        },
-                                    ]}
-                                    animate={isOffline ? { scale: 1, opacity: 1 } : { scale: 1.16, opacity: 0.86 }}
-                                    transition={isOffline
-                                        ? { type: 'timing', duration: 120 }
-                                        : {
-                                            type: 'timing',
-                                            duration: 900,
-                                            loop: true,
-                                            repeatReverse: true,
-                                        }}
-                                />
+                                <Text
+                                    variant="titleSmall"
+                                    numberOfLines={1}
+                                    style={{ fontWeight: '700', color: theme.colors.onSurface }}
+                                >
+                                    {currentOrganization?.name || user?.businessName || 'Your Organization'}
+                                </Text>
+                                <Text
+                                    variant="labelSmall"
+                                    numberOfLines={1}
+                                    style={{ color: theme.colors.onSurfaceVariant }}
+                                >
+                                    {loadingOrganizations
+                                        ? 'Loading organizations...'
+                                        : `Hello, ${firstName}`}
+                                </Text>
                             </Pressable>
                         )}
                     >
-                        <Menu.Item
-                            leadingIcon="account-circle-outline"
-                            title="Profile"
-                            onPress={() => {
-                                setMenuVisible(false);
-                                router.push('/profile');
-                            }}
-                        />
-                        <Menu.Item
-                            leadingIcon="cog-outline"
-                            title="Settings"
-                            onPress={() => {
-                                setMenuVisible(false);
-                                router.push('/(main)/(tabs)/settings');
-                            }}
-                        />
+                        {loadingOrganizations ? (
+                            <Menu.Item
+                                title="Loading organizations..."
+                                leadingIcon={() => <ActivityIndicator size="small" style={{ marginLeft: 8 }} />}
+                                onPress={() => { }}
+                                disabled
+                            />
+                        ) : organizations.length > 0 ? (
+                            organizations.map((organization) => {
+                                const isSelected = organization.id === selectedOrganizationId;
+                                const isSwitching = switchingOrganizationId === organization.id;
+                                return (
+                                    <Menu.Item
+                                        key={organization.id}
+                                        leadingIcon={isSelected ? 'check-circle' : 'domain'}
+                                        title={organization.name}
+                                        onPress={() => { void handleSwitchOrganization(organization.id); }}
+                                        disabled={Boolean(switchingOrganizationId)}
+                                        trailingIcon={isSwitching ? 'progress-clock' : undefined}
+                                    />
+                                );
+                            })
+                        ) : (
+                                    <Menu.Item
+                                        title="No connected organizations"
+                                        leadingIcon="domain-off"
+                                        onPress={() => { }}
+                                        disabled
+                                    />
+                        )}
+
                         <Divider />
                         <Menu.Item
-                            leadingIcon="logout"
-                            title="Logout"
-                            onPress={() => { void handleLogout(); }}
+                            leadingIcon="swap-horizontal"
+                            title="Manage Organizations"
+                            onPress={() => {
+                                setOrganizationMenuVisible(false);
+                                router.push('/org-select' as never);
+                            }}
                         />
+                        {isOwnerOrAdmin ? (
+                            <Menu.Item
+                                leadingIcon="domain-plus"
+                                title="Create Organization"
+                                onPress={() => {
+                                    setOrganizationMenuVisible(false);
+                                    router.push('/org-create' as never);
+                                }}
+                            />
+                        ) : null}
                     </Menu>
+
+                    <View style={styles.rightActions}>
+                        <IconButton
+                            icon="bell-outline"
+                            size={21}
+                            iconColor={theme.colors.onSurface}
+                            onPress={() => router.push('/notifications')}
+                            style={styles.menuButton}
+                        />
+
+                        <Menu
+                            visible={profileMenuVisible}
+                            onDismiss={() => setProfileMenuVisible(false)}
+                            anchorPosition="bottom"
+                            contentStyle={[
+                                styles.menuContent,
+                                {
+                                    backgroundColor: theme.colors.surface,
+                                    borderColor: theme.colors.outlineVariant,
+                                },
+                            ]}
+                            anchor={(
+                                <Pressable
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Open profile menu"
+                                    onPress={() => setProfileMenuVisible(true)}
+                                    style={styles.avatarPressable}
+                                >
+                                    {user?.photoURL ? (
+                                        <Avatar.Image size={32} source={{ uri: user.photoURL }} />
+                                    ) : (
+                                        <Avatar.Text size={32} label={initials} />
+                                    )}
+                                    <View
+                                        style={[
+                                            styles.statusDot,
+                                            {
+                                                backgroundColor: isOffline ? theme.colors.error : theme.colors.secondary,
+                                                borderColor: theme.colors.background,
+                                            },
+                                        ]}
+                                    />
+                                </Pressable>
+                            )}
+                        >
+                            <Menu.Item
+                                leadingIcon="account-circle-outline"
+                                title="Profile"
+                                onPress={() => {
+                                    setProfileMenuVisible(false);
+                                    router.push('/profile');
+                                }}
+                            />
+                            <Menu.Item
+                                leadingIcon="cog-outline"
+                                title="Settings"
+                                onPress={() => {
+                                    setProfileMenuVisible(false);
+                                    router.push('/(main)/(tabs)/settings');
+                                }}
+                            />
+                            <Menu.Item
+                                leadingIcon="format-paint"
+                                title={autoTheme ? 'Auto' : themeMode === 'dark' ? 'Dark' : 'Light'}
+                                onPress={() => {
+                                    setProfileMenuVisible(false);
+                                    setThemeMode(autoTheme ? 'system' : themeMode === 'dark' ? 'light' : 'dark');
+                                }}
+                            />
+                            <Divider />
+                            <Menu.Item
+                                titleStyle={{ color: theme.colors.error }}
+                                leadingIcon="logout"
+                                title="Logout"
+                                onPress={() => { void handleLogout(); }}
+                            />
+                        </Menu>
+                    </View>
                 </View>
-            </MotionView>
+            </View>
 
             <SideDrawer
                 visible={drawerVisible}
@@ -289,86 +399,59 @@ const styles = StyleSheet.create({
     },
     headerContainer: {
         position: 'absolute',
-        left: 14,
-        right: 14,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        left: 12,
+        right: 12,
         zIndex: 2,
     },
-    pillLeft: {
-        height: 42,
-        width: 42,
-        borderRadius: 21,
+    singlePill: {
+        minHeight: 54,
+        borderRadius: DesignSystem.radius.pill,
         borderWidth: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
-        elevation: 8,
-    },
-    centerSection: {
-        flex: 1,
-        marginHorizontal: 10,
-    },
-    orgPressable: {
-        paddingHorizontal: 14,
-        paddingVertical: 6,
-        borderRadius: 21,
-        borderWidth: 1,
-        justifyContent: 'center',
-        shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
-        elevation: 8,
-    },
-    rightGroup: {
+        
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 6,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.18,
+        shadowRadius: 18,
+        elevation: 12,
+        overflow: 'hidden',
     },
-    pillNotify: {
-        height: 42,
-        width: 42,
-        borderRadius: 21,
-        borderWidth: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 8,
-        shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
-        elevation: 8,
-    },
-    notifyBadge: {
+    glassInset: {
         position: 'absolute',
-        top: 6,
-        right: 8,
-        backgroundColor: '#E63946',
-    },
-    pillProfile: {
-        height: 42,
-        borderRadius: 21,
+        top: 1,
+        left: 1,
+        right: 1,
+        height: '50%',
+        borderTopLeftRadius: DesignSystem.radius.pill,
+        borderTopRightRadius: DesignSystem.radius.pill,
         borderWidth: 1,
-        paddingHorizontal: 4,
+        borderBottomWidth: 0,
+        opacity: 0.5,
+    },
+    menuButton: {
+        margin: 0,
+    },
+    orgAnchor: {
+        flex: 1,
+        minHeight: 44,
+        justifyContent: 'center',
+        paddingHorizontal: 8,
+    },
+    rightActions: {
         flexDirection: 'row',
         alignItems: 'center',
-        shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
-        elevation: 8,
+        gap: 4,
     },
-    iconBtn: {
-        margin: 0,
+    avatarPressable: {
+        marginRight: 4,
+        marginLeft: 2,
     },
     statusDot: {
         position: 'absolute',
-        right: 2,
-        bottom: 4,
+        right: 0,
+        bottom: 1,
         width: 9,
         height: 9,
         borderRadius: 4.5,

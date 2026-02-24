@@ -4,6 +4,9 @@ import { API_CONFIG } from './Api';
 export const Config = {
     appName: BRAND.productName,
     defaultCurrency: 'INR',
+    features: {
+        imageUploadsEnabled: false,
+    },
     supportedCurrencies: [
         { code: 'INR', label: 'Indian Rupee' },
         { code: 'USD', label: 'US Dollar' },

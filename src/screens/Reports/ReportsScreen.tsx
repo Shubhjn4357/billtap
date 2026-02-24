@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState, useTransition } from 'react';
 import { ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 import { useRouter } from 'expo-router';
 import { Chip, SegmentedButtons, Text, useTheme } from 'react-native-paper';
 import type { CachedBill, StoredBill } from '../../api/billService';
@@ -246,9 +246,10 @@ export const ReportsScreen = () => {
 
     return (
         <ScreenWrapper>
+            <AppPullToRefresh refreshing={refreshing} onRefresh={() => { void onRefresh(); }}>
             <ScrollView
                 contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]}
-                refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />}
+                
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
@@ -476,6 +477,7 @@ export const ReportsScreen = () => {
                     ) : null}
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
         </ScreenWrapper>
     );
 };

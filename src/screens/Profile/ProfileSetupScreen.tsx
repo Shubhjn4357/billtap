@@ -31,7 +31,7 @@ export const ProfileSetupScreen = () => {
     const dialog = useAppDialog();
     const { user, sendPhoneVerification } = useAuth();
     const router = useRouter();
-    const params = useLocalSearchParams<{ upiPayload?: string | string[] }>();
+    const params = useLocalSearchParams<{ upiPayload?: string | string[]; scanAt?: string | string[] }>();
     const { setUser } = useUserStore();
     const { isConnected, isInternetReachable } = useNetworkStore();
     const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
@@ -93,9 +93,11 @@ export const ProfileSetupScreen = () => {
 
     useEffect(() => {
         const scannedPayload = Array.isArray(params.upiPayload) ? params.upiPayload[0] : params.upiPayload;
-        if (!scannedPayload || handledUpiPayloadRef.current === scannedPayload) return;
+        const scanSignal = Array.isArray(params.scanAt) ? params.scanAt[0] : params.scanAt;
+        const scanKey = `${scannedPayload || ''}::${scanSignal || ''}`;
+        if (!scannedPayload || handledUpiPayloadRef.current === scanKey) return;
 
-        handledUpiPayloadRef.current = scannedPayload;
+        handledUpiPayloadRef.current = scanKey;
         const extracted = extractUpiIdFromPayload(scannedPayload);
         if (!extracted) {
             dialog.alert('UPI', 'Scanned QR does not contain a valid UPI ID.');
@@ -104,7 +106,7 @@ export const ProfileSetupScreen = () => {
 
         setUpiId(extracted);
         dialog.alert('UPI', 'UPI ID captured from QR. Tap "Save UPI Details" to apply.');
-    }, [dialog, params.upiPayload]);
+    }, [dialog, params.upiPayload, params.scanAt]);
 
     const profileSubtitle = useMemo(
         () => user?.email || user?.phoneNumber || 'Complete your profile and contact details',

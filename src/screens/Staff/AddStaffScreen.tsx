@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { Text } from 'react-native-paper';
+import { Text, useTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { AppCard } from '../../components/common/AppCard';
@@ -15,15 +15,19 @@ import { staffService } from '../../api/staffService';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { buildE164PhoneNumber, sanitizePhoneLocal } from '../../utils/phone';
 import { staffInviteSchema } from '../../validation/forms';
+import { useAuth } from '../../hooks/useAuth';
 
 export const AddStaffScreen = () => {
     const router = useRouter();
     const { width } = useWindowDimensions();
     const isWide = width >= 960;
+    const theme = useTheme();
+    const { user } = useAuth();
     const dialog = useAppDialog();
     const [dialCode, setDialCode] = useState(DEFAULT_COUNTRY_DIAL_CODE);
     const [phone, setPhone] = useState('');
     const [loading, setLoading] = useState(false);
+    const canManageStaff = user?.role === 'owner' || user?.role === 'admin';
 
     const handleInvite = async () => {
         const normalizedPhone = buildE164PhoneNumber(dialCode, phone);
@@ -47,9 +51,25 @@ export const AddStaffScreen = () => {
         }
     };
 
+    if (!canManageStaff) {
+        return (
+            <ScreenWrapper>
+                <View style={styles.centered}>
+                    <AppCard style={styles.centeredCard}>
+                        <Text style={{ color: theme.colors.outline }}>Only owner/admin can invite staff.</Text>
+                    </AppCard>
+                </View>
+            </ScreenWrapper>
+        );
+    }
+
     return (
         <ScreenWrapper>
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+            >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
                         title="Invite Staff Member"
@@ -84,6 +104,15 @@ export const AddStaffScreen = () => {
 };
 
 const styles = StyleSheet.create({
+    centered: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    centeredCard: {
+        width: '100%',
+        maxWidth: DesignSystem.layout.compactMaxWidth,
+    },
     content: {
         paddingTop: DesignSystem.layout.pageTop,
         paddingBottom: DesignSystem.layout.pageBottom,

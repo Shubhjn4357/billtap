@@ -12,7 +12,7 @@ import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { DesignSystem } from '../../constants/DesignSystem';
 import type { Account } from '../../types';
 import { isNetworkLikeError } from '../../utils/errorGuards';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 
 interface DraftLine {
     id: string;
@@ -118,10 +118,11 @@ export const JournalEntryScreen = () => {
 
     return (
         <ScreenWrapper>
+            <AppPullToRefresh refreshing={accountsQuery.isFetching} onRefresh={() => { void accountsQuery.refetch(); }}>
             <ScrollView
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<AppRefreshControl refreshing={accountsQuery.isFetching} onRefresh={() => { void accountsQuery.refetch(); }} />}
+                
             >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
@@ -230,6 +231,7 @@ export const JournalEntryScreen = () => {
                     </AppCard>
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
         </ScreenWrapper>
     );
 };

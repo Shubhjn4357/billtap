@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, FlatList, StyleSheet, useWindowDimensions, Platform } from 'react-native';
 import { Chip, Text, FAB, SegmentedButtons, useTheme, Searchbar, Avatar, IconButton } from 'react-native-paper';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStock } from '../../hooks/useStock';
@@ -35,7 +35,7 @@ export const StockListScreen = () => {
     const { width } = useWindowDimensions();
     const insets = useSafeAreaInsets();
     const router = useRouter();
-    const params = useLocalSearchParams<{ search?: string | string[] }>();
+    const params = useLocalSearchParams<{ search?: string | string[]; scanAt?: string | string[] }>();
     const { canManageInventory } = useOrganizationAccess();
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
     const [refreshing, setRefreshing] = useState(false);
@@ -60,7 +60,7 @@ export const StockListScreen = () => {
         if (scannedSearch) {
             setSearchQuery(scannedSearch);
         }
-    }, [params.search, setSearchQuery]);
+    }, [params.search, params.scanAt, setSearchQuery]);
 
     useFocusRefresh(fetchItems, {
         enabled: canManageInventory,
@@ -226,13 +226,12 @@ export const StockListScreen = () => {
             ) : (
                 <View style={styles.content}>
                     <View style={[styles.contentInner, useWideWorkspace && styles.contentInnerWide]}>
+                        <AppPullToRefresh refreshing={refreshing} onRefresh={() => { void onRefresh(); }}>
                         <FlatList
                             data={loading ? [] : scopedItems}
                             keyExtractor={item => item.id}
                             renderItem={renderItem}
-                            refreshControl={
-                                <AppRefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh(); }} />
-                            }
+                            
                             keyboardShouldPersistTaps="handled"
                             initialNumToRender={12}
                             maxToRenderPerBatch={8}
@@ -330,6 +329,7 @@ export const StockListScreen = () => {
                                 </AppCard>
                             ) : null}
                         />
+                        </AppPullToRefresh>
                     </View>
 
                     <FAB

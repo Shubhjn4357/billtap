@@ -15,6 +15,20 @@
       "when": 1771576321099,
       "tag": "0001_aberrant_tenebrous",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1771934660310,
+      "tag": "0002_eminent_zuras",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1772000000000,
+      "tag": "0003_schema_alignment",
+      "breakpoints": true
     }
   ]
 }

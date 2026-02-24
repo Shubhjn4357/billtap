@@ -12,7 +12,7 @@ import { DesignSystem } from '../../constants/DesignSystem';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 
 interface ProfitLossData {
     income: { accountId: string; code: string; name: string; net: number }[];
@@ -63,10 +63,11 @@ export const ProfitLossScreen = () => {
 
     return (
         <ScreenWrapper>
+            <AppPullToRefresh refreshing={profitLossQuery.isFetching} onRefresh={() => { void loadData(); }}>
             <ScrollView
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<AppRefreshControl refreshing={profitLossQuery.isFetching} onRefresh={() => { void loadData(); }} />}
+                
             >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
@@ -130,6 +131,7 @@ export const ProfitLossScreen = () => {
                     </AppCard>
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
         </ScreenWrapper>
     );
 };

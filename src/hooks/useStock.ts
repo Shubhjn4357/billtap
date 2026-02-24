@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { itemRepository } from '../repositories/itemRepository';
 import { itemService } from '../api/itemService';
-import { useStockStore } from '../store';
+import { useOrganizationStore, useStockStore } from '../store';
 import type { Item } from '../types';
 import { useAuth } from './useAuth';
 import { useDebouncedValue } from './useDebouncedValue';
@@ -41,8 +41,9 @@ export const useStock = () => {
     const [searchQuery, setSearchQueryState] = useState('');
     const [searchPending, startSearchTransition] = useTransition();
     const debouncedSearchQuery = useDebouncedValue(searchQuery, 220);
-    const queryKey = useMemo(() => ['stock-items', user?.uid ?? 'guest'] as const, [user?.uid]);
-    const organizationId = user?.uid; // Assuming Owner UID is Org ID for now, adjust if needed
+    const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
+    const organizationId = selectedOrganizationId ?? user?.uid ?? null;
+    const queryKey = useMemo(() => ['stock-items', organizationId ?? 'none'] as const, [organizationId]);
 
     const stockQuery = useQuery({
         queryKey,
@@ -50,7 +51,7 @@ export const useStock = () => {
             if (!user || !organizationId) return [];
 
             if (Platform.OS === 'web') {
-                return await itemService.getUserItems(user.uid);
+                return await itemService.getUserItems(organizationId);
             }
 
             // Load from SQLite Repository

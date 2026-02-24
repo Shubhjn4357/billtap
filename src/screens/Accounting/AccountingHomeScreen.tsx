@@ -12,7 +12,7 @@ import { DesignSystem } from '../../constants/DesignSystem';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 
 interface AccountingSnapshot {
     totalDebit: number;
@@ -72,10 +72,11 @@ export const AccountingHomeScreen = () => {
 
     return (
         <ScreenWrapper>
+            <AppPullToRefresh refreshing={snapshotQuery.isFetching} onRefresh={() => { void snapshotQuery.refetch(); }}>
             <ScrollView
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<AppRefreshControl refreshing={snapshotQuery.isFetching} onRefresh={() => { void snapshotQuery.refetch(); }} />}
+                
             >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
@@ -163,6 +164,7 @@ export const AccountingHomeScreen = () => {
                     </AppCard>
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
         </ScreenWrapper>
     );
 };

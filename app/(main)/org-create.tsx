@@ -1,5 +1,5 @@
-import BusinessSetupScreen from '../../src/screens/Auth/BusinessSetupScreen';
+import { OrganizationCreateScreen } from '../../src/screens/Organization/OrganizationCreateScreen';
 
 export default function OrgCreateRoute() {
-    return <BusinessSetupScreen />;
+    return <OrganizationCreateScreen />;
 }

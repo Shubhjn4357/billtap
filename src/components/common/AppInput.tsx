@@ -1,6 +1,5 @@
-import React from 'react';
-import { StyleSheet } from 'react-native';
-import { MotionView } from '../motion/Motion';
+import React, { useRef } from 'react';
+import { StyleSheet, Animated } from 'react-native';
 import { TextInput, TextInputProps, useTheme } from 'react-native-paper';
 import { DesignSystem } from '../../constants/DesignSystem';
 
@@ -140,25 +139,34 @@ export const AppInput: React.FC<AppInputProps> = ({
     ...props
 }) => {
     const theme = useTheme();
+    const scaleAnim = useRef(new Animated.Value(1)).current;
     const [isFocused, setIsFocused] = React.useState(false);
+
     const resolvedType = inputType ?? inferInputType(label, placeholder);
     const defaults = getInputDefaults(resolvedType);
 
     const handleFocus: NonNullable<TextInputProps['onFocus']> = (event) => {
         setIsFocused(true);
+        Animated.timing(scaleAnim, {
+            toValue: 1.01,
+            duration: DesignSystem.motion.fast + 40,
+            useNativeDriver: true,
+        }).start();
         onFocus?.(event);
     };
 
     const handleBlur: NonNullable<TextInputProps['onBlur']> = (event) => {
         setIsFocused(false);
+        Animated.timing(scaleAnim, {
+            toValue: 1,
+            duration: DesignSystem.motion.fast + 40,
+            useNativeDriver: true,
+        }).start();
         onBlur?.(event);
     };
 
     return (
-        <MotionView
-            animate={{ scale: isFocused ? 1.01 : 1, translateY: isFocused ? -1 : 0 }}
-            transition={{ type: 'timing', duration: DesignSystem.motion.fast + 40 }}
-        >
+        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <TextInput
                 mode={mode}
                 dense={dense}
@@ -194,7 +202,7 @@ export const AppInput: React.FC<AppInputProps> = ({
                 onBlur={handleBlur}
                 {...props}
             />
-        </MotionView>
+        </Animated.View>
     );
 };
 

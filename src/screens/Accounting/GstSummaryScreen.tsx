@@ -12,7 +12,7 @@ import { DesignSystem } from '../../constants/DesignSystem';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 
 interface GstSummaryResponse {
     taxableTurnover: number;
@@ -68,10 +68,11 @@ export const GstSummaryScreen = () => {
 
     return (
         <ScreenWrapper>
+            <AppPullToRefresh refreshing={gstSummaryQuery.isFetching} onRefresh={() => { void loadData(); }}>
             <ScrollView
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<AppRefreshControl refreshing={gstSummaryQuery.isFetching} onRefresh={() => { void loadData(); }} />}
+                
             >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
@@ -127,6 +128,7 @@ export const GstSummaryScreen = () => {
                     </AppCard>
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
         </ScreenWrapper>
     );
 };

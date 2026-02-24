@@ -12,7 +12,7 @@ import { DesignSystem } from '../../constants/DesignSystem';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 
 interface BalanceSheetData {
     assets: {
@@ -64,10 +64,11 @@ export const BalanceSheetScreen = () => {
 
     return (
         <ScreenWrapper>
+            <AppPullToRefresh refreshing={balanceSheetQuery.isFetching} onRefresh={() => { void loadData(); }}>
             <ScrollView
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<AppRefreshControl refreshing={balanceSheetQuery.isFetching} onRefresh={() => { void loadData(); }} />}
+                
             >
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
@@ -138,6 +139,7 @@ export const BalanceSheetScreen = () => {
                     </AppCard>
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
         </ScreenWrapper>
     );
 };

@@ -34,6 +34,13 @@ type ServerTransaction = Transaction & {
 
 type RawDate = string | number | Date | null | undefined;
 
+const normalizeTransactionTypeForApi = (value: TransactionType | undefined): 'SALE' | 'PURCHASE' => {
+    if (value === 'SALE' || value === 'PURCHASE') return value;
+    if (value === 'RETURN_OUTWARD') return 'SALE';
+    if (value === 'RETURN_INWARD') return 'PURCHASE';
+    return 'SALE';
+};
+
 const toIso = (value: RawDate, fallback: string): string => {
     if (value instanceof Date) return value.toISOString();
     if (typeof value === 'string') {
@@ -100,6 +107,7 @@ export const billService = {
                 await offlineSyncService.flushQueue();
                 const response = await apiClient.post<{ ok: boolean; id?: string; message?: string }>('/transactions', {
                     ...offlineBill,
+                    type: normalizeTransactionTypeForApi(offlineBill.type),
                     partyName: offlineBill.customerName,
                     partyPhone: offlineBill.customerPhone,
                     totalAmount: offlineBill.total,

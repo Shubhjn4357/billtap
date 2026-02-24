@@ -19,6 +19,13 @@ type ReminderRow = {
     paymentStatus: 'PAID' | 'PARTIAL' | 'PENDING';
 };
 
+const normalizeTransactionTypeForApi = (value: TransactionType): 'SALE' | 'PURCHASE' => {
+    if (value === 'SALE' || value === 'PURCHASE') return value;
+    if (value === 'RETURN_OUTWARD') return 'SALE';
+    if (value === 'RETURN_INWARD') return 'PURCHASE';
+    return 'SALE';
+};
+
 const toIsoOrNull = (value?: string | Date | null): string | null | undefined => {
     if (value === undefined) return undefined;
     if (value === null) return null;
@@ -264,6 +271,7 @@ export const transactionService = {
                     '/transactions',
                     {
                         ...payload,
+                        type: normalizeTransactionTypeForApi(payload.type),
                         id: localId,
                         billDate,
                         dueDate: toIsoOrNull(payload.dueDate) ?? undefined,
@@ -317,9 +325,7 @@ export const transactionService = {
             total: Number(item.total ?? (item.quantity * item.price)),
         }));
 
-        if (payload.type === 'SALE' || payload.type === 'PURCHASE') {
-            await offlineSyncService.applyLocalBillStock(queuePayloadItems, payload.type);
-        }
+        await offlineSyncService.applyLocalBillStock(queuePayloadItems, normalizeTransactionTypeForApi(payload.type));
 
         await offlineSyncService.upsertCachedBill({
             id: localId,
@@ -352,7 +358,7 @@ export const transactionService = {
             type: 'create_bill',
             payload: {
                 id: localId,
-                type: payload.type,
+                type: normalizeTransactionTypeForApi(payload.type),
                 partyId: payload.partyId,
                 customerName: payload.partyName,
                 customerPhone: payload.partyPhone,

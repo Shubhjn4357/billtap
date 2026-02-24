@@ -27,7 +27,7 @@ export const AnimatedTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
         Animated.spring(animatedPos, {
             toValue: state.index * tabWidth + (tabWidth / 2) - (DOT_SIZE / 2),
             useNativeDriver: true,
-            bounciness: 10,
+            bounciness: 5,
         }).start();
     }, [state.index, tabWidth, animatedPos]);
 
@@ -115,15 +115,17 @@ export const AnimatedTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
 const styles = StyleSheet.create({
     container: {
         position: 'absolute',
+
         bottom: 0,
         left: 0,
         right: 0,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(0,0,0,0.05)',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        overflow: 'hidden',
     },
     tabRow: {
         flexDirection: 'row',
-        height: 60,
+        height: 80,
     },
     tabItem: {
         flex: 1,
@@ -132,9 +134,9 @@ const styles = StyleSheet.create({
     },
     activePill: {
         position: 'absolute',
-        top: 5,
+        top: 10,
         width: DOT_SIZE,
-        height: 50,
+        height: 60,
         paddingTop:10,
         borderRadius: 10,
         zIndex: 0,

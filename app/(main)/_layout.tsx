@@ -112,6 +112,18 @@ export default function MainLayout() {
                         return;
                     }
 
+                    if (!selectedOrganizationId) {
+                        try {
+                            const cachedOrganizations = await businessSuiteService.getMyOrganizations();
+                            const fallbackOrganizationId = cachedOrganizations[0]?.id;
+                            if (fallbackOrganizationId) {
+                                setSelectedOrganizationId(fallbackOrganizationId);
+                            }
+                        } catch {
+                            // Keep current fallback behavior below when org list cache is unavailable.
+                        }
+                    }
+
                     // Preserve local context on transient/offline failures so access checks
                     // do not collapse into "access denied" while the network is flaky.
                     const currentContext = useOrganizationStore.getState().context;
@@ -160,7 +172,7 @@ export default function MainLayout() {
         return <Redirect href="/(main)/business-setup" />;
     }
 
-    if (!user?.phoneNumber && currentSegment !== 'phone-setup') {
+    if (user?.businessName && !user?.phoneNumber && currentSegment !== 'phone-setup') {
         // Enforce phone number linking after business setup
         return <Redirect href={"/(main)/phone-setup" as any} />;
     }
@@ -183,6 +195,8 @@ export default function MainLayout() {
             <Stack.Screen name="scan" options={{ title: 'Scan Barcode' }} />
             <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
             <Stack.Screen name="categories" options={{ headerShown: true, title: 'Manage Categories' }} />
+            <Stack.Screen name="org-select" options={{ headerShown: true, title: 'Switch Organization' }} />
+            <Stack.Screen name="org-create" options={{ headerShown: true, title: 'Create Organization' }} />
         </Stack>
     );
 }

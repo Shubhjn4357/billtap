@@ -10,7 +10,7 @@ import { AppButton } from '../../components/common/AppButton';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { DesignSystem } from '../../constants/DesignSystem';
-import { usePartyStore } from '../../store';
+import { useOrganizationStore, usePartyStore } from '../../store';
 import { useCartStore } from '../../store/cartStore';
 import { partyRepository } from '../../repositories/partyRepository';
 import type { Party } from '../../types';
@@ -29,17 +29,19 @@ export const PartyListScreen = () => {
     const { setCustomer } = useCartStore();
     const { canManageParties } = useOrganizationAccess();
     const { user } = useAuth();
+    const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
+    const organizationId = selectedOrganizationId ?? user?.uid ?? null;
     const [searchQuery, setSearchQuery] = useState('');
     const isSelectionMode = params.mode === 'select';
 
     const partiesQuery = useQuery({
-        queryKey: ['parties', canManageParties] as const,
+        queryKey: ['parties', organizationId, canManageParties] as const,
         queryFn: async (): Promise<Party[]> => {
-            if (!canManageParties || !user?.uid) return [];
-            const data = await partyRepository.getAll(user.uid);
+            if (!canManageParties || !organizationId) return [];
+            const data = await partyRepository.getAll(organizationId);
             return data.filter((entry) => entry.isActive !== false).map(mapDbPartyToAppParty);
         },
-        enabled: canManageParties && !!user,
+        enabled: canManageParties && !!organizationId,
         staleTime: 5000,
     });
 

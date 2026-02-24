@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import {
     ActivityIndicator,
@@ -16,24 +16,38 @@ import { businessSuiteService, OrganizationMembership } from '../../api/business
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 import { useOrganizationStore } from '../../store';
 import { DesignSystem } from '../../constants/DesignSystem';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 
 export const OrganizationSelectScreen: React.FC = () => {
     const theme = useTheme();
     const insets = useSafeAreaInsets();
-    const { refreshOrganizationContext } = useOrganizationAccess();
+    const dialog = useAppDialog();
+    const { refreshOrganizationContext, isOwnerOrAdmin } = useOrganizationAccess();
     const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
 
     const [loading, setLoading] = useState(true);
     const [organizations, setOrganizations] = useState<OrganizationMembership[]>([]);
     const [switchingId, setSwitchingId] = useState<string | null>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+    const uniqueOrganizations = useMemo(() => {
+        const map = new Map<string, OrganizationMembership>();
+        organizations.forEach((entry) => {
+            if (!map.has(entry.id)) {
+                map.set(entry.id, entry);
+            }
+        });
+        return Array.from(map.values());
+    }, [organizations]);
 
     const loadOrganizations = async () => {
         try {
             setLoading(true);
+            setErrorMessage(null);
             const data = await businessSuiteService.getMyOrganizations();
             setOrganizations(data);
-        } catch (error) {
-            console.error('Failed to load organizations:', error);
+        } catch (error: unknown) {
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to load organizations.');
         } finally {
             setLoading(false);
         }
@@ -53,8 +67,8 @@ export const OrganizationSelectScreen: React.FC = () => {
             setSwitchingId(orgId);
             await refreshOrganizationContext(orgId);
             router.replace('/(main)/(tabs)/home');
-        } catch (error) {
-            console.error('Failed to switch organization:', error);
+        } catch (error: unknown) {
+            dialog.alert('Switch Organization', error instanceof Error ? error.message : 'Failed to switch organization.');
         } finally {
             setSwitchingId(null);
         }
@@ -83,7 +97,9 @@ export const OrganizationSelectScreen: React.FC = () => {
                         />
                         <View style={styles.textContainer}>
                             <Text variant="titleMedium" style={styles.orgName}>{item.name}</Text>
-                            <Text variant="labelSmall" style={styles.orgCode}>{item.code}</Text>
+                            <Text variant="labelSmall" style={styles.orgCode}>
+                                {item.code} | {item.role.toUpperCase()}
+                            </Text>
                         </View>
                     </View>
                     <View style={styles.statusContainer}>
@@ -105,6 +121,11 @@ export const OrganizationSelectScreen: React.FC = () => {
             <View style={styles.header}>
                 <IconButton icon="arrow-left" onPress={() => router.back()} />
                 <Text variant="headlineSmall" style={styles.title}>Switch Business</Text>
+                {isOwnerOrAdmin ? (
+                    <Button mode="text" compact onPress={() => router.push('/org-create')}>
+                        Create
+                    </Button>
+                ) : null}
             </View>
 
             {loading ? (
@@ -114,16 +135,25 @@ export const OrganizationSelectScreen: React.FC = () => {
                 </View>
             ) : (
                 <FlatList
-                    data={organizations}
+                    data={uniqueOrganizations}
                     renderItem={renderItem}
                     keyExtractor={(item) => item.id}
                     contentContainerStyle={styles.listContent}
+                    refreshing={loading}
+                    onRefresh={() => { void loadOrganizations(); }}
                     ListEmptyComponent={
                         <View style={styles.center}>
                             <Text variant="bodyLarge">No organizations found.</Text>
-                            <Button mode="contained" onPress={() => router.push('/business-setup')} style={styles.mt}>
-                                Create New Business
-                            </Button>
+                            {isOwnerOrAdmin ? (
+                                <Button mode="contained" onPress={() => router.push('/org-create')} style={styles.mt}>
+                                    Create Organization
+                                </Button>
+                            ) : null}
+                            {errorMessage ? (
+                                <Text style={[styles.loadingText, { color: theme.colors.error }]}>
+                                    {errorMessage}
+                                </Text>
+                            ) : null}
                         </View>
                     }
                 />

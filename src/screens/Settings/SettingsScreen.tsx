@@ -10,8 +10,9 @@ import { syncService } from '../../services/syncService';
 import { userService } from '../../api/userService';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { AppAccordion } from '../../components/common/AppAccordion';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
-import { AppRefreshControl } from '../../components/common/AppRefreshControl';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { Config } from '../../constants/Config';
@@ -67,6 +68,7 @@ export const SettingsScreen = () => {
     const [pendingSyncCount, setPendingSyncCount] = useState(0);
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState<string>(SETTINGS_TEXT.dataSync.idleMessage);
+    const [currencyAccordionExpanded, setCurrencyAccordionExpanded] = useState(false);
     const [moduleAccessDraft, setModuleAccessDraft] = useState<AppModuleAccessMap>(DEFAULT_APP_MODULE_ACCESS);
     const [savingModuleAccess, setSavingModuleAccess] = useState(false);
 
@@ -238,11 +240,12 @@ export const SettingsScreen = () => {
                 })}
             </View>
 
+            <AppPullToRefresh refreshing={isSyncing} onRefresh={runManualSync}>
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<AppRefreshControl refreshing={isSyncing} onRefresh={runManualSync} />}
+                
             >
                 <View style={[styles.inner, isWide && { maxWidth: DesignSystem.layout.workspaceMaxWidth, alignSelf: 'center', width: '100%' }]}>
 
@@ -452,6 +455,18 @@ export const SettingsScreen = () => {
                                             onPress={() => router.push('/operations' as never)}
                                         />
                                     )}
+                                    {isOwnerOrAdmin && <Divider />}
+                                    {isOwnerOrAdmin && (
+                                        <List.Item
+                                            title="Staff Management"
+                                            description="Invite and manage your staff members"
+                                            titleStyle={{ color: theme.colors.onSurface }}
+                                            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                            left={(props) => <List.Icon {...props} icon="account-group-outline" color={theme.colors.onSurfaceVariant} />}
+                                            right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
+                                            onPress={() => router.push('/staff' as never)}
+                                        />
+                                    )}
                                     {canAccessBusinessSuite && <Divider />}
                                     {canAccessBusinessSuite && (
                                         <List.Item
@@ -481,10 +496,15 @@ export const SettingsScreen = () => {
                             <AppCard>
                                 <List.Section style={styles.noMargin}>
                                     <List.Subheader style={{ color: theme.colors.primary }}>{SETTINGS_TEXT.sections.billingPreferences}</List.Subheader>
-                                    <List.Accordion
+                                    <AppAccordion
                                         title={`${SETTINGS_TEXT.billing.currencyPrefix} ${activeCurrency}`}
+                                        icon="cash-multiple"
+                                        expanded={currencyAccordionExpanded}
+                                        onExpandedChange={setCurrencyAccordionExpanded}
+                                        containerStyle={styles.currencyAccordion}
+                                        headerStyle={styles.currencyAccordionHeader}
+                                        contentStyle={styles.currencyAccordionContent}
                                         titleStyle={{ color: theme.colors.onSurface }}
-                                        left={(props) => <List.Icon {...props} icon="cash-multiple" color={theme.colors.onSurfaceVariant} />}
                                     >
                                         {Config.supportedCurrencies.map((entry) => (
                                             <List.Item
@@ -499,7 +519,7 @@ export const SettingsScreen = () => {
                                                 }
                                             />
                                         ))}
-                                    </List.Accordion>
+                                    </AppAccordion>
                                 </List.Section>
                             </AppCard>
 
@@ -564,6 +584,7 @@ export const SettingsScreen = () => {
                     )}
                 </View>
             </ScrollView>
+            </AppPullToRefresh>
         </ScreenWrapper>
     );
 };
@@ -643,5 +664,15 @@ const styles = StyleSheet.create({
     },
     saveBtn: {
         margin: DesignSystem.spacing.md,
+    },
+    currencyAccordion: {
+        borderWidth: 0,
+        backgroundColor: 'transparent',
+    },
+    currencyAccordionHeader: {
+        paddingHorizontal: DesignSystem.spacing.md,
+    },
+    currencyAccordionContent: {
+        paddingHorizontal: 0,
     },
 });
