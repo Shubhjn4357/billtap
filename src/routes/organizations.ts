@@ -64,7 +64,7 @@ organizationsRoute.get('/mine', requireAuth, async (c) => {
         .orderBy(desc(organizationMembers.joinedAt));
 
     const orgIds = [...new Set(memberRows.map((row) => row.organizationId))];
-    const orgRows = orgIds.length === 0
+    const memberOrgRows = orgIds.length === 0
         ? []
         : await db
             .select()
@@ -74,22 +74,54 @@ organizationsRoute.get('/mine', requireAuth, async (c) => {
                 inArray(organizations.id, orgIds),
             ))
             .orderBy(asc(organizations.name));
-    const orgById = new Map(orgRows.map((row) => [row.id, row]));
 
-    const organizationsForUser = memberRows
-        .map((member) => {
-            const org = orgById.get(member.organizationId);
-            if (!org) return null;
-            return {
-                id: org.id,
-                name: org.name,
-                code: org.code,
-                currency: org.currency,
-                role: member.role,
-                permissions: member.permissions,
-            };
-        })
-        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    const ownedOrgRows = await db
+        .select()
+        .from(organizations)
+        .where(and(
+            eq(organizations.userId, authUser.uid),
+            eq(organizations.isActive, true),
+        ))
+        .orderBy(asc(organizations.name));
+
+    const orgById = new Map([...memberOrgRows, ...ownedOrgRows].map((row) => [row.id, row]));
+
+    const organizationsForUserMap = new Map<string, {
+        id: string;
+        name: string;
+        code: string;
+        currency: string;
+        role: string;
+        permissions: Record<string, boolean>;
+    }>();
+
+    memberRows.forEach((member) => {
+        const org = orgById.get(member.organizationId);
+        if (!org) return;
+        organizationsForUserMap.set(org.id, {
+            id: org.id,
+            name: org.name,
+            code: org.code,
+            currency: org.currency,
+            role: member.role,
+            permissions: member.permissions,
+        });
+    });
+
+    ownedOrgRows.forEach((org) => {
+        if (organizationsForUserMap.has(org.id)) return;
+        organizationsForUserMap.set(org.id, {
+            id: org.id,
+            name: org.name,
+            code: org.code,
+            currency: org.currency,
+            role: 'owner',
+            permissions: {},
+        });
+    });
+
+    const organizationsForUser = Array.from(organizationsForUserMap.values())
+        .sort((a, b) => a.name.localeCompare(b.name));
 
     return c.json({
         ok: true,
