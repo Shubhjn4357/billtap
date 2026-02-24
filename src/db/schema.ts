@@ -22,11 +22,11 @@ export const users = pgTable('users', {
     subscriptionEndsAt: timestamp('subscriptionEndsAt', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
     updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-}, (table) => ({
-    roleIndex: index('users_role_idx').on(table.role),
-    ownerIndex: index('users_owner_idx').on(table.ownerId),
-    subscriptionStatusIndex: index('users_subscription_status_idx').on(table.subscriptionStatus),
-}));
+}, (table) => [
+    index('users_role_idx').on(table.role),
+    index('users_owner_idx').on(table.ownerId),
+    index('users_subscription_status_idx').on(table.subscriptionStatus),
+]);
 
 export const phoneVerifications = pgTable('phone_verifications', {
     id: text('id').primaryKey(),

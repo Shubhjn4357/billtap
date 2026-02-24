@@ -1,12 +1,197 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { offers, plans, users, templates } from '../db/schema';
+import { offers, plans, users, templates, organizations, organizationMembers, organizationSettings, transactions, bankAccounts, vouchers, salaryRuns, salaryRunItems, auditLogs } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { isDeveloperAdminPrincipal, requireAuth, requireDeveloperAdmin, type AppEnv } from '../middleware/auth';
 import { z } from 'zod';
+import { nanoid } from 'nanoid';
 import { DEFAULT_PLANS } from '../constants/defaultPlans';
 
 const adminRoute = new Hono<AppEnv>();
+
+// GET /admin/organizations - List all organizations
+adminRoute.get('/organizations', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 1000);
+    const data = await db.select().from(organizations).orderBy(desc(organizations.createdAt)).limit(limit);
+    return c.json({ ok: true, organizations: data });
+});
+
+// GET /admin/organizations/:id - Get detail
+adminRoute.get('/organizations/:id', requireDeveloperAdmin, async (c) => {
+    const id = c.req.param('id');
+    const db = c.get('db');
+    const rows = await db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
+    if (!rows[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    return c.json({ ok: true, organization: rows[0] });
+});
+
+// POST /admin/organizations - Create organization from admin panel
+adminRoute.post('/organizations', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const body = await c.req.json();
+    const payload = z.object({
+        userId: z.string().optional(),
+        name: z.string().min(1),
+        code: z.string().min(1),
+        gstNumber: z.string().nullable().optional(),
+        address: z.string().nullable().optional(),
+        phoneNumber: z.string().nullable().optional(),
+        email: z.string().email().nullable().optional(),
+        isActive: z.boolean().default(true),
+        currency: z.string().default('INR'),
+    }).parse(body);
+
+    const ownerUserId = payload.userId ?? authUser.uid;
+    const ownerRow = await db.select({ uid: users.uid, phoneNumber: users.phoneNumber }).from(users).where(eq(users.uid, ownerUserId)).limit(1);
+    if (!ownerRow[0]) {
+        return c.json({ ok: false, message: `Owner user ${ownerUserId} not found.` }, 400);
+    }
+
+    const now = new Date();
+    const organizationId = nanoid();
+
+    await withTransaction(db, async (tx) => {
+        await tx.insert(organizations).values({
+            id: organizationId,
+            userId: ownerUserId,
+            name: payload.name.trim(),
+            code: payload.code.trim().toUpperCase(),
+            gstNumber: payload.gstNumber?.trim() || null,
+            address: payload.address?.trim() || null,
+            phoneNumber: payload.phoneNumber?.trim() || null,
+            email: payload.email?.trim().toLowerCase() || null,
+            currency: payload.currency.trim().toUpperCase(),
+            isActive: payload.isActive,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await tx.insert(organizationMembers).values({
+            id: nanoid(),
+            userId: ownerUserId,
+            organizationId,
+            role: 'owner',
+            permissions: {},
+            isActive: true,
+            invitedBy: authUser.uid,
+            phoneNumberSnapshot: ownerRow[0]?.phoneNumber ?? null,
+            joinedAt: now,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await tx.insert(organizationSettings).values({
+            organizationId,
+            userId: ownerUserId,
+            settings: {},
+            createdAt: now,
+            updatedAt: now,
+        }).onConflictDoNothing();
+    });
+
+    const created = await db.select().from(organizations).where(eq(organizations.id, organizationId)).limit(1);
+    return c.json({ ok: true, organization: created[0] ?? null });
+});
+
+// GET /admin/transactions - Global view of all bills
+adminRoute.get('/transactions', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 1000);
+
+    // Joint query to get organization name
+    const data = await db.select({
+        id: transactions.id,
+        organizationId: transactions.organizationId,
+        userId: transactions.userId,
+        type: transactions.type,
+        totalAmount: transactions.totalAmount,
+        paymentStatus: transactions.paymentStatus,
+        paymentMode: transactions.paymentMode,
+        createdAt: transactions.createdAt,
+        updatedAt: transactions.updatedAt,
+        organizationName: organizations.name,
+    })
+        .from(transactions)
+        .leftJoin(organizations, eq(transactions.organizationId, organizations.id))
+        .orderBy(desc(transactions.createdAt))
+        .limit(limit);
+
+    return c.json({ ok: true, transactions: data });
+});
+
+// PATCH /admin/organizations/:id - Update org
+adminRoute.patch('/organizations/:id', requireDeveloperAdmin, async (c) => {
+    const id = c.req.param('id');
+    const db = c.get('db');
+    const body = await c.req.json();
+
+    const payload = z.object({
+        name: z.string().min(1).optional(),
+        code: z.string().min(1).optional(),
+        gstNumber: z.string().nullable().optional(),
+        address: z.string().nullable().optional(),
+        phoneNumber: z.string().nullable().optional(),
+        email: z.string().email().nullable().optional(),
+        isActive: z.boolean().optional(),
+        currency: z.string().optional(),
+    }).parse(body);
+
+    const updated = await db
+        .update(organizations)
+        .set({ ...payload, updatedAt: new Date() })
+        .where(eq(organizations.id, id))
+        .returning({ id: organizations.id });
+
+    if (!updated[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    return c.json({ ok: true });
+});
+
+// PUT /admin/organizations/:id - Full update alias
+adminRoute.put('/organizations/:id', requireDeveloperAdmin, async (c) => {
+    const id = c.req.param('id');
+    const db = c.get('db');
+    const body = await c.req.json();
+
+    const payload = z.object({
+        name: z.string().min(1).optional(),
+        code: z.string().min(1).optional(),
+        gstNumber: z.string().nullable().optional(),
+        address: z.string().nullable().optional(),
+        phoneNumber: z.string().nullable().optional(),
+        email: z.string().email().nullable().optional(),
+        isActive: z.boolean().optional(),
+        currency: z.string().optional(),
+    }).parse(body);
+
+    const updated = await db
+        .update(organizations)
+        .set({ ...payload, updatedAt: new Date() })
+        .where(eq(organizations.id, id))
+        .returning({ id: organizations.id });
+
+    if (!updated[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    return c.json({ ok: true });
+});
+
+// POST /admin/organizations/:id/toggle-status
+adminRoute.post('/organizations/:id/toggle-status', requireDeveloperAdmin, async (c) => {
+    const id = c.req.param('id');
+    const db = c.get('db');
+
+    const org = await db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
+    if (!org[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+
+    await db.update(organizations)
+        .set({ isActive: !org[0].isActive, updatedAt: new Date() })
+        .where(eq(organizations.id, id));
+
+    return c.json({ ok: true });
+});
+
 const parseBoolean = (value: string | undefined, fallback = false) => {
     if (value === undefined) return fallback;
     return value.toLowerCase() === 'true';
@@ -41,6 +226,136 @@ adminRoute.get('/stats', requireDeveloperAdmin, async (c) => {
             monthlyRevenue,
             recentUsers
         }
+    });
+});
+
+// GET /admin/treasury/stats - System-wide liquidity
+adminRoute.get('/treasury/stats', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+
+    const [balanceResult, pendingVouchers] = await Promise.all([
+        db.select({ total: sql<number>`sum(${bankAccounts.currentBalance})` }).from(bankAccounts),
+        db.select({ count: sql<number>`count(*)` }).from(vouchers).where(eq(vouchers.status, 'draft'))
+    ]);
+
+    const totalLiquidity = Number(balanceResult[0]?.total || 0);
+    const settlementsPending = Number(pendingVouchers[0]?.count || 0);
+
+    // Recent accounts for table
+    const accounts = await db.select().from(bankAccounts).orderBy(desc(bankAccounts.currentBalance)).limit(10);
+
+    return c.json({
+        ok: true,
+        stats: {
+            totalLiquidity,
+            settlementsPending,
+            institutionalReserve: totalLiquidity * 0.15, // Mock reserve calculation
+            netCashFlow: totalLiquidity * 0.08, // Mock flow trend
+        },
+        accounts
+    });
+});
+
+// GET /admin/payroll/stats - System-wide payroll overview
+adminRoute.get('/payroll/stats', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+
+    const [runStats, itemStats] = await Promise.all([
+        db.select({
+            totalNet: sql<number>`sum(${salaryRuns.totalNet})`,
+            runCount: sql<number>`count(*)`
+        }).from(salaryRuns),
+        db.select({ count: sql<number>`count(*)` }).from(salaryRunItems)
+    ]);
+
+    const totalDisbursed = Number(runStats[0]?.totalNet || 0);
+    const totalStaff = Number(itemStats[0]?.count || 0);
+
+    // Latest batches
+    const latestBatches = await db.select().from(salaryRuns).orderBy(desc(salaryRuns.createdAt)).limit(10);
+
+    return c.json({
+        ok: true,
+        stats: {
+            totalDisbursed,
+            totalStaff,
+            avgSalary: totalStaff > 0 ? totalDisbursed / totalStaff : 0,
+            activeBatches: Number(runStats[0]?.runCount || 0)
+        },
+        latestBatches
+    });
+});
+
+// GET /admin/analytics/extended - High level metrics
+adminRoute.get('/analytics/extended', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+
+    const [userStats, subStats, revenueStats] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(users),
+        db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.subscriptionStatus, 'active')),
+        db.select({ total: sql<number>`sum(${users.subscriptionAmountMonthly})` }).from(users).where(eq(users.subscriptionStatus, 'active'))
+    ]);
+
+    const totalUsers = Number(userStats[0]?.count || 0);
+    const totalRevenue = Number(revenueStats[0]?.total || 0);
+
+    return c.json({
+        ok: true,
+        metrics: {
+            totalUsers,
+            activeSubscriptions: Number(subStats[0]?.count || 0),
+            monthlyRevenue: totalRevenue,
+            systemHealth: 99.9,
+            userGrowth: 12.5, // Mock trend
+            revenueGrowth: 8.2 // Mock trend
+        }
+    });
+});
+
+// In-memory mock settings for now, should be moved to a 'settings' table or KV soon.
+let globalSettings = {
+    maintenanceMode: false,
+    registrationAllowed: true,
+    globalTaxRate: 18.0,
+    supportEmail: 'admin@vahi.app'
+};
+
+// GET /admin/settings
+adminRoute.get('/settings', requireDeveloperAdmin, async (c) => {
+    return c.json({
+        ok: true,
+        settings: globalSettings
+    });
+});
+
+// PATCH /admin/settings
+adminRoute.patch('/settings', requireDeveloperAdmin, async (c) => {
+    const body = await c.req.json();
+    globalSettings = { ...globalSettings, ...body };
+    return c.json({
+        ok: true,
+        settings: globalSettings
+    });
+});
+
+// GET /admin/audit-logs
+adminRoute.get('/audit-logs', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const logs = await db.select()
+        .from(auditLogs)
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(50);
+
+    return c.json({
+        ok: true,
+        logs: logs.map(log => ({
+            id: log.id,
+            time: log.createdAt.toISOString(),
+            actor: log.actorUid,
+            action: log.action,
+            entity: `${log.entityType}:${log.entityId}`,
+            status: "SUCCESS" // Defaulting to success as failures usually aren't logged in this table or are separate
+        }))
     });
 });
 

@@ -50,6 +50,13 @@
       "when": 1771492581598,
       "tag": "0006_funny_nicolaos",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1771775402810,
+      "tag": "0007_superb_juggernaut",
+      "breakpoints": true
     }
   ]
 }

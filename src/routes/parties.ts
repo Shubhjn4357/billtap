@@ -12,10 +12,10 @@ const partySchema = z.object({
     id: z.string().optional(),
     name: z.string().min(1),
     type: z.enum(['customer', 'supplier']),
-    phone: z.string().optional(),
-    email: z.string().email().optional().or(z.literal('')),
-    address: z.string().optional(),
-    gstNumber: z.string().optional(),
+    phone: z.string().optional().nullable(),
+    email: z.union([z.string().email(), z.literal(''), z.null()]).optional(),
+    address: z.string().optional().nullable(),
+    gstNumber: z.string().optional().nullable(),
     isActive: z.boolean().default(true),
 });
 
