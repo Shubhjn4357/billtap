@@ -24,6 +24,7 @@ export const SideDrawerContent: React.FC<SideDrawerContentProps> = ({ onClose })
         canManageInventory,
         canManageParties,
         canAccessBusinessSuite,
+        canAccessAccounting,
         canManageStaff,
     } = useOrganizationAccess();
 
@@ -77,6 +78,38 @@ export const SideDrawerContent: React.FC<SideDrawerContentProps> = ({ onClose })
             enabled: canAccessBusinessSuite,
         },
         {
+            key: 'accounting-home',
+            label: 'Accounting',
+            subtitle: 'Suite dashboard',
+            icon: 'book-open-variant',
+            route: '/accounting',
+            enabled: canAccessAccounting,
+        },
+        {
+            key: 'accounting-trial',
+            label: 'Trial Balance',
+            subtitle: 'Debit and credit parity',
+            icon: 'scale-balance',
+            route: '/accounting/trial-balance',
+            enabled: canAccessAccounting,
+        },
+        {
+            key: 'accounting-balance',
+            label: 'Balance Sheet',
+            subtitle: 'Assets, liabilities, equity',
+            icon: 'bank-outline',
+            route: '/accounting/balance-sheet',
+            enabled: canAccessAccounting,
+        },
+        {
+            key: 'accounting-profit',
+            label: 'Profit & Loss',
+            subtitle: 'Income and expense summary',
+            icon: 'chart-line',
+            route: '/accounting/profit-loss',
+            enabled: canAccessAccounting,
+        },
+        {
             key: 'staff',
             label: 'Staff',
             subtitle: 'Invite and manage team',
@@ -86,6 +119,7 @@ export const SideDrawerContent: React.FC<SideDrawerContentProps> = ({ onClose })
         },
     ]).filter((entry) => entry.enabled), [
         canAccessBusinessSuite,
+        canAccessAccounting,
         canCreatePurchase,
         canCreateSale,
         canManageInventory,

@@ -1,7 +1,7 @@
 export type FirestoreDate = Date | number | string;
 
 export type SubscriptionStatus = 'inactive' | 'active' | 'expired' | 'canceled';
-export type UserRole = 'owner' | 'staff' | 'admin';
+export type UserRole = 'owner' | 'staff';
 export type OfferAudience = 'all' | 'active_subscribers' | 'inactive_subscribers';
 export type PartyType = 'customer' | 'supplier';
 export type TransactionType = 'SALE' | 'PURCHASE' | 'RETURN_INWARD' | 'RETURN_OUTWARD';
@@ -125,6 +125,7 @@ export interface Item {
     // Meta
     category?: string;
     subcategory?: string;
+    description?: string;
     location?: string;
     barcode?: string;
     imageUrl?: string;

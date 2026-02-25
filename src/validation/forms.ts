@@ -101,6 +101,7 @@ export const itemSchema = z.object({
     minimumStock: z.number().int('Minimum stock must be whole number.').min(0, 'Minimum stock cannot be negative.').optional(),
     category: z.string().trim().max(80, 'Category is too long.').optional().or(z.literal('')),
     subcategory: z.string().trim().max(80, 'Subcategory is too long.').optional().or(z.literal('')),
+    description: z.string().trim().max(500, 'Description is too long.').optional().or(z.literal('')),
     unit: z.string().trim().max(20, 'Unit is too long.').optional().or(z.literal('')),
     location: z.string().trim().max(120, 'Location is too long.').optional().or(z.literal('')),
     hsn: z.string().trim().max(16, 'HSN code is too long.').optional().or(z.literal('')),
@@ -113,29 +114,3 @@ export const itemSchema = z.object({
     (value) => value.purchasePrice === undefined || value.mrp === undefined || value.purchasePrice <= value.mrp,
     { message: 'Purchase price should not exceed MRP.', path: ['purchasePrice'] }
 );
-
-export const adminPlanSchema = z.object({
-    id: z.string().trim().min(2).max(64),
-    name: z.string().trim().min(2, 'Plan name is required.').max(80, 'Plan name is too long.'),
-    description: z.string().trim().min(4, 'Plan description is required.').max(240, 'Plan description is too long.'),
-    monthlyPrice: z.number().min(0, 'Monthly price cannot be negative.'),
-    currency: z.string().trim().length(3, 'Currency must be 3 letters.'),
-    displayOrder: z.number().int().min(0),
-    features: z.array(z.string().trim().min(1)).min(1, 'Add at least one feature.'),
-    isActive: z.boolean(),
-});
-
-export const adminOfferSchema = z.object({
-    title: z.string().trim().min(2, 'Offer title is required.').max(100, 'Offer title is too long.'),
-    message: z.string().trim().min(4, 'Offer message is required.').max(280, 'Offer message is too long.'),
-    bannerUrl: z.string().trim().optional().or(z.literal('')).refine(
-        (value) => !value || z.string().url().safeParse(value).success,
-        'Banner image URL must be valid.'
-    ),
-    bannerBackground: z.string().trim().min(2, 'Banner color is required.').max(24),
-    ctaText: z.string().trim().max(32).optional().or(z.literal('')),
-    ctaRoute: z.string().trim().max(80).optional().or(z.literal('')),
-    audience: z.enum(['all', 'active_subscribers', 'inactive_subscribers']),
-    priority: z.number().int().min(0).max(999),
-    isActive: z.boolean(),
-});

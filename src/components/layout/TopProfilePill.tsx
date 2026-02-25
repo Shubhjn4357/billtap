@@ -33,7 +33,9 @@ export const TopProfilePill: React.FC = () => {
         canManageParties,
         canAccessBusinessSuite,
         canManageStaff,
-        isOwnerOrAdmin,
+        canAccessSettings,
+        canSendMessages,
+        isOwner,
         refreshOrganizationContext,
     } = useOrganizationAccess();
 
@@ -291,7 +293,7 @@ export const TopProfilePill: React.FC = () => {
                                 router.push('/org-select' as never);
                             }}
                         />
-                        {isOwnerOrAdmin ? (
+                        {isOwner ? (
                             <Menu.Item
                                 leadingIcon="domain-plus"
                                 title="Create Organization"
@@ -304,13 +306,15 @@ export const TopProfilePill: React.FC = () => {
                     </Menu>
 
                     <View style={styles.rightActions}>
-                        <IconButton
-                            icon="bell-outline"
-                            size={21}
-                            iconColor={theme.colors.onSurface}
-                            onPress={() => router.push('/notifications')}
-                            style={styles.menuButton}
-                        />
+                        {canSendMessages ? (
+                            <IconButton
+                                icon="bell-outline"
+                                size={21}
+                                iconColor={theme.colors.onSurface}
+                                onPress={() => router.push('/notifications')}
+                                style={styles.menuButton}
+                            />
+                        ) : null}
 
                         <Menu
                             visible={profileMenuVisible}
@@ -355,14 +359,16 @@ export const TopProfilePill: React.FC = () => {
                                     router.push('/profile');
                                 }}
                             />
-                            <Menu.Item
-                                leadingIcon="cog-outline"
-                                title="Settings"
-                                onPress={() => {
-                                    setProfileMenuVisible(false);
-                                    router.push('/(main)/(tabs)/settings');
-                                }}
-                            />
+                            {canAccessSettings ? (
+                                <Menu.Item
+                                    leadingIcon="cog-outline"
+                                    title="Settings"
+                                    onPress={() => {
+                                        setProfileMenuVisible(false);
+                                        router.push('/(main)/(tabs)/settings');
+                                    }}
+                                />
+                            ) : null}
                             <Menu.Item
                                 leadingIcon="format-paint"
                                 title={autoTheme ? 'Auto' : themeMode === 'dark' ? 'Dark' : 'Light'}

@@ -64,7 +64,7 @@ export const BusinessSuiteHubScreen = () => {
         canManageStaff,
         canAccessSettings,
         canAccessOperations,
-        isOwnerOrAdmin,
+        isOwner,
     } = useOrganizationAccess();
     const { selectedOrganizationId, context } = useOrganizationStore();
     const isWide = width >= 900;
@@ -72,16 +72,16 @@ export const BusinessSuiteHubScreen = () => {
     const cards = React.useMemo(() => {
         const output = BASE_CARDS.filter((card) => {
             if (card.key === 'template' || card.key === 'card') {
-                return isOwnerOrAdmin || canManageTemplates;
+                return isOwner || canManageTemplates;
             }
             if (card.key === 'operations') {
-                return canAccessOperations || isOwnerOrAdmin || canManageStaff || canAccessSettings;
+                return canAccessOperations || isOwner || canManageStaff || canAccessSettings;
             }
             if (card.key === 'staff') {
-                return isOwnerOrAdmin || canManageStaff;
+                return isOwner || canManageStaff;
             }
             if (card.key === 'subscription') {
-                return isOwnerOrAdmin || canManageSubscription;
+                return isOwner || canManageSubscription;
             }
             return true;
         });
@@ -93,7 +93,7 @@ export const BusinessSuiteHubScreen = () => {
             cta: 'Open Profile',
         });
         return output;
-    }, [canAccessOperations, canAccessSettings, canManageStaff, canManageSubscription, canManageTemplates, isOwnerOrAdmin]);
+    }, [canAccessOperations, canAccessSettings, canManageStaff, canManageSubscription, canManageTemplates, isOwner]);
 
     return (
         <ScreenWrapper>

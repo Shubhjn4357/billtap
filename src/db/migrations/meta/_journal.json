@@ -29,6 +29,13 @@
       "when": 1772000000000,
       "tag": "0003_schema_alignment",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1772052600000,
+      "tag": "0004_item_description",
+      "breakpoints": true
     }
   ]
 }

@@ -1,18 +1,19 @@
-import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useCallback } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
+
 import { accountingService } from '../../api/accountingService';
+import { AppAccordion } from '../../components/common/AppAccordion';
 import { AppButton } from '../../components/common/AppButton';
-import { AppCard } from '../../components/common/AppCard';
-import { AppDateField } from '../../components/common/AppDateField';
-import { PageHeaderCard } from '../../components/common/PageHeaderCard';
-import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { SummaryCard } from '../../components/common/SummaryCard';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 import { DesignSystem } from '../../constants/DesignSystem';
+import { buildCsv, shareExportContent } from '../../utils/accountingExport';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
-import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
+import { AccountingWorkspaceShell } from './components/AccountingWorkspaceShell';
+import { useAccountingRange } from './context/AccountingRangeContext';
 
 interface GstSummaryResponse {
     taxableTurnover: number;
@@ -29,16 +30,13 @@ interface GstSummaryResponse {
 
 export const GstSummaryScreen = () => {
     const theme = useTheme();
-    const { width } = useWindowDimensions();
-    const isWide = width >= 960;
-    const [startDate, setStartDate] = useState<Date | undefined>(undefined);
-    const [endDate, setEndDate] = useState<Date | undefined>(undefined);
-    const start = startDate ? startDate.toISOString().slice(0, 10) : '';
-    const end = endDate ? endDate.toISOString().slice(0, 10) : '';
+    const dialog = useAppDialog();
+    const { startKey, endKey } = useAccountingRange();
+
     const gstSummaryQuery = useQuery({
-        queryKey: ['accounting-gst-summary', start, end] as const,
+        queryKey: ['accounting-gst-summary', startKey ?? 'any', endKey ?? 'any'] as const,
         queryFn: async (): Promise<GstSummaryResponse> => {
-            const response = await accountingService.getGstSummary(start || undefined, end || undefined);
+            const response = await accountingService.getGstSummary(startKey, endKey);
             return {
                 taxableTurnover: response.taxableTurnover,
                 outputTax: response.outputTax,
@@ -47,116 +45,115 @@ export const GstSummaryScreen = () => {
                 byHsn: response.byHsn,
             };
         },
-        enabled: false,
         staleTime: 45_000,
     });
-    const { refetch: refetchGstSummary } = gstSummaryQuery;
 
     const data = gstSummaryQuery.data ?? null;
     const error = gstSummaryQuery.error && !isNetworkLikeError(gstSummaryQuery.error)
         ? (gstSummaryQuery.error instanceof Error ? gstSummaryQuery.error.message : 'Failed to load GST summary.')
         : null;
 
-    const loadData = useCallback(async () => {
-        await refetchGstSummary();
-    }, [refetchGstSummary]);
+    const handleExport = useCallback(async (format: 'csv' | 'json') => {
+        if (!data) return;
+        try {
+            if (format === 'csv') {
+                const csv = buildCsv(
+                    ['HSN', 'Taxable Value', 'GST Amount', 'Quantity'],
+                    data.byHsn.map((row) => [row.hsn, row.taxableValue, row.gstAmount, row.quantity])
+                );
+                await shareExportContent({
+                    title: 'GST Summary',
+                    format: 'csv',
+                    payload: csv,
+                });
+                return;
+            }
 
-    useFocusRefresh(loadData, {
-        enabled: gstSummaryQuery.isFetched,
-        minIntervalMs: 10_000,
-    });
+            await shareExportContent({
+                title: 'GST Summary',
+                format: 'json',
+                payload: {
+                    taxableTurnover: data.taxableTurnover,
+                    outputTax: data.outputTax,
+                    inputTax: data.inputTax,
+                    netGstPayable: data.netGstPayable,
+                    byHsn: data.byHsn,
+                },
+            });
+        } catch (exportError: unknown) {
+            dialog.alert('Export', exportError instanceof Error ? exportError.message : 'Failed to export GST summary.');
+        }
+    }, [data, dialog]);
 
     return (
-        <ScreenWrapper>
-            <AppPullToRefresh refreshing={gstSummaryQuery.isFetching} onRefresh={() => { void loadData(); }}>
-            <ScrollView
-                contentContainerStyle={styles.content}
-                showsVerticalScrollIndicator={false}
-                
-            >
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                    <PageHeaderCard
-                        title="GST Summary"
-                        subtitle="HSN-wise taxable value and GST position."
-                    />
+        <AccountingWorkspaceShell
+            title="GST Summary"
+            subtitle="HSN-wise GST view with shared date range."
+            activeSegment="gst"
+            refreshing={gstSummaryQuery.isFetching}
+            onRefresh={() => { void gstSummaryQuery.refetch(); }}
+        >
+            {error ? (
+                <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                    {error}
+                </Text>
+            ) : null}
 
-                    <AppCard>
-                        <AppDateField
-                            label="Start Date"
-                            value={startDate}
-                            onChange={setStartDate}
-                            placeholder="Select start date"
-                        />
-                        <AppDateField
-                            label="End Date"
-                            value={endDate}
-                            onChange={setEndDate}
-                            placeholder="Select end date"
-                        />
-                        <AppButton mode="contained" onPress={() => { void loadData(); }} loading={gstSummaryQuery.isFetching}>
-                            Refresh GST Summary
-                        </AppButton>
-                    </AppCard>
+            <View style={styles.summaryRow}>
+                <SummaryCard label="Taxable" value={formatCurrency(data?.taxableTurnover ?? 0, 'INR')} tone="neutral" />
+                <SummaryCard label="Output Tax" value={formatCurrency(data?.outputTax ?? 0, 'INR')} tone="warning" />
+                <SummaryCard label="Net Payable" value={formatCurrency(data?.netGstPayable ?? 0, 'INR')} tone="positive" />
+            </View>
 
-                    {error ? (
-                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
-                            {error}
+            <AppAccordion title={`HSN Breakdown (${data?.byHsn.length ?? 0})`} icon="barcode-scan" defaultExpanded>
+                {(data?.byHsn ?? []).map((row) => (
+                    <View key={row.hsn} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>HSN {row.hsn}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Taxable: {formatCurrency(row.taxableValue, 'INR')}
                         </Text>
-                    ) : null}
-
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>Totals</Text>
-                        <Text variant="bodySmall">Taxable Turnover: {formatCurrency(data?.taxableTurnover ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Output Tax: {formatCurrency(data?.outputTax ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Input Tax: {formatCurrency(data?.inputTax ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall" style={{ color: theme.colors.primary }}>
-                            Net GST Payable: {formatCurrency(data?.netGstPayable ?? 0, 'INR')}
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            GST: {formatCurrency(row.gstAmount, 'INR')} • Qty: {row.quantity}
                         </Text>
-                    </AppCard>
+                    </View>
+                ))}
+            </AppAccordion>
 
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            HSN Breakdown ({data?.byHsn.length ?? 0})
-                        </Text>
-                        {(data?.byHsn ?? []).map((row) => (
-                            <ScrollView key={row.hsn} horizontal showsHorizontalScrollIndicator={false} style={styles.hsnRow}>
-                                <Text variant="bodySmall">
-                                    HSN {row.hsn} | Taxable {formatCurrency(row.taxableValue, 'INR')} | GST {formatCurrency(row.gstAmount, 'INR')} | Qty {row.quantity}
-                                </Text>
-                            </ScrollView>
-                        ))}
-                    </AppCard>
+            <AppAccordion title="Export" icon="file-export-outline" defaultExpanded={false}>
+                <View style={styles.exportRow}>
+                    <AppButton mode="contained-tonal" compact onPress={() => { void handleExport('csv'); }}>
+                        Export CSV
+                    </AppButton>
+                    <AppButton mode="outlined" compact onPress={() => { void handleExport('json'); }}>
+                        Export JSON
+                    </AppButton>
                 </View>
-            </ScrollView>
-            </AppPullToRefresh>
-        </ScreenWrapper>
+            </AppAccordion>
+        </AccountingWorkspaceShell>
     );
 };
 
 const styles = StyleSheet.create({
-    content: {
-        paddingTop: DesignSystem.layout.pageTop,
-        paddingBottom: DesignSystem.layout.pageBottom,
-        alignItems: 'center',
-    },
-    contentInner: {
-        width: '100%',
-        gap: DesignSystem.layout.sectionGap,
-    },
-    contentInnerWide: {
-        maxWidth: DesignSystem.layout.pageMaxWidth,
-    },
     errorText: {
-        marginBottom: DesignSystem.spacing.sm,
+        marginTop: 2,
     },
-    sectionTitle: {
+    summaryRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    listRow: {
+        marginTop: 8,
+        borderWidth: 1,
+        borderRadius: DesignSystem.radius.sm,
+        padding: DesignSystem.spacing.sm,
+    },
+    primaryLine: {
         fontWeight: '700',
     },
-    sectionTitleWithGap: {
-        fontWeight: '700',
-        marginBottom: DesignSystem.spacing.xs,
-    },
-    hsnRow: {
-        marginBottom: DesignSystem.spacing.xs + 2,
+    exportRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
 });

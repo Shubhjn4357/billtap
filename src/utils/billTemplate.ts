@@ -68,13 +68,15 @@ const normalizeBillLines = (bill: Bill): BillLine[] => {
 
 const renderThermalBillHTML = (bill: Bill, data: Record<string, unknown>) => {
     const businessName = escapeHtml(asString(bill.businessName, Config.companyName));
-    const businessAddress = escapeHtml(asString(bill.businessAddress, Config.companyAddress));
+    const businessAddress = escapeHtml(asString(bill.businessAddress, asString(data.businessAddress || data.billingAddress, Config.companyAddress)));
     const gstNumber = escapeHtml(asString(bill.gstNumber, 'Not Set'));
     const currency = bill.currency ?? Config.defaultCurrency;
     const billNumber = escapeHtml(bill.billNumber?.trim() || (bill.id ? bill.id.slice(0, 8).toUpperCase() : '-'));
     const billDate = bill.billDate ?? bill.createdAt;
     const paymentMode = escapeHtml(asString(data.paymentMode, 'Cash'));
-    const customerName = escapeHtml(asString(bill.customerName, '-'));
+    const customerName = escapeHtml(asString(bill.customerName, asString(data.customerName || data.partyName, '-')));
+    const isInboundFlow = bill.type === 'PURCHASE' || bill.type === 'RETURN_INWARD';
+    const partyLabel = isInboundFlow ? 'From' : 'Customer';
     const lines = normalizeBillLines(bill);
     const totalItems = lines.reduce((sum, line) => sum + line.qty, 0);
     const subtotal = lines.reduce((sum, line) => sum + (line.qty * line.rate), 0);
@@ -125,7 +127,8 @@ const renderThermalBillHTML = (bill: Bill, data: Record<string, unknown>) => {
           <div class="center meta">Bill No: ${billNumber}</div>
           <div class="center meta">${escapeHtml(formatDate(billDate))} - ${paymentMode}</div>
           <div class="line"></div>
-          <div class="meta">Customer: ${customerName}</div>
+          <div class="meta">${partyLabel}: ${customerName}</div>
+          ${isInboundFlow ? `<div class="meta">To: ${businessName}</div>` : ''}
           <div class="line"></div>
           <table>
             <thead>
@@ -163,20 +166,34 @@ const renderThermalBillHTML = (bill: Bill, data: Record<string, unknown>) => {
 
 const renderA4BillHTML = (bill: Bill, data: Record<string, unknown>) => {
     const businessName = escapeHtml(asString(bill.businessName, Config.companyName));
-    const businessAddress = escapeHtml(asString(bill.businessAddress, Config.companyAddress));
+    const businessAddress = escapeHtml(asString(bill.businessAddress, asString(data.businessAddress || data.billingAddress, Config.companyAddress)));
     const gstNumber = escapeHtml(asString(bill.gstNumber, 'Not Set'));
     const currency = bill.currency ?? Config.defaultCurrency;
     const billNumber = escapeHtml(bill.billNumber?.trim() || (bill.id ? bill.id.slice(0, 8).toUpperCase() : '-'));
     const billDate = bill.billDate ?? bill.createdAt;
-    const customerName = escapeHtml(asString(bill.customerName, '-'));
-    const customerPhone = escapeHtml(asString(bill.customerPhone, '-'));
-    const customerAddress = escapeHtml(asString(data.customerAddress, '-'));
+    const customerName = escapeHtml(asString(bill.customerName, asString(data.customerName || data.partyName, '-')));
+    const customerPhone = escapeHtml(asString(bill.customerPhone, asString(data.customerPhone || data.partyPhone, '-')));
+    const customerAddress = escapeHtml(asString(data.customerAddress || data.partyAddress || data.billingAddress, '-'));
+    const isInboundFlow = bill.type === 'PURCHASE' || bill.type === 'RETURN_INWARD';
+    const partyHeading = isInboundFlow ? 'From Party' : 'Bill To';
+    const destinationHeading = isInboundFlow ? 'To Business' : 'Ship To';
+    const destinationName = isInboundFlow
+        ? businessName
+        : escapeHtml(asString(data.deliveryContactName || data.customerName, '-'));
+    const destinationPhone = isInboundFlow
+        ? escapeHtml(asString(data.businessPhone, '-'))
+        : escapeHtml(asString(data.deliveryContactPhone || data.customerPhone, '-'));
+    const destinationAddress = isInboundFlow
+        ? escapeHtml(asString(data.deliveryAddress || data.businessAddress || data.billingAddress, '-'))
+        : escapeHtml(asString(data.deliveryAddress || data.customerAddress, '-'));
     const paymentMode = escapeHtml(asString(data.paymentMode, 'Cash'));
     const footerText = escapeHtml(asString(data.footerText, 'Subject to local jurisdiction.'));
     const acknowledgmentText = escapeHtml(asString(data.acknowledgmentText, 'Thank you for your business.'));
     const upiId = escapeHtml(asString(data.upiId, ''));
     const qrImageDataUrl = asString(data.qrImageDataUrl, '');
     const signatureImageUrl = asString(data.signatureImageUrl, '');
+    const safeQrImageSrc = escapeHtml(qrImageDataUrl.trim());
+    const safeSignatureImageSrc = escapeHtml(signatureImageUrl.trim());
     const invoiceTitle = bill.billMode === 'ESTIMATE' ? 'ESTIMATE / QUOTATION' : 'TAX INVOICE';
 
     const lines = normalizeBillLines(bill);
@@ -197,11 +214,11 @@ const renderA4BillHTML = (bill: Bill, data: Record<string, unknown>) => {
     const igstAmount = providedIgst ?? (hasSplitGst ? 0 : taxTotal);
     const totalValue = Number.isFinite(bill.total) ? bill.total : taxableValue + taxTotal;
 
-    const qrMarkup = qrImageDataUrl.trim()
-        ? `<img class="qr-image" src="${qrImageDataUrl}" alt="UPI QR" />`
+    const qrMarkup = safeQrImageSrc
+        ? `<img class="qr-image" src="${safeQrImageSrc}" alt="UPI QR" />`
         : `<div class="qr-placeholder">${upiId ? `UPI: ${upiId}` : 'UPI QR'}</div>`;
-    const signatureMarkup = signatureImageUrl.trim()
-        ? `<img class="signature-image" src="${signatureImageUrl}" alt="Signature" />`
+    const signatureMarkup = safeSignatureImageSrc
+        ? `<img class="signature-image" src="${safeSignatureImageSrc}" alt="Signature" />`
         : `<div class="signature-placeholder">Authorized Signatory</div>`;
 
     return `
@@ -482,16 +499,16 @@ const renderA4BillHTML = (bill: Bill, data: Record<string, unknown>) => {
 
           <div class="party-grid">
             <div class="party-box">
-              <p class="party-heading">Bill To</p>
+              <p class="party-heading">${partyHeading}</p>
               <p class="party-name">${customerName}</p>
               <p class="party-line">Phone: ${customerPhone}</p>
               <p class="party-line">${customerAddress}</p>
             </div>
             <div class="party-box">
-              <p class="party-heading">Ship To</p>
-              <p class="party-name">${escapeHtml(asString(data.deliveryContactName || data.customerName, '-'))}</p>
-              <p class="party-line">${escapeHtml(asString(data.deliveryContactPhone || data.customerPhone, '-'))}</p>
-              <p class="party-line">${escapeHtml(asString(data.deliveryAddress || data.customerAddress, '-'))}</p>
+              <p class="party-heading">${destinationHeading}</p>
+              <p class="party-name">${destinationName}</p>
+              <p class="party-line">${destinationPhone}</p>
+              <p class="party-line">${destinationAddress}</p>
             </div>
           </div>
 

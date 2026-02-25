@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, useTheme, Surface, IconButton } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,11 +11,13 @@ import { formatCurrency, normalizeCurrencyCode } from '../utils/formatters';
 import { printBill, shareBillPDF } from '../utils/pdfGenerator';
 import { useSettingsStore, usePartyStore, useOrganizationStore } from '../store';
 import { useAuth } from '../hooks/useAuth';
+import { businessSuiteService } from '../api/businessSuiteService';
 import QRCode from 'react-native-qrcode-svg';
 import { shareViaWhatsApp, shareViaSMS } from '../utils/shareIntent';
 import { useAppDialog } from '../components/providers/DialogProvider';
-import { buildUpiPaymentUri, isValidUpiId, sanitizeUpiId } from '../utils/upi';
+import { buildUpiPaymentUri, buildUpiQrImageUrl, isValidUpiId, sanitizeUpiId } from '../utils/upi';
 import type { DbTransaction } from '../types/db';
+import type { Bill, BillItem } from '../types';
 
 const asRecord = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -36,9 +38,12 @@ export const BillSuccessScreen = () => {
     const [loading, setLoading] = useState(true);
     const [partialPaidInput, setPartialPaidInput] = useState('');
     const [savingPayment, setSavingPayment] = useState(false);
+    const [qrImageDataUrl, setQrImageDataUrl] = useState<string | undefined>(undefined);
+    const qrCodeRef = useRef<any>(null);
 
     const { currencySymbol } = useSettingsStore();
     const { parties } = usePartyStore();
+    const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
     const organizationSettings = useOrganizationStore((state) => state.context.settings);
     const { user } = useAuth();
     const dialog = useAppDialog();
@@ -98,18 +103,172 @@ export const BillSuccessScreen = () => {
         if (!configuredUpiId) return 'UPI ID is missing. Add UPI ID in Profile Setup to enable QR payment collection.';
         return 'Unable to generate UPI QR for this bill.';
     }, [configuredUpiId, dueAmount, transaction]);
+    useEffect(() => {
+        if (!qrData) {
+            setQrImageDataUrl(undefined);
+            return;
+        }
+
+        const timeoutId = setTimeout(() => {
+            const ref = qrCodeRef.current;
+            if (!ref || typeof ref.toDataURL !== 'function') {
+                setQrImageDataUrl(undefined);
+                return;
+            }
+
+            ref.toDataURL((value: string) => {
+                if (!value) {
+                    setQrImageDataUrl(undefined);
+                    return;
+                }
+                setQrImageDataUrl(`data:image/png;base64,${value}`);
+            });
+        }, 0);
+
+        return () => clearTimeout(timeoutId);
+    }, [qrData]);
+
+    const ensureQrImageForPrint = useCallback(async (): Promise<string | undefined> => {
+        if (!qrData) return undefined;
+
+        const inMemoryImage = qrImageDataUrl?.trim();
+        if (inMemoryImage) {
+            return inMemoryImage;
+        }
+
+        const ref = qrCodeRef.current;
+        if (ref && typeof ref.toDataURL === 'function') {
+            const generated = await new Promise<string | null>((resolve) => {
+                try {
+                    ref.toDataURL((value: string) => {
+                        if (!value) {
+                            resolve(null);
+                            return;
+                        }
+                        resolve(`data:image/png;base64,${value}`);
+                    });
+                } catch {
+                    resolve(null);
+                }
+            });
+
+            if (generated) {
+                setQrImageDataUrl(generated);
+                return generated;
+            }
+        }
+
+        return buildUpiQrImageUrl(qrData);
+    }, [qrData, qrImageDataUrl]);
+
+    const buildBillPayload = useCallback(async (): Promise<Bill | null> => {
+        if (!transaction) return null;
+
+        let businessName = transaction.businessName?.trim()
+            || user?.businessName?.trim()
+            || user?.displayName?.trim()
+            || '';
+        let businessAddress = transaction.businessAddress?.trim()
+            || user?.address?.trim()
+            || transaction.billingAddress?.trim()
+            || '';
+        let gstNumber = transaction.gstNumber?.trim() || user?.gstNumber?.trim() || '';
+
+        try {
+            const orgContext = await businessSuiteService.getCurrentOrganization(selectedOrganizationId ?? undefined);
+            businessName = orgContext.organization.name?.trim() || businessName;
+            businessAddress = orgContext.organization.address?.trim() || businessAddress;
+            gstNumber = orgContext.organization.gstNumber?.trim() || gstNumber;
+        } catch {
+            // Continue with local/cached profile values when org context is unavailable.
+        }
+
+        const parsedItems: BillItem[] = (() => {
+            try {
+                if (!transaction.itemsSnapshot) return [];
+                const raw = JSON.parse(transaction.itemsSnapshot);
+                return Array.isArray(raw) ? raw : [];
+            } catch {
+                return [];
+            }
+        })();
+
+        const settings = asRecord(organizationSettings);
+        const customization = asRecord(settings.customization);
+        const payment = asRecord(settings.payment);
+        const print = asRecord(settings.print);
+        const resolvedQrImageDataUrl = await ensureQrImageForPrint();
+
+        const signatureImageUrl = typeof settings.signatureImageUrl === 'string'
+            ? settings.signatureImageUrl
+            : (typeof customization.signatureImageUrl === 'string' ? customization.signatureImageUrl : '');
+        const upiIdFromSettings = typeof payment.upiId === 'string'
+            ? sanitizeUpiId(payment.upiId)
+            : '';
+        const partyProfile = transaction.partyId
+            ? parties.find((party) => party.id === transaction.partyId)
+            : undefined;
+        const isInboundFlow = transaction.type === 'PURCHASE' || transaction.type === 'RETURN_INWARD';
+        const paperSizeCandidate = typeof print.paperSize === 'string' ? print.paperSize.toUpperCase() : 'A4';
+        const paperSize: Bill['paperSize'] = (
+            paperSizeCandidate === 'A5'
+            || paperSizeCandidate === '2INCH'
+            || paperSizeCandidate === '3INCH'
+        ) ? paperSizeCandidate : 'A4';
+
+        return {
+            id: transaction.id,
+            userId: transaction.organizationId || user?.uid || '',
+            type: transaction.type as Bill['type'],
+            billMode: transaction.billMode as Bill['billMode'],
+            partyId: transaction.partyId ?? undefined,
+            customerName: transaction.partyName || partyProfile?.name || 'Walk-in',
+            customerPhone: transaction.partyPhone || partyProfile?.phone || transaction.deliveryContactPhone || undefined,
+            customerAddress: isInboundFlow
+                ? (transaction.billingAddress || partyProfile?.address || undefined)
+                : (partyProfile?.address || transaction.billingAddress || undefined),
+            businessName: businessName || 'Business',
+            businessAddress: businessAddress || undefined,
+            gstNumber: gstNumber || undefined,
+            currency: transaction.currency || activeCurrency,
+            billNumber: transaction.billNumber || undefined,
+            billDate: transaction.billDate || transaction.createdAt || new Date().toISOString(),
+            paymentMode: (transaction.paymentMode as Bill['paymentMode']) || 'CASH',
+            printerType: print.printerType === 'THERMAL' ? 'THERMAL' : 'STANDARD',
+            paperSize,
+            acknowledgmentText: typeof customization.acknowledgmentText === 'string' ? customization.acknowledgmentText : undefined,
+            footerText: typeof customization.footerText === 'string' ? customization.footerText : undefined,
+            upiId: upiIdFromSettings || configuredUpiId || undefined,
+            qrImageDataUrl: resolvedQrImageDataUrl,
+            signatureImageUrl: signatureImageUrl || undefined,
+            taxAmount: transaction.taxAmount || 0,
+            items: parsedItems,
+            total: transaction.totalAmount,
+            billingAddress: transaction.billingAddress || undefined,
+            deliveryAddress: transaction.deliveryAddress || undefined,
+            createdAt: transaction.createdAt || new Date().toISOString(),
+        };
+    }, [
+        activeCurrency,
+        configuredUpiId,
+        ensureQrImageForPrint,
+        organizationSettings,
+        parties,
+        selectedOrganizationId,
+        transaction,
+        user?.address,
+        user?.businessName,
+        user?.displayName,
+        user?.gstNumber,
+        user?.uid,
+    ]);
 
     const handleViewBill = async () => {
         if (!transaction) return;
         try {
-            const parsedItems = transaction.itemsSnapshot ? JSON.parse(transaction.itemsSnapshot) : [];
-            const billToShare = {
-                ...transaction,
-                items: parsedItems,
-                userId: transaction.accountId || '',
-                total: transaction.totalAmount,
-            };
-            await printBill(billToShare as any);
+            const billPayload = await buildBillPayload();
+            if (!billPayload) return;
+            await printBill(billPayload);
         } catch (error) {
             console.error('Failed to print bill', error);
             dialog.alert('Bill', 'Unable to print bill.');
@@ -119,14 +278,9 @@ export const BillSuccessScreen = () => {
     const handleShareBill = async () => {
         if (!transaction) return;
         try {
-            const parsedItems = transaction.itemsSnapshot ? JSON.parse(transaction.itemsSnapshot) : [];
-            const billToShare = {
-                ...transaction,
-                items: parsedItems,
-                userId: transaction.accountId || '',
-                total: transaction.totalAmount,
-            };
-            await shareBillPDF(billToShare as any);
+            const billPayload = await buildBillPayload();
+            if (!billPayload) return;
+            await shareBillPDF(billPayload);
         } catch (error) {
             console.error('Failed to share PDF', error);
             dialog.alert('Bill', 'Unable to share bill PDF.');
@@ -263,6 +417,9 @@ export const BillSuccessScreen = () => {
                                     size={180}
                                     color={theme.colors.onSurface}
                                     backgroundColor={theme.colors.surface}
+                                    getRef={(ref) => {
+                                        qrCodeRef.current = ref;
+                                    }}
                                 />
                                 <Text variant="labelSmall" style={{ marginTop: 12, color: theme.colors.outline }}>
                                     Scan to Pay Pending Amount

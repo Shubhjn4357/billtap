@@ -30,6 +30,7 @@ import { userService } from '../src/api/userService';
 import { AppThemeProvider } from '../src/components/providers/AppThemeProvider';
 import { AppQueryProvider } from '../src/components/providers/AppQueryProvider';
 import { DialogProvider } from '../src/components/providers/DialogProvider';
+import { GlobalToastHost } from '../src/components/common/GlobalToastHost';
 import { Config } from '../src/constants/Config';
 import { STACK_ROUTE_TITLES } from '../src/constants/staticText';
 import { toDateSafe } from '../src/utils/date';
@@ -358,6 +359,7 @@ export default function RootLayout() {
                     <Stack.Screen name="sitemap" options={{ title: STACK_ROUTE_TITLES.sitemap }} />
                     <Stack.Screen name="+not-found" />
                 </Stack>
+                <GlobalToastHost />
             </DialogProvider>
         </AppQueryProvider>
     );

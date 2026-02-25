@@ -1,4 +1,4 @@
-import type { SubscriptionPlan } from '../types';
+import type { MarketingOffer, SubscriptionPlan } from '../types';
 import { apiClient } from './httpClient';
 
 export const subscriptionService = {
@@ -35,5 +35,17 @@ export const subscriptionService = {
             throw new Error(response.message || 'Failed to create checkout session.');
         }
         return response;
-    }
+    },
+
+    async getActiveOffers(): Promise<MarketingOffer[]> {
+        const response = await apiClient.get<{
+            ok: boolean;
+            offers?: MarketingOffer[];
+            message?: string;
+        }>('/subscription/offers/active');
+        if (!response.ok) {
+            throw new Error(response.message || 'Failed to fetch offers.');
+        }
+        return (response.offers ?? []).sort((a, b) => b.priority - a.priority);
+    },
 };

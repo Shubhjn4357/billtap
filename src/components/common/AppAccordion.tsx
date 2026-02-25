@@ -35,6 +35,8 @@ let androidLayoutAnimationEnabled = false;
 
 const enableAndroidLayoutAnimation = () => {
     if (Platform.OS !== 'android') return;
+    const isNewArchitecture = Boolean((globalThis as { nativeFabricUIManager?: unknown }).nativeFabricUIManager);
+    if (isNewArchitecture) return;
     if (androidLayoutAnimationEnabled) return;
     if (typeof UIManager.setLayoutAnimationEnabledExperimental !== 'function') return;
     UIManager.setLayoutAnimationEnabledExperimental(true);

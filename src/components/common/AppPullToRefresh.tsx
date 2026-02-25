@@ -1,5 +1,5 @@
 import React, { ReactElement } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { useTheme } from 'react-native-paper';
 
 export interface AppPullToRefreshProps {

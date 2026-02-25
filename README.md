@@ -1,6 +1,6 @@
 # Vahi Client
 
-Expo app for billing, inventory, accounting, staff, and admin modules.
+Expo app for billing, inventory, accounting, and staff modules.
 
 ## Local Setup
 

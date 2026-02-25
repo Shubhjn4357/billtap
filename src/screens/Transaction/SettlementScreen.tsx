@@ -105,7 +105,7 @@ export const SettlementScreen = () => {
                         Payments access is disabled
                     </Text>
                     <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 6 }}>
-                        Ask owner/admin to enable payments permission for your account.
+                        Ask your organization owner to enable payments permission for your account.
                     </Text>
                 </AppCard>
             ) : (

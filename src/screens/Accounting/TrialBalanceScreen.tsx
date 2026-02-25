@@ -1,18 +1,19 @@
-import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useCallback } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
+
 import { accountingService } from '../../api/accountingService';
+import { AppAccordion } from '../../components/common/AppAccordion';
 import { AppButton } from '../../components/common/AppButton';
-import { AppCard } from '../../components/common/AppCard';
-import { AppDateField } from '../../components/common/AppDateField';
-import { PageHeaderCard } from '../../components/common/PageHeaderCard';
-import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { SummaryCard } from '../../components/common/SummaryCard';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 import { DesignSystem } from '../../constants/DesignSystem';
+import { buildCsv, shareExportContent } from '../../utils/accountingExport';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
-import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
+import { AccountingWorkspaceShell } from './components/AccountingWorkspaceShell';
+import { useAccountingRange } from './context/AccountingRangeContext';
 
 interface TrialBalanceResponse {
     rows: {
@@ -33,130 +34,124 @@ interface TrialBalanceResponse {
 
 export const TrialBalanceScreen = () => {
     const theme = useTheme();
-    const { width } = useWindowDimensions();
-    const isWide = width >= 960;
-    const [startDate, setStartDate] = useState<Date | undefined>(undefined);
-    const [endDate, setEndDate] = useState<Date | undefined>(undefined);
-    const start = startDate ? startDate.toISOString().slice(0, 10) : '';
-    const end = endDate ? endDate.toISOString().slice(0, 10) : '';
+    const dialog = useAppDialog();
+    const { startKey, endKey } = useAccountingRange();
+
     const trialBalanceQuery = useQuery({
-        queryKey: ['accounting-trial-balance', start, end] as const,
+        queryKey: ['accounting-trial-balance', startKey ?? 'any', endKey ?? 'any'] as const,
         queryFn: async (): Promise<TrialBalanceResponse> => {
-            const response = await accountingService.getTrialBalance(start || undefined, end || undefined);
+            const response = await accountingService.getTrialBalance(startKey, endKey);
             return {
                 rows: response.rows,
                 summary: response.summary,
             };
         },
-        enabled: false,
         staleTime: 45_000,
     });
-    const { refetch: refetchTrialBalance } = trialBalanceQuery;
 
     const data = trialBalanceQuery.data ?? null;
     const error = trialBalanceQuery.error && !isNetworkLikeError(trialBalanceQuery.error)
         ? (trialBalanceQuery.error instanceof Error ? trialBalanceQuery.error.message : 'Failed to load trial balance.')
         : null;
 
-    const loadData = useCallback(async () => {
-        await refetchTrialBalance();
-    }, [refetchTrialBalance]);
+    const handleExport = useCallback(async (format: 'csv' | 'json') => {
+        if (!data) return;
+        try {
+            if (format === 'csv') {
+                const csv = buildCsv(
+                    ['Account Code', 'Account Name', 'Type', 'Debit', 'Credit', 'Balance'],
+                    data.rows.map((row) => [row.code, row.name, row.type, row.debit, row.credit, row.balance])
+                );
+                await shareExportContent({
+                    title: 'Trial Balance',
+                    format: 'csv',
+                    payload: csv,
+                });
+                return;
+            }
 
-    useFocusRefresh(loadData, {
-        enabled: trialBalanceQuery.isFetched,
-        minIntervalMs: 10_000,
-    });
+            await shareExportContent({
+                title: 'Trial Balance',
+                format: 'json',
+                payload: {
+                    summary: data.summary,
+                    rows: data.rows,
+                },
+            });
+        } catch (exportError: unknown) {
+            dialog.alert('Export', exportError instanceof Error ? exportError.message : 'Failed to export trial balance.');
+        }
+    }, [data, dialog]);
 
     return (
-        <ScreenWrapper>
-            <AppPullToRefresh refreshing={trialBalanceQuery.isFetching} onRefresh={() => { void loadData(); }}>
-            <ScrollView
-                contentContainerStyle={styles.content}
-                showsVerticalScrollIndicator={false}
-                
-            >
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                    <PageHeaderCard
-                        title="Trial Balance"
-                        subtitle="Verify books are balanced across accounts."
-                    />
+        <AccountingWorkspaceShell
+            title="Trial Balance"
+            subtitle="Single range applied across all ledger balances."
+            activeSegment="trial"
+            refreshing={trialBalanceQuery.isFetching}
+            onRefresh={() => { void trialBalanceQuery.refetch(); }}
+        >
+            {error ? (
+                <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                    {error}
+                </Text>
+            ) : null}
 
-                    <AppCard>
-                        <AppDateField
-                            label="Start Date"
-                            value={startDate}
-                            onChange={setStartDate}
-                            placeholder="Select start date"
-                        />
-                        <AppDateField
-                            label="End Date"
-                            value={endDate}
-                            onChange={setEndDate}
-                            placeholder="Select end date"
-                        />
-                        <AppButton mode="contained" onPress={() => { void loadData(); }} loading={trialBalanceQuery.isFetching}>
-                            Refresh Trial Balance
-                        </AppButton>
-                    </AppCard>
+            <View style={styles.summaryRow}>
+                <SummaryCard label="Debit" value={formatCurrency(data?.summary.totalDebit ?? 0, 'INR')} tone="neutral" />
+                <SummaryCard label="Credit" value={formatCurrency(data?.summary.totalCredit ?? 0, 'INR')} tone="neutral" />
+                <SummaryCard label="Status" value={data?.summary.isBalanced ? 'Balanced' : 'Mismatch'} tone={data?.summary.isBalanced ? 'positive' : 'negative'} />
+            </View>
 
-                    {error ? (
-                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
-                            {error}
+            <AppAccordion title={`Accounts (${data?.rows.length ?? 0})`} icon="format-list-numbered" defaultExpanded>
+                {(data?.rows ?? []).map((row) => (
+                    <View key={row.accountId} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.code} - {row.name}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            {row.type} • Dr {formatCurrency(row.debit, 'INR')} • Cr {formatCurrency(row.credit, 'INR')}
                         </Text>
-                    ) : null}
-
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>Summary</Text>
-                        <Text variant="bodySmall">Total Debit: {formatCurrency(data?.summary.totalDebit ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Total Credit: {formatCurrency(data?.summary.totalCredit ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall" style={{ color: data?.summary.isBalanced ? theme.colors.primary : theme.colors.error }}>
-                            {data?.summary.isBalanced ? 'Balanced' : 'Not Balanced'}
+                        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Balance: {formatCurrency(row.balance, 'INR')}
                         </Text>
-                    </AppCard>
+                    </View>
+                ))}
+            </AppAccordion>
 
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Accounts ({data?.rows.length ?? 0})
-                        </Text>
-                        {(data?.rows ?? []).map((row) => (
-                            <ScrollView key={row.accountId} horizontal showsHorizontalScrollIndicator={false} style={styles.rowScroll}>
-                                <Text variant="bodySmall">
-                                    {row.code} | {row.name} | {row.type} | Dr {formatCurrency(row.debit, 'INR')} | Cr {formatCurrency(row.credit, 'INR')} | Bal {formatCurrency(row.balance, 'INR')}
-                                </Text>
-                            </ScrollView>
-                        ))}
-                    </AppCard>
+            <AppAccordion title="Export" icon="file-export-outline" defaultExpanded={false}>
+                <View style={styles.exportRow}>
+                    <AppButton mode="contained-tonal" compact onPress={() => { void handleExport('csv'); }}>
+                        Export CSV
+                    </AppButton>
+                    <AppButton mode="outlined" compact onPress={() => { void handleExport('json'); }}>
+                        Export JSON
+                    </AppButton>
                 </View>
-            </ScrollView>
-            </AppPullToRefresh>
-        </ScreenWrapper>
+            </AppAccordion>
+        </AccountingWorkspaceShell>
     );
 };
 
 const styles = StyleSheet.create({
-    content: {
-        paddingTop: DesignSystem.layout.pageTop,
-        paddingBottom: DesignSystem.layout.pageBottom,
-        alignItems: 'center',
-    },
-    contentInner: {
-        width: '100%',
-        gap: DesignSystem.layout.sectionGap,
-    },
-    contentInnerWide: {
-        maxWidth: DesignSystem.layout.pageMaxWidth,
-    },
     errorText: {
-        marginBottom: DesignSystem.spacing.sm,
+        marginTop: 2,
     },
-    sectionTitle: {
+    summaryRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    listRow: {
+        marginTop: 8,
+        borderWidth: 1,
+        borderRadius: DesignSystem.radius.sm,
+        padding: DesignSystem.spacing.sm,
+    },
+    primaryLine: {
         fontWeight: '700',
     },
-    sectionTitleWithGap: {
-        fontWeight: '700',
-        marginBottom: DesignSystem.spacing.xs,
-    },
-    rowScroll: {
-        marginBottom: DesignSystem.spacing.xs + 2,
+    exportRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
 });

@@ -12,9 +12,17 @@ export const AnimatedTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
     const [dimensions, setDimensions] = useState({ width: Dimensions.get('window').width });
     const [animatedPos] = useState(() => new Animated.Value(0));
 
+    const visibleRoutes = state.routes.filter((route) => {
+        const options = descriptors[route.key]?.options as { href?: unknown } | undefined;
+        return options?.href !== null;
+    });
+
     // Calculate dynamic layout values
-    const totalTabs = state.routes.length;
+    const totalTabs = Math.max(visibleRoutes.length, 1);
     const tabWidth = dimensions.width / totalTabs;
+    const focusedRouteKey = state.routes[state.index]?.key;
+    const focusedVisibleIndex = visibleRoutes.findIndex((route) => route.key === focusedRouteKey);
+    const activeTabIndex = focusedVisibleIndex >= 0 ? focusedVisibleIndex : 0;
 
     useEffect(() => {
         const subscription = Dimensions.addEventListener('change', ({ window }) => {
@@ -24,12 +32,20 @@ export const AnimatedTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
     }, []);
 
     useEffect(() => {
+        if (visibleRoutes.length === 0) {
+            animatedPos.setValue(0);
+            return;
+        }
         Animated.spring(animatedPos, {
-            toValue: state.index * tabWidth + (tabWidth / 2) - (DOT_SIZE / 2),
+            toValue: activeTabIndex * tabWidth + (tabWidth / 2) - (DOT_SIZE / 2),
             useNativeDriver: true,
             bounciness: 5,
         }).start();
-    }, [state.index, tabWidth, animatedPos]);
+    }, [activeTabIndex, animatedPos, tabWidth, visibleRoutes.length]);
+
+    if (visibleRoutes.length === 0) {
+        return null;
+    }
 
     return (
         <Surface
@@ -54,9 +70,9 @@ export const AnimatedTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
             />
 
             <View style={styles.tabRow}>
-                {state.routes.map((route, index) => {
+                {visibleRoutes.map((route) => {
                     const { options } = descriptors[route.key];
-                    const isFocused = state.index === index;
+                    const isFocused = route.key === focusedRouteKey;
 
                     const onPress = () => {
                         const event = navigation.emit({

@@ -59,8 +59,7 @@ export type AppModuleKey =
     | 'businessCards'
     | 'accounting'
     | 'operations'
-    | 'businessSuite'
-    | 'admin';
+    | 'businessSuite';
 
 export type AppModuleAccessMap = Record<AppModuleKey, boolean>;
 
@@ -83,7 +82,6 @@ export const DEFAULT_APP_MODULE_ACCESS: AppModuleAccessMap = {
     accounting: true,
     operations: true,
     businessSuite: true,
-    admin: false,
 };
 
 const asRecord = (value: unknown): Record<string, unknown> => {
@@ -128,7 +126,7 @@ export const useOrganizationAccess = () => {
     const clearOrganizationContext = useOrganizationStore((state) => state.clearOrganizationContext);
     const [refreshingContext, setRefreshingContext] = useState(false);
 
-    const isOwnerOrAdmin = context.role === 'owner' || user?.role === 'owner' || user?.role === 'admin';
+    const isOwner = context.role === 'owner' || user?.role === 'owner';
     const organizationPermissions = useMemo(
         () => context.permissions ?? {},
         [context.permissions]
@@ -157,30 +155,30 @@ export const useOrganizationAccess = () => {
     );
 
     const canByPermission = useCallback((permissionKey: string): boolean => {
-        if (isOwnerOrAdmin) return true;
+        if (isOwner) return true;
         // If no explicit permissions have been configured, allow access by default
         // (solo user / fresh setup scenario)
         if (!hasExplicitPermissions) return true;
         return Boolean(organizationPermissions[permissionKey]);
-    }, [hasExplicitPermissions, isOwnerOrAdmin, organizationPermissions]);
+    }, [hasExplicitPermissions, isOwner, organizationPermissions]);
 
     const canByFeature = useCallback((featureKey: StaffFeatureKey): boolean => {
-        if (isOwnerOrAdmin) return true;
+        if (isOwner) return true;
         return staffFeatureAccess[featureKey] !== false;
-    }, [isOwnerOrAdmin, staffFeatureAccess]);
+    }, [isOwner, staffFeatureAccess]);
 
     const canByModule = useCallback((moduleKey: AppModuleKey): boolean => {
-        if (isOwnerOrAdmin && !hasExplicitModuleSettings) {
+        if (isOwner && !hasExplicitModuleSettings) {
             return true;
         }
         if (
-            isOwnerOrAdmin
-            && (moduleKey === 'settings' || moduleKey === 'businessSuite' || moduleKey === 'admin')
+            isOwner
+            && (moduleKey === 'settings' || moduleKey === 'businessSuite')
         ) {
             return true;
         }
         return appModuleAccess[moduleKey] !== false;
-    }, [appModuleAccess, hasExplicitModuleSettings, isOwnerOrAdmin]);
+    }, [appModuleAccess, hasExplicitModuleSettings, isOwner]);
 
     const canViewDashboard = canByModule('dashboard') && canByPermission('can_view_dashboard') && canByFeature('dashboard');
     const canManageInventory = canByModule('stock') && canByPermission('can_manage_inventory') && canByFeature('stock');
@@ -200,8 +198,7 @@ export const useOrganizationAccess = () => {
     const canAccessAccounting = canByModule('accounting') && canManagePayments;
     const canAccessOperations = canByModule('operations') && canManageStaff;
     const canAccessBusinessSuite = canByModule('businessSuite')
-        && (isOwnerOrAdmin || canManageTemplates || canManagePayments || canManageStaff || canManageSubscription);
-    const canAccessAdminPanel = false; // Admin panel removed strictly per user request
+        && (isOwner || canManageTemplates || canManagePayments || canManageStaff || canManageSubscription);
 
     const refreshOrganizationContext = useCallback(async (forcedOrganizationId?: string) => {
         if (!user) {
@@ -260,7 +257,7 @@ export const useOrganizationAccess = () => {
         staffFeatureAccess,
         appModuleAccess,
         refreshingContext,
-        isOwnerOrAdmin,
+        isOwner,
         canByModule,
         canViewDashboard,
         canManageInventory,
@@ -280,7 +277,6 @@ export const useOrganizationAccess = () => {
         canAccessAccounting,
         canAccessOperations,
         canAccessBusinessSuite,
-        canAccessAdminPanel,
         setOrganizationSettings,
         refreshOrganizationContext,
     };

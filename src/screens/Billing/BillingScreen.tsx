@@ -22,6 +22,7 @@ import { useAppDialog } from '../../components/providers/DialogProvider';
 import { useCartStore } from '../../store/cartStore';
 import { useOrganizationStore, useSettingsStore } from '../../store';
 import { billRepository } from '../../repositories/billRepository';
+import { businessSuiteService } from '../../api/businessSuiteService';
 import { Config } from '../../constants/Config';
 import { BILLING_TEXT } from '../../constants/staticText';
 import { billingCheckoutSchema } from '../../validation/forms';
@@ -34,6 +35,11 @@ const BILLING_WIDE_BREAKPOINT = 1100;
 const MOBILE_CART_COLLAPSED_HEIGHT = 78;
 const MOBILE_CART_MIN_EXPANDED_HEIGHT = 360;
 
+const asRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
 export const BillingScreen = () => {
     const theme = useTheme();
     const { width } = useWindowDimensions();
@@ -45,6 +51,7 @@ export const BillingScreen = () => {
     const { parties, fetchParties } = useParties();
     const { currencySymbol } = useSettingsStore();
     const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
+    const organizationSettings = useOrganizationStore((state) => state.context.settings);
     const organizationId = selectedOrganizationId ?? user?.uid ?? null;
     const { canOpenBilling } = useOrganizationAccess();
     const dialog = useAppDialog();
@@ -81,14 +88,25 @@ export const BillingScreen = () => {
     const [sameAsBilling, setSameAsBilling] = useState(true);
     const [billingAddress, setBillingAddress] = useState(user?.address || '');
     const [deliveryAddress, setDeliveryAddress] = useState('');
+    const [billDate, setBillDate] = useState(new Date());
+    const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
+    const [discountInput, setDiscountInput] = useState('0');
 
     const [mobileCartExpanded, setMobileCartExpanded] = useState(false);
     const [mobileLayoutHeight, setMobileLayoutHeight] = useState(0);
     const mobileCartAnim = useRef(new Animated.Value(0)).current;
+    const defaultsAppliedRef = useRef(false);
 
     const isWide = width >= BILLING_WIDE_BREAKPOINT;
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
-    const effectiveDeliveryAddress = sameAsBilling ? billingAddress : deliveryAddress;
+    const isInboundFlow = transactionType === 'PURCHASE' || transactionType === 'RETURN_INWARD';
+    const selectedParty = useMemo(
+        () => parties.find((party) => party.id === partyId),
+        [parties, partyId]
+    );
+    const effectiveDeliveryAddress = isInboundFlow
+        ? deliveryAddress
+        : (sameAsBilling ? billingAddress : deliveryAddress);
     const scannedSearch = Array.isArray(params.search) ? params.search[0] : params.search;
     const scanSignal = Array.isArray(params.scanAt) ? params.scanAt[0] : params.scanAt;
 
@@ -106,7 +124,12 @@ export const BillingScreen = () => {
             : 0),
         [cart, isGstBill]
     );
-    const cartTotal = cartSubTotal + cartTaxTotal;
+    const parsedDiscountAmount = useMemo(() => {
+        const value = Number(discountInput.replace(/[^0-9.]/g, ''));
+        return Number.isFinite(value) && value > 0 ? value : 0;
+    }, [discountInput]);
+    const cartDiscountAmount = Math.min(parsedDiscountAmount, cartSubTotal + cartTaxTotal);
+    const cartTotal = Math.max((cartSubTotal + cartTaxTotal) - cartDiscountAmount, 0);
 
     const mobileExpandedHeight = Math.max(
         MOBILE_CART_MIN_EXPANDED_HEIGHT,
@@ -136,6 +159,44 @@ export const BillingScreen = () => {
             setMobileCartExpanded(false);
         }
     }, [isWide, mobileCartExpanded]);
+
+    useEffect(() => {
+        if (defaultsAppliedRef.current) return;
+
+        const settings = asRecord(organizationSettings);
+        const billing = asRecord(settings.billing);
+        const defaultTransactionType = billing.defaultTransactionType === 'PURCHASE'
+            ? 'PURCHASE'
+            : billing.defaultTransactionType === 'RETURN_INWARD'
+                ? 'RETURN_INWARD'
+                : billing.defaultTransactionType === 'RETURN_OUTWARD'
+                    ? 'RETURN_OUTWARD'
+                    : 'SALE';
+        const defaultGstBill = typeof billing.defaultGstBill === 'boolean'
+            ? billing.defaultGstBill
+            : true;
+
+        setTransactionType(defaultTransactionType);
+        setIsGstBill(defaultGstBill);
+        defaultsAppliedRef.current = true;
+    }, [organizationSettings, setIsGstBill, setTransactionType]);
+
+    useEffect(() => {
+        if (!isInboundFlow) return;
+
+        const businessAddress = user?.address?.trim() || '';
+        const partyAddress = selectedParty?.address?.trim() || '';
+
+        setSameAsBilling(false);
+        setDeliveryAddress((current) => current.trim() || businessAddress);
+        setBillingAddress((current) => {
+            const currentTrimmed = current.trim();
+            if (!currentTrimmed || currentTrimmed === businessAddress) {
+                return partyAddress || current;
+            }
+            return current;
+        });
+    }, [isInboundFlow, selectedParty?.address, user?.address]);
 
     useFocusEffect(
         useCallback(() => {
@@ -217,6 +278,12 @@ export const BillingScreen = () => {
                 // Keep checkout tolerant to avoid blocking cashier flow.
             }
 
+            if (dueDate && dueDate.getTime() < billDate.getTime()) {
+                dialog.alert('Due Date', 'Due date cannot be earlier than bill date.');
+                setCheckoutLoading(false);
+                return;
+            }
+
             const available = await billRepository.checkBillNumberAvailability(normalizedBillNumber, organizationId);
             if (!available) {
                 dialog.alert('Duplicate Bill Number', 'Please choose a unique bill number.');
@@ -226,7 +293,35 @@ export const BillingScreen = () => {
 
             const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
             const taxTotal = isGstBill ? cart.reduce((sum, i) => sum + (i.price * i.quantity * (i.tax || 0)) / 100, 0) : 0;
-            const total = subtotal + taxTotal;
+            const discountAmount = Math.min(parsedDiscountAmount, subtotal + taxTotal);
+            const total = Math.max((subtotal + taxTotal) - discountAmount, 0);
+            const resolvedPartyName = selectedParty?.name?.trim() || customerName || 'Walk-in';
+            const resolvedPartyPhone = selectedParty?.phone?.trim() || undefined;
+            let organizationBusinessName = user?.businessName?.trim() || user?.displayName?.trim() || '';
+            let organizationBusinessAddress = user?.address?.trim() || '';
+            let organizationGstNumber = user?.gstNumber?.trim() || '';
+
+            try {
+                const orgContext = await businessSuiteService.getCurrentOrganization(selectedOrganizationId ?? undefined);
+                organizationBusinessName = orgContext.organization.name?.trim()
+                    || organizationBusinessName;
+                organizationBusinessAddress = orgContext.organization.address?.trim()
+                    || organizationBusinessAddress;
+                organizationGstNumber = orgContext.organization.gstNumber?.trim()
+                    || organizationGstNumber;
+            } catch {
+                // Keep checkout resilient offline by using cached user/profile fallback values.
+            }
+
+            const normalizedBusinessAddress = organizationBusinessAddress.trim();
+            const normalizedPartyAddress = selectedParty?.address?.trim() || '';
+            const normalizedBillingAddress = isInboundFlow
+                ? (billingAddress.trim() || normalizedPartyAddress || normalizedBusinessAddress)
+                : (billingAddress.trim() || normalizedBusinessAddress);
+            const normalizedDeliveryAddress = isInboundFlow
+                ? (deliveryAddress.trim() || normalizedBusinessAddress)
+                : (effectiveDeliveryAddress.trim() || normalizedBillingAddress);
+            const dueDateIso = dueDate ? dueDate.toISOString() : null;
 
             const newBillId = randomUUID();
             const now = new Date().toISOString();
@@ -237,18 +332,25 @@ export const BillingScreen = () => {
                 type: transactionType,
                 partyId,
                 billNumber: normalizedBillNumber,
-                billDate: now,
+                billDate: billDate.toISOString(),
                 itemsSnapshot: JSON.stringify(cart),
                 totalAmount: total,
-                discountAmount: 0,
+                discountAmount,
                 taxAmount: taxTotal,
                 paidAmount: 0,
                 paymentMode: 'CASH',
                 paymentStatus: 'PENDING',
                 billMode: isGstBill ? 'GST' : 'ESTIMATE',
-                partyName: customerName || 'Walk-in',
-                billingAddress,
-                deliveryAddress: effectiveDeliveryAddress,
+                dueDate: dueDateIso,
+                reminderEnabled: Boolean(dueDateIso),
+                nextReminderAt: dueDateIso,
+                partyName: resolvedPartyName,
+                partyPhone: resolvedPartyPhone,
+                businessName: organizationBusinessName || null,
+                businessAddress: organizationBusinessAddress || null,
+                gstNumber: organizationGstNumber || null,
+                billingAddress: normalizedBillingAddress || null,
+                deliveryAddress: normalizedDeliveryAddress || null,
                 currency: activeCurrency,
                 createdAt: now,
                 updatedAt: now,
@@ -270,6 +372,9 @@ export const BillingScreen = () => {
             );
             await fetchItems();
             clearCart();
+            setDiscountInput('0');
+            setBillDate(new Date());
+            setDueDate(undefined);
             setMobileCartExpanded(false);
 
             router.push({ pathname: '/bill-success', params: { id: newBillId } });
@@ -311,6 +416,7 @@ export const BillingScreen = () => {
                 onDismiss={() => setPartySelectorVisible(false)}
                 parties={parties}
                 selectedId={partyId}
+                transactionType={transactionType}
                 onSelect={(party) => setCustomer(party)}
                 onCreateNew={() => router.push('/party/new')}
             />
@@ -348,6 +454,13 @@ export const BillingScreen = () => {
                                     onCheckout={handleCheckout}
                                     checkoutLoading={checkoutLoading}
                                     transactionType={transactionType}
+                                    billDate={billDate}
+                                    setBillDate={setBillDate}
+                                    dueDate={dueDate}
+                                    setDueDate={setDueDate}
+                                    discountInput={discountInput}
+                                    setDiscountInput={setDiscountInput}
+                                    discountAmount={cartDiscountAmount}
                                     stockMap={stockById}
                                     isGstBill={isGstBill}
                                     sameAsBilling={sameAsBilling}
@@ -425,6 +538,13 @@ export const BillingScreen = () => {
                                         onCheckout={handleCheckout}
                                         checkoutLoading={checkoutLoading}
                                         transactionType={transactionType}
+                                        billDate={billDate}
+                                        setBillDate={setBillDate}
+                                        dueDate={dueDate}
+                                        setDueDate={setDueDate}
+                                        discountInput={discountInput}
+                                        setDiscountInput={setDiscountInput}
+                                        discountAmount={cartDiscountAmount}
                                         stockMap={stockById}
                                         isGstBill={isGstBill}
                                         sameAsBilling={sameAsBilling}

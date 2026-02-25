@@ -1,11 +1,10 @@
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { Config } from '../constants/Config';
 import type { UserProfile, Party, Transaction, Item } from '../types';
-
-const zustandMiddleware = require('zustand/middleware') as typeof import('zustand/middleware');
-const { createJSONStorage, persist } = zustandMiddleware;
+import { normalizeUserProfile } from '../utils/userRole';
 
 interface UserState {
     user: UserProfile | null;
@@ -24,7 +23,10 @@ export const useUserStore = create<UserState>()(
             user: null,
             isAuthenticated: false,
             isLoading: true,
-            setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
+            setUser: (user) => {
+                const normalizedUser = normalizeUserProfile(user);
+                set({ user: normalizedUser, isAuthenticated: !!normalizedUser, isLoading: false });
+            },
             logout: () => set({ user: null, isAuthenticated: false, isLoading: false }),
             setLoading: (loading) => set({ isLoading: loading }),
             hasHydrated: false,
@@ -39,7 +41,7 @@ export const useUserStore = create<UserState>()(
             }),
             merge: (persistedState, currentState) => {
                 const persisted = (persistedState ?? {}) as Partial<UserState>;
-                const user = persisted.user ?? null;
+                const user = normalizeUserProfile(persisted.user ?? null);
 
                 return {
                     ...currentState,
@@ -185,6 +187,47 @@ export const useNetworkStore = create<NetworkState>((set) => ({
     }),
     setSyncStatus: (status) => set({ syncStatus: status }),
     setLastSyncTime: (time) => set({ lastSyncTime: time }),
+}));
+
+interface UiFeedbackState {
+    toastMessage: string | null;
+    toastToken: number;
+    lastToastAt: number;
+    lastToastMessage: string;
+    showToast: (message: string) => void;
+    hideToast: () => void;
+}
+
+const TOAST_DEDUPE_WINDOW_MS = 1400;
+
+export const useUiFeedbackStore = create<UiFeedbackState>((set) => ({
+    toastMessage: null,
+    toastToken: 0,
+    lastToastAt: 0,
+    lastToastMessage: '',
+    showToast: (message) => {
+        const normalizedMessage = message.trim();
+        if (!normalizedMessage) return;
+
+        set((state) => {
+            const now = Date.now();
+            const isDuplicate =
+                state.lastToastMessage === normalizedMessage &&
+                now - state.lastToastAt < TOAST_DEDUPE_WINDOW_MS;
+
+            if (isDuplicate) {
+                return state;
+            }
+
+            return {
+                toastMessage: normalizedMessage,
+                toastToken: state.toastToken + 1,
+                lastToastAt: now,
+                lastToastMessage: normalizedMessage,
+            };
+        });
+    },
+    hideToast: () => set({ toastMessage: null }),
 }));
 
 interface OrganizationContextState {

@@ -885,7 +885,7 @@ export const DashboardScreen = () => {
                                         style={styles.txRow}
                                         onPress={() =>
                                             router.push({
-                                                pathname: '/transaction',
+                                                pathname: '/bill/[id]',
                                                 params: { id: bill.id },
                                             } as never)
                                         }

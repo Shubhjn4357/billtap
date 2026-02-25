@@ -57,6 +57,12 @@ const toIso = (value: RawDate, fallback: string): string => {
 
 const toStoredBill = (entry: ServerTransaction): StoredBill => {
     const createdAt = toIso(entry.createdAt ?? entry.billDate, new Date().toISOString());
+    const enriched = entry as ServerTransaction & {
+        businessName?: string | null;
+        businessAddress?: string | null;
+        billingAddress?: string | null;
+        gstNumber?: string | null;
+    };
     return {
         ...entry,
         id: entry.id,
@@ -64,9 +70,9 @@ const toStoredBill = (entry: ServerTransaction): StoredBill => {
         billNumber: entry.billNumber,
         customerName: entry.partyName ?? undefined,
         customerPhone: entry.partyPhone ?? undefined,
-        businessName: undefined,
-        businessAddress: undefined,
-        gstNumber: undefined,
+        businessName: enriched.businessName ?? undefined,
+        businessAddress: enriched.businessAddress ?? enriched.billingAddress ?? undefined,
+        gstNumber: enriched.gstNumber ?? undefined,
         currency: entry.currency ?? 'INR',
         items: entry.items ?? [],
         total: Number(entry.totalAmount ?? 0),

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, Modal } from 'react-native';
 import { Text, useTheme, Searchbar, IconButton, List } from 'react-native-paper';
 import { DesignSystem } from '../../../constants/DesignSystem';
-import { Party } from '../../../types';
+import { Party, TransactionType } from '../../../types';
 import { AppCard } from '../../../components/common/AppCard';
 
 interface BillingPartySelectorProps {
@@ -10,6 +10,7 @@ interface BillingPartySelectorProps {
     onDismiss: () => void;
     parties: Party[];
     selectedId?: string;
+    transactionType: TransactionType;
     onSelect: (party: Party | null) => void;
     onCreateNew: () => void;
 }
@@ -19,6 +20,7 @@ export const BillingPartySelector = ({
     onDismiss,
     parties,
     selectedId,
+    transactionType,
     onSelect,
     onCreateNew
 }: BillingPartySelectorProps) => {
@@ -33,16 +35,23 @@ export const BillingPartySelector = ({
 
     if (!visible) return null;
 
-    const filtered = parties.filter((p) =>
+    const isInboundFlow = transactionType === 'PURCHASE' || transactionType === 'RETURN_INWARD';
+    const expectedPartyType: Party['type'] = isInboundFlow ? 'supplier' : 'customer';
+    const filteredBySearch = parties.filter((p) =>
         p.name.toLowerCase().includes(search.toLowerCase()) || p.phone?.includes(search)
     );
+    const filteredByType = filteredBySearch.filter((party) => party.type === expectedPartyType);
+    const filtered = filteredByType.length > 0 ? filteredByType : filteredBySearch;
+    const modalTitle = isInboundFlow ? 'Select Supplier (From)' : 'Select Party';
+    const walkInLabel = isInboundFlow ? 'Unassigned Supplier' : 'Walk-in Customer';
+    const walkInDescription = isInboundFlow ? 'No supplier selected' : 'No party recorded';
 
     return (
         <Modal visible={visible} animationType="slide" transparent onRequestClose={onDismiss}>
             <View style={styles.overlay}>
                 <View style={[styles.container, { backgroundColor: theme.colors.elevation.level2 }]}>
                     <View style={styles.header}>
-                        <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>Select Party</Text>
+                        <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>{modalTitle}</Text>
                         <IconButton icon="close" onPress={onDismiss} />
                     </View>
 
@@ -62,8 +71,8 @@ export const BillingPartySelector = ({
                         contentContainerStyle={styles.list}
                         ListHeaderComponent={
                             <List.Item
-                                title="Walk-in Customer"
-                                description="No party recorded"
+                                title={walkInLabel}
+                                description={walkInDescription}
                                 left={(props) => <List.Icon {...props} icon="account-off-outline" />}
                                 onPress={() => {
                                     onSelect(null);

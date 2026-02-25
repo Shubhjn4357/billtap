@@ -3,49 +3,15 @@ import { offlineSyncService } from './syncService';
 import { isNetworkLikeError } from '../utils/errorGuards';
 import {
     getOrgCachedValue,
-    ORG_FEE_REMINDERS_CACHE_KEY,
     ORG_CONTEXT_CACHE_KEY,
     ORG_LIST_CACHE_KEY,
     ORG_MEMBERS_CACHE_KEY,
     ORG_SETTINGS_CACHE_KEY,
     ORG_SIGNATURES_CACHE_KEY,
-    ORG_STUDENTS_CACHE_KEY,
     ORG_TEMPLATES_CACHE_KEY,
     setOrgCachedValue,
 } from './businessSuiteCache';
 import { useUserStore } from '../store';
-
-export interface PayrollSnapshot {
-    attendanceCount: number;
-    salaryRuns: {
-        total: number;
-        draft: number;
-        finalized: number;
-    };
-}
-
-export interface GstComplianceSnapshot {
-    salesTaxableValue: number;
-    outputTax: number;
-    inputTax: number;
-    netGstPayable: number;
-    eligibleItc: number;
-    ineligibleItc: number;
-}
-
-export interface TreasurySnapshot {
-    bankAccountCount: number;
-    receivables: number;
-    payables: number;
-    netCashFlow: number;
-}
-
-export interface EnterpriseSnapshot {
-    branchCount: number;
-    consolidatedSales: number;
-    consolidatedPurchases: number;
-    consolidatedStockValue: number;
-}
 
 export type StaffRole = 'owner' | 'manager' | 'salesman';
 
@@ -136,27 +102,6 @@ export interface SignatureEntry {
     updatedAt?: string;
 }
 
-export interface InstitutionStudent {
-    id: string;
-    name: string;
-    className?: string | null;
-    admissionNumber?: string | null;
-    guardianName?: string | null;
-    phoneNumber?: string | null;
-    isActive: boolean;
-}
-
-export interface FeeReminderInvoice {
-    id: string;
-    studentId: string;
-    invoiceNumber?: string | null;
-    amount: number;
-    dueAmount: number;
-    dueDate?: string | null;
-    status: string;
-    barcodeValue?: string | null;
-}
-
 const withOrgQuery = (path: string, organizationId?: string): string => {
     if (!organizationId) return path;
     const separator = path.includes('?') ? '&' : '?';
@@ -179,113 +124,6 @@ const getOrgContextDefaultSlot = (): string | undefined => {
 };
 
 export const businessSuiteService = {
-    async getPayrollSnapshot(): Promise<PayrollSnapshot> {
-        const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-
-        const [attendanceResponse, runsResponse] = await Promise.all([
-            apiClient.get<{ ok: boolean; records?: unknown[]; message?: string }>(
-                `/payroll/attendance?start=${encodeURIComponent(startDate)}&limit=500`
-            ),
-            apiClient.get<{ ok: boolean; runs?: { status: string }[]; message?: string }>(
-                '/payroll/salary-runs?limit=100'
-            ),
-        ]);
-
-        if (!attendanceResponse.ok) throw new Error(attendanceResponse.message || 'Failed to load attendance snapshot.');
-        if (!runsResponse.ok) throw new Error(runsResponse.message || 'Failed to load payroll runs snapshot.');
-
-        const runs = runsResponse.runs ?? [];
-        const draft = runs.filter((row) => row.status === 'draft').length;
-        const finalized = runs.filter((row) => row.status === 'finalized').length;
-
-        return {
-            attendanceCount: attendanceResponse.records?.length ?? 0,
-            salaryRuns: {
-                total: runs.length,
-                draft,
-                finalized,
-            },
-        };
-    },
-
-    async getGstComplianceSnapshot(): Promise<GstComplianceSnapshot> {
-        const response = await apiClient.get<{
-            ok: boolean;
-            sales?: { taxableValue: number; outputTax: number };
-            purchases?: { inputTax: number };
-            itc?: { eligible: number; ineligible: number };
-            netGstPayable?: number;
-            message?: string;
-        }>('/gst-compliance/summary');
-
-        if (!response.ok || !response.sales || !response.purchases || !response.itc) {
-            throw new Error(response.message || 'Failed to load GST compliance snapshot.');
-        }
-
-        return {
-            salesTaxableValue: response.sales.taxableValue,
-            outputTax: response.sales.outputTax,
-            inputTax: response.purchases.inputTax,
-            netGstPayable: response.netGstPayable ?? 0,
-            eligibleItc: response.itc.eligible,
-            ineligibleItc: response.itc.ineligible,
-        };
-    },
-
-    async getTreasurySnapshot(): Promise<TreasurySnapshot> {
-        const [accountsResponse, agingResponse, cashFlowResponse] = await Promise.all([
-            apiClient.get<{ ok: boolean; accounts?: unknown[]; message?: string }>('/treasury/bank-accounts'),
-            apiClient.get<{
-                ok: boolean;
-                totals?: { receivables: number; payables: number };
-                message?: string;
-            }>('/treasury/aging'),
-            apiClient.get<{
-                ok: boolean;
-                summary?: { netCashFlow: number };
-                message?: string;
-            }>('/treasury/cash-flow'),
-        ]);
-
-        if (!accountsResponse.ok) throw new Error(accountsResponse.message || 'Failed to load bank accounts snapshot.');
-        if (!agingResponse.ok || !agingResponse.totals) throw new Error(agingResponse.message || 'Failed to load aging snapshot.');
-        if (!cashFlowResponse.ok || !cashFlowResponse.summary) throw new Error(cashFlowResponse.message || 'Failed to load cash flow snapshot.');
-
-        return {
-            bankAccountCount: accountsResponse.accounts?.length ?? 0,
-            receivables: agingResponse.totals.receivables,
-            payables: agingResponse.totals.payables,
-            netCashFlow: cashFlowResponse.summary.netCashFlow,
-        };
-    },
-
-    async getEnterpriseSnapshot(): Promise<EnterpriseSnapshot> {
-        const [branchesResponse, consolidatedResponse] = await Promise.all([
-            apiClient.get<{ ok: boolean; branches?: unknown[]; message?: string }>('/enterprise/branches'),
-            apiClient.get<{
-                ok: boolean;
-                totals?: {
-                    sales: number;
-                    purchases: number;
-                    stockValue: number;
-                };
-                message?: string;
-            }>('/enterprise/reports/consolidated'),
-        ]);
-
-        if (!branchesResponse.ok) throw new Error(branchesResponse.message || 'Failed to load branches snapshot.');
-        if (!consolidatedResponse.ok || !consolidatedResponse.totals) {
-            throw new Error(consolidatedResponse.message || 'Failed to load consolidated snapshot.');
-        }
-
-        return {
-            branchCount: branchesResponse.branches?.length ?? 0,
-            consolidatedSales: consolidatedResponse.totals.sales,
-            consolidatedPurchases: consolidatedResponse.totals.purchases,
-            consolidatedStockValue: consolidatedResponse.totals.stockValue,
-        };
-    },
-
     async getMyOrganizations(): Promise<OrganizationMembership[]> {
         const listCacheSlot = getOrgListCacheSlot();
         try {
@@ -702,72 +540,5 @@ export const businessSuiteService = {
         const next = cached.map((entry) => ({ ...entry, isDefault: entry.id === signatureId }));
         await setOrgCachedValue<SignatureEntry[]>(ORG_SIGNATURES_CACHE_KEY, organizationId, next);
         if (queuedForLater) return;
-    },
-
-    async getInstitutionStudents(organizationId?: string): Promise<InstitutionStudent[]> {
-        try {
-            const response = await apiClient.get<{ ok: boolean; students?: InstitutionStudent[]; message?: string }>(
-                withOrgQuery('/institution/students', organizationId)
-            );
-
-            if (!response.ok || !response.students) {
-                throw new Error(response.message || 'Failed to load students.');
-            }
-
-            await setOrgCachedValue<InstitutionStudent[]>(ORG_STUDENTS_CACHE_KEY, organizationId, response.students);
-            return response.students;
-        } catch (error: unknown) {
-            if (!isNetworkLikeError(error)) {
-                throw error;
-            }
-
-            const cached = await getOrgCachedValue<InstitutionStudent[]>(ORG_STUDENTS_CACHE_KEY, organizationId);
-            if (cached) return cached;
-            throw error;
-        }
-    },
-
-    async getDueFeeReminders(dueBefore?: string, organizationId?: string): Promise<FeeReminderInvoice[]> {
-        const query = dueBefore ? `?dueBefore=${encodeURIComponent(dueBefore)}` : '';
-        try {
-            const response = await apiClient.get<{ ok: boolean; reminders?: FeeReminderInvoice[]; message?: string }>(
-                withOrgQuery(`/institution/fee-reminders/due${query}`, organizationId)
-            );
-
-            if (!response.ok || !response.reminders) {
-                throw new Error(response.message || 'Failed to load due reminders.');
-            }
-
-            await setOrgCachedValue<FeeReminderInvoice[]>(ORG_FEE_REMINDERS_CACHE_KEY, organizationId, response.reminders);
-            return response.reminders;
-        } catch (error: unknown) {
-            if (!isNetworkLikeError(error)) {
-                throw error;
-            }
-
-            const cached = await getOrgCachedValue<FeeReminderInvoice[]>(ORG_FEE_REMINDERS_CACHE_KEY, organizationId);
-            if (cached) return cached;
-            throw error;
-        }
-    },
-
-    async sendFeeReminderWhatsApp(payload: {
-        invoiceId: string;
-        recipient: string;
-        customMessage?: string;
-        mediaUrl?: string;
-    }, organizationId?: string): Promise<void> {
-        const response = await apiClient.post<{ ok: boolean; message?: string }>(
-            withOrgQuery(`/institution/fee-reminders/${payload.invoiceId}/send-whatsapp`, organizationId),
-            {
-                recipient: payload.recipient,
-                customMessage: payload.customMessage,
-                mediaUrl: payload.mediaUrl,
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(response.message || 'Failed to send WhatsApp reminder.');
-        }
     },
 };

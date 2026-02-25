@@ -1,18 +1,19 @@
-import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useCallback } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
+
 import { accountingService } from '../../api/accountingService';
+import { AppAccordion } from '../../components/common/AppAccordion';
 import { AppButton } from '../../components/common/AppButton';
-import { AppCard } from '../../components/common/AppCard';
-import { AppDateField } from '../../components/common/AppDateField';
-import { PageHeaderCard } from '../../components/common/PageHeaderCard';
-import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { SummaryCard } from '../../components/common/SummaryCard';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 import { DesignSystem } from '../../constants/DesignSystem';
+import { buildCsv, shareExportContent } from '../../utils/accountingExport';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
-import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
+import { AccountingWorkspaceShell } from './components/AccountingWorkspaceShell';
+import { useAccountingRange } from './context/AccountingRangeContext';
 
 interface ProfitLossData {
     income: { accountId: string; code: string; name: string; net: number }[];
@@ -24,16 +25,13 @@ interface ProfitLossData {
 
 export const ProfitLossScreen = () => {
     const theme = useTheme();
-    const { width } = useWindowDimensions();
-    const isWide = width >= 960;
-    const [startDate, setStartDate] = useState<Date | undefined>(undefined);
-    const [endDate, setEndDate] = useState<Date | undefined>(undefined);
-    const start = startDate ? startDate.toISOString().slice(0, 10) : '';
-    const end = endDate ? endDate.toISOString().slice(0, 10) : '';
+    const dialog = useAppDialog();
+    const { startKey, endKey } = useAccountingRange();
+
     const profitLossQuery = useQuery({
-        queryKey: ['accounting-profit-loss', start, end] as const,
+        queryKey: ['accounting-profit-loss', startKey ?? 'any', endKey ?? 'any'] as const,
         queryFn: async (): Promise<ProfitLossData> => {
-            const response = await accountingService.getProfitLoss(start || undefined, end || undefined);
+            const response = await accountingService.getProfitLoss(startKey, endKey);
             return {
                 income: response.income,
                 expenses: response.expenses,
@@ -42,124 +40,128 @@ export const ProfitLossScreen = () => {
                 netProfit: response.netProfit,
             };
         },
-        enabled: false,
         staleTime: 45_000,
     });
-    const { refetch: refetchProfitLoss } = profitLossQuery;
 
     const data = profitLossQuery.data ?? null;
     const error = profitLossQuery.error && !isNetworkLikeError(profitLossQuery.error)
         ? (profitLossQuery.error instanceof Error ? profitLossQuery.error.message : 'Failed to load Profit & Loss.')
         : null;
 
-    const loadData = useCallback(async () => {
-        await refetchProfitLoss();
-    }, [refetchProfitLoss]);
+    const handleExport = useCallback(async (format: 'csv' | 'json') => {
+        if (!data) return;
+        try {
+            if (format === 'csv') {
+                const rows = [
+                    ...data.income.map((row) => ['Income', row.code, row.name, row.net]),
+                    ...data.expenses.map((row) => ['Expense', row.code, row.name, row.net]),
+                ];
+                const csv = buildCsv(['Section', 'Code', 'Account', 'Net'], rows);
+                await shareExportContent({
+                    title: 'Profit and Loss',
+                    format: 'csv',
+                    payload: csv,
+                });
+                return;
+            }
 
-    useFocusRefresh(loadData, {
-        enabled: profitLossQuery.isFetched,
-        minIntervalMs: 10_000,
-    });
+            await shareExportContent({
+                title: 'Profit and Loss',
+                format: 'json',
+                payload: {
+                    income: data.income,
+                    expenses: data.expenses,
+                    totalIncome: data.totalIncome,
+                    totalExpenses: data.totalExpenses,
+                    netProfit: data.netProfit,
+                },
+            });
+        } catch (exportError: unknown) {
+            dialog.alert('Export', exportError instanceof Error ? exportError.message : 'Failed to export profit and loss.');
+        }
+    }, [data, dialog]);
 
     return (
-        <ScreenWrapper>
-            <AppPullToRefresh refreshing={profitLossQuery.isFetching} onRefresh={() => { void loadData(); }}>
-            <ScrollView
-                contentContainerStyle={styles.content}
-                showsVerticalScrollIndicator={false}
-                
-            >
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                    <PageHeaderCard
-                        title="Profit & Loss"
-                        subtitle="Income versus expense from posted ledgers."
-                    />
+        <AccountingWorkspaceShell
+            title="Profit & Loss"
+            subtitle="Connected date range across income and expense ledgers."
+            activeSegment="profit"
+            refreshing={profitLossQuery.isFetching}
+            onRefresh={() => { void profitLossQuery.refetch(); }}
+        >
+            {error ? (
+                <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                    {error}
+                </Text>
+            ) : null}
 
-                    <AppCard>
-                        <AppDateField
-                            label="Start Date"
-                            value={startDate}
-                            onChange={setStartDate}
-                            placeholder="Select start date"
-                        />
-                        <AppDateField
-                            label="End Date"
-                            value={endDate}
-                            onChange={setEndDate}
-                            placeholder="Select end date"
-                        />
-                        <AppButton mode="contained" onPress={() => { void loadData(); }} loading={profitLossQuery.isFetching}>
-                            Refresh Profit & Loss
-                        </AppButton>
-                    </AppCard>
+            <View style={styles.summaryRow}>
+                <SummaryCard label="Income" value={formatCurrency(data?.totalIncome ?? 0, 'INR')} tone="positive" />
+                <SummaryCard label="Expenses" value={formatCurrency(data?.totalExpenses ?? 0, 'INR')} tone="warning" />
+                <SummaryCard
+                    label="Net Profit"
+                    value={formatCurrency(data?.netProfit ?? 0, 'INR')}
+                    tone={(data?.netProfit ?? 0) >= 0 ? 'positive' : 'negative'}
+                />
+            </View>
 
-                    {error ? (
-                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
-                            {error}
+            <AppAccordion title={`Income Accounts (${data?.income.length ?? 0})`} icon="cash-plus" defaultExpanded>
+                {(data?.income ?? []).map((row) => (
+                    <View key={row.accountId} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.code} - {row.name}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Net: {formatCurrency(row.net, 'INR')}
                         </Text>
-                    ) : null}
+                    </View>
+                ))}
+            </AppAccordion>
 
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>Summary</Text>
-                        <Text variant="bodySmall">Total Income: {formatCurrency(data?.totalIncome ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Total Expenses: {formatCurrency(data?.totalExpenses ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall" style={{ color: (data?.netProfit ?? 0) >= 0 ? theme.colors.primary : theme.colors.error }}>
-                            Net Profit: {formatCurrency(data?.netProfit ?? 0, 'INR')}
+            <AppAccordion title={`Expense Accounts (${data?.expenses.length ?? 0})`} icon="cash-minus" defaultExpanded>
+                {(data?.expenses ?? []).map((row) => (
+                    <View key={row.accountId} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.code} - {row.name}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Net: {formatCurrency(row.net, 'INR')}
                         </Text>
-                    </AppCard>
+                    </View>
+                ))}
+            </AppAccordion>
 
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Income Accounts ({data?.income.length ?? 0})
-                        </Text>
-                        {(data?.income ?? []).map((row) => (
-                            <Text key={row.accountId} variant="bodySmall" style={styles.listRow}>
-                                {row.code} | {row.name} | {formatCurrency(row.net, 'INR')}
-                            </Text>
-                        ))}
-                    </AppCard>
-
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Expense Accounts ({data?.expenses.length ?? 0})
-                        </Text>
-                        {(data?.expenses ?? []).map((row) => (
-                            <Text key={row.accountId} variant="bodySmall" style={styles.listRow}>
-                                {row.code} | {row.name} | {formatCurrency(row.net, 'INR')}
-                            </Text>
-                        ))}
-                    </AppCard>
+            <AppAccordion title="Export" icon="file-export-outline" defaultExpanded={false}>
+                <View style={styles.exportRow}>
+                    <AppButton mode="contained-tonal" compact onPress={() => { void handleExport('csv'); }}>
+                        Export CSV
+                    </AppButton>
+                    <AppButton mode="outlined" compact onPress={() => { void handleExport('json'); }}>
+                        Export JSON
+                    </AppButton>
                 </View>
-            </ScrollView>
-            </AppPullToRefresh>
-        </ScreenWrapper>
+            </AppAccordion>
+        </AccountingWorkspaceShell>
     );
 };
 
 const styles = StyleSheet.create({
-    content: {
-        paddingTop: DesignSystem.layout.pageTop,
-        paddingBottom: DesignSystem.layout.pageBottom,
-        alignItems: 'center',
-    },
-    contentInner: {
-        width: '100%',
-        gap: DesignSystem.layout.sectionGap,
-    },
-    contentInnerWide: {
-        maxWidth: DesignSystem.layout.pageMaxWidth,
-    },
     errorText: {
-        marginBottom: DesignSystem.spacing.sm,
+        marginTop: 2,
     },
-    sectionTitle: {
-        fontWeight: '700',
-    },
-    sectionTitleWithGap: {
-        fontWeight: '700',
-        marginBottom: DesignSystem.spacing.xs,
+    summaryRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
     listRow: {
-        marginBottom: DesignSystem.spacing.xs,
+        marginTop: 8,
+        borderWidth: 1,
+        borderRadius: DesignSystem.radius.sm,
+        padding: DesignSystem.spacing.sm,
+    },
+    primaryLine: {
+        fontWeight: '700',
+    },
+    exportRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
 });

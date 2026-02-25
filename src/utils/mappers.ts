@@ -16,6 +16,7 @@ export const mapDbItemToAppItem = (dbItem: DbItem): Item => {
         openingStock: dbItem.openingStock === null ? undefined : dbItem.openingStock,
         category: dbItem.category === null ? undefined : dbItem.category,
         subcategory: dbItem.subcategory === null ? undefined : dbItem.subcategory,
+        description: dbItem.description === null ? undefined : dbItem.description,
         location: dbItem.location === null ? undefined : dbItem.location,
         barcode: dbItem.barcode === null ? undefined : dbItem.barcode,
         expiresAt: dbItem.expiresAt === null ? undefined : dbItem.expiresAt,

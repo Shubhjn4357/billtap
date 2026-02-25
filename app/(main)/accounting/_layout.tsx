@@ -4,6 +4,7 @@ import { Text } from 'react-native-paper';
 import { AppCard } from '../../../src/components/common/AppCard';
 import { ScreenWrapper } from '../../../src/components/layout/ScreenWrapper';
 import { useOrganizationAccess } from '../../../src/hooks/useOrganizationAccess';
+import { AccountingRangeProvider } from '../../../src/screens/Accounting/context/AccountingRangeContext';
 
 export default function AccountingLayout() {
     const { canAccessAccounting } = useOrganizationAccess();
@@ -24,7 +25,8 @@ export default function AccountingLayout() {
     }
 
     return (
-        <Stack screenOptions={{ headerShown: false }} />
+        <AccountingRangeProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+        </AccountingRangeProvider>
     );
 }
-

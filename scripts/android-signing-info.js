@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const projectRoot = path.resolve(__dirname, '..');
+const scriptDir = path.dirname(process.argv[1]);
+const projectRoot = path.resolve(scriptDir, '..');
 
 const parseArgs = () => {
   const args = process.argv.slice(2);

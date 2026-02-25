@@ -219,7 +219,7 @@ export const StockListScreen = () => {
                             Inventory access is disabled
                         </Text>
                         <Text variant="bodySmall" style={{ color: theme.colors.outline }}>
-                            Ask owner/admin to enable inventory permissions for your account.
+                            Ask your organization owner to enable inventory permissions for your account.
                         </Text>
                     </AppCard>
                 </View>

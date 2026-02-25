@@ -8,7 +8,6 @@ import { PageHeaderCard } from '../../components/common/PageHeaderCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { APP_SITEMAP, SITEMAP_TEXT, type SitemapEntry } from '../../constants/staticText';
-import { useAuth } from '../../hooks/useAuth';
 
 const accessLabel = (access: SitemapEntry['access']) => {
     return SITEMAP_TEXT.accessLabels[access];
@@ -17,7 +16,6 @@ const accessLabel = (access: SitemapEntry['access']) => {
 export const SitemapScreen = () => {
     const theme = useTheme();
     const router = useRouter();
-    const { user } = useAuth();
     const { width } = useWindowDimensions();
     const isWide = width >= 1120;
 
@@ -34,9 +32,6 @@ export const SitemapScreen = () => {
                 />
 
                 {APP_SITEMAP.map((entry) => {
-                    const needsAdmin = entry.access === 'admin';
-                    const canOpen = !needsAdmin || user?.role === 'admin';
-
                     return (
                         <AppCard key={entry.route}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -57,7 +52,6 @@ export const SitemapScreen = () => {
                                 mode="outlined"
                                 compact
                                 style={{ marginTop: 10 }}
-                                disabled={!canOpen}
                                 onPress={() => router.push(entry.route as never)}
                             >
                                 {SITEMAP_TEXT.openButton}

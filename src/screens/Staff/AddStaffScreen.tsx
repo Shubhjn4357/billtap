@@ -15,20 +15,18 @@ import { staffService } from '../../api/staffService';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 import { buildE164PhoneNumber, sanitizePhoneLocal } from '../../utils/phone';
 import { staffInviteSchema } from '../../validation/forms';
-import { useAuth } from '../../hooks/useAuth';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 export const AddStaffScreen = () => {
     const router = useRouter();
     const { width } = useWindowDimensions();
     const isWide = width >= 960;
     const theme = useTheme();
-    const { user } = useAuth();
+    const { canManageStaff } = useOrganizationAccess();
     const dialog = useAppDialog();
     const [dialCode, setDialCode] = useState(DEFAULT_COUNTRY_DIAL_CODE);
     const [phone, setPhone] = useState('');
     const [loading, setLoading] = useState(false);
-    const canManageStaff = user?.role === 'owner' || user?.role === 'admin';
-
     const handleInvite = async () => {
         const normalizedPhone = buildE164PhoneNumber(dialCode, phone);
         const validation = staffInviteSchema.safeParse({
@@ -56,7 +54,7 @@ export const AddStaffScreen = () => {
             <ScreenWrapper>
                 <View style={styles.centered}>
                     <AppCard style={styles.centeredCard}>
-                        <Text style={{ color: theme.colors.outline }}>Only owner/admin can invite staff.</Text>
+                        <Text style={{ color: theme.colors.outline }}>Only authorized organization owners can invite staff.</Text>
                     </AppCard>
                 </View>
             </ScreenWrapper>

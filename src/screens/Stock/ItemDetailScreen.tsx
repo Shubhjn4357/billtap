@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, useTheme, SegmentedButtons, TextInput, Avatar, IconButton } from 'react-native-paper';
+import { Text, useTheme, TextInput, Avatar, IconButton } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -28,6 +28,7 @@ export const ItemDetailScreen = () => {
         barcode?: string | string[];
         scanned?: string | string[];
         scanAt?: string | string[];
+        scanField?: string | string[];
     }>();
     const itemId = Array.isArray(params.id) ? params.id[0] : params.id;
     // `/item/new` does not provide `id`, while `/item/[id]` passes `id`.
@@ -47,6 +48,7 @@ export const ItemDetailScreen = () => {
         name: '',
         category: '',
         subcategory: '',
+        description: '',
 
         // Pricing
         price: '', // Selling Price
@@ -75,6 +77,7 @@ export const ItemDetailScreen = () => {
                     name: item.name,
                     category: item.category || '',
                     subcategory: item.subcategory || '',
+                    description: item.description || '',
                     price: item.price.toString(),
                     purchasePrice: item.purchasePrice?.toString() || '',
                     mrp: item.mrp?.toString() || '',
@@ -94,10 +97,15 @@ export const ItemDetailScreen = () => {
     useEffect(() => {
         const scannedFlag = Array.isArray(params.scanned) ? params.scanned[0] : params.scanned;
         const code = Array.isArray(params.barcode) ? params.barcode[0] : params.barcode;
+        const scanField = Array.isArray(params.scanField) ? params.scanField[0] : params.scanField;
         if (code && scannedFlag === 'true') {
-            setForm(prev => ({ ...prev, barcode: code }));
+            if (scanField === 'hsn') {
+                setForm((prev) => ({ ...prev, hsn: code }));
+            } else {
+                setForm((prev) => ({ ...prev, barcode: code }));
+            }
         }
-    }, [params.barcode, params.scanned, params.scanAt]);
+    }, [params.barcode, params.scanned, params.scanAt, params.scanField]);
 
     const handlePickAndUploadImage = async () => {
         if (!imageUploadsEnabled) {
@@ -176,6 +184,7 @@ export const ItemDetailScreen = () => {
             minimumStock: parsedMinimumStock,
             category: form.category,
             subcategory: form.subcategory,
+            description: form.description,
             unit: form.unit,
             location: form.location,
             hsn: form.hsn,
@@ -191,6 +200,7 @@ export const ItemDetailScreen = () => {
             name: values.name.trim(),
             category: values.category?.trim() || undefined,
             subcategory: values.subcategory?.trim() || undefined,
+            description: values.description?.trim() || undefined,
             price: values.price,
             purchasePrice: values.purchasePrice,
             mrp: values.mrp,
@@ -318,6 +328,16 @@ export const ItemDetailScreen = () => {
                                             inputType="text"
                                             left={<TextInput.Icon icon="shape-plus-outline" />}
                                         />
+                                        <AppInput
+                                            label="Description (optional)"
+                                            value={form.description}
+                                            onChangeText={(t) => setForm({ ...form, description: t })}
+                                            style={styles.fullInput}
+                                            inputType="text"
+                                            multiline
+                                            numberOfLines={2}
+                                            left={<TextInput.Icon icon="text-box-outline" />}
+                                        />
                                     </View>
                            
                                  
@@ -356,19 +376,31 @@ export const ItemDetailScreen = () => {
                                                 style={styles.halfInput}
                                                 inputType="text"
                                                 left={<TextInput.Icon icon="barcode" />}
+                                                right={<TextInput.Icon icon="camera" onPress={() => router.push({
+                                                    pathname: '/scan',
+                                                    params: {
+                                                        target: 'item_detail',
+                                                        returnPath: isNew ? '/item/new' : `/item/${itemId}`,
+                                                        scanField: 'hsn',
+                                                    },
+                                                })} />}
                                             />
                                         </View>
                                         <View style={styles.gstSection}>
                                             <Text variant="bodySmall" style={[styles.gstLabel, { color: theme.colors.onSurfaceVariant }]}>GST Rate (%)</Text>
-                                            <SegmentedButtons
-                                                value={form.gstPercentage.toString()}
-                                                onValueChange={val => setForm({ ...form, gstPercentage: Number(val) })}
-                                                buttons={Config.gstRates.map(rate => ({
-                                                    value: rate.toString(),
-                                                    label: `${rate}%`,
-                                                }))}
-                                                density="medium"
-                                            />
+                                            <View style={styles.gstCompactRow}>
+                                                {Config.gstRates.map((rate) => (
+                                                    <AppButton
+                                                        key={rate}
+                                                        compact
+                                                        mode={form.gstPercentage === rate ? 'contained' : 'outlined'}
+                                                        onPress={() => setForm({ ...form, gstPercentage: rate })}
+                                                        style={styles.gstPill}
+                                                    >
+                                                        {rate}%
+                                                    </AppButton>
+                                                ))}
+                                            </View>
                                         </View>
                                     </View>
                                 
@@ -506,6 +538,15 @@ const styles = StyleSheet.create({
     gstLabel: {
         marginBottom: DesignSystem.spacing.xs,
         fontWeight: '600'
+    },
+    gstCompactRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: DesignSystem.spacing.xs,
+    },
+    gstPill: {
+        minWidth: 62,
+        borderRadius: DesignSystem.radius.pill,
     },
     primaryAction: {
         marginTop: DesignSystem.spacing.md,

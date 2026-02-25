@@ -16,7 +16,7 @@ export default function BusinessSuiteBusinessCardStudioRoute() {
                         Business Card Studio is disabled
                     </Text>
                     <Text variant="bodySmall" style={{ marginTop: 6 }}>
-                        Ask owner/admin to enable business card access for this store.
+                        Ask your organization owner to enable business card access for this store.
                     </Text>
                 </AppCard>
             </ScreenWrapper>

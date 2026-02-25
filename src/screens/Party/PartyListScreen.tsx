@@ -123,7 +123,7 @@ export const PartyListScreen = () => {
                                 Access Restricted
                             </Text>
                             <Text variant="bodyMedium" style={{ color: theme.colors.outline, textAlign: 'center', marginTop: 8 }}>
-                                You do not have permission to manage parties. Please contact your administrator.
+                                You do not have permission to manage parties. Please contact your organization owner.
                             </Text>
                         </View>
                     </AppCard>

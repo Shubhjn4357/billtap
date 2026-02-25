@@ -140,7 +140,6 @@ function parseVitestErrors(output) {
     }
 
     // Capture individual test failures
-    const failRe = /AssertionError|Error:|FAIL\s+\w/g;
     for (const suite of failedSuites) {
         issues.push({
             file: suite,
@@ -151,7 +150,6 @@ function parseVitestErrors(output) {
     }
 
     // Detailed errors within output
-    const detailRe = /✗|×|● (.+)\n([\s\S]*?)(?=\n● |\n\s+at |$)/g;
     for (const match of output.matchAll(/^\s+● (.+)$/gm)) {
         const title = match[1].trim();
         const suite = [...failedSuites][0] ?? '(unknown)';

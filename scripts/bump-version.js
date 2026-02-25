@@ -24,9 +24,11 @@ if (!['patch', 'minor', 'major'].includes(bumpType)) {
     throw new Error(`Invalid BUMP_TYPE: ${bumpType}`);
 }
 
-const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
-const appJsonPath = path.resolve(__dirname, '..', 'app.json');
-const changelogPath = path.resolve(__dirname, '..', 'CHANGELOG.md');
+const scriptDir = path.dirname(process.argv[1]);
+const projectRoot = path.resolve(scriptDir, '..');
+const packageJsonPath = path.resolve(projectRoot, 'package.json');
+const appJsonPath = path.resolve(projectRoot, 'app.json');
+const changelogPath = path.resolve(projectRoot, 'CHANGELOG.md');
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
 const writeJson = (filePath, data) => {

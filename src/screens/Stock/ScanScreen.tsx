@@ -10,7 +10,7 @@ const getSingleParam = (value?: string | string[]) => {
 
 export default function ScanScreen() {
     const router = useRouter();
-    const params = useLocalSearchParams<{ target?: string | string[]; returnPath?: string | string[] }>();
+    const params = useLocalSearchParams<{ target?: string | string[]; returnPath?: string | string[]; scanField?: string | string[] }>();
 
     const handleScan = (data: string) => {
         const targetParam = getSingleParam(params.target) as ScanTarget | undefined;
@@ -19,9 +19,10 @@ export default function ScanScreen() {
 
         if (targetParam === 'item_detail') {
             const destination = returnPathParam || '/item/new';
+            const scanFieldParam = getSingleParam(params.scanField) || 'barcode';
             router.replace({
                 pathname: destination as never,
-                params: { barcode: data, scanned: 'true', scanAt },
+                params: { barcode: data, scanned: 'true', scanAt, scanField: scanFieldParam },
             });
             return;
         }

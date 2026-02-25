@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Chip, Text, useTheme } from 'react-native-paper';
 
 import { businessSuiteService } from '../../api/businessSuiteService';
+import { AppAccordion } from '../../components/common/AppAccordion';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
 import { AppInput } from '../../components/common/AppInput';
@@ -40,7 +41,7 @@ export const OrganizationCreateScreen: React.FC = () => {
     const dialog = useAppDialog();
     const { width } = useWindowDimensions();
     const isWide = width >= 960;
-    const { isOwnerOrAdmin, refreshOrganizationContext } = useOrganizationAccess();
+    const { isOwner, refreshOrganizationContext } = useOrganizationAccess();
 
     const [name, setName] = useState('');
     const [code, setCode] = useState('');
@@ -101,16 +102,16 @@ export const OrganizationCreateScreen: React.FC = () => {
         }
     };
 
-    if (!isOwnerOrAdmin) {
+    if (!isOwner) {
         return (
             <ScreenWrapper>
                 <View style={styles.blockedContainer}>
                     <AppCard style={styles.blockedCard}>
-                        <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 6 }}>
+                        <Text variant="titleMedium" style={styles.blockedTitle}>
                             Access Restricted
                         </Text>
-                        <Text style={{ color: theme.colors.outline }}>
-                            Only owner/admin can create organizations.
+                        <Text style={{ color: theme.colors.onSurfaceVariant }}>
+                            Only organization owners can create organizations.
                         </Text>
                     </AppCard>
                 </View>
@@ -128,10 +129,20 @@ export const OrganizationCreateScreen: React.FC = () => {
                 <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
                     <PageHeaderCard
                         title="Create Organization"
-                        subtitle="Create a new business workspace and switch to it instantly."
+                        subtitle="Set up a new business workspace and switch instantly."
                     />
 
                     <AppCard>
+                        <Text variant="titleSmall" style={styles.previewTitle}>Preview</Text>
+                        <Text variant="bodyMedium" numberOfLines={1}>
+                            {name.trim() || 'Organization Name'}
+                        </Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }} numberOfLines={1}>
+                            {(code.trim() || 'ORG_CODE')} • {currency}
+                        </Text>
+                    </AppCard>
+
+                    <AppAccordion title="Basic Details" icon="office-building-outline" defaultExpanded>
                         <AppInput
                             label="Organization Name"
                             value={name}
@@ -149,9 +160,7 @@ export const OrganizationCreateScreen: React.FC = () => {
                             placeholder="ACME_TRADERS"
                         />
 
-                        <Text variant="labelMedium" style={styles.currencyLabel}>
-                            Currency
-                        </Text>
+                        <Text variant="labelMedium" style={styles.currencyLabel}>Currency</Text>
                         <View style={styles.currencyWrap}>
                             {Config.supportedCurrencies.slice(0, 10).map((entry) => (
                                 <Chip
@@ -165,7 +174,9 @@ export const OrganizationCreateScreen: React.FC = () => {
                                 </Chip>
                             ))}
                         </View>
+                    </AppAccordion>
 
+                    <AppAccordion title="Optional Contact & Tax" icon="card-account-details-outline" defaultExpanded={false}>
                         <AppInput
                             label="Phone Number (Optional)"
                             value={phoneNumber}
@@ -201,16 +212,22 @@ export const OrganizationCreateScreen: React.FC = () => {
                             numberOfLines={3}
                             placeholder="Business address"
                         />
+                    </AppAccordion>
 
-                        <AppButton
-                            mode="contained"
-                            onPress={() => { void handleCreate(); }}
-                            loading={saving}
-                            disabled={!canSave}
-                            style={styles.submitButton}
-                        >
-                            Create Organization
-                        </AppButton>
+                    <AppCard>
+                        <View style={styles.actionRow}>
+                            <AppButton mode="outlined" onPress={() => router.back()}>
+                                Cancel
+                            </AppButton>
+                            <AppButton
+                                mode="contained"
+                                onPress={() => { void handleCreate(); }}
+                                loading={saving}
+                                disabled={!canSave}
+                            >
+                                Create Organization
+                            </AppButton>
+                        </View>
                     </AppCard>
                 </View>
             </ScrollView>
@@ -228,6 +245,10 @@ const styles = StyleSheet.create({
         width: '100%',
         maxWidth: DesignSystem.layout.compactMaxWidth,
     },
+    blockedTitle: {
+        fontWeight: '700',
+        marginBottom: 6,
+    },
     content: {
         paddingTop: DesignSystem.layout.pageTop,
         paddingBottom: DesignSystem.layout.pageBottom,
@@ -235,9 +256,14 @@ const styles = StyleSheet.create({
     },
     contentInner: {
         width: '100%',
+        gap: DesignSystem.layout.sectionGap,
     },
     contentInnerWide: {
         maxWidth: DesignSystem.layout.formMaxWidth,
+    },
+    previewTitle: {
+        fontWeight: '700',
+        marginBottom: 4,
     },
     currencyLabel: {
         marginTop: DesignSystem.spacing.xs,
@@ -249,7 +275,10 @@ const styles = StyleSheet.create({
         gap: DesignSystem.spacing.xs,
         marginBottom: DesignSystem.spacing.sm,
     },
-    submitButton: {
-        marginTop: DesignSystem.spacing.sm,
+    actionRow: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        gap: 8,
+        flexWrap: 'wrap',
     },
 });

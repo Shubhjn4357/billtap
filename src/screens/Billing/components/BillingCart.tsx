@@ -3,6 +3,7 @@ import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, useTheme, IconButton } from 'react-native-paper';
 import { AppButton } from '../../../components/common/AppButton';
 import { AppCard } from '../../../components/common/AppCard';
+import { AppDateField } from '../../../components/common/AppDateField';
 import { AppInput } from '../../../components/common/AppInput';
 import { AppAccordion } from '../../../components/common/AppAccordion';
 import { useCartStore } from '../../../store/cartStore';
@@ -19,6 +20,13 @@ interface BillingCartProps {
     isGstBill: boolean;
     stockMap: Map<string, Item>;
     transactionType: TransactionType;
+    billDate: Date;
+    setBillDate: (value: Date) => void;
+    dueDate?: Date;
+    setDueDate: (value: Date | undefined) => void;
+    discountInput: string;
+    setDiscountInput: (value: string) => void;
+    discountAmount: number;
     sameAsBilling: boolean;
     setSameAsBilling: (val: boolean) => void;
     billingAddress: string;
@@ -36,6 +44,13 @@ export const BillingCart = ({
     isGstBill,
     stockMap,
     transactionType,
+    billDate,
+    setBillDate,
+    dueDate,
+    setDueDate,
+    discountInput,
+    setDiscountInput,
+    discountAmount,
     sameAsBilling,
     setSameAsBilling,
     billingAddress,
@@ -47,6 +62,7 @@ export const BillingCart = ({
 }: BillingCartProps) => {
     const theme = useTheme();
     const [addressExpanded, setAddressExpanded] = useState(false);
+    const [billControlsExpanded, setBillControlsExpanded] = useState(false);
     const { items, updateQuantity, removeItem, clearCart } = useCartStore(
         useShallow((state) => ({
             items: state.items,
@@ -60,7 +76,17 @@ export const BillingCart = ({
     const taxTotal = isGstBill
         ? items.reduce((sum, item) => sum + (item.price * item.quantity * (item.tax || 0)) / 100, 0)
         : 0;
-    const total = subtotal + taxTotal;
+    const baseTotal = subtotal + taxTotal;
+    const total = Math.max(baseTotal - discountAmount, 0);
+    const isInboundFlow = transactionType === 'PURCHASE' || transactionType === 'RETURN_INWARD';
+    const primaryAddressLabel = isInboundFlow ? 'From Address (Party)' : 'Billing Address';
+    const primaryAddressPlaceholder = isInboundFlow ? 'Enter supplier/party address...' : 'Enter business location...';
+    const secondaryAddressLabel = isInboundFlow ? 'To Address (Business)' : 'Delivery Address';
+    const secondaryAddressPlaceholder = isInboundFlow ? 'Where goods are received?' : 'Where should items be sent?';
+    const sameAddressLabel = isInboundFlow
+        ? 'To address is same as from address'
+        : 'Delivery is same as billing address';
+    const dueDateEnabled = Boolean(dueDate);
 
     if (items.length === 0) {
         return (
@@ -168,6 +194,72 @@ export const BillingCart = ({
             <View style={[styles.footer, { backgroundColor: theme.colors.elevation.level2 }]}>
                 <View style={styles.deliverySection}>
                     <AppAccordion
+                        title="Bill Controls"
+                        icon="calendar-edit-outline"
+                        expanded={billControlsExpanded}
+                        onExpandedChange={setBillControlsExpanded}
+                        containerStyle={[styles.addressAccordion, { backgroundColor: theme.colors.elevation.level1 }]}
+                        contentStyle={styles.addressAccordionBody}
+                        titleStyle={{ color: theme.colors.onSurfaceVariant, fontWeight: '600' }}
+                    >
+                        <AppDateField
+                            label="Bill Date"
+                            value={billDate}
+                            onChange={setBillDate}
+                            maximumDate={new Date()}
+                        />
+                        <View style={styles.dueDateToggleRow}>
+                            <IconButton
+                                icon={dueDateEnabled ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                                size={20}
+                                onPress={() => {
+                                    if (dueDateEnabled) {
+                                        setDueDate(undefined);
+                                        return;
+                                    }
+                                    const defaultDueDate = new Date(billDate);
+                                    defaultDueDate.setDate(defaultDueDate.getDate() + 7);
+                                    setDueDate(defaultDueDate);
+                                }}
+                                iconColor={theme.colors.primary}
+                                style={{ margin: 0, paddingLeft: 0 }}
+                            />
+                            <Text
+                                variant="bodySmall"
+                                onPress={() => {
+                                    if (dueDateEnabled) {
+                                        setDueDate(undefined);
+                                        return;
+                                    }
+                                    const defaultDueDate = new Date(billDate);
+                                    defaultDueDate.setDate(defaultDueDate.getDate() + 7);
+                                    setDueDate(defaultDueDate);
+                                }}
+                                style={{ color: theme.colors.outline }}
+                            >
+                                Enable due date (for credit/reminder)
+                            </Text>
+                        </View>
+                        {dueDateEnabled ? (
+                            <AppDateField
+                                label="Due Date"
+                                value={dueDate}
+                                onChange={setDueDate}
+                                minimumDate={billDate}
+                            />
+                        ) : null}
+                        <AppInput
+                            label="Bill Discount"
+                            placeholder="0"
+                            value={discountInput}
+                            onChangeText={(value) => setDiscountInput(value.replace(/[^0-9.]/g, ''))}
+                            inputType="decimal"
+                        />
+                    </AppAccordion>
+                </View>
+
+                <View style={styles.deliverySection}>
+                    <AppAccordion
                         title="Addresses"
                         icon="map-marker-outline"
                         expanded={addressExpanded}
@@ -178,8 +270,8 @@ export const BillingCart = ({
                     >
                         <View style={styles.addressInputContainer}>
                             <AppInput
-                                label="Billing Address"
-                                placeholder="Enter business location..."
+                                label={primaryAddressLabel}
+                                placeholder={primaryAddressPlaceholder}
                                 value={billingAddress}
                                 onChangeText={setBillingAddress}
                                 inputType="text"
@@ -188,28 +280,30 @@ export const BillingCart = ({
                             />
                         </View>
 
-                        <View style={styles.checkboxRow}>
-                            <IconButton
-                                icon={sameAsBilling ? 'checkbox-marked' : 'checkbox-blank-outline'}
-                                size={20}
-                                onPress={() => setSameAsBilling(!sameAsBilling)}
-                                iconColor={theme.colors.primary}
-                                style={{ margin: 0, paddingLeft: 0 }}
-                            />
-                            <Text
-                                variant="bodySmall"
-                                onPress={() => setSameAsBilling(!sameAsBilling)}
-                                style={{ color: theme.colors.outline }}
-                            >
-                                Delivery is same as billing address
-                            </Text>
-                        </View>
+                        {!isInboundFlow ? (
+                            <View style={styles.checkboxRow}>
+                                <IconButton
+                                    icon={sameAsBilling ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                                    size={20}
+                                    onPress={() => setSameAsBilling(!sameAsBilling)}
+                                    iconColor={theme.colors.primary}
+                                    style={{ margin: 0, paddingLeft: 0 }}
+                                />
+                                <Text
+                                    variant="bodySmall"
+                                    onPress={() => setSameAsBilling(!sameAsBilling)}
+                                    style={{ color: theme.colors.outline }}
+                                >
+                                    {sameAddressLabel}
+                                </Text>
+                            </View>
+                        ) : null}
 
-                        {!sameAsBilling ? (
+                        {!sameAsBilling || isInboundFlow ? (
                             <View style={styles.addressInputContainer}>
                                 <AppInput
-                                    label="Delivery Address"
-                                    placeholder="Where should items be sent?"
+                                    label={secondaryAddressLabel}
+                                    placeholder={secondaryAddressPlaceholder}
                                     value={deliveryAddress}
                                     onChangeText={setDeliveryAddress}
                                     inputType="text"
@@ -231,6 +325,14 @@ export const BillingCart = ({
                         <Text variant="bodyMedium">{formatCurrency(taxTotal, activeCurrency)}</Text>
                     </View>
                 )}
+                {discountAmount > 0 ? (
+                    <View style={styles.summaryRow}>
+                        <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>Discount</Text>
+                        <Text variant="bodyMedium" style={{ color: theme.colors.primary }}>
+                            -{formatCurrency(discountAmount, activeCurrency)}
+                        </Text>
+                    </View>
+                ) : null}
                 <View style={[styles.summaryRow, { marginTop: 8 }]}>
                     <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>Total</Text>
                     <Text variant="titleLarge" style={{ fontWeight: 'bold', color: theme.colors.primary }}>
@@ -346,5 +448,10 @@ const styles = StyleSheet.create({
     },
     addressInputContainer: {
         marginTop: 4,
+    },
+    dueDateToggleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
     },
 });

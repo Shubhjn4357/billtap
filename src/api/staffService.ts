@@ -1,5 +1,6 @@
 import type { StaffInvite, UserProfile } from '../types';
 import { apiClient } from './httpClient';
+import { normalizeUserProfile, normalizeUserProfiles } from '../utils/userRole';
 
 export const staffService = {
     async getStaff(): Promise<{ staff: UserProfile[]; invites: StaffInvite[] }> {
@@ -13,7 +14,7 @@ export const staffService = {
             throw new Error(response.message || 'Failed to fetch staff.');
         }
         return {
-            staff: response.staff ?? [],
+            staff: normalizeUserProfiles(response.staff),
             invites: response.invites ?? [],
         };
     },
@@ -53,7 +54,7 @@ export const staffService = {
         if (!response.ok || !response.staff) {
             throw new Error(response.message || 'Failed to fetch staff member.');
         }
-        return response.staff;
+        return normalizeUserProfile(response.staff);
     },
 
     async updateStaffRelation(

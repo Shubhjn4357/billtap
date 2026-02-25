@@ -13,14 +13,15 @@ import { staffService } from '../../api/staffService';
 import { DesignSystem } from '../../constants/DesignSystem';
 import type { UserProfile, StaffInvite } from '../../types';
 import { isNetworkLikeError } from '../../utils/errorGuards';
+import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
 
 export const StaffListScreen = () => {
     const theme = useTheme();
     const router = useRouter();
     const { user } = useUserStore();
+    const { canManageStaff } = useOrganizationAccess();
     const { width } = useWindowDimensions();
     const isWide = width >= 960;
-    const canManageStaff = user?.role === 'owner' || user?.role === 'admin';
     const staffQuery = useQuery({
         queryKey: ['staff-list', user?.uid ?? 'guest'] as const,
         queryFn: async (): Promise<{ staff: UserProfile[]; invites: StaffInvite[] }> => {
@@ -45,7 +46,7 @@ export const StaffListScreen = () => {
             <ScreenWrapper>
                 <View style={styles.centered}>
                     <AppCard style={styles.centeredCard}>
-                        <Text style={{ color: theme.colors.outline }}>Only owner/admin can manage staff.</Text>
+                        <Text style={{ color: theme.colors.outline }}>Only authorized organization owners can manage staff.</Text>
                     </AppCard>
                 </View>
             </ScreenWrapper>

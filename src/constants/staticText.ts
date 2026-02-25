@@ -13,7 +13,7 @@ export interface SitemapEntry {
     title: string;
     route: string;
     description: string;
-    access: 'public' | 'authenticated' | 'admin';
+    access: 'public' | 'authenticated';
 }
 
 export const BRAND = {
@@ -67,8 +67,6 @@ export const SETTINGS_TEXT = {
         subscriptionTitle: 'Subscription & Payments',
         subscriptionInactive: 'No active plan',
         subscriptionActiveSuffix: 'active',
-        adminPanelTitle: 'Admin Control Panel',
-        adminPanelDescription: 'Manage users, plans, and offers',
         businessProfileTitle: 'Business Profile',
         businessProfileDescription: 'Manage company details',
     },
@@ -243,7 +241,7 @@ export const SUBSCRIPTION_TEXT = {
     planLabel: 'Plan',
     validUntilLabel: 'Valid Until',
     selectedLabel: 'Selected',
-    loadingPlans: 'Loading latest plans from admin panel...',
+    loadingPlans: 'Loading latest plans...',
     noPlan: COMMON_TEXT.labels.none,
     paymentSuccessTitle: 'Payment Success',
     paymentFailedTitle: 'Payment Failed',
@@ -266,87 +264,6 @@ export const SUBSCRIPTION_TEXT = {
     startLiveDisabledButton: 'Live Payment Disabled',
     testSuccessButton: 'Test Payment Success',
     testFailButton: 'Test Payment Fail',
-} as const;
-
-export const ADMIN_TEXT = {
-    accessRequiredTitle: 'Admin Access Required',
-    accessRequiredBody: 'This panel is restricted to developer/admin principals configured on server.',
-    title: 'Admin Control Panel',
-    subtitle: 'Manage users, subscription plans, offers, and sales automation settings.',
-    refresh: COMMON_TEXT.actions.refresh,
-    salesFunnelTitle: 'Sales Funnel (Last 30 Days)',
-    salesFunnel: {
-        views: 'Views',
-        planSelects: 'Plan Selects',
-        checkoutStart: 'Checkout Start',
-        redirected: 'Redirected',
-        success: 'Success',
-        failed: 'Failed',
-        viewToPlan: 'View to Plan',
-        planToCheckout: 'Plan to Checkout',
-        checkoutToSuccess: 'Checkout to Success',
-        overall: 'Overall Conversion',
-    },
-    tabs: {
-        users: 'Users',
-        plans: 'Plans',
-        offers: 'Offers',
-    },
-    users: {
-        searchLabel: 'Search users (name/email/business)',
-        countSuffix: 'user(s) found',
-        planLabel: 'Plan',
-        validUntilLabel: 'Valid Until',
-        makeAdmin: 'Make Admin',
-        makeOwner: 'Make Owner',
-        activatePlan: 'Activate Plan',
-        expire: 'Expire',
-    },
-    plans: {
-        planName: 'Plan Name',
-        description: 'Description',
-        monthlyPrice: 'Monthly Price',
-        currency: 'Currency',
-        features: 'Features (comma separated)',
-        active: 'Active',
-        currentPrice: 'Current Price',
-        savePlan: 'Save Plan',
-    },
-    offers: {
-        createTitle: 'Create Offer Banner',
-        title: 'Title',
-        message: 'Message',
-        bannerImage: 'Banner Image URL (optional)',
-        bannerColor: 'Banner Color',
-        priority: 'Priority',
-        ctaText: 'CTA Text',
-        ctaRoute: 'CTA Route',
-        publishNow: 'Publish Immediately',
-        createOffer: 'Create Offer',
-        audience: 'Audience',
-    },
-    alerts: {
-        loadAdminFailed: 'Failed to load admin data.',
-        roleUpdated: (role: string) => `Role updated to ${role}.`,
-        roleUpdateFailed: 'Failed to update role.',
-        noPlanTitle: 'No Plan',
-        noPlanBody: 'No active plan is available.',
-        subscriptionUpdatedTitle: 'Subscription Updated',
-        subscriptionUpdatedBody: (name: string) => `${name} has active subscription.`,
-        activateSubscriptionFailed: 'Failed to activate subscription.',
-        subscriptionStatusUpdated: (status: string) => `Subscription marked as ${status}.`,
-        subscriptionStatusFailed: 'Failed to update subscription status.',
-        planNameRequired: 'Plan name is required.',
-        monthlyPriceInvalid: 'Monthly price must be a non-negative number.',
-        planUpdated: (name: string) => `${name} plan updated.`,
-        savePlanFailed: 'Failed to save plan.',
-        offerTitleMessageRequired: 'Offer title and message are required.',
-        offerPriorityInvalid: 'Priority must be a number.',
-        offerCreatedTitle: 'Offer Created',
-        offerCreatedBody: 'Marketing offer banner is now available.',
-        createOfferFailed: 'Failed to create offer.',
-        offerToggleFailed: 'Failed to update offer state.',
-    },
 } as const;
 
 export const BILLING_TEXT = {
@@ -465,7 +382,6 @@ export const SITEMAP_TEXT = {
     routePrefix: 'Route:',
     openButton: 'Open',
     accessLabels: {
-        admin: 'Admin',
         public: 'Public',
         authenticated: 'Signed in',
     },
@@ -478,7 +394,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
         highlights: [
             'Full stability + layout sweep across client screens: normalized responsive content shells and compact spacing in shared headers / screen wrappers.',
             'Fixed centered action button alignment in bottom navigation and improved tab shell positioning.',
-            'Improved scroll / layout consistency for Admin, Info pages, Business Suite pages, Billing, and route-level shells.',
+            'Improved scroll / layout consistency for management, info pages, business suite pages, billing, and route-level shells.',
             'Treated transient backend failures (429, 5xx) as network-like for silent fallback behavior.',
             'Reduced repeated organization context sync calls with throttled refresh in main layout.',
             'Kept route structure stable with accounting stack registration updates.',
@@ -504,7 +420,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
             'Added company switch and multi-store organization support in Business Suite.',
             'Added staff permission controls, signature management, and institution reminder tooling.',
             'Added subscription management with test success/failure flows and live checkout scaffold.',
-            'Added admin control panel for users, plans, offers, and funnel monitoring.',
+            'Added management control panel for users, plans, offers, and funnel monitoring.',
             'Added marketing banners, analytics events, and automation jobs for lifecycle management.',
             'Improved API organization scoping and reduced redundant state updates.',
         ],
@@ -711,12 +627,6 @@ export const APP_SITEMAP: SitemapEntry[] = [
         route: '/subscription',
         description: 'Plan selection and payment state.',
         access: 'authenticated',
-    },
-    {
-        title: 'Admin Panel',
-        route: '/admin',
-        description: 'User, plan, and offer administration.',
-        access: 'admin',
     },
     {
         title: 'Business Setup',

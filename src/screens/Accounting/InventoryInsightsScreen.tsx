@@ -1,17 +1,15 @@
-import { useCallback } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
+
 import { accountingService } from '../../api/accountingService';
-import { AppButton } from '../../components/common/AppButton';
-import { AppCard } from '../../components/common/AppCard';
-import { PageHeaderCard } from '../../components/common/PageHeaderCard';
-import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { AppAccordion } from '../../components/common/AppAccordion';
+import { SummaryCard } from '../../components/common/SummaryCard';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
-import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
+import { AccountingWorkspaceShell } from './components/AccountingWorkspaceShell';
+import { useAccountingRange } from './context/AccountingRangeContext';
 
 interface InventoryInsightsData {
     valuation: {
@@ -39,10 +37,10 @@ interface InventoryInsightsData {
 
 export const InventoryInsightsScreen = () => {
     const theme = useTheme();
-    const { width } = useWindowDimensions();
-    const isWide = width >= 960;
+    const { startKey, endKey } = useAccountingRange();
+
     const insightsQuery = useQuery({
-        queryKey: ['accounting-inventory-insights'] as const,
+        queryKey: ['accounting-inventory-insights', startKey ?? 'any', endKey ?? 'any'] as const,
         queryFn: async (): Promise<InventoryInsightsData> => {
             const [valuation, reorder, aging] = await Promise.all([
                 accountingService.getInventoryValuation(),
@@ -76,116 +74,93 @@ export const InventoryInsightsScreen = () => {
         },
         staleTime: 45_000,
     });
-    const { refetch: refetchInventoryInsights } = insightsQuery;
 
     const data = insightsQuery.data ?? null;
     const error = insightsQuery.error && !isNetworkLikeError(insightsQuery.error)
         ? (insightsQuery.error instanceof Error ? insightsQuery.error.message : 'Failed to load inventory insights.')
         : null;
 
-    const loadData = useCallback(async () => {
-        await refetchInventoryInsights();
-    }, [refetchInventoryInsights]);
-
-    useFocusRefresh(loadData, { minIntervalMs: 10_000 });
-
     return (
-        <ScreenWrapper>
-            <AppPullToRefresh refreshing={insightsQuery.isFetching} onRefresh={() => { void loadData(); }}>
-            <ScrollView
-                contentContainerStyle={styles.content}
-                showsVerticalScrollIndicator={false}
-                
-            >
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                    <PageHeaderCard
-                        title="Inventory Insights"
-                        subtitle="Valuation, reorder signals and stock-aging view."
-                    />
+        <AccountingWorkspaceShell
+            title="Inventory Insights"
+            subtitle="Stock value, reorder alerts and aging in one compact view."
+            activeSegment="inventory"
+            refreshing={insightsQuery.isFetching}
+            onRefresh={() => { void insightsQuery.refetch(); }}
+        >
+            {error ? (
+                <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                    {error}
+                </Text>
+            ) : null}
 
-                    <AppCard>
-                        <AppButton mode="contained" onPress={() => { void loadData(); }} loading={insightsQuery.isFetching}>
-                            Refresh Inventory Insights
-                        </AppButton>
-                    </AppCard>
+            <View style={styles.summaryRow}>
+                <SummaryCard label="Cost Value" value={formatCurrency(data?.valuation.totalCostValue ?? 0, 'INR')} tone="neutral" />
+                <SummaryCard label="Retail Value" value={formatCurrency(data?.valuation.totalRetailValue ?? 0, 'INR')} tone="positive" />
+                <SummaryCard label="Low Stock" value={String(data?.valuation.lowStockCount ?? 0)} tone="warning" />
+            </View>
 
-                    {error ? (
-                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
-                            {error}
+            <AppAccordion title={`Reorder Suggestions (${data?.reorder.count ?? 0})`} icon="truck-fast-outline" defaultExpanded>
+                {(data?.reorder.suggestions ?? []).map((row) => (
+                    <View key={row.itemId} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.name}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Stock {row.stock}/{row.minimumStock} • Order {row.suggestedOrderQty}
                         </Text>
-                    ) : null}
-
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>Valuation</Text>
-                        <Text variant="bodySmall">Cost Value: {formatCurrency(data?.valuation.totalCostValue ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Retail Value: {formatCurrency(data?.valuation.totalRetailValue ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Potential Gross Margin: {formatCurrency(data?.valuation.potentialGrossMargin ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Low Stock Items: {data?.valuation.lowStockCount ?? 0}</Text>
-                    </AppCard>
-
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Reorder Suggestions ({data?.reorder.count ?? 0})
+                        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Est. Cost {formatCurrency(row.estimatedCost, 'INR')}
                         </Text>
-                        {(data?.reorder.suggestions ?? []).map((row) => (
-                            <Text key={row.itemId} variant="bodySmall" style={styles.listRow}>
-                                {row.name} | Stock {row.stock}/{row.minimumStock} | Order {row.suggestedOrderQty} | Cost {formatCurrency(row.estimatedCost, 'INR')}
-                            </Text>
-                        ))}
-                    </AppCard>
+                    </View>
+                ))}
+            </AppAccordion>
 
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Stock Aging Buckets
+            <AppAccordion title="Aging Buckets" icon="clock-time-eight-outline" defaultExpanded>
+                {(data?.aging.summary ?? []).map((row) => (
+                    <View key={row.bucket} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.bucket} days</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Items {row.itemCount} • Qty {row.quantity}
                         </Text>
-                        {(data?.aging.summary ?? []).map((row) => (
-                            <Text key={row.bucket} variant="bodySmall" style={styles.listRow}>
-                                {row.bucket} days | Items {row.itemCount} | Qty {row.quantity} | Cost {formatCurrency(row.costValue, 'INR')}
-                            </Text>
-                        ))}
-                    </AppCard>
+                        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Cost {formatCurrency(row.costValue, 'INR')}
+                        </Text>
+                    </View>
+                ))}
+            </AppAccordion>
 
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Oldest Moving Stock ({data?.aging.rows.length ?? 0})
+            <AppAccordion title={`Oldest Stock (${data?.aging.rows.length ?? 0})`} icon="calendar-clock-outline">
+                {(data?.aging.rows ?? []).map((row) => (
+                    <View key={row.itemId} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.name}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            {row.ageDays} days • {row.stock} {row.unit}
                         </Text>
-                        {(data?.aging.rows ?? []).map((row) => (
-                            <Text key={row.itemId} variant="bodySmall" style={styles.listRow}>
-                                {row.name} | {row.ageDays} days | {row.stock} {row.unit} | Bucket {row.bucket}
-                            </Text>
-                        ))}
-                    </AppCard>
-                </View>
-            </ScrollView>
-            </AppPullToRefresh>
-        </ScreenWrapper>
+                        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            Bucket {row.bucket}
+                        </Text>
+                    </View>
+                ))}
+            </AppAccordion>
+        </AccountingWorkspaceShell>
     );
 };
 
 const styles = StyleSheet.create({
-    content: {
-        paddingTop: DesignSystem.layout.pageTop,
-        paddingBottom: DesignSystem.layout.pageBottom,
-        alignItems: 'center',
-    },
-    contentInner: {
-        width: '100%',
-        gap: DesignSystem.layout.sectionGap,
-    },
-    contentInnerWide: {
-        maxWidth: DesignSystem.layout.pageMaxWidth,
-    },
     errorText: {
-        marginBottom: DesignSystem.spacing.sm,
+        marginTop: 2,
     },
-    sectionTitle: {
-        fontWeight: '700',
-    },
-    sectionTitleWithGap: {
-        fontWeight: '700',
-        marginBottom: DesignSystem.spacing.xs,
+    summaryRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
     listRow: {
-        marginBottom: DesignSystem.spacing.xs,
+        marginTop: 8,
+        borderWidth: 1,
+        borderRadius: DesignSystem.radius.sm,
+        padding: DesignSystem.spacing.sm,
+    },
+    primaryLine: {
+        fontWeight: '700',
     },
 });

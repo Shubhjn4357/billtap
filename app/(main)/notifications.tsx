@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { DesignSystem } from '../../src/constants/DesignSystem';
 import {
+    clearNotificationInbox,
     getNotificationInbox,
     markAllNotificationsAsRead,
     markNotificationAsRead,
@@ -55,6 +56,15 @@ export default function NotificationsScreen() {
         }
     };
 
+    const clearAll = async () => {
+        try {
+            await clearNotificationInbox();
+            setAlerts([]);
+        } catch (error) {
+            console.error('Failed to clear notifications', error);
+        }
+    };
+
     const renderItem = ({ item }: { item: NotificationInboxEntry }) => (
         <Surface
             style={[
@@ -101,7 +111,10 @@ export default function NotificationsScreen() {
         <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
             <View style={styles.topActions}>
                 <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>Notifications</Text>
-                <IconButton icon="check-all" onPress={() => { void markAllRead(); }} iconColor={theme.colors.primary} size={24} />
+                <View style={styles.topActionButtons}>
+                    <IconButton icon="check-all" onPress={() => { void markAllRead(); }} iconColor={theme.colors.primary} size={24} />
+                    <IconButton icon="delete-sweep-outline" onPress={() => { void clearAll(); }} iconColor={theme.colors.error} size={24} />
+                </View>
             </View>
 
             <FlatList
@@ -136,6 +149,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: DesignSystem.spacing.lg,
         paddingTop: DesignSystem.spacing.md,
         paddingBottom: DesignSystem.spacing.sm,
+    },
+    topActionButtons: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     listContent: {
         padding: DesignSystem.spacing.lg,

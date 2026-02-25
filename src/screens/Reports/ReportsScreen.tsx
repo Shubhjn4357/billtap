@@ -1,18 +1,21 @@
 import React, { useCallback, useMemo, useState, useTransition } from 'react';
-import { ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
-import { useRouter } from 'expo-router';
+import { Pressable, ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Chip, SegmentedButtons, Text, useTheme } from 'react-native-paper';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import type { CachedBill, StoredBill } from '../../api/billService';
 import { reportingService } from '../../api/reportingService';
+import { AppAccordion } from '../../components/common/AppAccordion';
 import { AppButton } from '../../components/common/AppButton';
 import { AppCard } from '../../components/common/AppCard';
+import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
 import { AppSkeleton } from '../../components/common/AppSkeleton';
 import { PageHeaderCard } from '../../components/common/PageHeaderCard';
-import { useAppDialog } from '../../components/providers/DialogProvider';
+import { SummaryCard } from '../../components/common/SummaryCard';
 import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
 import { getTabAwareBottomSpacing } from '../../components/layout/tabBarMetrics';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 import { Config } from '../../constants/Config';
 import { DesignSystem } from '../../constants/DesignSystem';
 import { COMMON_TEXT, REPORTS_TEXT } from '../../constants/staticText';
@@ -20,13 +23,12 @@ import { useAuth } from '../../hooks/useAuth';
 import { useBills } from '../../hooks/useBills';
 import { useFocusRefresh } from '../../hooks/useFocusRefresh';
 import { useOrganizationAccess } from '../../hooks/useOrganizationAccess';
-import { SkeletonCardRow, SkeletonList } from '../../components/common/SkeletonList';
-import { useSettingsStore } from '../../store';
+import { useOrganizationStore, useSettingsStore } from '../../store';
 import { toDateSafe } from '../../utils/date';
 import { isNetworkLikeError } from '../../utils/errorGuards';
 import { formatCurrency, formatDate, normalizeCurrencyCode } from '../../utils/formatters';
 import { shareBillPDF, shareSalesReportPDF } from '../../utils/pdfGenerator';
-
+import { sanitizeUpiId } from '../../utils/upi';
 
 type RangePreset = 'today' | '7d' | '30d' | 'all';
 type StatusPreset = 'all' | 'paid' | 'partial' | 'unpaid';
@@ -37,7 +39,6 @@ const RANGE_LABELS: Record<RangePreset, string> = {
     '30d': REPORTS_TEXT.ranges['30d'],
     all: REPORTS_TEXT.ranges.all,
 };
-
 
 const getRangeStart = (range: RangePreset): Date | null => {
     const now = new Date();
@@ -84,6 +85,11 @@ const buildTopItems = (bills: StoredBill[]) => {
     return [...counts.values()].sort((a, b) => b.revenue - a.revenue);
 };
 
+const asRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
 export const ReportsScreen = () => {
     const theme = useTheme();
     const router = useRouter();
@@ -92,15 +98,17 @@ export const ReportsScreen = () => {
     const insets = useSafeAreaInsets();
     const { user } = useAuth();
     const { currencySymbol } = useSettingsStore();
+    const organizationSettings = useOrganizationStore((state) => state.context.settings);
     const { canViewReports, canAccessAccounting } = useOrganizationAccess();
     const { bills: rawBills, loading, error, fetchBills } = useBills(canViewReports, { limit: 400 });
     const bills = rawBills as CachedBill[];
+
     const [range, setRange] = useState<RangePreset>('7d');
     const [statusFilter, setStatusFilter] = useState<StatusPreset>('all');
     const [rangePending, startRangeTransition] = useTransition();
     const [refreshing, setRefreshing] = useState(false);
 
-    const isWide = width >= 1080;
+    const isWide = width >= 1024;
     const bottomSpacing = getTabAwareBottomSpacing(insets.bottom, 20);
     const activeCurrency = normalizeCurrencyCode(user?.currency ?? currencySymbol ?? Config.defaultCurrency);
 
@@ -121,10 +129,12 @@ export const ReportsScreen = () => {
     const summary = useMemo(() => {
         const totalRevenue = filteredBills.reduce((sum, bill) => sum + bill.total, 0);
         const totalOrders = filteredBills.length;
+        const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
         return {
             totalRevenue,
             totalOrders,
-            topItems: buildTopItems(filteredBills).slice(0, 5),
+            avgOrderValue,
+            topItems: buildTopItems(filteredBills).slice(0, 8),
         };
     }, [filteredBills]);
 
@@ -144,7 +154,7 @@ export const ReportsScreen = () => {
     const recentBills = useMemo(
         () => [...filteredBills]
             .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
-            .slice(0, 24),
+            .slice(0, 20),
         [filteredBills]
     );
 
@@ -186,13 +196,38 @@ export const ReportsScreen = () => {
 
     const handleShareBill = useCallback(async (bill: StoredBill) => {
         try {
-            await shareBillPDF({ ...bill, currency: bill.currency ?? activeCurrency });
+            const settings = asRecord(organizationSettings);
+            const customization = asRecord(settings.customization);
+            const payment = asRecord(settings.payment);
+            const print = asRecord(settings.print);
+            const paperSizeCandidate = typeof print.paperSize === 'string' ? print.paperSize.toUpperCase() : 'A4';
+            const paperSize: 'A4' | 'A5' | '2INCH' | '3INCH' = (
+                paperSizeCandidate === 'A5'
+                || paperSizeCandidate === '2INCH'
+                || paperSizeCandidate === '3INCH'
+            ) ? paperSizeCandidate : 'A4';
+
+            await shareBillPDF({
+                ...bill,
+                currency: bill.currency ?? activeCurrency,
+                businessName: bill.businessName ?? user?.businessName ?? user?.displayName ?? undefined,
+                businessAddress: bill.businessAddress ?? user?.address ?? undefined,
+                gstNumber: bill.gstNumber ?? user?.gstNumber ?? undefined,
+                printerType: print.printerType === 'THERMAL' ? 'THERMAL' : 'STANDARD',
+                paperSize,
+                acknowledgmentText: typeof customization.acknowledgmentText === 'string' ? customization.acknowledgmentText : undefined,
+                footerText: typeof customization.footerText === 'string' ? customization.footerText : undefined,
+                upiId: sanitizeUpiId(typeof payment.upiId === 'string' ? payment.upiId : '') || undefined,
+                signatureImageUrl: typeof settings.signatureImageUrl === 'string'
+                    ? settings.signatureImageUrl
+                    : (typeof customization.signatureImageUrl === 'string' ? customization.signatureImageUrl : undefined),
+            });
         } catch (shareError: unknown) {
             if (!isNetworkLikeError(shareError)) {
                 dialog.alert(COMMON_TEXT.alerts.error, shareError instanceof Error ? shareError.message : REPORTS_TEXT.shareBillFailed);
             }
         }
-    }, [activeCurrency, dialog]);
+    }, [activeCurrency, dialog, organizationSettings, user?.address, user?.businessName, user?.displayName, user?.gstNumber]);
 
     const handleExport = useCallback(async (mode: 'json' | 'csv') => {
         try {
@@ -222,23 +257,11 @@ export const ReportsScreen = () => {
                     <AppCard>
                         <Text variant="titleMedium" style={styles.blockedTitle}>Reports access is disabled</Text>
                         <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                            Ask owner/admin to enable reports permission for your account.
+                            Ask your organization owner to enable reports permission for your account.
                         </Text>
                     </AppCard>
                 </View>
             </ScreenWrapper>
-        );
-    }
-
-    if (loading) {
-        return (
-            <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-                <PageHeaderCard title="Business Reports" />
-                <ScrollView contentContainerStyle={styles.content}>
-                    <SkeletonCardRow style={{ marginBottom: 20 }} />
-                    <SkeletonList count={10} />
-                </ScrollView>
-            </SafeAreaView>
         );
     }
 
@@ -247,205 +270,128 @@ export const ReportsScreen = () => {
     return (
         <ScreenWrapper>
             <AppPullToRefresh refreshing={refreshing} onRefresh={() => { void onRefresh(); }}>
-            <ScrollView
-                contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]}
-                
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-            >
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                    <PageHeaderCard
-                        title={REPORTS_TEXT.title}
-                        subtitle={`${RANGE_LABELS[range]} range`}
-                        right={(
-                            <AppButton mode="contained-tonal" compact onPress={() => { void handleShareSummary(); }}>
-                                Share
-                            </AppButton>
-                        )}
-                    />
-
-                    <AppCard>
-                        <SegmentedButtons
-                            value={range}
-                            onValueChange={(value) => {
-                                startRangeTransition(() => setRange(value as RangePreset));
-                            }}
-                            buttons={[
-                                { value: 'today', label: REPORTS_TEXT.rangeButtons.today },
-                                { value: '7d', label: REPORTS_TEXT.rangeButtons['7d'] },
-                                { value: '30d', label: REPORTS_TEXT.rangeButtons['30d'] },
-                                { value: 'all', label: REPORTS_TEXT.rangeButtons.all },
-                            ]}
-                        />
-                        {rangePending ? (
-                            <Text variant="labelSmall" style={{ marginTop: 6, color: theme.colors.onSurfaceVariant }}>
-                                Updating range...
-                            </Text>
-                        ) : null}
-                    </AppCard>
-
-                    <AppCard>
-                        <SegmentedButtons
-                            value={statusFilter}
-                            onValueChange={(value) => setStatusFilter(value as StatusPreset)}
-                            buttons={[
-                                { value: 'all', label: 'All' },
-                                { value: 'paid', label: `Paid (${billStatusSummary.paid})` },
-                                { value: 'partial', label: `Partial (${billStatusSummary.partial})` },
-                                { value: 'unpaid', label: `Unpaid (${billStatusSummary.unpaid})` },
-                            ]}
-                        />
-                    </AppCard>
-
-                    <View style={[styles.metricRow, isWide && styles.metricRowWide]}>
-                        <AppCard style={[styles.metricCard, isWide && styles.metricCardWide]}>
-                            {showSkeleton ? (
-                                <>
-                                    <AppSkeleton width="40%" height={12} />
-                                    <AppSkeleton width="72%" height={28} style={{ marginTop: 10 }} />
-                                </>
-                            ) : (
-                                <>
-                                    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Revenue</Text>
-                                    <Text variant="headlineSmall" style={styles.metricValue}>
-                                        {formatCurrency(summary.totalRevenue, activeCurrency)}
-                                    </Text>
-                                </>
+                <ScrollView
+                    contentContainerStyle={[styles.content, { paddingBottom: bottomSpacing }]}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                >
+                    <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
+                        <PageHeaderCard
+                            title={REPORTS_TEXT.title}
+                            subtitle={`${RANGE_LABELS[range]} • ${filteredBills.length} bills`}
+                            right={(
+                                <AppButton mode="contained-tonal" compact onPress={() => { void handleShareSummary(); }}>
+                                    Share
+                                </AppButton>
                             )}
-                        </AppCard>
-                        <AppCard style={[styles.metricCard, isWide && styles.metricCardWide]}>
-                            {showSkeleton ? (
-                                <>
-                                    <AppSkeleton width="38%" height={12} />
-                                    <AppSkeleton width={88} height={28} style={{ marginTop: 10 }} />
-                                </>
-                            ) : (
-                                <>
-                                    <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Orders</Text>
-                                    <Text variant="headlineSmall" style={styles.metricValue}>{summary.totalOrders}</Text>
-                                </>
-                            )}
-                        </AppCard>
-                    </View>
+                        />
 
-                    <View style={[styles.mainGrid, isWide && styles.mainGridWide]}>
-                        <View style={styles.mainColumn}>
-                            <AppCard>
-                                <View style={styles.sectionHeaderRow}>
-                                    <Text variant="titleSmall" style={styles.sectionTitle}>Top Products</Text>
-                                    <AppButton mode="outlined" compact icon="file-pdf-box" onPress={() => { void handleShareSummary(); }}>
-                                        Share PDF
-                                    </AppButton>
-                                </View>
-                                {showSkeleton ? (
-                                    Array.from({ length: 4 }).map((_, index) => (
-                                        <View key={`product-skeleton-${index}`} style={styles.topItemRow}>
-                                            <AppSkeleton width={24} height={10} />
-                                            <AppSkeleton width="74%" height={10} />
-                                        </View>
-                                    ))
-                                ) : summary.topItems.length === 0 ? (
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                        {REPORTS_TEXT.noProductSales}
-                                    </Text>
-                                ) : (
-                                    summary.topItems.slice(0, 5).map((entry, index) => (
-                                        <View key={`${entry.name}-${index}`} style={styles.topItemRow}>
-                                            <Text variant="bodySmall" style={styles.topItemRank}>#{index + 1}</Text>
-                                            <Text variant="bodySmall" style={styles.topItemText}>
-                                                {entry.name} | {entry.qty} qty | {formatCurrency(entry.revenue, activeCurrency)}
-                                            </Text>
-                                        </View>
-                                    ))
-                                )}
-                                <View style={styles.exportRow}>
-                                    <AppButton mode="contained-tonal" compact icon="code-json" onPress={() => { void handleExport('json'); }}>
-                                        Export JSON
-                                    </AppButton>
-                                    <AppButton mode="contained-tonal" compact icon="microsoft-excel" onPress={() => { void handleExport('csv'); }}>
-                                        Export CSV
-                                    </AppButton>
-                                </View>
-                            </AppCard>
+                        <AppCard>
+                            <SegmentedButtons
+                                value={range}
+                                onValueChange={(value) => {
+                                    startRangeTransition(() => setRange(value as RangePreset));
+                                }}
+                                buttons={[
+                                    { value: 'today', label: REPORTS_TEXT.rangeButtons.today },
+                                    { value: '7d', label: REPORTS_TEXT.rangeButtons['7d'] },
+                                    { value: '30d', label: REPORTS_TEXT.rangeButtons['30d'] },
+                                    { value: 'all', label: REPORTS_TEXT.rangeButtons.all },
+                                ]}
+                            />
+                            <View style={styles.filterRow}>
+                                <Chip compact selected={statusFilter === 'all'} onPress={() => setStatusFilter('all')}>
+                                    All ({rangeFilteredBills.length})
+                                </Chip>
+                                <Chip compact selected={statusFilter === 'paid'} onPress={() => setStatusFilter('paid')}>
+                                    Paid ({billStatusSummary.paid})
+                                </Chip>
+                                <Chip compact selected={statusFilter === 'partial'} onPress={() => setStatusFilter('partial')}>
+                                    Partial ({billStatusSummary.partial})
+                                </Chip>
+                                <Chip compact selected={statusFilter === 'unpaid'} onPress={() => setStatusFilter('unpaid')}>
+                                    Unpaid ({billStatusSummary.unpaid})
+                                </Chip>
+                            </View>
+                            {rangePending ? (
+                                <Text variant="labelSmall" style={{ marginTop: 6, color: theme.colors.onSurfaceVariant }}>
+                                    Updating range...
+                                </Text>
+                            ) : null}
+                        </AppCard>
 
-                            <AppCard>
-                                <View style={styles.sectionHeaderRow}>
-                                    <View style={{ flex: 1, marginRight: 8 }}>
-                                        <Text variant="titleSmall" style={styles.sectionTitle}>Accounting Suite</Text>
-                                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                            Trial balance, GST summary and journals.
-                                        </Text>
-                                    </View>
-                                    <AppButton
-                                        mode="contained-tonal"
-                                        compact
-                                        onPress={() => router.push('/accounting' as never)}
-                                        disabled={!canAccessAccounting}
-                                    >
-                                        Open
-                                    </AppButton>
-                                </View>
-                            </AppCard>
+                        <View style={[styles.summaryRow, isWide && styles.summaryRowWide]}>
+                            <SummaryCard
+                                label="Revenue"
+                                value={showSkeleton ? '--' : formatCurrency(summary.totalRevenue, activeCurrency)}
+                                tone="positive"
+                            />
+                            <SummaryCard
+                                label="Bills"
+                                value={showSkeleton ? '--' : String(summary.totalOrders)}
+                                tone="neutral"
+                            />
+                            <SummaryCard
+                                label="Avg Bill"
+                                value={showSkeleton ? '--' : formatCurrency(summary.avgOrderValue, activeCurrency)}
+                                tone="warning"
+                            />
                         </View>
 
-                        <View style={styles.mainColumn}>
-                            <AppCard>
-                                <Text variant="titleSmall" style={styles.sectionTitle}>
-                                    Recent Bills ({recentBills.length})
-                                </Text>
-
-                                {showSkeleton ? (
-                                    Array.from({ length: 8 }).map((_, index) => (
-                                        <View key={`bill-skeleton-${index}`} style={styles.billRow}>
-                                            <View style={{ flex: 1 }}>
-                                                <AppSkeleton width="42%" height={12} />
-                                                <AppSkeleton width="60%" height={10} style={{ marginTop: 8 }} />
-                                                <AppSkeleton width={120} height={10} style={{ marginTop: 8 }} />
-                                            </View>
-                                            <AppSkeleton width={72} height={28} borderRadius={DesignSystem.radius.pill} />
+                        <AppAccordion
+                            title={`Recent Bills (${recentBills.length})`}
+                            icon="receipt-text-outline"
+                            defaultExpanded
+                        >
+                            {showSkeleton ? (
+                                Array.from({ length: 6 }).map((_, index) => (
+                                    <View key={`bill-skeleton-${index}`} style={styles.billRowSkeleton}>
+                                        <View style={{ flex: 1 }}>
+                                            <AppSkeleton width="42%" height={12} />
+                                            <AppSkeleton width="65%" height={10} style={{ marginTop: 8 }} />
                                         </View>
-                                    ))
-                                ) : recentBills.length === 0 ? (
-                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 8 }}>
-                                        {REPORTS_TEXT.noBillsInRange}
-                                    </Text>
-                                ) : (
-                                    recentBills.map((item) => {
-                                        const status = getBillStatus(item);
-                                        const statusColor = status === 'Paid'
-                                            ? theme.colors.primaryContainer
-                                            : status === 'Partial'
-                                                ? theme.colors.secondaryContainer
-                                                : theme.colors.errorContainer;
-                                        const statusText = status === 'Paid'
-                                            ? theme.colors.onPrimaryContainer
-                                            : status === 'Partial'
-                                                ? theme.colors.onSecondaryContainer
-                                                : theme.colors.onErrorContainer;
+                                        <AppSkeleton width={80} height={26} borderRadius={DesignSystem.radius.pill} />
+                                    </View>
+                                ))
+                            ) : recentBills.length === 0 ? (
+                                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                    {REPORTS_TEXT.noBillsInRange}
+                                </Text>
+                            ) : (
+                                recentBills.map((item) => {
+                                    const status = getBillStatus(item);
+                                    const statusBg = status === 'Paid'
+                                        ? theme.colors.primaryContainer
+                                        : status === 'Partial'
+                                            ? theme.colors.secondaryContainer
+                                            : theme.colors.errorContainer;
+                                    const statusColor = status === 'Paid'
+                                        ? theme.colors.onPrimaryContainer
+                                        : status === 'Partial'
+                                            ? theme.colors.onSecondaryContainer
+                                            : theme.colors.onErrorContainer;
 
-                                        return (
-                                            <View
-                                                key={item.id}
-                                                style={[
-                                                    styles.billRow,
-                                                    { backgroundColor: theme.colors.surfaceVariant },
-                                                ]}
+                                    return (
+                                        <View key={item.id} style={[styles.billRow, { borderColor: theme.colors.outlineVariant }]}>
+                                            <Pressable
+                                                style={styles.billRowMain}
+                                                onPress={() => router.push({ pathname: '/bill/[id]', params: { id: item.id } } as never)}
                                             >
-                                                <View style={{ flex: 1, marginRight: 8 }}>
-                                                    <Text variant="titleSmall" style={{ fontWeight: '700' }}>
-                                                        Bill #{item.billNumber?.trim() || item.id.slice(0, 8).toUpperCase()}
-                                                    </Text>
-                                                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                                                        {formatDate(item.createdAt)} | {item.items.length} {REPORTS_TEXT.lineItemSuffix}
-                                                    </Text>
-                                                    <Text variant="labelMedium" style={{ marginTop: 4 }}>
-                                                        {formatCurrency(item.total, item.currency ?? activeCurrency)}
-                                                    </Text>
-                                                </View>
-                                                <View style={styles.billActions}>
-                                                    <Chip compact style={{ backgroundColor: statusColor }} textStyle={{ color: statusText }}>
-                                                        {status}
-                                                    </Chip>
+                                                <Text variant="titleSmall" style={styles.billId}>
+                                                    #{item.billNumber?.trim() || item.id.slice(0, 8).toUpperCase()}
+                                                </Text>
+                                                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                                    {formatDate(item.createdAt)} • {item.items.length} {REPORTS_TEXT.lineItemSuffix}
+                                                </Text>
+                                                <Text variant="labelLarge" style={styles.billAmount}>
+                                                    {formatCurrency(item.total, item.currency ?? activeCurrency)}
+                                                </Text>
+                                            </Pressable>
+                                            <View style={styles.billRowActions}>
+                                                <Chip compact style={{ backgroundColor: statusBg }} textStyle={{ color: statusColor }}>
+                                                    {status}
+                                                </Chip>
+                                                <View style={styles.billActionButtons}>
                                                     <AppButton
                                                         mode="text"
                                                         compact
@@ -464,28 +410,78 @@ export const ReportsScreen = () => {
                                                     </AppButton>
                                                 </View>
                                             </View>
-                                        );
-                                    })
-                                )}
-                            </AppCard>
-                        </View>
+                                        </View>
+                                    );
+                                })
+                            )}
+                        </AppAccordion>
+
+                        <AppAccordion
+                            title={`Top Products (${summary.topItems.length})`}
+                            icon="chart-line"
+                            defaultExpanded={!isWide}
+                        >
+                            {summary.topItems.length === 0 ? (
+                                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                    {REPORTS_TEXT.noProductSales}
+                                </Text>
+                            ) : (
+                                summary.topItems.map((entry, index) => (
+                                    <View key={`${entry.name}-${index}`} style={styles.topItemRow}>
+                                        <Text variant="labelMedium" style={styles.topItemRank}>
+                                            #{index + 1}
+                                        </Text>
+                                        <View style={{ flex: 1 }}>
+                                            <Text variant="bodyMedium" numberOfLines={1}>{entry.name}</Text>
+                                            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                                {entry.qty} qty • {formatCurrency(entry.revenue, activeCurrency)}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                ))
+                            )}
+                        </AppAccordion>
+
+                        <AppAccordion
+                            title="Export & Tools"
+                            icon="toolbox-outline"
+                            defaultExpanded={false}
+                        >
+                            <View style={styles.toolsRow}>
+                                <AppButton mode="contained-tonal" compact icon="file-pdf-box" onPress={() => { void handleShareSummary(); }}>
+                                    Share PDF
+                                </AppButton>
+                                <AppButton mode="contained-tonal" compact icon="code-json" onPress={() => { void handleExport('json'); }}>
+                                    Export JSON
+                                </AppButton>
+                                <AppButton mode="contained-tonal" compact icon="microsoft-excel" onPress={() => { void handleExport('csv'); }}>
+                                    Export CSV
+                                </AppButton>
+                                <AppButton
+                                    mode="outlined"
+                                    compact
+                                    icon="calculator-variant-outline"
+                                    onPress={() => router.push('/accounting' as never)}
+                                    disabled={!canAccessAccounting}
+                                >
+                                    Accounting
+                                </AppButton>
+                            </View>
+                        </AppAccordion>
+
+                        {error && !isNetworkLikeError(error) ? (
+                            <Text variant="bodySmall" style={{ color: theme.colors.error }}>
+                                {error}
+                            </Text>
+                        ) : null}
                     </View>
-                    {error && !isNetworkLikeError(error) ? (
-                        <Text variant="bodySmall" style={{ color: theme.colors.error }}>
-                            {error}
-                        </Text>
-                    ) : null}
-                </View>
-            </ScrollView>
+                </ScrollView>
             </AppPullToRefresh>
         </ScreenWrapper>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
     centeredWrap: {
         flex: 1,
         justifyContent: 'center',
@@ -500,78 +496,72 @@ const styles = StyleSheet.create({
     },
     contentInner: {
         width: '100%',
-        gap: 10,
+        gap: DesignSystem.layout.sectionGap,
     },
     contentInnerWide: {
         maxWidth: DesignSystem.layout.dashboardMaxWidth,
     },
-    metricRow: {
+    filterRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 10,
+    },
+    summaryRow: {
         flexDirection: 'column',
         gap: 10,
     },
-    metricRowWide: {
+    summaryRowWide: {
         flexDirection: 'row',
     },
-    metricCard: {
-        marginBottom: 0,
-    },
-    metricCardWide: {
-        width: '49%',
-    },
-    metricValue: {
-        marginTop: 4,
-        fontWeight: '800',
-    },
-    mainGrid: {
-        gap: 10,
-    },
-    mainGridWide: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-    },
-    mainColumn: {
-        flex: 1,
-        minWidth: 0,
-    },
-    sectionTitle: {
-        fontWeight: '700',
-    },
-    sectionHeaderRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    topItemRow: {
+    billRowSkeleton: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
         marginTop: 8,
     },
-    topItemRank: {
-        width: 24,
+    billRow: {
+        borderWidth: 1,
+        borderRadius: DesignSystem.radius.sm,
+        padding: DesignSystem.spacing.sm,
+        marginTop: 8,
+    },
+    billRowMain: {
+        marginBottom: 8,
+    },
+    billId: {
         fontWeight: '700',
     },
-    topItemText: {
-        flex: 1,
+    billAmount: {
+        marginTop: 4,
+        fontWeight: '700',
     },
-    exportRow: {
+    billRowActions: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         gap: 8,
-        marginTop: 12,
+        flexWrap: 'wrap',
     },
-    billRow: {
+    billActionButtons: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 2,
+    },
+    topItemRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
-        borderRadius: DesignSystem.radius.sm,
-        paddingHorizontal: 10,
-        paddingVertical: 10,
-        marginBottom: 8,
+        marginTop: 10,
     },
-    billActions: {
-        alignItems: 'flex-end',
-        gap: 6,
+    topItemRank: {
+        width: 28,
+        fontWeight: '700',
+    },
+    toolsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
 });

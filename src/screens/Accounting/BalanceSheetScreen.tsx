@@ -1,18 +1,19 @@
-import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useCallback } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
+
 import { accountingService } from '../../api/accountingService';
+import { AppAccordion } from '../../components/common/AppAccordion';
 import { AppButton } from '../../components/common/AppButton';
-import { AppCard } from '../../components/common/AppCard';
-import { AppDateField } from '../../components/common/AppDateField';
-import { PageHeaderCard } from '../../components/common/PageHeaderCard';
-import { ScreenWrapper } from '../../components/layout/ScreenWrapper';
+import { SummaryCard } from '../../components/common/SummaryCard';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 import { DesignSystem } from '../../constants/DesignSystem';
+import { buildCsv, shareExportContent } from '../../utils/accountingExport';
 import { formatCurrency } from '../../utils/formatters';
 import { isNetworkLikeError } from '../../utils/errorGuards';
-import { useFocusRefresh } from '../../hooks/useFocusRefresh';
-import { AppPullToRefresh } from '../../components/common/AppPullToRefresh';
+import { AccountingWorkspaceShell } from './components/AccountingWorkspaceShell';
+import { useAccountingRange } from './context/AccountingRangeContext';
 
 interface BalanceSheetData {
     assets: {
@@ -34,140 +35,157 @@ interface BalanceSheetData {
 
 export const BalanceSheetScreen = () => {
     const theme = useTheme();
-    const { width } = useWindowDimensions();
-    const isWide = width >= 960;
-    const [asOfDate, setAsOfDate] = useState<Date | undefined>(undefined);
-    const asOf = asOfDate ? asOfDate.toISOString().slice(0, 10) : '';
+    const dialog = useAppDialog();
+    const { startKey, endKey } = useAccountingRange();
+    const asOf = endKey ?? startKey;
+
     const balanceSheetQuery = useQuery({
-        queryKey: ['accounting-balance-sheet', asOf] as const,
-        queryFn: async (): Promise<BalanceSheetData> => {
-            return await accountingService.getBalanceSheet(asOf || undefined);
-        },
-        enabled: false,
+        queryKey: ['accounting-balance-sheet', asOf ?? 'any'] as const,
+        queryFn: async (): Promise<BalanceSheetData> => accountingService.getBalanceSheet(asOf || undefined),
         staleTime: 45_000,
     });
-    const { refetch: refetchBalanceSheet } = balanceSheetQuery;
 
     const data = balanceSheetQuery.data ?? null;
     const error = balanceSheetQuery.error && !isNetworkLikeError(balanceSheetQuery.error)
         ? (balanceSheetQuery.error instanceof Error ? balanceSheetQuery.error.message : 'Failed to load balance sheet.')
         : null;
 
-    const loadData = useCallback(async () => {
-        await refetchBalanceSheet();
-    }, [refetchBalanceSheet]);
+    const handleExport = useCallback(async (format: 'csv' | 'json') => {
+        if (!data) return;
+        try {
+            if (format === 'csv') {
+                const rows = [
+                    ...data.assets.rows.map((row) => ['Asset', row.code, row.name, row.balance]),
+                    ...data.liabilities.rows.map((row) => ['Liability', row.code, row.name, row.balance]),
+                    ...data.equity.rows.map((row) => ['Equity', row.code, row.name, row.balance]),
+                    ['Equity', 'RETAINED', 'Retained Earnings', data.equity.retainedEarnings],
+                ];
+                const csv = buildCsv(['Section', 'Code', 'Account', 'Balance'], rows);
+                await shareExportContent({
+                    title: 'Balance Sheet',
+                    format: 'csv',
+                    payload: csv,
+                });
+                return;
+            }
 
-    useFocusRefresh(loadData, {
-        enabled: balanceSheetQuery.isFetched,
-        minIntervalMs: 10_000,
-    });
+            await shareExportContent({
+                title: 'Balance Sheet',
+                format: 'json',
+                payload: {
+                    assets: data.assets,
+                    liabilities: data.liabilities,
+                    equity: data.equity,
+                    equationDelta: data.equationDelta,
+                    isBalanced: data.isBalanced,
+                },
+            });
+        } catch (exportError: unknown) {
+            dialog.alert('Export', exportError instanceof Error ? exportError.message : 'Failed to export balance sheet.');
+        }
+    }, [data, dialog]);
 
     return (
-        <ScreenWrapper>
-            <AppPullToRefresh refreshing={balanceSheetQuery.isFetching} onRefresh={() => { void loadData(); }}>
-            <ScrollView
-                contentContainerStyle={styles.content}
-                showsVerticalScrollIndicator={false}
-                
-            >
-                <View style={[styles.contentInner, isWide && styles.contentInnerWide]}>
-                    <PageHeaderCard
-                        title="Balance Sheet"
-                        subtitle="Assets, liabilities and equity as of a selected date."
-                    />
+        <AccountingWorkspaceShell
+            title="Balance Sheet"
+            subtitle="Assets, liabilities, and equity under one shared range."
+            activeSegment="balance"
+            refreshing={balanceSheetQuery.isFetching}
+            onRefresh={() => { void balanceSheetQuery.refetch(); }}
+        >
+            {error ? (
+                <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
+                    {error}
+                </Text>
+            ) : null}
 
-                    <AppCard>
-                        <AppDateField
-                            label="As Of Date"
-                            value={asOfDate}
-                            onChange={setAsOfDate}
-                            placeholder="Today"
-                        />
-                        <AppButton mode="contained" onPress={() => { void loadData(); }} loading={balanceSheetQuery.isFetching}>
-                            Refresh Balance Sheet
-                        </AppButton>
-                    </AppCard>
+            <View style={styles.summaryRow}>
+                <SummaryCard label="Assets" value={formatCurrency(data?.assets.totalAssets ?? 0, 'INR')} tone="positive" />
+                <SummaryCard label="Liabilities" value={formatCurrency(data?.liabilities.totalLiabilities ?? 0, 'INR')} tone="warning" />
+                <SummaryCard
+                    label="Equation"
+                    value={data?.isBalanced ? 'Balanced' : 'Mismatch'}
+                    tone={data?.isBalanced ? 'positive' : 'negative'}
+                />
+            </View>
 
-                    {error ? (
-                        <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
-                            {error}
+            <AppAccordion title={`Assets (${data?.assets.rows.length ?? 0})`} icon="bank-outline" defaultExpanded>
+                {(data?.assets.rows ?? []).map((row) => (
+                    <View key={row.accountId} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.code} - {row.name}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            {formatCurrency(row.balance, 'INR')}
                         </Text>
-                    ) : null}
+                    </View>
+                ))}
+            </AppAccordion>
 
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>Summary</Text>
-                        <Text variant="bodySmall">Total Assets: {formatCurrency(data?.assets.totalAssets ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Total Liabilities: {formatCurrency(data?.liabilities.totalLiabilities ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Total Equity: {formatCurrency(data?.equity.totalEquity ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall">Retained Earnings: {formatCurrency(data?.equity.retainedEarnings ?? 0, 'INR')}</Text>
-                        <Text variant="bodySmall" style={{ color: data?.isBalanced ? theme.colors.primary : theme.colors.error }}>
-                            {data?.isBalanced ? 'Equation Balanced' : `Equation Delta: ${formatCurrency(data?.equationDelta ?? 0, 'INR')}`}
+            <AppAccordion title={`Liabilities (${data?.liabilities.rows.length ?? 0})`} icon="credit-card-outline" defaultExpanded>
+                {(data?.liabilities.rows ?? []).map((row) => (
+                    <View key={row.accountId} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.code} - {row.name}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            {formatCurrency(row.balance, 'INR')}
                         </Text>
-                    </AppCard>
+                    </View>
+                ))}
+            </AppAccordion>
 
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Assets ({data?.assets.rows.length ?? 0})
-                        </Text>
-                        {(data?.assets.rows ?? []).map((row) => (
-                            <Text key={row.accountId} variant="bodySmall" style={styles.listRow}>
-                                {row.code} | {row.name} | {formatCurrency(row.balance, 'INR')}
-                            </Text>
-                        ))}
-                    </AppCard>
-
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Liabilities ({data?.liabilities.rows.length ?? 0})
-                        </Text>
-                        {(data?.liabilities.rows ?? []).map((row) => (
-                            <Text key={row.accountId} variant="bodySmall" style={styles.listRow}>
-                                {row.code} | {row.name} | {formatCurrency(row.balance, 'INR')}
-                            </Text>
-                        ))}
-                    </AppCard>
-
-                    <AppCard>
-                        <Text variant="titleMedium" style={styles.sectionTitleWithGap}>
-                            Equity ({data?.equity.rows.length ?? 0})
-                        </Text>
-                        {(data?.equity.rows ?? []).map((row) => (
-                            <Text key={row.accountId} variant="bodySmall" style={styles.listRow}>
-                                {row.code} | {row.name} | {formatCurrency(row.balance, 'INR')}
-                            </Text>
-                        ))}
-                    </AppCard>
+            <AppAccordion title={`Equity (${data?.equity.rows.length ?? 0})`} icon="chart-arc" defaultExpanded>
+                <View style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                    <Text variant="bodySmall">Retained Earnings</Text>
+                    <Text variant="bodySmall">{formatCurrency(data?.equity.retainedEarnings ?? 0, 'INR')}</Text>
                 </View>
-            </ScrollView>
-            </AppPullToRefresh>
-        </ScreenWrapper>
+                {(data?.equity.rows ?? []).map((row) => (
+                    <View key={row.accountId} style={[styles.listRow, { borderColor: theme.colors.outlineVariant }]}>
+                        <Text variant="bodyMedium" style={styles.primaryLine}>{row.code} - {row.name}</Text>
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                            {formatCurrency(row.balance, 'INR')}
+                        </Text>
+                    </View>
+                ))}
+                {!data?.isBalanced ? (
+                    <Text variant="labelSmall" style={{ color: theme.colors.error, marginTop: 8 }}>
+                        Delta: {formatCurrency(data?.equationDelta ?? 0, 'INR')}
+                    </Text>
+                ) : null}
+            </AppAccordion>
+
+            <AppAccordion title="Export" icon="file-export-outline" defaultExpanded={false}>
+                <View style={styles.exportRow}>
+                    <AppButton mode="contained-tonal" compact onPress={() => { void handleExport('csv'); }}>
+                        Export CSV
+                    </AppButton>
+                    <AppButton mode="outlined" compact onPress={() => { void handleExport('json'); }}>
+                        Export JSON
+                    </AppButton>
+                </View>
+            </AppAccordion>
+        </AccountingWorkspaceShell>
     );
 };
 
 const styles = StyleSheet.create({
-    content: {
-        paddingTop: DesignSystem.layout.pageTop,
-        paddingBottom: DesignSystem.layout.pageBottom,
-        alignItems: 'center',
-    },
-    contentInner: {
-        width: '100%',
-        gap: DesignSystem.layout.sectionGap,
-    },
-    contentInnerWide: {
-        maxWidth: DesignSystem.layout.pageMaxWidth,
-    },
     errorText: {
-        marginBottom: DesignSystem.spacing.sm,
+        marginTop: 2,
     },
-    sectionTitle: {
-        fontWeight: '700',
-    },
-    sectionTitleWithGap: {
-        fontWeight: '700',
-        marginBottom: DesignSystem.spacing.xs,
+    summaryRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
     listRow: {
-        marginBottom: DesignSystem.spacing.xs,
+        marginTop: 8,
+        borderWidth: 1,
+        borderRadius: DesignSystem.radius.sm,
+        padding: DesignSystem.spacing.sm,
+    },
+    primaryLine: {
+        fontWeight: '700',
+    },
+    exportRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
 });

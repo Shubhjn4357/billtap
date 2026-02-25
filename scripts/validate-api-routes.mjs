@@ -35,7 +35,6 @@ const resolveBackendEntryPath = () => {
 
 const backendEntryPath = resolveBackendEntryPath();
 
-const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const normalizedPath = (value) => {
     const withSlashes = value.startsWith('/') ? value : `/${value}`;
     const compact = withSlashes.replace(/\/+/g, '/');

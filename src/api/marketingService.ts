@@ -1,7 +1,7 @@
 import type { MarketingOffer, UserProfile } from '../types';
 import { isNetworkLikeError } from '../utils/errorGuards';
 import { offlineKeyValueStore } from '../offline/db/offlineKeyValueStore';
-import { adminService } from './adminService';
+import { subscriptionService } from './subscriptionService';
 
 const OFFERS_CACHE_KEY = 'billtap_offer_cache_v1';
 
@@ -52,7 +52,7 @@ export const marketingService = {
         let allOffers: MarketingOffer[] = [];
 
         try {
-            allOffers = await adminService.getOffers(false);
+            allOffers = await subscriptionService.getActiveOffers();
             await writeOffersCache(allOffers);
         } catch (error: unknown) {
             const cachedOffers = await readOffersCache();

@@ -6,6 +6,7 @@ import { TopProfilePill } from '../../../src/components/layout/TopProfilePill';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { TAB_TITLES } from '../../../src/constants/staticText';
 import { useOrganizationAccess } from '../../../src/hooks/useOrganizationAccess';
+import { useUiFeedbackStore } from '../../../src/store';
 
 export default function TabLayout() {
   const router = useRouter();
@@ -36,16 +37,11 @@ export default function TabLayout() {
     canViewReports,
   ]);
 
-  const tabVisibility = useMemo(() => {
-    if (Object.values(baseVisibility).some(Boolean)) {
-      return baseVisibility;
-    }
-    return { ...baseVisibility, home: true };
-  }, [baseVisibility]);
+  const tabVisibility = baseVisibility;
 
   const fallbackTab = useMemo(() => {
     const ordered: (keyof typeof tabVisibility)[] = ['home', 'stock', 'billing', 'reports', 'settings'];
-    return ordered.find((entry) => tabVisibility[entry]) ?? 'home';
+    return ordered.find((entry) => tabVisibility[entry]) ?? null;
   }, [tabVisibility]);
 
   const tabGroupIndex = segments.indexOf('(tabs)');
@@ -54,7 +50,12 @@ export default function TabLayout() {
   useEffect(() => {
     if (!currentTab) return;
     if (currentTab in tabVisibility && !tabVisibility[currentTab as keyof typeof tabVisibility]) {
-      router.replace(`/(main)/(tabs)/${fallbackTab}` as never);
+      useUiFeedbackStore.getState().showToast('This module is disabled in organization settings.');
+      if (fallbackTab) {
+        router.replace(`/(main)/(tabs)/${fallbackTab}` as never);
+      } else {
+        router.replace('/(main)/profile' as never);
+      }
     }
   }, [currentTab, fallbackTab, router, tabVisibility]);
 

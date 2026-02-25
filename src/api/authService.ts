@@ -2,6 +2,7 @@ import type { UserProfile } from '../types';
 import { apiClient, ApiError } from './httpClient';
 import { offlineSyncService } from './syncService';
 import { clearSessionToken, getSessionToken, setSessionToken } from './session';
+import { normalizeUserProfile } from '../utils/userRole';
 
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 
@@ -41,7 +42,7 @@ export const authService = {
         }
 
         await setSessionToken(response.token);
-        return response.user;
+        return normalizeUserProfile(response.user);
     },
 
     async sendPhoneVerification(phoneNumber: string): Promise<PhoneVerificationSession> {
@@ -85,7 +86,7 @@ export const authService = {
             }
 
             await setSessionToken(response.token);
-            return response.user;
+            return normalizeUserProfile(response.user);
 
         } catch (error: any) {
             throw new Error(error.message || 'Unable to verify code.');
@@ -108,7 +109,7 @@ export const authService = {
                 'Profile request timed out.'
             );
             if (!response.ok || !response.user) return null;
-            return response.user;
+            return normalizeUserProfile(response.user);
         } catch (error: unknown) {
             if (error instanceof ApiError && error.status === 401) {
                 await clearSessionToken();

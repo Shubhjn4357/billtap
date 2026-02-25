@@ -33,7 +33,6 @@ Notifications.setNotificationHandler({
     handleNotification: async () => {
         const soundEnabled = useSettingsStore.getState().notificationSoundEnabled;
         return {
-            shouldShowAlert: true,
             shouldPlaySound: soundEnabled,
             shouldSetBadge: true,
             shouldShowBanner: true,
@@ -471,6 +470,12 @@ export async function markAllNotificationsAsRead(): Promise<void> {
         .update(notificationsTable)
         .set({ isRead: true })
         .where(and(eq(notificationsTable.isRead, false)));
+}
+
+export async function clearNotificationInbox(): Promise<void> {
+    if (Platform.OS === 'web') return;
+    await db.delete(notificationsTable);
+    await clearBadge();
 }
 
 export async function setBadgeCount(count: number): Promise<void> {

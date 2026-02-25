@@ -37,6 +37,7 @@ interface OfflineItemPayload {
     gstPercentage?: number | null;
     category?: string | null;
     subcategory?: string | null;
+    description?: string | null;
     location?: string | null;
     barcode?: string | null;
     imageUrl?: string | null;
@@ -189,22 +190,6 @@ const sanitizeAccountPayloadForApi = (payload: { id: string; code: string; name:
     };
 };
 
-const sanitizeMessagePayloadForApi = (payload: {
-    channel: 'WHATSAPP' | 'SMS' | 'EMAIL';
-    recipient: string;
-    message: string;
-    barcode?: string;
-    mediaUrl?: string;
-}) => {
-    return {
-        channel: payload.channel,
-        recipient: String(payload.recipient ?? '').trim(),
-        message: String(payload.message ?? '').trim(),
-        barcode: sanitizeOptionalString(payload.barcode),
-        mediaUrl: sanitizeOptionalString(payload.mediaUrl),
-    };
-};
-
 const sanitizeItemPayloadForApi = (payload: OfflineItemPayload): Record<string, unknown> => {
     const next: Record<string, unknown> = {
         ...payload,
@@ -223,6 +208,7 @@ const sanitizeItemPayloadForApi = (payload: OfflineItemPayload): Record<string, 
     next.hsn = sanitizeOptionalString(payload.hsn);
     next.category = sanitizeOptionalString(payload.category);
     next.subcategory = sanitizeOptionalString(payload.subcategory);
+    next.description = sanitizeOptionalString(payload.description);
     next.location = sanitizeOptionalString(payload.location);
     next.barcode = sanitizeOptionalString(payload.barcode);
     next.imageUrl = sanitizeOptionalString(payload.imageUrl);
@@ -416,9 +402,7 @@ const applyMutation = async (mutation: OfflineMutation): Promise<void> => {
             return;
         }
         case 'send_message': {
-            const payload = sanitizeMessagePayloadForApi(mutation.payload);
-            const res = await apiClient.post<ApiResponse>('/communications/messages/send', payload);
-            if (res && res.ok === false) throw new Error(res.message || 'Failed to send message.');
+            // Communications module was retired; treat legacy queued items as consumed.
             return;
         }
         case 'update_user_me': {

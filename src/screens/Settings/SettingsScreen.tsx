@@ -33,6 +33,11 @@ import { isNetworkLikeError } from '../../utils/errorGuards';
 type UpdateState = 'idle' | 'checking' | 'downloading' | 'upToDate' | 'downloaded' | 'disabled' | 'error';
 type SettingsTab = 'profile' | 'business';
 
+const asRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
 export const SettingsScreen = () => {
     const { user, signOut } = useAuth();
     const {
@@ -40,9 +45,12 @@ export const SettingsScreen = () => {
         canAccessAccounting,
         canAccessOperations,
         canAccessBusinessSuite,
+        canManageInventory,
+        canManageStaff,
+        organizationSettings,
         appModuleAccess,
         setOrganizationSettings,
-        isOwnerOrAdmin,
+        isOwner,
     } = useOrganizationAccess();
     const selectedOrganizationId = useOrganizationStore((state) => state.selectedOrganizationId);
     const { setUser } = useUserStore();
@@ -71,6 +79,16 @@ export const SettingsScreen = () => {
     const [currencyAccordionExpanded, setCurrencyAccordionExpanded] = useState(false);
     const [moduleAccessDraft, setModuleAccessDraft] = useState<AppModuleAccessMap>(DEFAULT_APP_MODULE_ACCESS);
     const [savingModuleAccess, setSavingModuleAccess] = useState(false);
+    const [savingBillingDefaults, setSavingBillingDefaults] = useState(false);
+    const [billingDefaultsDraft, setBillingDefaultsDraft] = useState<{
+        defaultGstBill: boolean;
+        defaultTransactionType: 'SALE' | 'PURCHASE';
+        allowBackDate: boolean;
+    }>({
+        defaultGstBill: true,
+        defaultTransactionType: 'SALE',
+        allowBackDate: false,
+    });
 
     const isSystemTheme = themeMode === 'system' || autoTheme;
     const effectiveDark = isSystemTheme ? theme.dark : themeMode === 'dark';
@@ -178,7 +196,7 @@ export const SettingsScreen = () => {
     }, [isSyncing, refreshQueueStats]);
 
     const saveModuleAccess = useCallback(async () => {
-        if (!isOwnerOrAdmin) return;
+        if (!isOwner) return;
         setSavingModuleAccess(true);
         try {
             const settings = await businessSuiteService.updateOrganizationSettings({
@@ -191,15 +209,61 @@ export const SettingsScreen = () => {
         } finally {
             setSavingModuleAccess(false);
         }
-    }, [dialog, isOwnerOrAdmin, moduleAccessDraft, selectedOrganizationId, setOrganizationSettings]);
+    }, [dialog, isOwner, moduleAccessDraft, selectedOrganizationId, setOrganizationSettings]);
+
+    const saveBillingDefaults = useCallback(async () => {
+        if (!isOwner) return;
+        setSavingBillingDefaults(true);
+        try {
+            const baseSettings = asRecord(organizationSettings);
+            const billing = asRecord(baseSettings.billing);
+            const nextSettings = {
+                ...baseSettings,
+                billing: {
+                    ...billing,
+                    defaultGstBill: billingDefaultsDraft.defaultGstBill,
+                    defaultTransactionType: billingDefaultsDraft.defaultTransactionType,
+                    allowBackDate: billingDefaultsDraft.allowBackDate,
+                },
+            };
+
+            const settings = await businessSuiteService.updateOrganizationSettings(
+                nextSettings,
+                selectedOrganizationId ?? undefined
+            );
+            setOrganizationSettings(settings);
+        } catch (error: unknown) {
+            dialog.alert('Billing Defaults', error instanceof Error ? error.message : 'Failed to save billing defaults.');
+        } finally {
+            setSavingBillingDefaults(false);
+        }
+    }, [
+        billingDefaultsDraft.allowBackDate,
+        billingDefaultsDraft.defaultGstBill,
+        billingDefaultsDraft.defaultTransactionType,
+        dialog,
+        isOwner,
+        organizationSettings,
+        selectedOrganizationId,
+        setOrganizationSettings,
+    ]);
 
     useEffect(() => { void checkForUpdates(); }, [checkForUpdates]);
     useEffect(() => { setModuleAccessDraft((current) => ({ ...current, ...appModuleAccess })); }, [appModuleAccess]);
+    useEffect(() => {
+        const settings = asRecord(organizationSettings);
+        const billing = asRecord(settings.billing);
+        setBillingDefaultsDraft({
+            defaultGstBill: typeof billing.defaultGstBill === 'boolean' ? billing.defaultGstBill : true,
+            defaultTransactionType: billing.defaultTransactionType === 'PURCHASE' ? 'PURCHASE' : 'SALE',
+            allowBackDate: typeof billing.allowBackDate === 'boolean' ? billing.allowBackDate : false,
+        });
+    }, [organizationSettings]);
     useEffect(() => { void refreshQueueStats(); }, [refreshQueueStats]);
     useFocusRefresh(refreshQueueStats, { minIntervalMs: 8_000 });
 
     // Render — both tabs visible to ALL authenticated users.
-    // Only module config section is gated to owner/admin.
+    // Only module config section is gated to organization owners.
 
     return (
         <ScreenWrapper>
@@ -420,7 +484,7 @@ export const SettingsScreen = () => {
                                 <List.Section style={styles.noMargin}>
                                     <List.Subheader style={{ color: theme.colors.primary }}>Modules & Features</List.Subheader>
 
-                                    {(isOwnerOrAdmin || canManageSubscription) && (
+                                    {canManageSubscription && (
                                         <List.Item
                                             title={SETTINGS_TEXT.account.subscriptionTitle}
                                             description={subscriptionLabel}
@@ -455,8 +519,8 @@ export const SettingsScreen = () => {
                                             onPress={() => router.push('/operations' as never)}
                                         />
                                     )}
-                                    {isOwnerOrAdmin && <Divider />}
-                                    {isOwnerOrAdmin && (
+                                    {canManageStaff && <Divider />}
+                                    {canManageStaff && (
                                         <List.Item
                                             title="Staff Management"
                                             description="Invite and manage your staff members"
@@ -479,16 +543,18 @@ export const SettingsScreen = () => {
                                             onPress={() => router.push('/business-suite' as never)}
                                         />
                                     )}
-                                    <Divider />
-                                    <List.Item
-                                        title="Manage Categories"
-                                        description="Add or remove item categories"
-                                        titleStyle={{ color: theme.colors.onSurface }}
-                                        descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-                                        left={(props) => <List.Icon {...props} icon="tag-multiple-outline" color={theme.colors.onSurfaceVariant} />}
-                                        right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
-                                        onPress={() => router.push('/categories' as never)}
-                                    />
+                                    {canManageInventory && <Divider />}
+                                    {canManageInventory && (
+                                        <List.Item
+                                            title="Manage Categories"
+                                            description="Add or remove item categories"
+                                            titleStyle={{ color: theme.colors.onSurface }}
+                                            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                            left={(props) => <List.Icon {...props} icon="tag-multiple-outline" color={theme.colors.onSurfaceVariant} />}
+                                            right={(props) => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
+                                            onPress={() => router.push('/categories' as never)}
+                                        />
+                                    )}
                                 </List.Section>
                             </AppCard>
 
@@ -523,6 +589,77 @@ export const SettingsScreen = () => {
                                 </List.Section>
                             </AppCard>
 
+                            {isOwner && (
+                                <AppCard>
+                                    <List.Section style={styles.noMargin}>
+                                        <List.Subheader style={{ color: theme.colors.primary }}>Billing Defaults</List.Subheader>
+                                        <List.Item
+                                            title="Default GST Bill"
+                                            description="When enabled, new bills start as GST invoice."
+                                            titleStyle={{ color: theme.colors.onSurface }}
+                                            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                            right={() => (
+                                                <Switch
+                                                    value={billingDefaultsDraft.defaultGstBill}
+                                                    onValueChange={(value) => setBillingDefaultsDraft((current) => ({ ...current, defaultGstBill: value }))}
+                                                    thumbColor={billingDefaultsDraft.defaultGstBill ? theme.colors.primary : theme.colors.outline}
+                                                />
+                                            )}
+                                        />
+                                        <Divider />
+                                        <List.Item
+                                            title="Allow Back-dated Bills"
+                                            description="Allow creating bills for previous dates."
+                                            titleStyle={{ color: theme.colors.onSurface }}
+                                            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                                            right={() => (
+                                                <Switch
+                                                    value={billingDefaultsDraft.allowBackDate}
+                                                    onValueChange={(value) => setBillingDefaultsDraft((current) => ({ ...current, allowBackDate: value }))}
+                                                    thumbColor={billingDefaultsDraft.allowBackDate ? theme.colors.primary : theme.colors.outline}
+                                                />
+                                            )}
+                                        />
+                                        <Text variant="labelMedium" style={styles.defaultTypeLabel}>Default Transaction Type</Text>
+                                        <View style={styles.defaultTypeRow}>
+                                            <Pressable
+                                                onPress={() => setBillingDefaultsDraft((current) => ({ ...current, defaultTransactionType: 'SALE' }))}
+                                                style={[
+                                                    styles.defaultTypePill,
+                                                    {
+                                                        borderColor: billingDefaultsDraft.defaultTransactionType === 'SALE' ? theme.colors.primary : theme.colors.outlineVariant,
+                                                        backgroundColor: billingDefaultsDraft.defaultTransactionType === 'SALE' ? theme.colors.primaryContainer : theme.colors.surface,
+                                                    },
+                                                ]}
+                                            >
+                                                <Text variant="labelMedium">Sale</Text>
+                                            </Pressable>
+                                            <Pressable
+                                                onPress={() => setBillingDefaultsDraft((current) => ({ ...current, defaultTransactionType: 'PURCHASE' }))}
+                                                style={[
+                                                    styles.defaultTypePill,
+                                                    {
+                                                        borderColor: billingDefaultsDraft.defaultTransactionType === 'PURCHASE' ? theme.colors.primary : theme.colors.outlineVariant,
+                                                        backgroundColor: billingDefaultsDraft.defaultTransactionType === 'PURCHASE' ? theme.colors.primaryContainer : theme.colors.surface,
+                                                    },
+                                                ]}
+                                            >
+                                                <Text variant="labelMedium">Purchase</Text>
+                                            </Pressable>
+                                        </View>
+                                        <AppButton
+                                            mode="contained"
+                                            onPress={() => { void saveBillingDefaults(); }}
+                                            loading={savingBillingDefaults}
+                                            disabled={savingBillingDefaults}
+                                            style={styles.saveBtn}
+                                        >
+                                            Save Billing Defaults
+                                        </AppButton>
+                                    </List.Section>
+                                </AppCard>
+                            )}
+
                             {/* Sync Status */}
                             <AppCard>
                                 <List.Section style={styles.noMargin}>
@@ -545,7 +682,7 @@ export const SettingsScreen = () => {
                             </AppCard>
 
                             {/* Module Configuration (Owner Only) */}
-                            {isOwnerOrAdmin && (
+                            {isOwner && (
                                 <AppCard>
                                     <List.Section style={styles.noMargin}>
                                         <List.Subheader style={{ color: theme.colors.primary }}>Module Configuration</List.Subheader>
@@ -664,6 +801,24 @@ const styles = StyleSheet.create({
     },
     saveBtn: {
         margin: DesignSystem.spacing.md,
+    },
+    defaultTypeLabel: {
+        marginTop: DesignSystem.spacing.sm,
+        marginBottom: DesignSystem.spacing.xs,
+        paddingHorizontal: DesignSystem.spacing.md,
+    },
+    defaultTypeRow: {
+        flexDirection: 'row',
+        gap: DesignSystem.spacing.xs,
+        paddingHorizontal: DesignSystem.spacing.md,
+    },
+    defaultTypePill: {
+        flex: 1,
+        minHeight: 36,
+        borderRadius: DesignSystem.radius.pill,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     currencyAccordion: {
         borderWidth: 0,

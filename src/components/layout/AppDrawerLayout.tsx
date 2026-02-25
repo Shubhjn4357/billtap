@@ -1,4 +1,4 @@
-import React, { ReactNode, useRef, useState } from 'react';
+import React, { ReactNode, useCallback, useRef, useState } from 'react';
 import { Dimensions, StyleSheet, View, Animated, PanResponder, TouchableWithoutFeedback } from 'react-native';
 import { useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,7 +30,7 @@ export const AppDrawerLayout: React.FC<AppDrawerLayoutProps> = ({ children }) =>
     const progress = useRef(new Animated.Value(0)).current;
     const [isOpen, setIsOpen] = useState(false);
 
-    const toggleDrawer = (open: boolean) => {
+    const toggleDrawer = useCallback((open: boolean) => {
         setIsOpen(open);
         Animated.spring(progress, {
             toValue: open ? 1 : 0,
@@ -38,7 +38,7 @@ export const AppDrawerLayout: React.FC<AppDrawerLayoutProps> = ({ children }) =>
             tension: 50,
             useNativeDriver: true,
         }).start();
-    };
+    }, [progress]);
 
     const panResponder = useRef(
         PanResponder.create({
@@ -84,7 +84,7 @@ export const AppDrawerLayout: React.FC<AppDrawerLayoutProps> = ({ children }) =>
     const contextValue = React.useMemo(() => ({
         toggleDrawer,
         isOpen
-    }), [isOpen]);
+    }), [isOpen, toggleDrawer]);
 
     return (
         <AppDrawerContext.Provider value={contextValue}>

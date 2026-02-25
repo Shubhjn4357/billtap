@@ -4,16 +4,19 @@ import { isOnline } from '../utils/network';
 import { apiClient } from './httpClient';
 import { offlineSyncService } from './syncService';
 import { shouldThrowClientApiError } from '../utils/errorGuards';
+import { normalizeUserProfile } from '../utils/userRole';
 
 const getLocalMergedUser = (payload: Partial<UserProfile>): UserProfile | null => {
     const localUser = useUserStore.getState().user;
     if (!localUser) return null;
 
-    return {
+    const merged = {
         ...localUser,
         ...payload,
         uid: localUser.uid,
     };
+
+    return normalizeUserProfile(merged);
 };
 
 export const userService = {
@@ -22,7 +25,7 @@ export const userService = {
         if (!response.ok || !response.user) {
             throw new Error(response.message || 'Failed to load profile.');
         }
-        return response.user;
+        return normalizeUserProfile(response.user);
     },
 
     async updateCurrentUser(payload: Partial<UserProfile>): Promise<UserProfile> {
@@ -39,7 +42,7 @@ export const userService = {
                 if (!response.ok || !response.user) {
                     throw new Error(response.message || 'Failed to update profile.');
                 }
-                return response.user;
+                return normalizeUserProfile(response.user);
             } catch (error: unknown) {
                 if (shouldThrowClientApiError(error)) {
                     throw error;
@@ -65,6 +68,6 @@ export const userService = {
             throw new Error(response.message || 'Failed to link phone number.');
         }
 
-        return response.user;
+        return normalizeUserProfile(response.user);
     },
 };
