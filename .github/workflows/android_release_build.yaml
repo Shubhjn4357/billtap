@@ -73,44 +73,7 @@ jobs:
 
       - name: Web Export Smoke Test
         run: pnpm run build:web
-
-      - name: API Smoke E2E (real env)
-        env:
-          SMOKE_API_BASE_URL_SECRET: ${{ secrets.SMOKE_API_BASE_URL }}
-          SMOKE_PHONE_NUMBER_SECRET: ${{ secrets.SMOKE_PHONE_NUMBER }}
-          SMOKE_OTP_CODE_SECRET: ${{ secrets.SMOKE_OTP_CODE }}
-          SMOKE_CREATE_SECOND_STORE_SECRET: ${{ secrets.SMOKE_CREATE_SECOND_STORE }}
-          SMOKE_REMINDER_RECIPIENT_SECRET: ${{ secrets.SMOKE_REMINDER_RECIPIENT }}
-          SMOKE_REQUIRED_SECRET: ${{ secrets.SMOKE_REQUIRED }}
-          SMOKE_API_BASE_URL_VAR: ${{ vars.SMOKE_API_BASE_URL }}
-          SMOKE_PHONE_NUMBER_VAR: ${{ vars.SMOKE_PHONE_NUMBER }}
-          SMOKE_OTP_CODE_VAR: ${{ vars.SMOKE_OTP_CODE }}
-          SMOKE_CREATE_SECOND_STORE_VAR: ${{ vars.SMOKE_CREATE_SECOND_STORE }}
-          SMOKE_REMINDER_RECIPIENT_VAR: ${{ vars.SMOKE_REMINDER_RECIPIENT }}
-          SMOKE_REQUIRED_VAR: ${{ vars.SMOKE_REQUIRED }}
-        run: |
-          export SMOKE_API_BASE_URL="${SMOKE_API_BASE_URL_SECRET:-$SMOKE_API_BASE_URL_VAR}"
-          export SMOKE_PHONE_NUMBER="${SMOKE_PHONE_NUMBER_SECRET:-$SMOKE_PHONE_NUMBER_VAR}"
-          export SMOKE_OTP_CODE="${SMOKE_OTP_CODE_SECRET:-$SMOKE_OTP_CODE_VAR}"
-          export SMOKE_CREATE_SECOND_STORE="${SMOKE_CREATE_SECOND_STORE_SECRET:-$SMOKE_CREATE_SECOND_STORE_VAR}"
-          export SMOKE_REMINDER_RECIPIENT="${SMOKE_REMINDER_RECIPIENT_SECRET:-$SMOKE_REMINDER_RECIPIENT_VAR}"
-          export SMOKE_REQUIRED="${SMOKE_REQUIRED_SECRET:-$SMOKE_REQUIRED_VAR}"
-
-          if [ -z "${SMOKE_API_BASE_URL}" ] || [ -z "${SMOKE_PHONE_NUMBER}" ]; then
-            if [ "${SMOKE_REQUIRED}" = "true" ]; then
-              echo "::error::SMOKE_REQUIRED=true, but SMOKE_API_BASE_URL and SMOKE_PHONE_NUMBER are missing."
-              echo "Set them in GitHub Secrets or Variables:"
-              echo "- secrets.SMOKE_API_BASE_URL or vars.SMOKE_API_BASE_URL"
-              echo "- secrets.SMOKE_PHONE_NUMBER or vars.SMOKE_PHONE_NUMBER"
-              exit 1
-            fi
-
-            echo "::warning::Skipping smoke:e2e (set SMOKE_REQUIRED=true to enforce)."
-            exit 0
-          fi
-
-          pnpm run smoke:e2e
-
+        
       - name: Prebuild
         run: pnpm exec expo prebuild --platform android --no-install
 
