@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { offers, plans, users, templates, organizations, organizationMembers, organizationSettings, transactions, bankAccounts, vouchers, salaryRuns, salaryRunItems, auditLogs } from '../db/schema';
+import { offers, plans, users, templates, organizations, organizationMembers, organizationSettings, transactions, bankAccounts, vouchers, salaryRuns, salaryRunItems, auditLogs, approvalRequests } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { isDeveloperAdminPrincipal, requireAuth, requireDeveloperAdmin, type AppEnv } from '../middleware/auth';
 import { z } from 'zod';
@@ -197,6 +197,14 @@ const parseBoolean = (value: string | undefined, fallback = false) => {
     return value.toLowerCase() === 'true';
 };
 
+const computeGrowth = (current: number, previous: number): number => {
+    if (!Number.isFinite(current) || !Number.isFinite(previous)) return 0;
+    if (previous <= 0) {
+        return current > 0 ? 100 : 0;
+    }
+    return ((current - previous) / previous) * 100;
+};
+
 // GET /admin/stats - Dashboard analytics
 adminRoute.get('/stats', requireDeveloperAdmin, async (c) => {
     const db = c.get('db');
@@ -233,13 +241,28 @@ adminRoute.get('/stats', requireDeveloperAdmin, async (c) => {
 adminRoute.get('/treasury/stats', requireDeveloperAdmin, async (c) => {
     const db = c.get('db');
 
-    const [balanceResult, pendingVouchers] = await Promise.all([
+    const [balanceResult, pendingVouchers, cashFlowResult] = await Promise.all([
         db.select({ total: sql<number>`sum(${bankAccounts.currentBalance})` }).from(bankAccounts),
-        db.select({ count: sql<number>`count(*)` }).from(vouchers).where(eq(vouchers.status, 'draft'))
+        db.select({ count: sql<number>`count(*)` }).from(vouchers).where(eq(vouchers.status, 'draft')),
+        db.select({
+            net: sql<number>`
+                coalesce(
+                    sum(
+                        case
+                            when ${vouchers.type} = 'RECEIPT' then ${vouchers.amount}
+                            when ${vouchers.type} = 'PAYMENT' then -${vouchers.amount}
+                            else 0
+                        end
+                    ),
+                    0
+                )
+            `,
+        }).from(vouchers).where(eq(vouchers.status, 'posted')),
     ]);
 
     const totalLiquidity = Number(balanceResult[0]?.total || 0);
     const settlementsPending = Number(pendingVouchers[0]?.count || 0);
+    const netCashFlow = Number(cashFlowResult[0]?.net || 0);
 
     // Recent accounts for table
     const accounts = await db.select().from(bankAccounts).orderBy(desc(bankAccounts.currentBalance)).limit(10);
@@ -249,8 +272,8 @@ adminRoute.get('/treasury/stats', requireDeveloperAdmin, async (c) => {
         stats: {
             totalLiquidity,
             settlementsPending,
-            institutionalReserve: totalLiquidity * 0.15, // Mock reserve calculation
-            netCashFlow: totalLiquidity * 0.08, // Mock flow trend
+            institutionalReserve: Math.max(0, totalLiquidity * 0.1),
+            netCashFlow,
         },
         accounts
     });
@@ -290,14 +313,74 @@ adminRoute.get('/payroll/stats', requireDeveloperAdmin, async (c) => {
 adminRoute.get('/analytics/extended', requireDeveloperAdmin, async (c) => {
     const db = c.get('db');
 
-    const [userStats, subStats, revenueStats] = await Promise.all([
+    const [userStats, subStats, revenueStats, growthWindow, approvalStats] = await Promise.all([
         db.select({ count: sql<number>`count(*)` }).from(users),
         db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.subscriptionStatus, 'active')),
-        db.select({ total: sql<number>`sum(${users.subscriptionAmountMonthly})` }).from(users).where(eq(users.subscriptionStatus, 'active'))
+        db.select({ total: sql<number>`sum(${users.subscriptionAmountMonthly})` }).from(users).where(eq(users.subscriptionStatus, 'active')),
+        db.select({
+            usersCurrentWindow: sql<number>`
+                coalesce(
+                    sum(case when ${users.createdAt} >= now() - interval '30 days' then 1 else 0 end),
+                    0
+                )
+            `,
+            usersPreviousWindow: sql<number>`
+                coalesce(
+                    sum(
+                        case
+                            when ${users.createdAt} >= now() - interval '60 days'
+                                and ${users.createdAt} < now() - interval '30 days'
+                            then 1
+                            else 0
+                        end
+                    ),
+                    0
+                )
+            `,
+            revenueCurrentWindow: sql<number>`
+                coalesce(
+                    sum(
+                        case
+                            when ${users.subscriptionStatus} = 'active' then coalesce(${users.subscriptionAmountMonthly}, 0)
+                            else 0
+                        end
+                    ),
+                    0
+                )
+            `,
+            revenuePreviousWindow: sql<number>`
+                coalesce(
+                    sum(
+                        case
+                            when ${users.subscriptionStatus} = 'active'
+                                and ${users.subscriptionStartsAt} >= now() - interval '60 days'
+                                and ${users.subscriptionStartsAt} < now() - interval '30 days'
+                            then coalesce(${users.subscriptionAmountMonthly}, 0)
+                            else 0
+                        end
+                    ),
+                    0
+                )
+            `,
+        }).from(users),
+        db.select({
+            total: sql<number>`count(*)`,
+            pending: sql<number>`
+                coalesce(sum(case when ${approvalRequests.status} = 'pending' then 1 else 0 end), 0)
+            `,
+        }).from(approvalRequests),
     ]);
 
     const totalUsers = Number(userStats[0]?.count || 0);
     const totalRevenue = Number(revenueStats[0]?.total || 0);
+    const usersCurrentWindow = Number(growthWindow[0]?.usersCurrentWindow || 0);
+    const usersPreviousWindow = Number(growthWindow[0]?.usersPreviousWindow || 0);
+    const revenueCurrentWindow = Number(growthWindow[0]?.revenueCurrentWindow || 0);
+    const revenuePreviousWindow = Number(growthWindow[0]?.revenuePreviousWindow || 0);
+    const totalApprovals = Number(approvalStats[0]?.total || 0);
+    const pendingApprovals = Number(approvalStats[0]?.pending || 0);
+    const approvalBacklogRatio = totalApprovals > 0 ? pendingApprovals / totalApprovals : 0;
+    const systemHealth = Math.max(70, 100 - (approvalBacklogRatio * 30));
 
     return c.json({
         ok: true,
@@ -305,9 +388,9 @@ adminRoute.get('/analytics/extended', requireDeveloperAdmin, async (c) => {
             totalUsers,
             activeSubscriptions: Number(subStats[0]?.count || 0),
             monthlyRevenue: totalRevenue,
-            systemHealth: 99.9,
-            userGrowth: 12.5, // Mock trend
-            revenueGrowth: 8.2 // Mock trend
+            systemHealth,
+            userGrowth: computeGrowth(usersCurrentWindow, usersPreviousWindow),
+            revenueGrowth: computeGrowth(revenueCurrentWindow, revenuePreviousWindow),
         }
     });
 });
