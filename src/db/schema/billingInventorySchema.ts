@@ -26,6 +26,7 @@ export const items = pgTable('items', {
     // Meta
     category: text('category'),
     subcategory: text('subcategory'),
+    description: text('description'),
     location: text('location'),
     barcode: text('barcode'),
     imageUrl: text('imageUrl'),

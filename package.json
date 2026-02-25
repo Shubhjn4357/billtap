@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit",
     "smoke:e2e": "tsx ./scripts/smoke-e2e.ts",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:push": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs push",
+    "db:studio": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
@@ -29,6 +29,7 @@
     "@types/node": "^25.2.3",
     "dotenv": "^17.3.1",
     "drizzle-kit": "^0.31.9",
+    "pg": "^8.18.0",
     "tsx": "^4.7.1",
     "typescript": "^5.9.3",
     "wrangler": "^4.66.0"

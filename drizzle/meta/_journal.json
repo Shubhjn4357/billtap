@@ -57,6 +57,27 @@
       "when": 1771775402810,
       "tag": "0007_superb_juggernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1772052000000,
+      "tag": "0008_retire_unused_modules",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1772052600000,
+      "tag": "0009_item_description",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1772029720716,
+      "tag": "0010_red_justin_hammer",
+      "breakpoints": true
     }
   ]
 }

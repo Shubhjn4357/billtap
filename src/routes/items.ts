@@ -38,6 +38,7 @@ const itemSchema = z.object({
     gstPercentage: z.number().nonnegative().default(0),
     category: z.string().optional().nullable(),
     subcategory: z.string().optional().nullable(),
+    description: z.string().optional().nullable(),
     location: z.string().optional().nullable(),
     barcode: z.string().optional().nullable(),
     imageUrl: z.string().optional().nullable(),
@@ -168,6 +169,7 @@ itemsRoute.post('/', requireAuth, withOrganizationContext, requirePermission('ca
             gstPercentage: payload.gstPercentage,
             category: payload.category?.trim() || null,
             subcategory: payload.subcategory?.trim() || null,
+            description: payload.description?.trim() || null,
             location: payload.location?.trim() || null,
             barcode: payload.barcode?.trim() || null,
             imageUrl: payload.imageUrl?.trim() || null,
@@ -227,6 +229,7 @@ itemsRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission
         if (payload.gstPercentage !== undefined) updatePayload.gstPercentage = payload.gstPercentage;
         if (payload.category !== undefined) updatePayload.category = payload.category;
         if (payload.subcategory !== undefined) updatePayload.subcategory = payload.subcategory;
+        if (payload.description !== undefined) updatePayload.description = payload.description;
         if (payload.location !== undefined) updatePayload.location = payload.location;
         if (payload.barcode !== undefined) updatePayload.barcode = payload.barcode;
         if (payload.imageUrl !== undefined) updatePayload.imageUrl = payload.imageUrl;

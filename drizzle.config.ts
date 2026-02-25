@@ -1,36 +1,51 @@
 import type { Config } from 'drizzle-kit';
-import * as dns from 'dns';
+import * as dns from 'node:dns';
 
-// Hack to fix DNS resolution issue with Neon on local machine
-dns.setServers(['8.8.8.8']);
+const NEON_DNS_SUFFIX = 'neon.tech';
+const PUBLIC_DNS_SERVERS = ['8.8.8.8', '1.1.1.1'];
 
-const originalLookup = dns.lookup;
-// @ts-ignore
-dns.lookup = (hostname, options, callback) => {
-    if (typeof options === 'function') {
-        callback = options;
-        options = {};
+type LookupCallback = (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
+type LookupAllCallback = (err: NodeJS.ErrnoException | null, addresses: dns.LookupAddress[]) => void;
+
+const patchDnsLookup = (dnsModule: typeof dns) => {
+    try {
+        dnsModule.setServers(PUBLIC_DNS_SERVERS);
+    } catch {
+        // Ignore restricted runtime DNS server mutations.
     }
 
-    if (hostname.includes('neon.tech')) {
-        // @ts-ignore
-        dns.resolve4(hostname, (err, addresses) => {
-            if (!err && addresses && addresses.length > 0) {
-                if (options && (options as any).all) {
-                    const result = addresses.map(addr => ({ address: addr, family: 4 }));
-                    // @ts-ignore
-                    callback(null, result as any);
-                } else {
-                    callback(null, addresses[0] as any, 4);
+    const originalLookup = dnsModule.lookup.bind(dnsModule);
+
+    const patchedLookup: typeof dns.lookup = ((hostname: string, options?: any, callback?: any) => {
+        const cb = (typeof options === 'function' ? options : callback) as LookupCallback | LookupAllCallback | undefined;
+        const lookupOptions = (typeof options === 'function' || options == null ? {} : options) as dns.LookupOneOptions | dns.LookupAllOptions;
+
+        if (!cb) {
+            return originalLookup(hostname, lookupOptions as any, cb as any);
+        }
+
+        if (!hostname.includes(NEON_DNS_SUFFIX)) {
+            return originalLookup(hostname, lookupOptions as any, cb as any);
+        }
+
+        dnsModule.resolve4(hostname, (resolveError, addresses) => {
+            if (!resolveError && addresses && addresses.length > 0) {
+                if ((lookupOptions as dns.LookupAllOptions).all) {
+                    const mapped: dns.LookupAddress[] = addresses.map((address) => ({ address, family: 4 }));
+                    (cb as LookupAllCallback)(null, mapped);
+                    return;
                 }
-            } else {
-                originalLookup(hostname, options as any, callback as any);
+                (cb as LookupCallback)(null, addresses[0]!, 4);
+                return;
             }
+            originalLookup(hostname, lookupOptions as any, cb as any);
         });
-    } else {
-        originalLookup(hostname, options as any, callback as any);
-    }
+    }) as typeof dns.lookup;
+
+    dnsModule.lookup = patchedLookup;
 };
+
+patchDnsLookup(dns);
 
 
 export default {
