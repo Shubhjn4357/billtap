@@ -1,6 +1,25 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { offers, plans, users, templates, organizations, organizationMembers, organizationSettings, transactions, bankAccounts, vouchers, salaryRuns, salaryRunItems, auditLogs, approvalRequests } from '../db/schema';
+import {
+    approvalRequests,
+    auditLogs,
+    bankAccounts,
+    inventoryMovements,
+    items,
+    offers,
+    organizationMembers,
+    organizations,
+    organizationSettings,
+    plans,
+    salaryRunItems,
+    salaryRuns,
+    staffInvites,
+    templates,
+    transactions,
+    userSettings,
+    users,
+    vouchers,
+} from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { isDeveloperAdminPrincipal, requireAuth, requireDeveloperAdmin, type AppEnv } from '../middleware/auth';
 import { z } from 'zod';
@@ -9,188 +28,7 @@ import { DEFAULT_PLANS } from '../constants/defaultPlans';
 
 const adminRoute = new Hono<AppEnv>();
 
-// GET /admin/organizations - List all organizations
-adminRoute.get('/organizations', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 1000);
-    const data = await db.select().from(organizations).orderBy(desc(organizations.createdAt)).limit(limit);
-    return c.json({ ok: true, organizations: data });
-});
-
-// GET /admin/organizations/:id - Get detail
-adminRoute.get('/organizations/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const rows = await db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
-    if (!rows[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
-    return c.json({ ok: true, organization: rows[0] });
-});
-
-// POST /admin/organizations - Create organization from admin panel
-adminRoute.post('/organizations', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const authUser = c.get('authUser');
-    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const body = await c.req.json();
-    const payload = z.object({
-        userId: z.string().optional(),
-        name: z.string().min(1),
-        code: z.string().min(1),
-        gstNumber: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        phoneNumber: z.string().nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        isActive: z.boolean().default(true),
-        currency: z.string().default('INR'),
-    }).parse(body);
-
-    const ownerUserId = payload.userId ?? authUser.uid;
-    const ownerRow = await db.select({ uid: users.uid, phoneNumber: users.phoneNumber }).from(users).where(eq(users.uid, ownerUserId)).limit(1);
-    if (!ownerRow[0]) {
-        return c.json({ ok: false, message: `Owner user ${ownerUserId} not found.` }, 400);
-    }
-
-    const now = new Date();
-    const organizationId = nanoid();
-
-    await withTransaction(db, async (tx) => {
-        await tx.insert(organizations).values({
-            id: organizationId,
-            userId: ownerUserId,
-            name: payload.name.trim(),
-            code: payload.code.trim().toUpperCase(),
-            gstNumber: payload.gstNumber?.trim() || null,
-            address: payload.address?.trim() || null,
-            phoneNumber: payload.phoneNumber?.trim() || null,
-            email: payload.email?.trim().toLowerCase() || null,
-            currency: payload.currency.trim().toUpperCase(),
-            isActive: payload.isActive,
-            createdAt: now,
-            updatedAt: now,
-        });
-
-        await tx.insert(organizationMembers).values({
-            id: nanoid(),
-            userId: ownerUserId,
-            organizationId,
-            role: 'owner',
-            permissions: {},
-            isActive: true,
-            invitedBy: authUser.uid,
-            phoneNumberSnapshot: ownerRow[0]?.phoneNumber ?? null,
-            joinedAt: now,
-            createdAt: now,
-            updatedAt: now,
-        });
-
-        await tx.insert(organizationSettings).values({
-            organizationId,
-            userId: ownerUserId,
-            settings: {},
-            createdAt: now,
-            updatedAt: now,
-        }).onConflictDoNothing();
-    });
-
-    const created = await db.select().from(organizations).where(eq(organizations.id, organizationId)).limit(1);
-    return c.json({ ok: true, organization: created[0] ?? null });
-});
-
-// GET /admin/transactions - Global view of all bills
-adminRoute.get('/transactions', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 1000);
-
-    // Joint query to get organization name
-    const data = await db.select({
-        id: transactions.id,
-        organizationId: transactions.organizationId,
-        userId: transactions.userId,
-        type: transactions.type,
-        totalAmount: transactions.totalAmount,
-        paymentStatus: transactions.paymentStatus,
-        paymentMode: transactions.paymentMode,
-        createdAt: transactions.createdAt,
-        updatedAt: transactions.updatedAt,
-        organizationName: organizations.name,
-    })
-        .from(transactions)
-        .leftJoin(organizations, eq(transactions.organizationId, organizations.id))
-        .orderBy(desc(transactions.createdAt))
-        .limit(limit);
-
-    return c.json({ ok: true, transactions: data });
-});
-
-// PATCH /admin/organizations/:id - Update org
-adminRoute.patch('/organizations/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const body = await c.req.json();
-
-    const payload = z.object({
-        name: z.string().min(1).optional(),
-        code: z.string().min(1).optional(),
-        gstNumber: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        phoneNumber: z.string().nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        isActive: z.boolean().optional(),
-        currency: z.string().optional(),
-    }).parse(body);
-
-    const updated = await db
-        .update(organizations)
-        .set({ ...payload, updatedAt: new Date() })
-        .where(eq(organizations.id, id))
-        .returning({ id: organizations.id });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// PUT /admin/organizations/:id - Full update alias
-adminRoute.put('/organizations/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const body = await c.req.json();
-
-    const payload = z.object({
-        name: z.string().min(1).optional(),
-        code: z.string().min(1).optional(),
-        gstNumber: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        phoneNumber: z.string().nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        isActive: z.boolean().optional(),
-        currency: z.string().optional(),
-    }).parse(body);
-
-    const updated = await db
-        .update(organizations)
-        .set({ ...payload, updatedAt: new Date() })
-        .where(eq(organizations.id, id))
-        .returning({ id: organizations.id });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// POST /admin/organizations/:id/toggle-status
-adminRoute.post('/organizations/:id/toggle-status', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-
-    const org = await db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
-    if (!org[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
-
-    await db.update(organizations)
-        .set({ isActive: !org[0].isActive, updatedAt: new Date() })
-        .where(eq(organizations.id, id));
-
-    return c.json({ ok: true });
-});
+// Admin transaction endpoint
 
 const parseBoolean = (value: string | undefined, fallback = false) => {
     if (value === undefined) return fallback;
@@ -203,6 +41,32 @@ const computeGrowth = (current: number, previous: number): number => {
         return current > 0 ? 100 : 0;
     }
     return ((current - previous) / previous) * 100;
+};
+
+const ADMIN_SETTINGS_ROW_ID = '__system_admin_settings__';
+const DEFAULT_ADMIN_SETTINGS = {
+    maintenanceMode: false,
+    registrationAllowed: true,
+    globalTaxRate: 18,
+    supportEmail: 'admin@vahi.app',
+};
+
+const adminSettingsPartialSchema = z.object({
+    maintenanceMode: z.boolean().optional(),
+    registrationAllowed: z.boolean().optional(),
+    globalTaxRate: z.number().min(0).max(100).optional(),
+    supportEmail: z.string().email().optional(),
+});
+
+type AdminSettings = typeof DEFAULT_ADMIN_SETTINGS;
+
+const toAdminSettings = (value: unknown): AdminSettings => {
+    const parsed = adminSettingsPartialSchema.safeParse(value);
+    if (!parsed.success) return { ...DEFAULT_ADMIN_SETTINGS };
+    return {
+        ...DEFAULT_ADMIN_SETTINGS,
+        ...parsed.data,
+    };
 };
 
 // GET /admin/stats - Dashboard analytics
@@ -265,7 +129,20 @@ adminRoute.get('/treasury/stats', requireDeveloperAdmin, async (c) => {
     const netCashFlow = Number(cashFlowResult[0]?.net || 0);
 
     // Recent accounts for table
-    const accounts = await db.select().from(bankAccounts).orderBy(desc(bankAccounts.currentBalance)).limit(10);
+    const accounts = await db
+        .select({
+            id: bankAccounts.id,
+            name: bankAccounts.name,
+            bankName: bankAccounts.bankName,
+            currentBalance: bankAccounts.currentBalance,
+            userId: bankAccounts.userId,
+            updatedAt: bankAccounts.updatedAt,
+            ownerBusinessName: users.businessName,
+        })
+        .from(bankAccounts)
+        .leftJoin(users, eq(bankAccounts.userId, users.uid))
+        .orderBy(desc(bankAccounts.currentBalance))
+        .limit(50);
 
     return c.json({
         ok: true,
@@ -275,7 +152,15 @@ adminRoute.get('/treasury/stats', requireDeveloperAdmin, async (c) => {
             institutionalReserve: Math.max(0, totalLiquidity * 0.1),
             netCashFlow,
         },
-        accounts
+        accounts: accounts.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            bankName: entry.bankName,
+            currentBalance: Number(entry.currentBalance ?? 0),
+            userId: entry.userId,
+            ownerBusinessName: entry.ownerBusinessName ?? null,
+            updatedAt: entry.updatedAt,
+        })),
     });
 });
 
@@ -295,7 +180,28 @@ adminRoute.get('/payroll/stats', requireDeveloperAdmin, async (c) => {
     const totalStaff = Number(itemStats[0]?.count || 0);
 
     // Latest batches
-    const latestBatches = await db.select().from(salaryRuns).orderBy(desc(salaryRuns.createdAt)).limit(10);
+    const latestBatches = await db
+        .select({
+            id: salaryRuns.id,
+            userId: salaryRuns.userId,
+            totalNet: salaryRuns.totalNet,
+            status: salaryRuns.status,
+            periodStart: salaryRuns.periodStart,
+            periodEnd: salaryRuns.periodEnd,
+            createdAt: salaryRuns.createdAt,
+            staffCount: sql<number>`
+                coalesce((
+                    select count(*)
+                    from ${salaryRunItems}
+                    where ${salaryRunItems.runId} = ${salaryRuns.id}
+                ), 0)
+            `,
+            ownerBusinessName: users.businessName,
+        })
+        .from(salaryRuns)
+        .leftJoin(users, eq(salaryRuns.userId, users.uid))
+        .orderBy(desc(salaryRuns.createdAt))
+        .limit(50);
 
     return c.json({
         ok: true,
@@ -305,7 +211,17 @@ adminRoute.get('/payroll/stats', requireDeveloperAdmin, async (c) => {
             avgSalary: totalStaff > 0 ? totalDisbursed / totalStaff : 0,
             activeBatches: Number(runStats[0]?.runCount || 0)
         },
-        latestBatches
+        latestBatches: latestBatches.map((entry) => ({
+            id: entry.id,
+            userId: entry.userId,
+            totalNet: Number(entry.totalNet ?? 0),
+            status: entry.status,
+            periodStart: entry.periodStart,
+            periodEnd: entry.periodEnd,
+            createdAt: entry.createdAt,
+            staffCount: Number(entry.staffCount ?? 0),
+            ownerBusinessName: entry.ownerBusinessName ?? null,
+        })),
     });
 });
 
@@ -395,29 +311,250 @@ adminRoute.get('/analytics/extended', requireDeveloperAdmin, async (c) => {
     });
 });
 
-// In-memory mock settings for now, should be moved to a 'settings' table or KV soon.
-let globalSettings = {
-    maintenanceMode: false,
-    registrationAllowed: true,
-    globalTaxRate: 18.0,
-    supportEmail: 'admin@vahi.app'
-};
+// GET /admin/transactions - global transaction list for admin panel
+adminRoute.get('/transactions', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
+
+    const rows = await db
+        .select({
+            id: transactions.id,
+            userId: transactions.userId,
+            type: transactions.type,
+            totalAmount: transactions.totalAmount,
+            paymentStatus: transactions.paymentStatus,
+            paymentMode: transactions.paymentMode,
+            createdAt: transactions.createdAt,
+            updatedAt: transactions.updatedAt,
+            organizationName: organizations.name,
+            ownerBusinessName: users.businessName,
+        })
+        .from(transactions)
+        .leftJoin(organizations, eq(transactions.organizationId, organizations.id))
+        .leftJoin(users, eq(transactions.userId, users.uid))
+        .orderBy(desc(transactions.createdAt))
+        .limit(limit);
+
+    return c.json({
+        ok: true,
+        transactions: rows.map((entry) => ({
+            id: entry.id,
+            userId: entry.userId,
+            type: entry.type,
+            totalAmount: Number(entry.totalAmount ?? 0),
+            paymentStatus: entry.paymentStatus,
+            paymentMode: entry.paymentMode,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+            organizationName: entry.organizationName ?? entry.ownerBusinessName ?? 'Unknown',
+        })),
+    });
+});
+
+// GET /admin/inventory/overview - global inventory stats + list
+adminRoute.get('/inventory/overview', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
+
+    const [
+        skuResult,
+        lowStockResult,
+        stockValueResult,
+        movementResult,
+        inventoryRows,
+    ] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(items),
+        db.select({
+            count: sql<number>`
+                coalesce(
+                    sum(case when ${items.stock} <= coalesce(${items.minimumStock}, 0) then 1 else 0 end),
+                    0
+                )
+            `,
+        }).from(items),
+        db.select({
+            total: sql<number>`
+                coalesce(
+                    sum(greatest(${items.stock}, 0) * coalesce(nullif(${items.purchasePrice}, 0), ${items.price}, 0)),
+                    0
+                )
+            `,
+        }).from(items),
+        db.select({
+            count: sql<number>`count(*)`,
+        })
+            .from(inventoryMovements)
+            .where(sql`${inventoryMovements.createdAt} >= now() - interval '1 day'`),
+        db.select({
+            id: items.id,
+            name: items.name,
+            category: items.category,
+            stock: items.stock,
+            price: items.price,
+            organizationName: organizations.name,
+            ownerBusinessName: users.businessName,
+            updatedAt: items.updatedAt,
+        })
+            .from(items)
+            .leftJoin(organizations, eq(items.organizationId, organizations.id))
+            .leftJoin(users, eq(items.userId, users.uid))
+            .orderBy(desc(items.updatedAt))
+            .limit(limit),
+    ]);
+
+    return c.json({
+        ok: true,
+        stats: {
+            totalSkus: Number(skuResult[0]?.count ?? 0),
+            lowStockAlerts: Number(lowStockResult[0]?.count ?? 0),
+            stockValue: Number(stockValueResult[0]?.total ?? 0),
+            recentMovements: Number(movementResult[0]?.count ?? 0),
+        },
+        items: inventoryRows.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            category: entry.category ?? 'Uncategorized',
+            stock: Number(entry.stock ?? 0),
+            price: Number(entry.price ?? 0),
+            organizationName: entry.organizationName ?? entry.ownerBusinessName ?? 'Unknown',
+        })),
+    });
+});
+
+// GET /admin/staff/overview - global user + invite visibility
+adminRoute.get('/staff/overview', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
+
+    const [
+        totalPersonnelResult,
+        adminCountResult,
+        pendingInviteResult,
+        revokedResult,
+        organizationRows,
+        userRows,
+        revokedMembershipRows,
+    ] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(users),
+        db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.role, 'admin')),
+        db.select({ count: sql<number>`count(*)` }).from(staffInvites).where(eq(staffInvites.status, 'pending')),
+        db.select({ count: sql<number>`count(*)` }).from(organizationMembers).where(eq(organizationMembers.isActive, false)),
+        db.select({
+            userId: organizations.userId,
+            name: organizations.name,
+            createdAt: organizations.createdAt,
+        })
+            .from(organizations)
+            .where(eq(organizations.isActive, true))
+            .orderBy(asc(organizations.createdAt)),
+        db.select({
+            uid: users.uid,
+            ownerId: users.ownerId,
+            role: users.role,
+            displayName: users.displayName,
+            email: users.email,
+            phoneNumber: users.phoneNumber,
+            createdAt: users.createdAt,
+        })
+            .from(users)
+            .orderBy(desc(users.createdAt))
+            .limit(limit),
+        db.select({
+            userId: organizationMembers.userId,
+        })
+            .from(organizationMembers)
+            .where(eq(organizationMembers.isActive, false)),
+    ]);
+
+    const orgNameByOwnerId = new Map<string, string>();
+    for (const row of organizationRows) {
+        if (!orgNameByOwnerId.has(row.userId)) {
+            orgNameByOwnerId.set(row.userId, row.name);
+        }
+    }
+
+    const revokedUserIds = new Set<string>(revokedMembershipRows.map((row) => row.userId));
+
+    const staff = userRows.map((entry) => {
+        const ownerScope = entry.role === 'staff' ? (entry.ownerId ?? entry.uid) : entry.uid;
+        const organizationName = orgNameByOwnerId.get(ownerScope) ?? orgNameByOwnerId.get(entry.uid) ?? 'Unassigned';
+        const contact = entry.email ?? entry.phoneNumber ?? '-';
+        const status = revokedUserIds.has(entry.uid) ? 'REVOKED' : 'ACTIVE';
+        return {
+            id: entry.uid,
+            name: entry.displayName ?? 'Unnamed user',
+            contact,
+            role: String(entry.role ?? 'staff').toUpperCase(),
+            organizationName,
+            status,
+        };
+    });
+
+    return c.json({
+        ok: true,
+        stats: {
+            totalPersonnel: Number(totalPersonnelResult[0]?.count ?? 0),
+            verifiedAdmins: Number(adminCountResult[0]?.count ?? 0),
+            pendingInvites: Number(pendingInviteResult[0]?.count ?? 0),
+            revokedAccess: Number(revokedResult[0]?.count ?? 0),
+        },
+        staff,
+    });
+});
 
 // GET /admin/settings
 adminRoute.get('/settings', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const rows = await db
+        .select({
+            settings: userSettings.settings,
+        })
+        .from(userSettings)
+        .where(eq(userSettings.userId, ADMIN_SETTINGS_ROW_ID))
+        .limit(1);
+
     return c.json({
         ok: true,
-        settings: globalSettings
+        settings: toAdminSettings(rows[0]?.settings),
     });
 });
 
 // PATCH /admin/settings
 adminRoute.patch('/settings', requireDeveloperAdmin, async (c) => {
-    const body = await c.req.json();
-    globalSettings = { ...globalSettings, ...body };
+    const db = c.get('db');
+    const payload = adminSettingsPartialSchema.parse(await c.req.json());
+    const rows = await db
+        .select({
+            settings: userSettings.settings,
+        })
+        .from(userSettings)
+        .where(eq(userSettings.userId, ADMIN_SETTINGS_ROW_ID))
+        .limit(1);
+    const current = toAdminSettings(rows[0]?.settings);
+    const nextSettings = {
+        ...current,
+        ...payload,
+    };
+    const now = new Date();
+    await db
+        .insert(userSettings)
+        .values({
+            userId: ADMIN_SETTINGS_ROW_ID,
+            settings: nextSettings,
+            createdAt: now,
+            updatedAt: now,
+        })
+        .onConflictDoUpdate({
+            target: userSettings.userId,
+            set: {
+                settings: nextSettings,
+                updatedAt: now,
+            },
+        });
+
     return c.json({
         ok: true,
-        settings: globalSettings
+        settings: nextSettings,
     });
 });
 
@@ -458,15 +595,108 @@ adminRoute.post('/templates', requireDeveloperAdmin, async (c) => {
         type: z.enum(['invoice', 'card', 'email']),
         content: z.any(), // JSON content
         isDefault: z.boolean().optional(),
-        thumbnailUrl: z.string().optional(),
+        thumbnailUrl: z.string().nullable().optional(),
+        isActive: z.boolean().optional(),
     }).parse(body);
 
     const newTemplate = await db.insert(templates).values({
         id: `tpl_${Date.now()}`,
-        ...payload,
+        name: payload.name,
+        type: payload.type,
+        content: payload.content,
+        isDefault: payload.isDefault ?? false,
+        thumbnailUrl: payload.thumbnailUrl ?? null,
+        isActive: payload.isActive ?? true,
     }).returning();
 
     return c.json({ ok: true, template: newTemplate[0] });
+});
+
+// GET /admin/templates/:id
+adminRoute.get('/templates/:id', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const rows = await db.select().from(templates).where(eq(templates.id, id)).limit(1);
+    if (!rows[0]) return c.json({ ok: false, message: 'Template not found.' }, 404);
+    return c.json({ ok: true, template: rows[0] });
+});
+
+// PATCH /admin/templates/:id
+adminRoute.patch('/templates/:id', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const payload = z.object({
+        name: z.string().min(1).optional(),
+        type: z.enum(['invoice', 'card', 'email']).optional(),
+        content: z.any().optional(),
+        isDefault: z.boolean().optional(),
+        thumbnailUrl: z.string().nullable().optional(),
+        isActive: z.boolean().optional(),
+    }).parse(await c.req.json());
+
+    const updated = await db
+        .update(templates)
+        .set({
+            ...payload,
+            updatedAt: new Date(),
+        })
+        .where(eq(templates.id, id))
+        .returning({ id: templates.id });
+
+    if (!updated[0]) return c.json({ ok: false, message: 'Template not found.' }, 404);
+    return c.json({ ok: true });
+});
+
+// PUT /admin/templates/:id
+adminRoute.put('/templates/:id', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const payload = z.object({
+        name: z.string().min(1),
+        type: z.enum(['invoice', 'card', 'email']),
+        content: z.any(),
+        isDefault: z.boolean().optional(),
+        thumbnailUrl: z.string().nullable().optional(),
+        isActive: z.boolean().optional(),
+    }).parse(await c.req.json());
+
+    const now = new Date();
+    await db
+        .insert(templates)
+        .values({
+            id,
+            name: payload.name,
+            type: payload.type,
+            content: payload.content,
+            isDefault: payload.isDefault ?? false,
+            thumbnailUrl: payload.thumbnailUrl ?? null,
+            isActive: payload.isActive ?? true,
+            createdAt: now,
+            updatedAt: now,
+        })
+        .onConflictDoUpdate({
+            target: templates.id,
+            set: {
+                name: payload.name,
+                type: payload.type,
+                content: payload.content,
+                isDefault: payload.isDefault ?? false,
+                thumbnailUrl: payload.thumbnailUrl ?? null,
+                isActive: payload.isActive ?? true,
+                updatedAt: now,
+            },
+        });
+
+    return c.json({ ok: true });
+});
+
+// DELETE /admin/templates/:id
+adminRoute.delete('/templates/:id', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const deleted = await db.delete(templates).where(eq(templates.id, id)).returning({ id: templates.id });
+    if (!deleted[0]) return c.json({ ok: false, message: 'Template not found.' }, 404);
+    return c.json({ ok: true });
 });
 
 adminRoute.get('/access', requireAuth, async (c) => {
@@ -515,7 +745,7 @@ adminRoute.patch('/users/:uid', requireDeveloperAdmin, async (c) => {
         currency: z.string().nullable().optional(),
         role: z.enum(['owner', 'staff', 'admin']).optional(),
         ownerId: z.string().nullable().optional(),
-        subscriptionStatus: z.enum(['active', 'inactive', 'canceled', 'expired']).optional(),
+        subscriptionStatus: z.enum(['active', 'inactive', 'canceled', 'past_due']).optional(),
         subscriptionPlanId: z.string().nullable().optional(),
         subscriptionPlanName: z.string().nullable().optional(),
         subscriptionAmountMonthly: z.number().nonnegative().nullable().optional(),
@@ -549,7 +779,7 @@ adminRoute.put('/users/:uid', requireDeveloperAdmin, async (c) => {
         currency: z.string().nullable().optional(),
         role: z.enum(['owner', 'staff', 'admin']).optional(),
         ownerId: z.string().nullable().optional(),
-        subscriptionStatus: z.enum(['active', 'inactive', 'canceled', 'expired']).optional(),
+        subscriptionStatus: z.enum(['active', 'inactive', 'canceled', 'past_due']).optional(),
         subscriptionPlanId: z.string().nullable().optional(),
         subscriptionPlanName: z.string().nullable().optional(),
         subscriptionAmountMonthly: z.number().nonnegative().nullable().optional(),
@@ -596,7 +826,7 @@ adminRoute.post('/users/:uid/subscription', requireDeveloperAdmin, async (c) => 
     // Schema validation
     const schema = z.object({
         planId: z.string().min(1),
-        status: z.enum(['active', 'inactive', 'canceled', 'expired']),
+        status: z.enum(['active', 'inactive', 'canceled', 'past_due']),
         durationDays: z.number().int().positive().default(30),
     });
 
@@ -632,6 +862,155 @@ adminRoute.delete('/users/:uid', requireDeveloperAdmin, async (c) => {
     const deleted = await db.delete(users).where(eq(users.uid, uid)).returning({ uid: users.uid });
     if (!deleted[0]) return c.json({ ok: false, message: 'User not found.' }, 404);
     return c.json({ ok: true });
+});
+
+// GET /admin/organizations - List all organizations
+adminRoute.get('/organizations', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') || 500), 1), 2000);
+    const data = await db.select().from(organizations).orderBy(desc(organizations.createdAt)).limit(limit);
+    return c.json({ ok: true, organizations: data });
+});
+
+// GET /admin/organizations/:id - Organization detail
+adminRoute.get('/organizations/:id', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const rows = await db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
+    if (!rows[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    return c.json({ ok: true, organization: rows[0] });
+});
+
+// POST /admin/organizations - Create organization
+adminRoute.post('/organizations', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    const body = await c.req.json();
+    const payload = z.object({
+        userId: z.string().optional(),
+        name: z.string().min(2).max(140),
+        code: z.string().min(2).max(32),
+        gstNumber: z.string().nullable().optional(),
+        address: z.string().nullable().optional(),
+        phoneNumber: z.string().nullable().optional(),
+        email: z.string().email().nullable().optional(),
+        currency: z.string().min(3).max(6).optional(),
+        isActive: z.boolean().optional(),
+    }).parse(body);
+
+    const now = new Date();
+    const id = nanoid();
+    const ownerUserId = payload.userId ?? authUser?.uid ?? '';
+    if (!ownerUserId) {
+        return c.json({ ok: false, message: 'userId is required.' }, 400);
+    }
+
+    await db.insert(organizations).values({
+        id,
+        userId: ownerUserId,
+        name: payload.name.trim(),
+        code: payload.code.trim().toUpperCase(),
+        gstNumber: payload.gstNumber ?? null,
+        address: payload.address ?? null,
+        phoneNumber: payload.phoneNumber ?? null,
+        email: payload.email ?? null,
+        currency: (payload.currency ?? 'INR').toUpperCase(),
+        isActive: payload.isActive ?? true,
+        createdAt: now,
+        updatedAt: now,
+    });
+
+    const ownerMembershipId = nanoid();
+    await db.insert(organizationMembers).values({
+        id: ownerMembershipId,
+        userId: ownerUserId,
+        organizationId: id,
+        role: 'owner',
+        permissions: {},
+        isActive: true,
+        invitedBy: authUser?.uid ?? ownerUserId,
+        phoneNumberSnapshot: null,
+        joinedAt: now,
+        createdAt: now,
+        updatedAt: now,
+    });
+
+    await db
+        .insert(organizationSettings)
+        .values({
+            organizationId: id,
+            userId: ownerUserId,
+            settings: {},
+            createdAt: now,
+            updatedAt: now,
+        })
+        .onConflictDoUpdate({
+            target: organizationSettings.organizationId,
+            set: {
+                userId: ownerUserId,
+                updatedAt: now,
+            },
+        });
+
+    return c.json({ ok: true, organization: { id, userId: ownerUserId } });
+});
+
+// PATCH /admin/organizations/:id - Patch organization
+adminRoute.patch('/organizations/:id', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const payload = z.object({
+        userId: z.string().optional(),
+        name: z.string().min(2).max(140).optional(),
+        code: z.string().min(2).max(32).optional(),
+        gstNumber: z.string().nullable().optional(),
+        address: z.string().nullable().optional(),
+        phoneNumber: z.string().nullable().optional(),
+        email: z.string().email().nullable().optional(),
+        currency: z.string().min(3).max(6).optional(),
+        isActive: z.boolean().optional(),
+    }).parse(body);
+
+    const updatePayload: Record<string, unknown> = { updatedAt: new Date() };
+    if (payload.userId !== undefined) updatePayload.userId = payload.userId;
+    if (payload.name !== undefined) updatePayload.name = payload.name.trim();
+    if (payload.code !== undefined) updatePayload.code = payload.code.trim().toUpperCase();
+    if (payload.gstNumber !== undefined) updatePayload.gstNumber = payload.gstNumber;
+    if (payload.address !== undefined) updatePayload.address = payload.address;
+    if (payload.phoneNumber !== undefined) updatePayload.phoneNumber = payload.phoneNumber;
+    if (payload.email !== undefined) updatePayload.email = payload.email;
+    if (payload.currency !== undefined) updatePayload.currency = payload.currency.toUpperCase();
+    if (payload.isActive !== undefined) updatePayload.isActive = payload.isActive;
+
+    const updated = await db
+        .update(organizations)
+        .set(updatePayload)
+        .where(eq(organizations.id, id))
+        .returning({ id: organizations.id });
+
+    if (!updated[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    return c.json({ ok: true });
+});
+
+// POST /admin/organizations/:id/toggle-status - Toggle active flag
+adminRoute.post('/organizations/:id/toggle-status', requireDeveloperAdmin, async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const rows = await db
+        .select({ isActive: organizations.isActive })
+        .from(organizations)
+        .where(eq(organizations.id, id))
+        .limit(1);
+    const current = rows[0];
+    if (!current) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+
+    await db
+        .update(organizations)
+        .set({ isActive: !current.isActive, updatedAt: new Date() })
+        .where(eq(organizations.id, id));
+
+    return c.json({ ok: true, isActive: !current.isActive });
 });
 
 // GET /admin/plans
@@ -806,7 +1185,7 @@ adminRoute.post('/offers', requireDeveloperAdmin, async (c) => {
         bannerBackground: z.string().nullable().optional(),
         ctaText: z.string().nullable().optional(),
         ctaRoute: z.string().nullable().optional(),
-        audience: z.enum(['all', 'active_subscribers', 'inactive_subscribers']).default('all'),
+        audience: z.enum(['all', 'owners', 'staff']).default('all'),
         isActive: z.boolean().default(true),
         priority: z.number().int().default(0),
         startsAt: z.coerce.date().nullable().optional(),
@@ -846,7 +1225,7 @@ adminRoute.put('/offers/:id', requireDeveloperAdmin, async (c) => {
         bannerBackground: z.string().nullable().optional(),
         ctaText: z.string().nullable().optional(),
         ctaRoute: z.string().nullable().optional(),
-        audience: z.enum(['all', 'active_subscribers', 'inactive_subscribers']).default('all'),
+        audience: z.enum(['all', 'owners', 'staff']).default('all'),
         isActive: z.boolean().default(true),
         priority: z.number().int().default(0),
         startsAt: z.coerce.date().nullable().optional(),
@@ -919,7 +1298,7 @@ adminRoute.patch('/offers/:id', requireDeveloperAdmin, async (c) => {
         bannerBackground: z.string().nullable().optional(),
         ctaText: z.string().nullable().optional(),
         ctaRoute: z.string().nullable().optional(),
-        audience: z.enum(['all', 'active_subscribers', 'inactive_subscribers']).optional(),
+        audience: z.enum(['all', 'owners', 'staff']).optional(),
         isActive: z.boolean().optional(),
         priority: z.number().int().optional(),
         startsAt: z.coerce.date().nullable().optional(),

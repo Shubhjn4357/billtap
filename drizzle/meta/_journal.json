@@ -78,6 +78,34 @@
       "when": 1772029720716,
       "tag": "0010_red_justin_hammer",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1772208000000,
+      "tag": "0011_user_centered_org_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1772265600000,
+      "tag": "0012_return_transaction_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1772294400000,
+      "tag": "0013_operations_controls_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1772380800000,
+      "tag": "0014_payment_provider_required",
+      "breakpoints": true
     }
   ]
 }

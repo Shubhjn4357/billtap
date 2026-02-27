@@ -13,7 +13,6 @@ import {
     transactions,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { withOrganizationContext } from '../middleware/permissions';
 import {
     createApprovalRequest,
     ensurePeriodUnlockedForDate,
@@ -57,7 +56,7 @@ accountingRoute.get('/accounts', requireAuth, async (c) => {
     const db = c.get('db');
 
     const conditions = [eq(accounts.userId, effectiveUserId)];
-    if (type) conditions.push(eq(accounts.type, type));
+    if (type) conditions.push(eq(accounts.type, type as any));
 
     const data = await db
         .select()
@@ -78,7 +77,7 @@ accountingRoute.post('/accounts', requireAuth, async (c) => {
 
     const body = await c.req.json();
     const payload = z.object({
-        branchId: z.string().optional(),
+
         code: z.string().min(2).max(20),
         name: z.string().min(2).max(120),
         type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
@@ -92,7 +91,7 @@ accountingRoute.post('/accounts', requireAuth, async (c) => {
     await db.insert(accounts).values({
         id,
         userId: effectiveUserId,
-        branchId: payload.branchId ?? null,
+
         code: payload.code.trim().toUpperCase(),
         name: payload.name.trim(),
         type: payload.type,
@@ -136,7 +135,7 @@ accountingRoute.post('/journals', requireAuth, async (c) => {
 
         const body = await c.req.json();
         const payload = z.object({
-            branchId: z.string().optional(),
+
             costCenter: z.string().optional(),
             projectCode: z.string().optional(),
             entryDate: z.coerce.date().optional(),
@@ -291,16 +290,15 @@ accountingRoute.get('/trial-balance', requireAuth, async (c) => {
     });
 });
 
-accountingRoute.get('/gst/summary', requireAuth, withOrganizationContext, async (c) => {
+accountingRoute.get('/gst/summary', requireAuth, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    const organizationId = c.get('organizationId');
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const start = dateParam.parse(c.req.query('start'));
     const end = dateParam.parse(c.req.query('end'));
     const db = c.get('db');
 
-    const conditions = [eq(transactions.userId, effectiveUserId), eq(transactions.organizationId, organizationId)];
+    const conditions = [eq(transactions.userId, effectiveUserId)];
     if (start) conditions.push(gte(transactions.billDate, start));
     if (end) conditions.push(lte(transactions.billDate, end));
 
@@ -312,7 +310,7 @@ accountingRoute.get('/gst/summary', requireAuth, withOrganizationContext, async 
     const itemRows = await db
         .select({ id: items.id, hsn: items.hsn })
         .from(items)
-        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
+        .where(eq(items.userId, effectiveUserId));
     const hsnByItem = new Map(itemRows.map((item) => [item.id, item.hsn ?? 'UNSPECIFIED']));
 
     const byHsn = new Map<string, { taxableValue: number; gstAmount: number; qty: number }>();
@@ -325,16 +323,22 @@ accountingRoute.get('/gst/summary', requireAuth, withOrganizationContext, async 
             const taxable = Number(line.quantity) * Number(line.price);
             const gstAmount = taxable * (Number(line.tax ?? 0) / 100);
             const hsn = hsnByItem.get(line.id) ?? 'UNSPECIFIED';
+            const isReturn = tx.type === 'RETURN_INWARD' || tx.type === 'RETURN_OUTWARD';
+            const signedTaxable = isReturn ? -taxable : taxable;
+            const signedGst = isReturn ? -gstAmount : gstAmount;
+            const signedQty = isReturn ? -Number(line.quantity) : Number(line.quantity);
 
             const bucket = byHsn.get(hsn) ?? { taxableValue: 0, gstAmount: 0, qty: 0 };
-            bucket.taxableValue += taxable;
-            bucket.gstAmount += gstAmount;
-            bucket.qty += Number(line.quantity);
+            bucket.taxableValue += signedTaxable;
+            bucket.gstAmount += signedGst;
+            bucket.qty += signedQty;
             byHsn.set(hsn, bucket);
 
-            taxableTurnover += taxable;
+            taxableTurnover += signedTaxable;
             if (tx.type === 'SALE') outputTax += gstAmount;
+            if (tx.type === 'RETURN_INWARD') outputTax -= gstAmount;
             if (tx.type === 'PURCHASE') inputTax += gstAmount;
+            if (tx.type === 'RETURN_OUTWARD') inputTax -= gstAmount;
         }
     }
 
@@ -571,10 +575,9 @@ accountingRoute.get('/balance-sheet', requireAuth, async (c) => {
     });
 });
 
-accountingRoute.get('/inventory/valuation', requireAuth, withOrganizationContext, async (c) => {
+accountingRoute.get('/inventory/valuation', requireAuth, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    const organizationId = c.get('organizationId');
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const db = c.get('db');
     const itemRows = await db
@@ -590,7 +593,7 @@ accountingRoute.get('/inventory/valuation', requireAuth, withOrganizationContext
             isActive: items.isActive,
         })
         .from(items)
-        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
+        .where(eq(items.userId, effectiveUserId));
 
     const rows = itemRows
         .filter((item) => item.isActive !== false && Number(item.stock) > 0)
@@ -624,10 +627,9 @@ accountingRoute.get('/inventory/valuation', requireAuth, withOrganizationContext
     });
 });
 
-accountingRoute.get('/inventory/reorder-suggestions', requireAuth, withOrganizationContext, async (c) => {
+accountingRoute.get('/inventory/reorder-suggestions', requireAuth, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    const organizationId = c.get('organizationId');
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const db = c.get('db');
     const itemRows = await db
@@ -642,7 +644,7 @@ accountingRoute.get('/inventory/reorder-suggestions', requireAuth, withOrganizat
             isActive: items.isActive,
         })
         .from(items)
-        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
+        .where(eq(items.userId, effectiveUserId));
 
     const suggestions = itemRows
         .filter((item) => item.isActive !== false)
@@ -676,10 +678,9 @@ accountingRoute.get('/inventory/reorder-suggestions', requireAuth, withOrganizat
     });
 });
 
-accountingRoute.get('/inventory/stock-aging', requireAuth, withOrganizationContext, async (c) => {
+accountingRoute.get('/inventory/stock-aging', requireAuth, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    const organizationId = c.get('organizationId');
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const db = c.get('db');
     const now = new Date();
@@ -697,7 +698,7 @@ accountingRoute.get('/inventory/stock-aging', requireAuth, withOrganizationConte
             createdAt: items.createdAt,
         })
         .from(items)
-        .where(and(eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)));
+        .where(eq(items.userId, effectiveUserId));
 
     const itemIds = itemRows.map((item) => item.id);
 
@@ -773,10 +774,9 @@ accountingRoute.get('/inventory/stock-aging', requireAuth, withOrganizationConte
     });
 });
 
-accountingRoute.get('/stock-ledger/:itemId', requireAuth, withOrganizationContext, async (c) => {
+accountingRoute.get('/stock-ledger/:itemId', requireAuth, async (c) => {
     const effectiveUserId = c.get('effectiveUserId');
-    const organizationId = c.get('organizationId');
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const itemId = c.req.param('itemId');
     const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
@@ -787,8 +787,7 @@ accountingRoute.get('/stock-ledger/:itemId', requireAuth, withOrganizationContex
         .from(items)
         .where(and(
             eq(items.id, itemId),
-            eq(items.userId, effectiveUserId),
-            eq(items.organizationId, organizationId),
+            eq(items.userId, effectiveUserId)
         ))
         .limit(1);
     if (!item) return c.json({ ok: false, message: 'Item not found.' }, 404);

@@ -63,7 +63,6 @@ treasuryRoute.post('/bank-accounts', requireAuth, async (c) => {
         }
 
         const payload = z.object({
-            branchId: z.string().optional(),
             name: z.string().min(1).max(120),
             bankName: z.string().min(1).max(120),
             accountNumberMasked: z.string().optional(),
@@ -79,7 +78,6 @@ treasuryRoute.post('/bank-accounts', requireAuth, async (c) => {
         await db.insert(bankAccounts).values({
             id,
             userId: effectiveUserId,
-            branchId: payload.branchId ?? null,
             name: payload.name.trim(),
             bankName: payload.bankName.trim(),
             accountNumberMasked: payload.accountNumberMasked?.trim() || null,
@@ -223,7 +221,6 @@ treasuryRoute.post('/vouchers', requireAuth, async (c) => {
         }
 
         const payload = z.object({
-            branchId: z.string().optional(),
             type: z.enum(['RECEIPT', 'PAYMENT']),
             voucherDate: z.coerce.date().optional(),
             amount: z.number().positive(),
@@ -249,7 +246,6 @@ treasuryRoute.post('/vouchers', requireAuth, async (c) => {
         await db.insert(vouchers).values({
             id: voucherId,
             userId: effectiveUserId,
-            branchId: payload.branchId ?? null,
             type: payload.type,
             voucherDate,
             amount: payload.amount,
@@ -500,9 +496,9 @@ treasuryRoute.get('/aging', requireAuth, async (c) => {
         const ageDays = Math.max(0, Math.floor((asOf.getTime() - anchorDate.getTime()) / (24 * 60 * 60 * 1000)));
         const bucket = getAgingBucket(ageDays);
 
-        if (row.type === 'SALE') {
+        if (row.type === 'SALE' || row.type === 'RETURN_OUTWARD') {
             receivablesByBucket.set(bucket, roundAmount((receivablesByBucket.get(bucket) ?? 0) + dueAmount));
-        } else {
+        } else if (row.type === 'PURCHASE' || row.type === 'RETURN_INWARD') {
             payablesByBucket.set(bucket, roundAmount((payablesByBucket.get(bucket) ?? 0) + dueAmount));
         }
 
@@ -589,8 +585,8 @@ treasuryRoute.get('/cash-flow', requireAuth, async (c) => {
     let operatingOutflow = 0;
     for (const row of transactionRows) {
         const paidAmount = Number(row.paidAmount ?? 0);
-        if (row.type === 'SALE') operatingInflow += paidAmount;
-        if (row.type === 'PURCHASE') operatingOutflow += paidAmount;
+        if (row.type === 'SALE' || row.type === 'RETURN_OUTWARD') operatingInflow += paidAmount;
+        if (row.type === 'PURCHASE' || row.type === 'RETURN_INWARD') operatingOutflow += paidAmount;
     }
 
     const totalInflow = roundAmount(voucherInflow + operatingInflow);

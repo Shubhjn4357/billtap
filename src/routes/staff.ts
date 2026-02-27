@@ -16,6 +16,7 @@ const normalizePhoneNumber = (raw: string) => {
 staffRoute.post('/', requireAuth, async (c) => {
     try {
         const authUser = c.get('authUser');
+        const effectiveOrganizationId = c.get('effectiveOrganizationId');
         const db = c.get('db');
 
         // Owners and admins can manage their team.
@@ -37,6 +38,7 @@ staffRoute.post('/', requireAuth, async (c) => {
         await db.insert(staffInvites).values({
             id,
             ownerId: authUser.uid,
+            organizationId: effectiveOrganizationId ?? authUser.uid,
             phoneNumber: normalizedPhone,
             code,
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days

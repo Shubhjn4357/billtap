@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { and, desc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
 import { ensureSystemAccounts, type SystemAccountCode } from '../accounting/systemAccounts';
 import { withTransaction } from '../db/transaction';
-import { inventoryMovements, items, journalEntries, journalLines, partyLedgerEntries, transactions } from '../db/schema';
+import { inventoryMovements, items, journalEntries, journalLines, parties, partyLedgerEntries, transactions } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     hasFeatureEnabled,
@@ -30,9 +30,32 @@ const lineItemSchema = z.object({
     total: z.number().nonnegative(),
 });
 
+const transactionTypeValues = ['SALE', 'PURCHASE', 'RETURN_INWARD', 'RETURN_OUTWARD'] as const;
+type SupportedTransactionType = (typeof transactionTypeValues)[number];
+
+const isSalesFlow = (type: SupportedTransactionType): boolean =>
+    type === 'SALE' || type === 'RETURN_INWARD';
+
+const isPurchaseFlow = (type: SupportedTransactionType): boolean =>
+    type === 'PURCHASE' || type === 'RETURN_OUTWARD';
+
+const isStockOutflow = (type: SupportedTransactionType): boolean =>
+    type === 'SALE' || type === 'RETURN_OUTWARD';
+
+const getPartyLedgerDirection = (type: SupportedTransactionType): 'DEBIT' | 'CREDIT' =>
+    type === 'SALE' || type === 'RETURN_OUTWARD' ? 'DEBIT' : 'CREDIT';
+
+const getPartyLedgerDelta = (type: SupportedTransactionType, dueAmount: number): number =>
+    type === 'SALE' || type === 'RETURN_OUTWARD'
+        ? dueAmount
+        : -dueAmount;
+
+const getExpectedPartyType = (type: SupportedTransactionType): 'customer' | 'supplier' =>
+    isSalesFlow(type) ? 'customer' : 'supplier';
+
 const transactionSchema = z.object({
     id: z.string().optional(),
-    type: z.enum(['SALE', 'PURCHASE']),
+    type: z.enum(transactionTypeValues),
     organizationId: z.string().optional(),
     branchId: z.string().optional(),
     partyId: z.string().optional(),
@@ -118,12 +141,12 @@ const groupStockLines = (lines: StockLine[]): Map<string, number> => {
 };
 
 const buildStockDeltaMap = (
-    transactionType: 'SALE' | 'PURCHASE',
+    transactionType: SupportedTransactionType,
     lines: StockLine[],
     multiplier = 1
 ): Map<string, number> => {
     const grouped = groupStockLines(lines);
-    const direction = transactionType === 'SALE' ? -1 : 1;
+    const direction = isStockOutflow(transactionType) ? -1 : 1;
     const output = new Map<string, number>();
     for (const [itemId, quantity] of grouped.entries()) {
         output.set(itemId, direction * quantity * multiplier);
@@ -246,7 +269,7 @@ const deleteTransactionArtifactsInTx = async (params: {
 interface AccountingPostInput {
     userId: string;
     transactionId: string;
-    transactionType: 'SALE' | 'PURCHASE';
+    transactionType: SupportedTransactionType;
     transactionDate: Date;
     branchId?: string | null;
     costCenter?: string | null;
@@ -297,45 +320,88 @@ const postTransactionJournal = async (tx: any, input: AccountingPostInput) => {
         lines.push({ accountId, debit: roundedDebit, credit: roundedCredit, partyId });
     };
 
-    if (input.transactionType === 'SALE') {
-        if (paidAmount > 0) {
-            pushLine(cashAccountId, paidAmount, 0, input.partyId ?? null);
-        }
-        if (input.paymentMode === 'CREDIT' && receivableAmount > 0) {
-            pushLine(receivableAccountId, receivableAmount, 0, input.partyId ?? null);
-        }
-        if (input.paymentMode !== 'CREDIT' && receivableAmount > 0) {
-            pushLine(cashAccountId, receivableAmount, 0, input.partyId ?? null);
-        }
-        pushLine(salesAccountId, 0, taxableBase, null);
-        if (taxAmount > 0) {
-            pushLine(gstPayableAccountId, 0, taxAmount, null);
-        }
+    const cogsValue = roundAmount(
+        input.itemLines.reduce((sum, line) => {
+            const purchasePrice = input.purchasePriceByItemId.get(line.id) ?? 0;
+            return sum + (purchasePrice * Number(line.quantity));
+        }, 0)
+    );
 
-        const cogsValue = roundAmount(
-            input.itemLines.reduce((sum, line) => {
-                const purchasePrice = input.purchasePriceByItemId.get(line.id) ?? 0;
-                return sum + (purchasePrice * Number(line.quantity));
-            }, 0)
-        );
-        if (cogsValue > 0) {
-            pushLine(cogsAccountId, cogsValue, 0, null);
-            pushLine(inventoryAccountId, 0, cogsValue, null);
+    switch (input.transactionType) {
+        case 'SALE': {
+            if (paidAmount > 0) {
+                pushLine(cashAccountId, paidAmount, 0, input.partyId ?? null);
+            }
+            if (input.paymentMode === 'CREDIT' && receivableAmount > 0) {
+                pushLine(receivableAccountId, receivableAmount, 0, input.partyId ?? null);
+            }
+            if (input.paymentMode !== 'CREDIT' && receivableAmount > 0) {
+                pushLine(cashAccountId, receivableAmount, 0, input.partyId ?? null);
+            }
+            pushLine(salesAccountId, 0, taxableBase, null);
+            if (taxAmount > 0) {
+                pushLine(gstPayableAccountId, 0, taxAmount, null);
+            }
+            if (cogsValue > 0) {
+                pushLine(cogsAccountId, cogsValue, 0, null);
+                pushLine(inventoryAccountId, 0, cogsValue, null);
+            }
+            break;
         }
-    } else {
-        pushLine(purchaseAccountId, taxableBase, 0, null);
-        if (taxAmount > 0) {
-            pushLine(gstPayableAccountId, taxAmount, 0, null);
+        case 'RETURN_INWARD': {
+            if (paidAmount > 0) {
+                pushLine(cashAccountId, 0, paidAmount, input.partyId ?? null);
+            }
+            if (input.paymentMode === 'CREDIT' && receivableAmount > 0) {
+                pushLine(receivableAccountId, 0, receivableAmount, input.partyId ?? null);
+            }
+            if (input.paymentMode !== 'CREDIT' && receivableAmount > 0) {
+                pushLine(cashAccountId, 0, receivableAmount, input.partyId ?? null);
+            }
+            pushLine(salesAccountId, taxableBase, 0, null);
+            if (taxAmount > 0) {
+                pushLine(gstPayableAccountId, taxAmount, 0, null);
+            }
+            if (cogsValue > 0) {
+                pushLine(inventoryAccountId, cogsValue, 0, null);
+                pushLine(cogsAccountId, 0, cogsValue, null);
+            }
+            break;
         }
-        if (paidAmount > 0) {
-            pushLine(cashAccountId, 0, paidAmount, input.partyId ?? null);
+        case 'PURCHASE': {
+            pushLine(purchaseAccountId, taxableBase, 0, null);
+            if (taxAmount > 0) {
+                pushLine(gstPayableAccountId, taxAmount, 0, null);
+            }
+            if (paidAmount > 0) {
+                pushLine(cashAccountId, 0, paidAmount, input.partyId ?? null);
+            }
+            if (input.paymentMode === 'CREDIT' && payableAmount > 0) {
+                pushLine(payableAccountId, 0, payableAmount, input.partyId ?? null);
+            }
+            if (input.paymentMode !== 'CREDIT' && payableAmount > 0) {
+                pushLine(cashAccountId, 0, payableAmount, input.partyId ?? null);
+            }
+            break;
         }
-        if (input.paymentMode === 'CREDIT' && payableAmount > 0) {
-            pushLine(payableAccountId, 0, payableAmount, input.partyId ?? null);
+        case 'RETURN_OUTWARD': {
+            pushLine(purchaseAccountId, 0, taxableBase, null);
+            if (taxAmount > 0) {
+                pushLine(gstPayableAccountId, 0, taxAmount, null);
+            }
+            if (paidAmount > 0) {
+                pushLine(cashAccountId, paidAmount, 0, input.partyId ?? null);
+            }
+            if (input.paymentMode === 'CREDIT' && payableAmount > 0) {
+                pushLine(payableAccountId, payableAmount, 0, input.partyId ?? null);
+            }
+            if (input.paymentMode !== 'CREDIT' && payableAmount > 0) {
+                pushLine(cashAccountId, payableAmount, 0, input.partyId ?? null);
+            }
+            break;
         }
-        if (input.paymentMode !== 'CREDIT' && payableAmount > 0) {
-            pushLine(cashAccountId, 0, payableAmount, input.partyId ?? null);
-        }
+        default:
+            break;
     }
 
     if (lines.length < 2) return;
@@ -462,16 +528,16 @@ transactionsRoute.post(
         if (!hasFeatureEnabled(c, 'billing')) {
             return c.json({ ok: false, message: 'Billing module is disabled for your role.' }, 403);
         }
-        if (payload.type === 'SALE' && !hasFeatureEnabled(c, 'billingSale')) {
+        if (isSalesFlow(payload.type) && !hasFeatureEnabled(c, 'billingSale')) {
             return c.json({ ok: false, message: 'Sales billing is disabled by owner settings.' }, 403);
         }
-        if (payload.type === 'PURCHASE' && !hasFeatureEnabled(c, 'billingPurchase')) {
+        if (isPurchaseFlow(payload.type) && !hasFeatureEnabled(c, 'billingPurchase')) {
             return c.json({ ok: false, message: 'Purchase entry is disabled by owner settings.' }, 403);
         }
-        if (payload.type === 'SALE' && !hasPermission(c, 'canManageBilling')) {
+        if (isSalesFlow(payload.type) && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Sale billing is disabled for your role.' }, 403);
         }
-        if (payload.type === 'PURCHASE' && !hasPermission(c, 'canManageBilling')) {
+        if (isPurchaseFlow(payload.type) && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Purchase entry is disabled for your role.' }, 403);
         }
         const id = payload.id ?? nanoid();
@@ -550,6 +616,27 @@ transactionsRoute.post(
                 }
             }
 
+            if (payload.partyId) {
+                const expectedPartyType = getExpectedPartyType(payload.type);
+                const partyRows = await tx
+                    .select({ id: parties.id, type: parties.type, name: parties.name })
+                    .from(parties)
+                    .where(and(
+                        eq(parties.id, payload.partyId),
+                        eq(parties.userId, effectiveUserId),
+                    ))
+                    .limit(1);
+                const party = partyRows[0];
+                if (!party) {
+                    throw new Error('Selected party was not found.');
+                }
+                if (party.type !== expectedPartyType) {
+                    throw new Error(
+                        `Selected party "${party.name}" is ${party.type}. Expected ${expectedPartyType} for ${payload.type}.`
+                    );
+                }
+            }
+
             const itemIds = [...grouped.keys()];
             const sourceItems = itemIds.length === 0
                 ? []
@@ -564,90 +651,64 @@ transactionsRoute.post(
                 sourceItems.map((item) => [item.id, Number(item.purchasePrice ?? 0)])
             );
 
-            // Update Stock
+            // Update stock for sale/purchase/return entries.
             for (const [itemId, qty] of grouped.entries()) {
-                if (payload.type === 'SALE') {
-                    // Check stock and deduct (or allow negative stock based on settings).
-                    const saleConditions = [
-                        eq(items.id, itemId),
-                        eq(items.userId, effectiveUserId),
-                    ];
-                    if (!allowNegativeStock) {
-                        saleConditions.push(gte(items.stock, qty));
-                    }
-                    const updatedRows = await tx
-                        .update(items)
-                        .set({
-                            stock: sql`${items.stock} - ${qty}`,
-                            updatedAt: now,
-                        })
-                        .where(and(...saleConditions))
-                        .returning({ id: items.id, stock: items.stock });
+                const outflow = isStockOutflow(payload.type);
+                const updateConditions = [
+                    eq(items.id, itemId),
+                    eq(items.userId, effectiveUserId),
+                ];
+                if (outflow && !allowNegativeStock) {
+                    updateConditions.push(gte(items.stock, qty));
+                }
 
-                    if (!updatedRows[0]) {
-                        // Determine why it failed
-                        const existing = await tx
-                            .select({ id: items.id, name: items.name, stock: items.stock })
-                            .from(items)
-                            .where(and(
-                                eq(items.id, itemId),
-                                eq(items.userId, effectiveUserId),
-                            ))
-                            .limit(1);
+                const updatedRows = await tx
+                    .update(items)
+                    .set({
+                        stock: outflow
+                            ? sql`${items.stock} - ${qty}`
+                            : sql`${items.stock} + ${qty}`,
+                        updatedAt: now,
+                    })
+                    .where(and(...updateConditions))
+                    .returning({ id: items.id, name: items.name, stock: items.stock });
 
-                        if (!existing[0]) throw new Error(`Item ${itemId} not found.`);
-                        throw new Error(`Insufficient stock for "${existing[0].name}". Available: ${existing[0].stock}`);
-                    }
-
-                    await tx.insert(inventoryMovements).values({
-                        id: nanoid(),
-                        userId: effectiveUserId,
-                        itemId,
-                        transactionId: id,
-                        movementType: 'OUT',
-                        quantity: qty,
-                        balanceAfter: updatedRows[0].stock,
-                        unitCost: null,
-                        createdAt: now,
-                    });
-                } else {
-                    // Purchase: Add stock
-                    const updatedRows = await tx
-                        .update(items)
-                        .set({
-                            stock: sql`${items.stock} + ${qty}`,
-                            updatedAt: now,
-                        })
+                if (!updatedRows[0]) {
+                    const existing = await tx
+                        .select({ id: items.id, name: items.name, stock: items.stock })
+                        .from(items)
                         .where(and(
                             eq(items.id, itemId),
                             eq(items.userId, effectiveUserId),
                         ))
-                        .returning({ id: items.id, stock: items.stock });
+                        .limit(1);
 
-                    if (!updatedRows[0]) {
-                        throw new Error(`Item ${itemId} not found.`);
+                    if (!existing[0]) throw new Error(`Item ${itemId} not found.`);
+                    if (outflow) {
+                        throw new Error(`Insufficient stock for "${existing[0].name}". Available: ${existing[0].stock}`);
                     }
-
-                    const totalQty = payload.items
-                        .filter((line) => line.id === itemId)
-                        .reduce((sum, line) => sum + line.quantity, 0);
-                    const totalValue = payload.items
-                        .filter((line) => line.id === itemId)
-                        .reduce((sum, line) => sum + line.quantity * line.price, 0);
-                    const unitCost = totalQty > 0 ? totalValue / totalQty : 0;
-
-                    await tx.insert(inventoryMovements).values({
-                        id: nanoid(),
-                        userId: effectiveUserId,
-                        itemId,
-                        transactionId: id,
-                        movementType: 'IN',
-                        quantity: qty,
-                        balanceAfter: updatedRows[0].stock,
-                        unitCost,
-                        createdAt: now,
-                    });
+                    throw new Error(`Failed to update stock for "${existing[0].name}".`);
                 }
+
+                const totalQty = payload.items
+                    .filter((line) => line.id === itemId)
+                    .reduce((sum, line) => sum + line.quantity, 0);
+                const totalValue = payload.items
+                    .filter((line) => line.id === itemId)
+                    .reduce((sum, line) => sum + line.quantity * line.price, 0);
+                const unitCost = !outflow && totalQty > 0 ? totalValue / totalQty : null;
+
+                await tx.insert(inventoryMovements).values({
+                    id: nanoid(),
+                    userId: effectiveUserId,
+                    itemId,
+                    transactionId: id,
+                    movementType: outflow ? 'OUT' : 'IN',
+                    quantity: qty,
+                    balanceAfter: Number(updatedRows[0].stock ?? 0),
+                    unitCost,
+                    createdAt: now,
+                });
             }
 
             // Create Transaction Record
@@ -716,7 +777,7 @@ transactionsRoute.post(
                     userId: effectiveUserId,
                     partyId: payload.partyId,
                 });
-                const delta = payload.type === 'SALE' ? dueAmount : -dueAmount;
+                const delta = getPartyLedgerDelta(payload.type, dueAmount);
                 const runningBalance = roundAmount(previousBalance + delta);
 
                 await tx.insert(partyLedgerEntries).values({
@@ -726,7 +787,7 @@ transactionsRoute.post(
                     partyId: payload.partyId,
                     sourceType: 'BILL',
                     sourceId: id,
-                    direction: payload.type === 'SALE' ? 'DEBIT' : 'CREDIT',
+                    direction: getPartyLedgerDirection(payload.type),
                     amount: dueAmount,
                     runningBalance,
                     entryDate: billDate,
@@ -795,16 +856,16 @@ transactionsRoute.patch(
         if (!hasFeatureEnabled(c, 'billing')) {
             return c.json({ ok: false, message: 'Billing module is disabled for your role.' }, 403);
         }
-        if (payload.type === 'SALE' && !hasFeatureEnabled(c, 'billingSale')) {
+        if (isSalesFlow(payload.type) && !hasFeatureEnabled(c, 'billingSale')) {
             return c.json({ ok: false, message: 'Sales billing is disabled by owner settings.' }, 403);
         }
-        if (payload.type === 'PURCHASE' && !hasFeatureEnabled(c, 'billingPurchase')) {
+        if (isPurchaseFlow(payload.type) && !hasFeatureEnabled(c, 'billingPurchase')) {
             return c.json({ ok: false, message: 'Purchase entry is disabled by owner settings.' }, 403);
         }
-        if (payload.type === 'SALE' && !hasPermission(c, 'canManageBilling')) {
+        if (isSalesFlow(payload.type) && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Sale billing is disabled for your role.' }, 403);
         }
-        if (payload.type === 'PURCHASE' && !hasPermission(c, 'canManageBilling')) {
+        if (isPurchaseFlow(payload.type) && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Purchase entry is disabled for your role.' }, 403);
         }
 
@@ -875,6 +936,27 @@ const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime(
                 }
             }
 
+            if (payload.partyId) {
+                const expectedPartyType = getExpectedPartyType(payload.type);
+                const partyRows = await tx
+                    .select({ id: parties.id, type: parties.type, name: parties.name })
+                    .from(parties)
+                    .where(and(
+                        eq(parties.id, payload.partyId),
+                        eq(parties.userId, effectiveUserId),
+                    ))
+                    .limit(1);
+                const party = partyRows[0];
+                if (!party) {
+                    throw new Error('Selected party was not found.');
+                }
+                if (party.type !== expectedPartyType) {
+                    throw new Error(
+                        `Selected party "${party.name}" is ${party.type}. Expected ${expectedPartyType} for ${payload.type}.`
+                    );
+                }
+            }
+
             const existingLines = Array.isArray(existing.items)
                 ? existing.items.map((line) => ({
                     id: line.id,
@@ -883,8 +965,15 @@ const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime(
                 }))
                 : [];
 
+            const existingType: SupportedTransactionType =
+                existing.type === 'PURCHASE'
+                || existing.type === 'RETURN_INWARD'
+                || existing.type === 'RETURN_OUTWARD'
+                    ? existing.type
+                    : 'SALE';
+
             const reverseStockDeltas = buildStockDeltaMap(
-                existing.type === 'PURCHASE' ? 'PURCHASE' : 'SALE',
+                existingType,
                 existingLines,
                 -1
             );
@@ -1010,7 +1099,7 @@ const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime(
                     userId: effectiveUserId,
                     partyId: payload.partyId,
                 });
-                const delta = payload.type === 'SALE' ? dueAmount : -dueAmount;
+                const delta = getPartyLedgerDelta(payload.type, dueAmount);
                 const runningBalance = roundAmount(previousBalance + delta);
 
                 await tx.insert(partyLedgerEntries).values({
@@ -1020,7 +1109,7 @@ const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime(
                     partyId: payload.partyId,
                     sourceType: 'BILL',
                     sourceId: id,
-                    direction: payload.type === 'SALE' ? 'DEBIT' : 'CREDIT',
+                    direction: getPartyLedgerDirection(payload.type),
                     amount: dueAmount,
                     runningBalance,
                     entryDate: billDate,
@@ -1103,8 +1192,15 @@ transactionsRoute.delete(
                 }))
                 : [];
 
+            const existingType: SupportedTransactionType =
+                existing.type === 'PURCHASE'
+                || existing.type === 'RETURN_INWARD'
+                || existing.type === 'RETURN_OUTWARD'
+                    ? existing.type
+                    : 'SALE';
+
             const reverseStockDeltas = buildStockDeltaMap(
-                existing.type === 'PURCHASE' ? 'PURCHASE' : 'SALE',
+                existingType,
                 existingLines,
                 -1
             );
@@ -1313,7 +1409,10 @@ transactionsRoute.get(
         const effectiveUserId = c.get('effectiveUserId');
         const authUser = c.get('authUser');
     const db = c.get('db');
-    const type = c.req.query('type') as 'SALE' | 'PURCHASE' | undefined;
+    const typeQuery = c.req.query('type');
+    const type = typeQuery && transactionTypeValues.includes(typeQuery as SupportedTransactionType)
+        ? typeQuery as SupportedTransactionType
+        : undefined;
     const paymentStatus = c.req.query('paymentStatus') as 'PAID' | 'PARTIAL' | 'PENDING' | undefined;
     const start = c.req.query('start');
     const end = c.req.query('end');
@@ -1380,11 +1479,17 @@ transactionsRoute.get(
 
         for (const row of rows) {
             if (row.type === 'SALE') {
-                salesToday = Number(row.totalAmount);
-                salesCount = Number(row.count);
+                salesToday += Number(row.totalAmount);
+                salesCount += Number(row.count);
+            } else if (row.type === 'RETURN_INWARD') {
+                salesToday -= Number(row.totalAmount);
+                salesCount += Number(row.count);
             } else if (row.type === 'PURCHASE') {
-                purchasesToday = Number(row.totalAmount);
-                purchasesCount = Number(row.count);
+                purchasesToday += Number(row.totalAmount);
+                purchasesCount += Number(row.count);
+            } else if (row.type === 'RETURN_OUTWARD') {
+                purchasesToday -= Number(row.totalAmount);
+                purchasesCount += Number(row.count);
             }
         }
 

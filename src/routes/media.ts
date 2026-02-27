@@ -1,11 +1,9 @@
 import { Hono } from 'hono';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { mediaAssets, users } from '../db/schema';
 import { requireAuth, type AppContext, type AppEnv } from '../middleware/auth';
-import { hasPermission, withOrganizationContext } from '../middleware/permissions';
-import { resolveMaxUploadBytesForPlan } from '../organizations/access';
 
 const mediaRoute = new Hono<AppEnv>();
 
@@ -42,13 +40,11 @@ type UploadTokenPayload = {
 const DEFAULT_TOKEN_TTL_SECONDS = 120;
 const DEFAULT_MAX_UPLOAD_MB = 10;
 
-const normalizeFileName = (value: string): string => {
-    return value
-        .trim()
-        .replace(/\s+/g, '-')
-        .replace(/[^a-zA-Z0-9._-]/g, '')
-        .slice(0, 80) || 'upload.bin';
-};
+const normalizeFileName = (value: string): string => value
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-zA-Z0-9._-]/g, '')
+    .slice(0, 80) || 'upload.bin';
 
 const inferExtensionFromMime = (mimeType: string): string => {
     const normalized = mimeType.toLowerCase();
@@ -77,9 +73,8 @@ const buildObjectKey = (
     ].join('/');
 };
 
-const resolveUploadSecret = (c: AppContext): string | null => {
-    return c.env.MEDIA_UPLOAD_SECRET || c.env.API_JWT_SECRET || null;
-};
+const resolveUploadSecret = (c: AppContext): string | null =>
+    c.env.MEDIA_UPLOAD_SECRET || c.env.API_JWT_SECRET || null;
 
 const encodeTokenPayload = (payload: UploadTokenPayload): string => {
     const json = JSON.stringify(payload);
@@ -113,10 +108,7 @@ const createSignedToken = async (payload: UploadTokenPayload, secret: string): P
     return `${encoded}.${signature}`;
 };
 
-const verifySignedToken = async (
-    token: string,
-    secret: string
-): Promise<UploadTokenPayload | null> => {
+const verifySignedToken = async (token: string, secret: string): Promise<UploadTokenPayload | null> => {
     const [encoded, signature] = token.split('.', 2);
     if (!encoded || !signature) return null;
 
@@ -130,27 +122,7 @@ const verifySignedToken = async (
     }
     if (!Number.isFinite(payload.expiresAt) || payload.expiresAt <= 0) return null;
     if (!Number.isFinite(payload.maxUploadBytes) || payload.maxUploadBytes <= 0) return null;
-
     return payload;
-};
-
-const canUploadAssetType = (assetType: UploadAssetType, c: AppContext): boolean => {
-    if (assetType === 'SIGNATURE') {
-        return hasPermission(c, 'can_manage_templates');
-    }
-    if (assetType === 'PRODUCT_IMAGE') {
-        return hasPermission(c, 'can_manage_inventory');
-    }
-    if (assetType === 'PROFILE_IMAGE') {
-        return hasPermission(c, 'can_access_settings');
-    }
-    if (assetType === 'BILL_ATTACHMENT') {
-        return hasPermission(c, 'can_create_bill') || hasPermission(c, 'can_manage_payments');
-    }
-    return hasPermission(c, 'can_manage_inventory')
-        || hasPermission(c, 'can_manage_templates')
-        || hasPermission(c, 'can_manage_payments')
-        || hasPermission(c, 'can_access_settings');
 };
 
 const buildUploadUrl = (requestUrl: string, token: string): string => {
@@ -182,11 +154,28 @@ const parseMaxUploadBytes = (raw?: string): number => {
     return Math.floor(mb * 1024 * 1024);
 };
 
-mediaRoute.post('/upload-url', requireAuth, withOrganizationContext, async (c) => {
+const getMediaScope = (c: AppContext): { ownerUserId: string; organizationId: string } | null => {
+    const ownerUserId = c.get('effectiveOwnerUserId');
+    const organizationId = c.get('effectiveOrganizationId');
+    if (!ownerUserId || !organizationId) return null;
+    return { ownerUserId, organizationId };
+};
+
+const buildOptionalOrgScopeCondition = (
+    organizationColumn: any,
+    organizationId: string,
+    ownerUserId: string
+) => {
+    if (organizationId === ownerUserId) {
+        return or(eq(organizationColumn, organizationId), isNull(organizationColumn));
+    }
+    return eq(organizationColumn, organizationId);
+};
+
+mediaRoute.post('/upload-url', requireAuth, async (c) => {
     try {
-        const ownerUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
-        if (!ownerUserId || !organizationId) {
+        const scope = getMediaScope(c);
+        if (!scope) {
             return c.json({ ok: false, message: 'Organization context missing.' }, 400);
         }
 
@@ -196,37 +185,27 @@ mediaRoute.post('/upload-url', requireAuth, withOrganizationContext, async (c) =
         }
 
         const payload = uploadRequestSchema.parse(await c.req.json());
-        if (!canUploadAssetType(payload.assetType, c)) {
-            return c.json({ ok: false, message: `Access denied for asset type ${payload.assetType}.` }, 403);
-        }
-
-        const key = buildObjectKey(ownerUserId, organizationId, payload.fileName, payload.fileType);
+        const key = buildObjectKey(scope.ownerUserId, scope.organizationId, payload.fileName, payload.fileType);
         const ttlSeconds = DEFAULT_TOKEN_TTL_SECONDS;
         const expiresAt = Date.now() + ttlSeconds * 1000;
+
         const db = c.get('db');
-        const [owner] = await db
+        await db
             .select({
                 subscriptionStatus: users.subscriptionStatus,
                 subscriptionPlanId: users.subscriptionPlanId,
                 subscriptionPlanName: users.subscriptionPlanName,
             })
             .from(users)
-            .where(eq(users.uid, ownerUserId))
+            .where(eq(users.uid, scope.ownerUserId))
             .limit(1);
-        const settings = (c.get('organizationSettings') ?? {}) as Record<string, unknown>;
-        const envMaxUploadBytes = parseMaxUploadBytes(c.env.MEDIA_MAX_UPLOAD_MB);
-        const planMaxUploadBytes = resolveMaxUploadBytesForPlan(
-            settings,
-            owner?.subscriptionStatus,
-            owner?.subscriptionPlanId,
-            owner?.subscriptionPlanName
-        );
-        const maxUploadBytes = Math.min(envMaxUploadBytes, planMaxUploadBytes);
+
+        const maxUploadBytes = parseMaxUploadBytes(c.env.MEDIA_MAX_UPLOAD_MB);
 
         const tokenPayload: UploadTokenPayload = {
             key,
-            ownerUserId,
-            organizationId,
+            ownerUserId: scope.ownerUserId,
+            organizationId: scope.organizationId,
             assetType: payload.assetType,
             entityType: payload.entityType ?? null,
             entityId: payload.entityId ?? null,
@@ -304,7 +283,7 @@ mediaRoute.put('/upload', async (c) => {
             id: assetId,
             userId: tokenPayload.ownerUserId,
             organizationId: tokenPayload.organizationId,
-            assetType: tokenPayload.assetType,
+            assetType: tokenPayload.assetType as any,
             entityType: tokenPayload.entityType,
             entityId: tokenPayload.entityId,
             url: fileUrl,
@@ -348,26 +327,25 @@ mediaRoute.get('/files/*', async (c) => {
     return new Response(object.body, { headers });
 });
 
-mediaRoute.get('/assets', requireAuth, withOrganizationContext, async (c) => {
-    const ownerUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
-    if (!ownerUserId || !organizationId) {
+mediaRoute.get('/assets', requireAuth, async (c) => {
+    const scope = getMediaScope(c);
+    if (!scope) {
         return c.json({ ok: false, message: 'Organization context missing.' }, 400);
     }
 
     const assetTypeRaw = c.req.query('assetType');
     const assetType = assetTypeRaw && uploadAssetTypeSchema.safeParse(assetTypeRaw).success
-        ? assetTypeRaw
+        ? assetTypeRaw as UploadAssetType
         : null;
     const entityType = c.req.query('entityType');
     const entityId = c.req.query('entityId');
     const limit = Math.min(Math.max(Number(c.req.query('limit') || 100), 1), 500);
 
     const conditions = [
-        eq(mediaAssets.userId, ownerUserId),
-        eq(mediaAssets.organizationId, organizationId),
+        eq(mediaAssets.userId, scope.ownerUserId),
+        buildOptionalOrgScopeCondition(mediaAssets.organizationId, scope.organizationId, scope.ownerUserId),
     ];
-    if (assetType) conditions.push(eq(mediaAssets.assetType, assetType));
+    if (assetType) conditions.push(eq(mediaAssets.assetType, assetType as any));
     if (entityType) conditions.push(eq(mediaAssets.entityType, entityType));
     if (entityId) conditions.push(eq(mediaAssets.entityId, entityId));
 
@@ -382,3 +360,4 @@ mediaRoute.get('/assets', requireAuth, withOrganizationContext, async (c) => {
 });
 
 export default mediaRoute;
+

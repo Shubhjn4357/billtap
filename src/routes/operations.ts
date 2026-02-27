@@ -27,6 +27,14 @@ const parseDateParam = (value: string | undefined): Date | undefined => {
     return parsed;
 };
 
+const toStartOfDay = (value: Date): Date => (
+    new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 0, 0, 0, 0))
+);
+
+const toEndOfDay = (value: Date): Date => (
+    new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 23, 59, 59, 999))
+);
+
 const isOwnerOrAdmin = (role: string | null | undefined): boolean => role === 'owner' || role === 'admin';
 
 const journalApprovalPayloadSchema = z.object({
@@ -48,7 +56,6 @@ const journalApprovalPayloadSchema = z.object({
 });
 
 const stockApprovalPayloadSchema = z.object({
-    organizationId: z.string().optional(),
     itemId: z.string().min(1),
     type: z.enum(['IN', 'OUT']),
     quantity: z.number().positive(),
@@ -213,7 +220,6 @@ operationsRoute.post('/approvals/:id/approve', requireAuth, async (c) => {
                     await ensurePeriodUnlockedForDate(tx, effectiveUserId, new Date());
                 }
                 const stockResult = await applyStockAdjustmentInTx(tx, effectiveUserId, {
-                    organizationId: requestPayload.organizationId,
                     itemId: requestPayload.itemId,
                     type: requestPayload.type,
                     quantity: requestPayload.quantity,
@@ -391,7 +397,10 @@ operationsRoute.post('/periods/lock', requireAuth, async (c) => {
             notes: z.string().optional(),
         }).parse(body);
 
-        if (payload.periodStart.getTime() > payload.periodEnd.getTime()) {
+        const normalizedPeriodStart = toStartOfDay(payload.periodStart);
+        const normalizedPeriodEnd = toEndOfDay(payload.periodEnd);
+
+        if (normalizedPeriodStart.getTime() > normalizedPeriodEnd.getTime()) {
             return c.json({ ok: false, message: 'periodStart must be before periodEnd.' }, 400);
         }
 
@@ -402,8 +411,8 @@ operationsRoute.post('/periods/lock', requireAuth, async (c) => {
             .where(
                 and(
                     eq(accountingPeriods.userId, effectiveUserId),
-                    lte(accountingPeriods.periodStart, payload.periodEnd),
-                    gte(accountingPeriods.periodEnd, payload.periodStart),
+                    lte(accountingPeriods.periodStart, normalizedPeriodEnd),
+                    gte(accountingPeriods.periodEnd, normalizedPeriodStart),
                     eq(accountingPeriods.status, 'locked')
                 )
             )
@@ -418,8 +427,8 @@ operationsRoute.post('/periods/lock', requireAuth, async (c) => {
         await db.insert(accountingPeriods).values({
             id,
             userId: effectiveUserId,
-            periodStart: payload.periodStart,
-            periodEnd: payload.periodEnd,
+            periodStart: normalizedPeriodStart,
+            periodEnd: normalizedPeriodEnd,
             status: 'locked',
             lockedBy: authUser.uid,
             lockedAt: now,
@@ -439,8 +448,8 @@ operationsRoute.post('/periods/lock', requireAuth, async (c) => {
             entityType: 'accounting_period',
             entityId: id,
             after: {
-                periodStart: payload.periodStart.toISOString(),
-                periodEnd: payload.periodEnd.toISOString(),
+                periodStart: normalizedPeriodStart.toISOString(),
+                periodEnd: normalizedPeriodEnd.toISOString(),
                 status: 'locked',
             },
         });

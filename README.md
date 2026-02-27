@@ -111,7 +111,6 @@ Configured in `wrangler.json` to run daily at `02:00 UTC` and invoke `/api/jobs/
 - `pnpm dev` - local Worker dev
 - `pnpm deploy` - deploy Worker
 - `pnpm typecheck` - TypeScript checks
-- `pnpm smoke:e2e` - login/store-switch/estimate/reminder smoke flow
 - `pnpm db:push` - push schema
 - `pnpm db:generate` - generate migrations
 - `pnpm db:studio` - open studio

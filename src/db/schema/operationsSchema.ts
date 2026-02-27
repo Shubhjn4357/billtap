@@ -1,4 +1,15 @@
 import { boolean, doublePrecision, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+    amountTypeEnum,
+    attendanceStatusEnum,
+    payrollCategoryEnum,
+    periodStatusEnum,
+    requestModuleEnum,
+    requestStatusEnum,
+    requestTypeEnum,
+    salaryRunStatusEnum,
+} from './enums';
+import { createCreatedAt, createOwnerScope, createTimestamps } from './common';
 
 export const businessControls = pgTable('business_controls', {
     userId: text('userId').primaryKey().notNull(),
@@ -6,27 +17,25 @@ export const businessControls = pgTable('business_controls', {
     journalApprovalRequired: boolean('journalApprovalRequired').default(true).notNull(),
     stockAdjustmentApprovalRequired: boolean('stockAdjustmentApprovalRequired').default(true).notNull(),
     periodLockEnabled: boolean('periodLockEnabled').default(true).notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('business_controls_user_idx').on(table.userId),
 }));
 
 export const approvalRequests = pgTable('approval_requests', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
-    module: text('module').notNull(), // inventory | billing | accounting | admin
-    requestType: text('requestType').notNull(), // JOURNAL_ENTRY | STOCK_ADJUSTMENT
+    ...createOwnerScope(),
+    module: requestModuleEnum('module').notNull(),
+    requestType: requestTypeEnum('requestType').notNull(),
     requestedBy: text('requestedBy').notNull(),
     requestedByRole: text('requestedByRole'),
-    status: text('status').default('pending').notNull(), // pending | approved | rejected
+    status: requestStatusEnum('status').default('pending').notNull(),
     payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
     reason: text('reason'),
     reviewedBy: text('reviewedBy'),
     reviewedAt: timestamp('reviewedAt', { withTimezone: true, mode: 'date' }),
     reviewNote: text('reviewNote'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userStatusIndex: index('approval_requests_user_status_idx').on(table.userId, table.status),
     moduleIndex: index('approval_requests_module_idx').on(table.module),
@@ -36,7 +45,7 @@ export const approvalRequests = pgTable('approval_requests', {
 
 export const auditLogs = pgTable('audit_logs', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
+    ...createOwnerScope(),
     actorUid: text('actorUid').notNull(),
     actorRole: text('actorRole'),
     module: text('module').notNull(),
@@ -46,7 +55,7 @@ export const auditLogs = pgTable('audit_logs', {
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
     metadata: jsonb('metadata').$type<Record<string, string | number | boolean | null> | null>(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createCreatedAt(),
 }, (table) => ({
     userIndex: index('audit_logs_user_idx').on(table.userId),
     moduleIndex: index('audit_logs_module_idx').on(table.module),
@@ -56,17 +65,16 @@ export const auditLogs = pgTable('audit_logs', {
 
 export const accountingPeriods = pgTable('accounting_periods', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
+    ...createOwnerScope(),
     periodStart: timestamp('periodStart', { withTimezone: true, mode: 'date' }).notNull(),
     periodEnd: timestamp('periodEnd', { withTimezone: true, mode: 'date' }).notNull(),
-    status: text('status').default('open').notNull(), // open | locked | closed
+    status: periodStatusEnum('status').default('open').notNull(),
     lockedBy: text('lockedBy'),
     lockedAt: timestamp('lockedAt', { withTimezone: true, mode: 'date' }),
     closedBy: text('closedBy'),
     closedAt: timestamp('closedAt', { withTimezone: true, mode: 'date' }),
     notes: text('notes'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('accounting_periods_user_idx').on(table.userId),
     rangeIndex: index('accounting_periods_range_idx').on(table.periodStart, table.periodEnd),
@@ -75,14 +83,13 @@ export const accountingPeriods = pgTable('accounting_periods', {
 
 export const branches = pgTable('branches', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
+    ...createOwnerScope(),
     name: text('name').notNull(),
     code: text('code').notNull(),
     address: text('address'),
     isPrimary: boolean('isPrimary').default(false).notNull(),
     isActive: boolean('isActive').default(true).notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('branches_user_idx').on(table.userId),
     codeIndex: index('branches_code_idx').on(table.code),
@@ -90,17 +97,15 @@ export const branches = pgTable('branches', {
 
 export const attendanceRecords = pgTable('attendance_records', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
+    ...createOwnerScope(),
     staffUid: text('staffUid').notNull(),
-    branchId: text('branchId'),
     shiftName: text('shiftName'),
     checkInAt: timestamp('checkInAt', { withTimezone: true, mode: 'date' }).notNull(),
     checkOutAt: timestamp('checkOutAt', { withTimezone: true, mode: 'date' }),
     overtimeMinutes: integer('overtimeMinutes').default(0).notNull(),
-    status: text('status').default('present').notNull(), // present | absent | half-day | leave
+    status: attendanceStatusEnum('status').default('present').notNull(),
     notes: text('notes'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('attendance_records_user_idx').on(table.userId),
     staffIndex: index('attendance_records_staff_idx').on(table.staffUid),
@@ -109,15 +114,14 @@ export const attendanceRecords = pgTable('attendance_records', {
 
 export const payrollComponents = pgTable('payroll_components', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
+    ...createOwnerScope(),
     code: text('code').notNull(),
     name: text('name').notNull(),
-    category: text('category').notNull(), // earning | deduction | statutory
-    amountType: text('amountType').default('fixed').notNull(), // fixed | percent
+    category: payrollCategoryEnum('category').notNull(),
+    amountType: amountTypeEnum('amountType').default('fixed').notNull(),
     value: doublePrecision('value').default(0).notNull(),
     isActive: boolean('isActive').default(true).notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('payroll_components_user_idx').on(table.userId),
     codeIndex: index('payroll_components_code_idx').on(table.code),
@@ -126,18 +130,16 @@ export const payrollComponents = pgTable('payroll_components', {
 
 export const salaryRuns = pgTable('salary_runs', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
-    branchId: text('branchId'),
+    ...createOwnerScope(),
     periodStart: timestamp('periodStart', { withTimezone: true, mode: 'date' }).notNull(),
     periodEnd: timestamp('periodEnd', { withTimezone: true, mode: 'date' }).notNull(),
-    status: text('status').default('draft').notNull(), // draft | finalized
+    status: salaryRunStatusEnum('status').default('draft').notNull(),
     totalGross: doublePrecision('totalGross').default(0).notNull(),
     totalDeductions: doublePrecision('totalDeductions').default(0).notNull(),
     totalNet: doublePrecision('totalNet').default(0).notNull(),
     journalEntryId: text('journalEntryId'),
     createdBy: text('createdBy').notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('salary_runs_user_idx').on(table.userId),
     periodIndex: index('salary_runs_period_idx').on(table.periodStart, table.periodEnd),
@@ -146,7 +148,7 @@ export const salaryRuns = pgTable('salary_runs', {
 
 export const salaryRunItems = pgTable('salary_run_items', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
+    ...createOwnerScope(),
     runId: text('runId').notNull(),
     staffUid: text('staffUid').notNull(),
     attendanceDays: doublePrecision('attendanceDays').default(0).notNull(),
@@ -162,8 +164,7 @@ export const salaryRunItems = pgTable('salary_run_items', {
         amount: number;
     }>>().default([]).notNull(),
     payslipData: jsonb('payslipData').$type<Record<string, unknown> | null>(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('salary_run_items_user_idx').on(table.userId),
     runIndex: index('salary_run_items_run_idx').on(table.runId),

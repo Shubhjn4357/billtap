@@ -14,7 +14,6 @@ export interface JournalLineInput {
 }
 
 export interface JournalEntryInput {
-    branchId?: string;
     costCenter?: string;
     projectCode?: string;
     entryDate?: Date;
@@ -27,7 +26,6 @@ export interface JournalEntryInput {
 }
 
 export interface StockAdjustmentInput {
-    organizationId?: string;
     itemId: string;
     type: 'IN' | 'OUT';
     quantity: number;
@@ -66,7 +64,6 @@ export const createJournalEntryInTx = async (
     await tx.insert(journalEntries).values({
         id: entryId,
         userId,
-        branchId: payload.branchId ?? null,
         costCenter: payload.costCenter ?? null,
         projectCode: payload.projectCode ?? null,
         entryDate: payload.entryDate ?? now,
@@ -108,9 +105,6 @@ export const applyStockAdjustmentInTx = async (
     }
 
     const itemScope = [eq(items.id, payload.itemId), eq(items.userId, userId)];
-    if (payload.organizationId) {
-        itemScope.push(eq(items.organizationId, payload.organizationId));
-    }
 
     const itemRows = await tx
         .select()
@@ -133,9 +127,6 @@ export const applyStockAdjustmentInTx = async (
     }
 
     const updateConditions = [eq(items.id, payload.itemId), eq(items.userId, userId)];
-    if (payload.organizationId) {
-        updateConditions.push(eq(items.organizationId, payload.organizationId));
-    }
     if (payload.type === 'OUT') {
         updateConditions.push(gte(items.stock, payload.quantity));
     }
@@ -161,7 +152,7 @@ export const applyStockAdjustmentInTx = async (
         userId,
         itemId: payload.itemId,
         transactionId: null,
-        movementType: payload.type === 'IN' ? 'ADJUST_IN' : 'ADJUST_OUT',
+        movementType: payload.type === 'IN' ? 'IN' : 'OUT',
         quantity: payload.quantity,
         balanceAfter: newStock,
         unitCost: null,

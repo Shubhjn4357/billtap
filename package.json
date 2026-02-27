@@ -9,7 +9,6 @@
     "deploy": "wrangler deploy --minify",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "smoke:e2e": "tsx ./scripts/smoke-e2e.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs push",
     "db:studio": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs studio"

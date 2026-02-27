@@ -103,6 +103,10 @@ const isMissingRelationError = (error: unknown, relationName: string): boolean =
     return new RegExp(relationName, 'i').test(extractErrorMessage(error));
 };
 
+const throwOperationsSchemaError = (): never => {
+    throw new Error('Operations control tables are missing. Run latest database migrations and retry.');
+};
+
 export const getBusinessControls = async (db: DrizzleClient, userId: string): Promise<BusinessControlSettings> => {
     try {
         const rows = await db
@@ -167,9 +171,10 @@ export const setBusinessControls = async (
                 },
             });
     } catch (error: unknown) {
-        if (!isMissingRelationError(error, 'business_controls')) {
-            throw error;
+        if (isMissingRelationError(error, 'business_controls')) {
+            throwOperationsSchemaError();
         }
+        throw error;
     }
 
     return next;
@@ -197,7 +202,7 @@ export const ensurePeriodUnlockedForDate = async (
             .limit(1);
     } catch (error: unknown) {
         if (isMissingRelationError(error, 'accounting_periods')) {
-            return;
+            throwOperationsSchemaError();
         }
         throw error;
     }
@@ -254,7 +259,7 @@ export const createApprovalRequest = async (
         });
     } catch (error: unknown) {
         if (isMissingRelationError(error, 'approval_requests')) {
-            return null;
+            throwOperationsSchemaError();
         }
         throw error;
     }
@@ -287,7 +292,7 @@ export const listApprovalRequests = async (
             .limit(limit);
     } catch (error: unknown) {
         if (isMissingRelationError(error, 'approval_requests')) {
-            return [];
+            throwOperationsSchemaError();
         }
         throw error;
     }

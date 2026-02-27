@@ -58,7 +58,7 @@ payrollRoute.post('/attendance/check-in', requireAuth, async (c) => {
             id,
             userId: effectiveUserId,
             staffUid,
-            branchId: payload.branchId ?? null,
+
             shiftName: payload.shiftName ?? null,
             checkInAt,
             checkOutAt: null,
@@ -254,6 +254,7 @@ payrollRoute.post('/salary-runs/generate', requireAuth, async (c) => {
         const effectiveUserId = c.get('effectiveUserId');
         const authUser = c.get('authUser');
         if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        const effectiveOwnerUserId = c.get('effectiveOwnerUserId') ?? effectiveUserId;
         if (!hasModulePermission(authUser, 'accounting', 'create')) {
             return c.json({ ok: false, message: 'Payroll generate access denied.' }, 403);
         }
@@ -282,7 +283,7 @@ payrollRoute.post('/salary-runs/generate', requireAuth, async (c) => {
         );
 
         const staffFilters = [
-            eq(users.ownerId, effectiveUserId),
+            eq(users.ownerId, effectiveOwnerUserId),
             eq(users.role, 'staff'),
         ];
         if (payload.includeStaffUids && payload.includeStaffUids.length > 0) {
@@ -434,7 +435,6 @@ payrollRoute.post('/salary-runs/generate', requireAuth, async (c) => {
             await tx.insert(salaryRuns).values({
                 id: runId,
                 userId: effectiveUserId,
-                branchId: payload.branchId ?? null,
                 periodStart: payload.periodStart,
                 periodEnd: payload.periodEnd,
                 status: 'draft',
@@ -566,7 +566,6 @@ payrollRoute.post('/salary-runs/:id/finalize', requireAuth, async (c) => {
             await tx.insert(journalEntries).values({
                 id: entryId,
                 userId: effectiveUserId,
-                branchId: run.branchId ?? null,
                 costCenter: null,
                 projectCode: null,
                 entryDate: run.periodEnd,

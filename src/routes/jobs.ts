@@ -31,7 +31,7 @@ jobsRoute.post('/run-all', async (c) => {
         const expired = await tx
             .update(users)
             .set({
-                subscriptionStatus: 'expired',
+                subscriptionStatus: 'inactive',
                 updatedAt: now,
             })
             .where(and(eq(users.subscriptionStatus, 'active'), lte(users.subscriptionEndsAt, now)))

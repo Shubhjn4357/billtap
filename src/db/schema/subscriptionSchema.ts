@@ -1,4 +1,6 @@
 import { boolean, doublePrecision, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { audienceEnum, paymentIntentStatusEnum } from './enums';
+import { createCreatedAt, createOwnerScope, createTimestamps } from './common';
 
 export const plans = pgTable('plans', {
     id: text('id').primaryKey(),
@@ -9,8 +11,7 @@ export const plans = pgTable('plans', {
     isActive: boolean('isActive').default(true).notNull(),
     displayOrder: integer('displayOrder').default(0).notNull(),
     features: jsonb('features').$type<string[]>().default([]).notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     activeIndex: index('plans_active_idx').on(table.isActive),
 }));
@@ -23,13 +24,12 @@ export const offers = pgTable('offers', {
     bannerBackground: text('bannerBackground'),
     ctaText: text('ctaText'),
     ctaRoute: text('ctaRoute'),
-    audience: text('audience').default('all').notNull(),
+    audience: audienceEnum('audience').default('all').notNull(),
     isActive: boolean('isActive').default(true).notNull(),
     priority: integer('priority').default(0).notNull(),
     startsAt: timestamp('startsAt', { withTimezone: true, mode: 'date' }),
     endsAt: timestamp('endsAt', { withTimezone: true, mode: 'date' }),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     activeIndex: index('offers_active_idx').on(table.isActive),
     priorityIndex: index('offers_priority_idx').on(table.priority),
@@ -37,7 +37,7 @@ export const offers = pgTable('offers', {
 
 export const analyticsEvents = pgTable('analytics_events', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
+    ...createOwnerScope(),
     eventType: text('eventType').notNull(),
     source: text('source'),
     planId: text('planId'),
@@ -45,7 +45,7 @@ export const analyticsEvents = pgTable('analytics_events', {
     value: doublePrecision('value'),
     currency: text('currency'),
     metadata: jsonb('metadata').$type<Record<string, string | number | boolean | null> | null>(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createCreatedAt(),
 }, (table) => ({
     createdIndex: index('analytics_events_created_idx').on(table.createdAt),
     typeIndex: index('analytics_events_type_idx').on(table.eventType),
@@ -53,22 +53,18 @@ export const analyticsEvents = pgTable('analytics_events', {
 
 export const paymentIntents = pgTable('payment_intents', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
+    ...createOwnerScope(),
     planId: text('planId').notNull(),
     planName: text('planName').notNull(),
     amount: doublePrecision('amount').notNull(),
     currency: text('currency').notNull(),
-    provider: text('provider').default('mock').notNull(),
-    status: text('status').default('pending').notNull(),
+    provider: text('provider').notNull(),
+    status: paymentIntentStatusEnum('status').default('pending').notNull(),
     checkoutUrl: text('checkoutUrl'),
     providerReference: text('providerReference'),
     failureReason: text('failureReason'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('payment_intents_user_idx').on(table.userId),
     statusIndex: index('payment_intents_status_idx').on(table.status),
 }));
-
-// Accounting master chart of accounts per business
-

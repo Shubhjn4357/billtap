@@ -1,4 +1,6 @@
 import { boolean, doublePrecision, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { roleEnum, subscriptionStatusEnum, inviteStatusEnum } from './enums';
+import { createCreatedAt, createOptionalOrganizationScope, createTimestamps } from './common';
 
 export const users = pgTable('users', {
     uid: text('uid').primaryKey(), // Firebase UID
@@ -12,16 +14,15 @@ export const users = pgTable('users', {
     gstEnabled: boolean('gstEnabled').default(false),
     gstNumber: text('gstNumber'),
     currency: text('currency').default('INR'),
-    role: text('role').default('owner'), // 'owner' | 'staff' | 'admin'
-    subscriptionStatus: text('subscriptionStatus').default('inactive'),
+    role: roleEnum('role').default('owner'), // Enum usage
+    subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('inactive'), // Enum usage
     subscriptionPlanId: text('subscriptionPlanId'),
     subscriptionPlanName: text('subscriptionPlanName'),
     subscriptionAmountMonthly: doublePrecision('subscriptionAmountMonthly'),
     subscriptionCurrency: text('subscriptionCurrency'),
     subscriptionStartsAt: timestamp('subscriptionStartsAt', { withTimezone: true, mode: 'date' }),
     subscriptionEndsAt: timestamp('subscriptionEndsAt', { withTimezone: true, mode: 'date' }),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => [
     index('users_role_idx').on(table.role),
     index('users_owner_idx').on(table.ownerId),
@@ -35,7 +36,7 @@ export const phoneVerifications = pgTable('phone_verifications', {
     expiresAt: timestamp('expiresAt', { withTimezone: true, mode: 'date' }).notNull(),
     consumedAt: timestamp('consumedAt', { withTimezone: true, mode: 'date' }),
     attempts: integer('attempts').default(0).notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createCreatedAt(),
 }, (table) => ({
     phoneIndex: index('phone_verifications_phone_idx').on(table.phoneNumber),
 }));
@@ -43,16 +44,15 @@ export const phoneVerifications = pgTable('phone_verifications', {
 export const staffInvites = pgTable('staff_invites', {
     id: text('id').primaryKey(),
     ownerId: text('ownerId').notNull(),
-    organizationId: text('organizationId'),
+    ...createOptionalOrganizationScope(),
     phoneNumber: text('phoneNumber').notNull(),
-    role: text('role').default('staff'),
+    role: roleEnum('role').default('staff'), // Enum usage
     permissions: jsonb('permissions').$type<Record<string, boolean> | null>(),
-    status: text('status').default('pending'), // 'pending' | 'accepted' | 'rejected'
+    status: inviteStatusEnum('status').default('pending'), // Enum usage
     code: text('code').notNull(), // Invite code
     expiresAt: timestamp('expiresAt', { withTimezone: true, mode: 'date' }).notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createCreatedAt(),
 }, (table) => ({
     ownerIndex: index('staff_invites_owner_idx').on(table.ownerId),
     phoneIndex: index('staff_invites_phone_idx').on(table.phoneNumber),
 }));
-

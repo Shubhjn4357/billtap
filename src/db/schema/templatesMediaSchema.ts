@@ -1,15 +1,21 @@
-import { boolean, doublePrecision, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
+import { assetTypeEnum, templateTypeEnum } from './enums';
+import {
+    createCreatedAt,
+    createOptionalOrganizationScope,
+    createOwnerScope,
+    createTimestamps,
+} from './common';
 
 export const templates = pgTable('templates', {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    type: text('type').notNull(), // 'invoice' | 'card' | 'email'
-    content: jsonb('content').notNull(), // HTML string or structured JSON
+    type: templateTypeEnum('type').notNull(),
+    content: jsonb('content').notNull(),
     isDefault: boolean('isDefault').default(false).notNull(),
     thumbnailUrl: text('thumbnailUrl'),
     isActive: boolean('isActive').default(true).notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     typeIndex: index('templates_type_idx').on(table.type),
     defaultIndex: index('templates_default_idx').on(table.isDefault),
@@ -17,19 +23,19 @@ export const templates = pgTable('templates', {
 
 export const mediaAssets = pgTable('media_assets', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
-    organizationId: text('organizationId'),
-    assetType: text('assetType').notNull(), // PRODUCT_IMAGE | PROFILE_IMAGE | BILL_ATTACHMENT | OTHER
+    ...createOwnerScope(),
+    ...createOptionalOrganizationScope(),
+    assetType: assetTypeEnum('assetType').notNull(),
     entityType: text('entityType'),
     entityId: text('entityId'),
     url: text('url').notNull(),
     mimeType: text('mimeType'),
     sizeBytes: integer('sizeBytes'),
     createdByUid: text('createdByUid'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createCreatedAt(),
 }, (table) => ({
     userIndex: index('media_assets_user_idx').on(table.userId),
-    organizationIndex: index('media_assets_org_idx').on(table.organizationId),
+    orgIndex: index('media_assets_org_idx').on(table.organizationId),
     entityIndex: index('media_assets_entity_idx').on(table.entityType, table.entityId),
 }));
 

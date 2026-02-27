@@ -1,29 +1,40 @@
 import { boolean, doublePrecision, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+    billModeEnum,
+    ledgerDirectionEnum,
+    ledgerSourceTypeEnum,
+    partyTypeEnum,
+    paymentDirectionEnum,
+    paymentModeEnum,
+    paymentStatusEnum,
+    transactionTypeEnum,
+} from './enums';
+import {
+    createCreatedAt,
+    createOptionalOrganizationScope,
+    createOwnerScope,
+    createTimestamps,
+} from './common';
 
 export const items = pgTable('items', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(), // Owner's ID
-    organizationId: text('organizationId').notNull(),
-    branchId: text('branchId'),
+    ...createOwnerScope(),
+    ...createOptionalOrganizationScope(),
     name: text('name').notNull(),
     nameLowercase: text('nameLowercase').notNull(),
 
-    // Pricing
-    price: doublePrecision('price').notNull(), // Selling Price
+    price: doublePrecision('price').notNull(),
     purchasePrice: doublePrecision('purchasePrice').default(0),
     mrp: doublePrecision('mrp').default(0),
 
-    // Taxes
     hsn: text('hsn'),
     gstPercentage: doublePrecision('gstPercentage').default(0),
 
-    // Stock
     stock: integer('stock').default(0).notNull(),
     minimumStock: integer('minimumStock').default(0),
     openingStock: integer('openingStock').default(0),
     unit: text('unit').default('pcs'),
 
-    // Meta
     category: text('category'),
     subcategory: text('subcategory'),
     description: text('description'),
@@ -35,13 +46,10 @@ export const items = pgTable('items', {
     autoDeleteEnabled: boolean('autoDeleteEnabled').default(false).notNull(),
     isActive: boolean('isActive').default(true),
 
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('items_user_idx').on(table.userId),
-    organizationIndex: index('items_org_idx').on(table.organizationId),
-    organizationBranchIndex: index('items_org_branch_idx').on(table.organizationId, table.branchId),
-    branchIndex: index('items_branch_idx').on(table.branchId),
+    orgIndex: index('items_org_idx').on(table.organizationId),
     nameIndex: index('items_name_idx').on(table.nameLowercase),
     barcodeIndex: index('items_barcode_idx').on(table.barcode),
     categoryIndex: index('items_category_idx').on(table.category),
@@ -51,47 +59,41 @@ export const items = pgTable('items', {
 
 export const parties = pgTable('parties', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(), // Owner's ID
-    organizationId: text('organizationId'),
+    ...createOwnerScope(),
+    ...createOptionalOrganizationScope(),
     name: text('name').notNull(),
     nameLowercase: text('nameLowercase').notNull(),
-    type: text('type').notNull(), // 'customer' | 'supplier'
+    type: partyTypeEnum('type').notNull(),
     phone: text('phone'),
     email: text('email'),
     address: text('address'),
     gstNumber: text('gstNumber'),
     isActive: boolean('isActive').default(true),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('parties_user_idx').on(table.userId),
-    organizationIndex: index('parties_org_idx').on(table.organizationId),
+    orgIndex: index('parties_org_idx').on(table.organizationId),
     nameIndex: index('parties_name_idx').on(table.nameLowercase),
     typeIndex: index('parties_type_idx').on(table.type),
 }));
 
 export const transactions = pgTable('transactions', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(), // Owner's ID
-    organizationId: text('organizationId'),
-    branchId: text('branchId'),
-    type: text('type').notNull(), // 'SALE' | 'PURCHASE'
+    ...createOwnerScope(),
+    ...createOptionalOrganizationScope(),
+    type: transactionTypeEnum('type').notNull(),
 
-    // Party Details
-    partyId: text('partyId'), // Optional link to parties table
+    partyId: text('partyId'),
     partyName: text('partyName'),
     partyPhone: text('partyPhone'),
 
-    // Bill Details
     billNumber: text('billNumber'),
     billDate: timestamp('billDate', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 
-// Business Details (Snapshot)
     businessName: text('businessName'),
     businessAddress: text('businessAddress'),
     gstNumber: text('gstNumber'),
 
-    // Financials
     currency: text('currency').default('INR'),
     costCenter: text('costCenter'),
     projectCode: text('projectCode'),
@@ -99,9 +101,9 @@ export const transactions = pgTable('transactions', {
     discountAmount: doublePrecision('discountAmount').default(0),
     taxAmount: doublePrecision('taxAmount').default(0),
     paidAmount: doublePrecision('paidAmount').default(0),
-    paymentMode: text('paymentMode').default('CASH').notNull(), // CASH | CREDIT
-    paymentStatus: text('paymentStatus').default('PAID').notNull(), // PAID | PARTIAL | PENDING
-    billMode: text('billMode').default('GST').notNull(), // GST | ESTIMATE
+    paymentMode: paymentModeEnum('paymentMode').default('CASH').notNull(),
+    paymentStatus: paymentStatusEnum('paymentStatus').default('PAID').notNull(),
+    billMode: billModeEnum('billMode').default('GST').notNull(),
     affectsGst: boolean('affectsGst').default(true).notNull(),
     createdByUid: text('createdByUid'),
     dueDate: timestamp('dueDate', { withTimezone: true, mode: 'date' }),
@@ -110,12 +112,11 @@ export const transactions = pgTable('transactions', {
     nextReminderAt: timestamp('nextReminderAt', { withTimezone: true, mode: 'date' }),
     lastReminderAt: timestamp('lastReminderAt', { withTimezone: true, mode: 'date' }),
 
-    // Items Snapshot
     items: jsonb('items').$type<Array<{
         id: string;
         name: string;
         quantity: number;
-        price: number; // Unit Price
+        price: number;
         tax: number;
         total: number;
     }>>().notNull(),
@@ -125,13 +126,12 @@ export const transactions = pgTable('transactions', {
     deliveryContactName: text('deliveryContactName'),
     deliveryContactPhone: text('deliveryContactPhone'),
     accountId: text('accountId'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('transactions_user_idx').on(table.userId),
-    organizationIndex: index('transactions_org_idx').on(table.organizationId),
-    organizationBillNumberIndex: index('transactions_org_bill_number_idx').on(table.organizationId, table.billNumber),
-    branchIndex: index('transactions_branch_idx').on(table.branchId),
+    orgIndex: index('transactions_org_idx').on(table.organizationId),
+    userBillNumberIndex: index('transactions_user_bill_number_idx').on(table.userId, table.billNumber),
+    orgBillNumberIndex: index('transactions_org_bill_number_idx').on(table.organizationId, table.billNumber),
     typeIndex: index('transactions_type_idx').on(table.type),
     createdIndex: index('transactions_created_idx').on(table.createdAt),
     partyIndex: index('transactions_party_idx').on(table.partyId),
@@ -142,54 +142,53 @@ export const transactions = pgTable('transactions', {
 
 export const partyLedgerEntries = pgTable('party_ledger_entries', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
-    organizationId: text('organizationId'),
+    ...createOwnerScope(),
+    ...createOptionalOrganizationScope(),
     partyId: text('partyId').notNull(),
-    sourceType: text('sourceType').notNull(), // BILL | PAYMENT | RETURN | ADJUSTMENT
+    sourceType: ledgerSourceTypeEnum('sourceType').notNull(),
     sourceId: text('sourceId'),
-    direction: text('direction').notNull(), // DEBIT | CREDIT
+    direction: ledgerDirectionEnum('direction').notNull(),
     amount: doublePrecision('amount').notNull(),
     runningBalance: doublePrecision('runningBalance').default(0).notNull(),
     entryDate: timestamp('entryDate', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
     narration: text('narration'),
     createdByUid: text('createdByUid'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createCreatedAt(),
 }, (table) => ({
     userIndex: index('party_ledger_entries_user_idx').on(table.userId),
-    organizationIndex: index('party_ledger_entries_org_idx').on(table.organizationId),
+    orgIndex: index('party_ledger_entries_org_idx').on(table.organizationId),
     partyIndex: index('party_ledger_entries_party_idx').on(table.partyId),
     dateIndex: index('party_ledger_entries_date_idx').on(table.entryDate),
 }));
 
 export const paymentEntries = pgTable('payment_entries', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
-    organizationId: text('organizationId'),
+    ...createOwnerScope(),
+    ...createOptionalOrganizationScope(),
     partyId: text('partyId').notNull(),
-    direction: text('direction').notNull(), // IN | OUT
+    direction: paymentDirectionEnum('direction').notNull(),
     amount: doublePrecision('amount').notNull(),
     paymentDate: timestamp('paymentDate', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    paymentMode: text('paymentMode').default('CASH').notNull(), // CASH | BANK | UPI | CARD
+    paymentMode: paymentModeEnum('paymentMode').default('CASH').notNull(),
     referenceNumber: text('referenceNumber'),
     narration: text('narration'),
     createdByUid: text('createdByUid'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createCreatedAt(),
 }, (table) => ({
     userIndex: index('payment_entries_user_idx').on(table.userId),
-    organizationIndex: index('payment_entries_org_idx').on(table.organizationId),
+    orgIndex: index('payment_entries_org_idx').on(table.organizationId),
     partyIndex: index('payment_entries_party_idx').on(table.partyId),
     dateIndex: index('payment_entries_date_idx').on(table.paymentDate),
 }));
 
 export const expenses = pgTable('expenses', {
     id: text('id').primaryKey(),
-    userId: text('userId').notNull(),
-    organizationId: text('organizationId'),
-    branchId: text('branchId'),
+    ...createOwnerScope(),
+    ...createOptionalOrganizationScope(),
     expenseDate: timestamp('expenseDate', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
     category: text('category').notNull(),
     amount: doublePrecision('amount').notNull(),
-    paymentMode: text('paymentMode').default('CASH').notNull(), // CASH | BANK | UPI | CARD
+    paymentMode: paymentModeEnum('paymentMode').default('CASH').notNull(),
     paidToPartyId: text('paidToPartyId'),
     paidToName: text('paidToName'),
     costCenter: text('costCenter'),
@@ -197,11 +196,10 @@ export const expenses = pgTable('expenses', {
     notes: text('notes'),
     attachmentUrl: text('attachmentUrl'),
     createdByUid: text('createdByUid'),
-    createdAt: timestamp('createdAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-    updatedAt: timestamp('updatedAt', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    ...createTimestamps(),
 }, (table) => ({
     userIndex: index('expenses_user_idx').on(table.userId),
-    organizationIndex: index('expenses_org_idx').on(table.organizationId),
+    orgIndex: index('expenses_org_idx').on(table.organizationId),
     dateIndex: index('expenses_date_idx').on(table.expenseDate),
     categoryIndex: index('expenses_category_idx').on(table.category),
 }));

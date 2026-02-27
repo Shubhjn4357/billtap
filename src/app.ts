@@ -20,9 +20,9 @@ import accountingRoute from './routes/accounting';
 import operationsRoute from './routes/operations';
 import payrollRoute from './routes/payroll';
 import treasuryRoute from './routes/treasury';
-import organizationsRoute from './routes/organizations';
 import financeOpsRoute from './routes/financeOps';
 import mediaRoute from './routes/media';
+import organizationsRoute from './routes/organizations';
 
 const app = new Hono<AppEnv>();
 const apiRoutes = new Hono<AppEnv>();
@@ -94,9 +94,9 @@ apiRoutes.route('/accounting', accountingRoute);
 apiRoutes.route('/operations', operationsRoute);
 apiRoutes.route('/payroll', payrollRoute);
 apiRoutes.route('/treasury', treasuryRoute);
-apiRoutes.route('/organizations', organizationsRoute);
 apiRoutes.route('/finance', financeOpsRoute);
 apiRoutes.route('/media', mediaRoute);
+apiRoutes.route('/organizations', organizationsRoute);
 app.route('/api', apiRoutes);
 app.route('/', apiRoutes);
 

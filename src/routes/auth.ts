@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
-import { users, staffInvites } from '../db/schema';
+import { users, staffInvites, organizationMembers } from '../db/schema';
 import { verifyGoogleIdentityToken } from '../auth/google';
 import { signSessionToken } from '../auth/tokens';
 import { toUserProfile } from '../auth/userProfile';
@@ -172,7 +172,7 @@ authRoute.post('/firebase', async (c) => {
             user = await db.select().from(users).where(eq(users.uid, phoneUid)).limit(1).then((entries: UserRow[]) => entries[0]);
         }
 
-        let staffInvite: { ownerId: string; id: string } | null = null;
+        let staffInvite: { ownerId: string; id: string; organizationId: string | null } | null = null;
         if (!user) {
             try {
                 const invite = await db
@@ -220,6 +220,43 @@ authRoute.post('/firebase', async (c) => {
                 await db.update(staffInvites).set({ status: 'accepted' }).where(eq(staffInvites.id, staffInvite.id));
             } catch (error: unknown) {
                 // ignore
+            }
+
+            if (staffInvite.organizationId) {
+                try {
+                    const now = new Date();
+                    const existingMembership = await db
+                        .select({ id: organizationMembers.id })
+                        .from(organizationMembers)
+                        .where(and(
+                            eq(organizationMembers.organizationId, staffInvite.organizationId),
+                            eq(organizationMembers.userId, user.uid),
+                        ))
+                        .limit(1);
+
+                    if (existingMembership[0]) {
+                        await db.update(organizationMembers).set({
+                            isActive: true,
+                            updatedAt: now,
+                        }).where(eq(organizationMembers.id, existingMembership[0].id));
+                    } else {
+                        await db.insert(organizationMembers).values({
+                            id: `mbr_${user.uid}_${staffInvite.organizationId}`,
+                            userId: user.uid,
+                            organizationId: staffInvite.organizationId,
+                            role: 'salesman',
+                            permissions: {},
+                            isActive: true,
+                            invitedBy: staffInvite.ownerId,
+                            phoneNumberSnapshot: normalizedPhone,
+                            joinedAt: now,
+                            createdAt: now,
+                            updatedAt: now,
+                        });
+                    }
+                } catch (error: unknown) {
+                    // ignore organization membership backfill failure
+                }
             }
         }
 
