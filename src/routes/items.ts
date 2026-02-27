@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { and, asc, eq, or, sql } from 'drizzle-orm';
 import { items, inventoryMovements } from '../db/schema';
 import { requireAuth, type AppContext, type AppEnv } from '../middleware/auth';
-import { hasPermission, requireFeatureToggle, requirePermission, withOrganizationContext } from '../middleware/permissions';
+import { hasPermission, requireFeatureToggle, requirePermission } from '../middleware/permissions';
 import { withTransaction } from '../db/transaction';
 import {
     createApprovalRequest,
@@ -19,7 +19,7 @@ import { applyStockAdjustmentInTx } from '../operations/executors';
 const itemsRoute = new Hono<AppEnv>();
 
 const canAccessItemCatalog = (c: AppContext) => {
-    return hasPermission(c, 'can_manage_inventory') || hasPermission(c, 'can_create_bill');
+    return hasPermission(c, 'canManageInventory') || hasPermission(c, 'canManageBilling');
 };
 
 // Schema for Item Input
@@ -49,24 +49,23 @@ const itemSchema = z.object({
 });
 
 // GET /items - List items
-itemsRoute.get('/', requireAuth, withOrganizationContext, async (c) => {
-    const effectiveUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
+itemsRoute.get('/', requireAuth, async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
     const authUser = c.get('authUser');
     const db = c.get('db');
     const queryText = c.req.query('q')?.trim();
     const includeInactive = c.req.query('includeInactive') === 'true';
     const limit = Math.min(Number(c.req.query('limit') || 100), 500);
 
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
     if (!canAccessItemCatalog(c)) {
         return c.json({ ok: false, message: 'Item catalog access denied.' }, 403);
     }
-    if (!hasModulePermission(authUser, 'inventory', 'view') && !hasPermission(c, 'can_create_bill')) {
+    if (!hasModulePermission(authUser, 'inventory', 'view') && !hasPermission(c, 'canManageBilling')) {
         return c.json({ ok: false, message: 'Inventory access denied.' }, 403);
     }
 
-    const baseConditions = [eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)];
+    const baseConditions = [eq(items.userId, effectiveUserId)];
     if (!includeInactive) {
         baseConditions.push(sql`coalesce(${items.isActive}, true) = true`);
     }
@@ -91,25 +90,24 @@ itemsRoute.get('/', requireAuth, withOrganizationContext, async (c) => {
 });
 
 // GET /items/:id - Get item detail
-itemsRoute.get('/:id', requireAuth, withOrganizationContext, async (c) => {
-    const effectiveUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
+itemsRoute.get('/:id', requireAuth, async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
     const authUser = c.get('authUser');
     const db = c.get('db');
     const id = c.req.param('id');
 
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
     if (!canAccessItemCatalog(c)) {
         return c.json({ ok: false, message: 'Item catalog access denied.' }, 403);
     }
-    if (!hasModulePermission(authUser, 'inventory', 'view') && !hasPermission(c, 'can_create_bill')) {
+    if (!hasModulePermission(authUser, 'inventory', 'view') && !hasPermission(c, 'canManageBilling')) {
         return c.json({ ok: false, message: 'Inventory access denied.' }, 403);
     }
 
     const data = await db
         .select()
         .from(items)
-        .where(and(eq(items.id, id), eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)))
+        .where(and(eq(items.id, id), eq(items.userId, effectiveUserId)))
         .limit(1);
 
     if (!data[0]) {
@@ -120,15 +118,16 @@ itemsRoute.get('/:id', requireAuth, withOrganizationContext, async (c) => {
 });
 
 // POST /items - Create item
-itemsRoute.post('/', requireAuth, withOrganizationContext, requirePermission('can_manage_inventory'), requireFeatureToggle('stock'), async (c) => {
+itemsRoute.post('/', requireAuth, requirePermission('canManageInventory'), requireFeatureToggle('stock'), async (c) => {
     try {
-        const effectiveUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
+        const effectiveUserId = c.get('effectiveUserId');
+        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
+
         const authUser = c.get('authUser');
         const db = c.get('db');
         const body = await c.req.json();
 
-        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
         if (!hasModulePermission(authUser, 'inventory', 'create')) {
             return c.json({ ok: false, message: 'Inventory create access denied.' }, 403);
         }
@@ -144,8 +143,7 @@ itemsRoute.post('/', requireAuth, withOrganizationContext, requirePermission('ca
                 .from(items)
                 .where(and(
                     eq(items.barcode, payload.barcode),
-                    eq(items.userId, effectiveUserId),
-                    eq(items.organizationId, organizationId)
+                    eq(items.userId, effectiveUserId)
                 ))
                 .limit(1);
             if (existingBarcode[0] && existingBarcode[0].id !== id) return c.json({ ok: false, message: 'Barcode already used.' }, 409);
@@ -154,8 +152,8 @@ itemsRoute.post('/', requireAuth, withOrganizationContext, requirePermission('ca
         const insertPayload = {
             id,
             userId: effectiveUserId,
-            organizationId,
-            branchId: payload.branchId ?? null,
+            organizationId: effectiveOrganizationId,
+
             name: payload.name.trim(),
             nameLowercase: payload.name.trim().toLowerCase(),
             price: payload.price,
@@ -193,16 +191,16 @@ itemsRoute.post('/', requireAuth, withOrganizationContext, requirePermission('ca
 });
 
 // PATCH /items/:id - Update item
-itemsRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission('can_manage_inventory'), requireFeatureToggle('stock'), async (c) => {
+itemsRoute.patch('/:id', requireAuth, requirePermission('canManageInventory'), requireFeatureToggle('stock'), async (c) => {
     try {
-        const effectiveUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
+        const effectiveUserId = c.get('effectiveUserId');
+
         const authUser = c.get('authUser');
         const db = c.get('db');
         const id = c.req.param('id');
         const body = await c.req.json();
 
-        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
         if (!hasModulePermission(authUser, 'inventory', 'update')) {
             return c.json({ ok: false, message: 'Inventory update access denied.' }, 403);
         }
@@ -219,7 +217,6 @@ itemsRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission
             updatePayload.nameLowercase = payload.name.trim().toLowerCase();
         }
         if (payload.price !== undefined) updatePayload.price = payload.price;
-        if (payload.branchId !== undefined) updatePayload.branchId = payload.branchId || null;
         if (payload.purchasePrice !== undefined) updatePayload.purchasePrice = payload.purchasePrice;
         if (payload.mrp !== undefined) updatePayload.mrp = payload.mrp;
         if (payload.stock !== undefined) updatePayload.stock = payload.stock;
@@ -241,7 +238,7 @@ itemsRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission
         const updated = await db
             .update(items)
             .set(updatePayload)
-            .where(and(eq(items.id, id), eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)))
+            .where(and(eq(items.id, id), eq(items.userId, effectiveUserId)))
             .returning({ id: items.id });
 
         if (!updated[0]) {
@@ -255,21 +252,20 @@ itemsRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission
 });
 
 // DELETE /items/:id - Delete item
-itemsRoute.delete('/:id', requireAuth, withOrganizationContext, requirePermission('can_manage_inventory'), requireFeatureToggle('stock'), async (c) => {
-    const effectiveUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
+itemsRoute.delete('/:id', requireAuth, requirePermission('canManageInventory'), requireFeatureToggle('stock'), async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
     const authUser = c.get('authUser');
     const db = c.get('db');
     const id = c.req.param('id');
 
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
     if (!hasModulePermission(authUser, 'inventory', 'delete')) {
         return c.json({ ok: false, message: 'Inventory delete access denied.' }, 403);
     }
 
     const deleted = await db
         .delete(items)
-        .where(and(eq(items.id, id), eq(items.userId, effectiveUserId), eq(items.organizationId, organizationId)))
+        .where(and(eq(items.id, id), eq(items.userId, effectiveUserId)))
         .returning({ id: items.id });
 
     if (!deleted[0]) {
@@ -280,16 +276,16 @@ itemsRoute.delete('/:id', requireAuth, withOrganizationContext, requirePermissio
 });
 
 // POST /items/:id/adjust - Adjust stock (IN/OUT)
-itemsRoute.post('/:id/adjust', requireAuth, withOrganizationContext, requirePermission('can_manage_inventory'), requireFeatureToggle('stock'), async (c) => {
+itemsRoute.post('/:id/adjust', requireAuth, requirePermission('canManageInventory'), requireFeatureToggle('stock'), async (c) => {
     try {
-        const effectiveUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
+        const effectiveUserId = c.get('effectiveUserId');
+
         const authUser = c.get('authUser');
         const db = c.get('db');
         const id = c.req.param('id');
         const body = await c.req.json();
 
-        if (!effectiveUserId || !organizationId || !authUser) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized' }, 401);
         if (!hasModulePermission(authUser, 'inventory', 'update')) {
             return c.json({ ok: false, message: 'Inventory adjustment access denied.' }, 403);
         }
@@ -309,7 +305,6 @@ itemsRoute.post('/:id/adjust', requireAuth, withOrganizationContext, requirePerm
                 requestedBy: authUser.uid,
                 requestedByRole: authUser.role,
                 body: {
-                    organizationId,
                     itemId: id,
                     type: payload.type,
                     quantity: payload.quantity,
@@ -345,7 +340,6 @@ itemsRoute.post('/:id/adjust', requireAuth, withOrganizationContext, requirePerm
 
         const result = await withTransaction(db, async (tx) => {
             return await applyStockAdjustmentInTx(tx, effectiveUserId, {
-                organizationId,
                 itemId: id,
                 type: payload.type,
                 quantity: payload.quantity,
@@ -376,13 +370,12 @@ itemsRoute.post('/:id/adjust', requireAuth, withOrganizationContext, requirePerm
 });
 
 // GET /items/low-stock — items where stock is at or below threshold
-itemsRoute.get('/low-stock', requireAuth, withOrganizationContext, async (c) => {
-    const effectiveUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
+itemsRoute.get('/low-stock', requireAuth, async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
     const authUser = c.get('authUser');
     const db = c.get('db');
 
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
     if (!canAccessItemCatalog(c)) {
         return c.json({ ok: false, message: 'Item catalog access denied.' }, 403);
     }
@@ -399,7 +392,6 @@ itemsRoute.get('/low-stock', requireAuth, withOrganizationContext, async (c) => 
         .where(
             and(
                 eq(items.userId, effectiveUserId),
-                eq(items.organizationId, organizationId),
                 sql`coalesce(${items.isActive}, true) = true`,
                 sql`${items.stock} <= ${threshold}`,
             )

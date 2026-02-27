@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { expenses, parties, partyLedgerEntries, paymentEntries } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { requirePermission, withOrganizationContext } from '../middleware/permissions';
+import { requirePermission } from '../middleware/permissions';
 import { ensurePeriodUnlockedForDate, getBusinessControls, writeAuditLog } from '../operations/controls';
 
 const financeOpsRoute = new Hono<AppEnv>();
@@ -20,18 +20,16 @@ const parseDateInput = (value?: string | null): Date | undefined => {
 
 const nextBalanceForParty = async (params: {
     db: any;
-    ownerUserId: string;
-    organizationId: string;
+    effectiveUserId: string;
     partyId: string;
     delta: number;
 }) => {
-    const { db, ownerUserId, organizationId, partyId, delta } = params;
+    const { db, effectiveUserId, partyId, delta } = params;
     const rows = await db
         .select({ runningBalance: partyLedgerEntries.runningBalance })
         .from(partyLedgerEntries)
         .where(and(
-            eq(partyLedgerEntries.userId, ownerUserId),
-            eq(partyLedgerEntries.organizationId, organizationId),
+            eq(partyLedgerEntries.userId, effectiveUserId),
             eq(partyLedgerEntries.partyId, partyId),
         ))
         .orderBy(desc(partyLedgerEntries.entryDate), desc(partyLedgerEntries.createdAt))
@@ -40,10 +38,9 @@ const nextBalanceForParty = async (params: {
     return roundAmount(previous + delta);
 };
 
-financeOpsRoute.get('/party-ledger/:partyId', requireAuth, withOrganizationContext, requirePermission('can_manage_payments'), async (c) => {
-    const ownerUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
-    if (!ownerUserId || !organizationId) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+financeOpsRoute.get('/party-ledger/:partyId', requireAuth, requirePermission('canManageBanking'), async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const partyId = c.req.param('partyId');
     const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
@@ -53,8 +50,7 @@ financeOpsRoute.get('/party-ledger/:partyId', requireAuth, withOrganizationConte
         .select()
         .from(parties)
         .where(and(
-            eq(parties.userId, ownerUserId),
-            eq(parties.organizationId, organizationId),
+            eq(parties.userId, effectiveUserId),
             eq(parties.id, partyId),
         ))
         .limit(1);
@@ -65,8 +61,7 @@ financeOpsRoute.get('/party-ledger/:partyId', requireAuth, withOrganizationConte
         .select()
         .from(partyLedgerEntries)
         .where(and(
-            eq(partyLedgerEntries.userId, ownerUserId),
-            eq(partyLedgerEntries.organizationId, organizationId),
+            eq(partyLedgerEntries.userId, effectiveUserId),
             eq(partyLedgerEntries.partyId, partyId),
         ))
         .orderBy(desc(partyLedgerEntries.entryDate), desc(partyLedgerEntries.createdAt))
@@ -89,18 +84,16 @@ financeOpsRoute.get('/party-ledger/:partyId', requireAuth, withOrganizationConte
     });
 });
 
-financeOpsRoute.get('/party-balances', requireAuth, withOrganizationContext, requirePermission('can_manage_payments'), async (c) => {
-    const ownerUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
-    if (!ownerUserId || !organizationId) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+financeOpsRoute.get('/party-balances', requireAuth, requirePermission('canManageBanking'), async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const db = c.get('db');
     const partyRows = await db
         .select()
         .from(parties)
         .where(and(
-            eq(parties.userId, ownerUserId),
-            eq(parties.organizationId, organizationId),
+            eq(parties.userId, effectiveUserId),
             eq(parties.isActive, true),
         ))
         .orderBy(asc(parties.nameLowercase));
@@ -108,10 +101,7 @@ financeOpsRoute.get('/party-balances', requireAuth, withOrganizationContext, req
     const ledgerRows = await db
         .select()
         .from(partyLedgerEntries)
-        .where(and(
-            eq(partyLedgerEntries.userId, ownerUserId),
-            eq(partyLedgerEntries.organizationId, organizationId),
-        ))
+        .where(eq(partyLedgerEntries.userId, effectiveUserId))
         .orderBy(asc(partyLedgerEntries.entryDate), asc(partyLedgerEntries.createdAt));
 
     const balanceByPartyId = new Map<string, number>();
@@ -135,10 +125,9 @@ financeOpsRoute.get('/party-balances', requireAuth, withOrganizationContext, req
     return c.json({ ok: true, balances });
 });
 
-financeOpsRoute.get('/payments', requireAuth, withOrganizationContext, requirePermission('can_manage_payments'), async (c) => {
-    const ownerUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
-    if (!ownerUserId || !organizationId) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+financeOpsRoute.get('/payments', requireAuth, requirePermission('canManageBanking'), async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const start = parseDateInput(c.req.query('start'));
     const end = parseDateInput(c.req.query('end'));
@@ -146,8 +135,7 @@ financeOpsRoute.get('/payments', requireAuth, withOrganizationContext, requirePe
     const limit = Math.min(Math.max(Number(c.req.query('limit') || 300), 1), 5000);
 
     const conditions = [
-        eq(paymentEntries.userId, ownerUserId),
-        eq(paymentEntries.organizationId, organizationId),
+        eq(paymentEntries.userId, effectiveUserId),
     ];
     if (start) conditions.push(gte(paymentEntries.paymentDate, start));
     if (end) conditions.push(lte(paymentEntries.paymentDate, end));
@@ -164,12 +152,12 @@ financeOpsRoute.get('/payments', requireAuth, withOrganizationContext, requirePe
     return c.json({ ok: true, payments: rows });
 });
 
-financeOpsRoute.post('/payments', requireAuth, withOrganizationContext, requirePermission('can_manage_payments'), async (c) => {
+financeOpsRoute.post('/payments', requireAuth, requirePermission('canManageBanking'), async (c) => {
     try {
-        const ownerUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
+        const effectiveUserId = c.get('effectiveUserId');
+        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
         const authUser = c.get('authUser');
-        if (!ownerUserId || !organizationId || !authUser) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
         const payload = z.object({
             partyId: z.string().min(1),
@@ -183,9 +171,9 @@ financeOpsRoute.post('/payments', requireAuth, withOrganizationContext, requireP
 
         const db = c.get('db');
         const paymentDate = payload.paymentDate ?? new Date();
-        const controls = await getBusinessControls(db, ownerUserId);
+        const controls = await getBusinessControls(db, effectiveUserId);
         if (controls.periodLockEnabled) {
-            await ensurePeriodUnlockedForDate(db, ownerUserId, paymentDate);
+            await ensurePeriodUnlockedForDate(db, effectiveUserId, paymentDate);
         }
 
         const partyRows = await db
@@ -193,8 +181,7 @@ financeOpsRoute.post('/payments', requireAuth, withOrganizationContext, requireP
             .from(parties)
             .where(and(
                 eq(parties.id, payload.partyId),
-                eq(parties.userId, ownerUserId),
-                eq(parties.organizationId, organizationId),
+                eq(parties.userId, effectiveUserId),
             ))
             .limit(1);
         const party = partyRows[0];
@@ -204,8 +191,8 @@ financeOpsRoute.post('/payments', requireAuth, withOrganizationContext, requireP
         const now = new Date();
         await db.insert(paymentEntries).values({
             id: paymentId,
-            userId: ownerUserId,
-            organizationId,
+            userId: effectiveUserId,
+            organizationId: effectiveOrganizationId,
             partyId: payload.partyId,
             direction: payload.direction,
             amount: payload.amount,
@@ -220,16 +207,15 @@ financeOpsRoute.post('/payments', requireAuth, withOrganizationContext, requireP
         const delta = payload.direction === 'IN' ? -payload.amount : payload.amount;
         const runningBalance = await nextBalanceForParty({
             db,
-            ownerUserId,
-            organizationId,
+            effectiveUserId,
             partyId: payload.partyId,
             delta,
         });
 
         await db.insert(partyLedgerEntries).values({
             id: nanoid(),
-            userId: ownerUserId,
-            organizationId,
+            userId: effectiveUserId,
+            organizationId: effectiveOrganizationId,
             partyId: payload.partyId,
             sourceType: 'PAYMENT',
             sourceId: paymentId,
@@ -243,7 +229,7 @@ financeOpsRoute.post('/payments', requireAuth, withOrganizationContext, requireP
         });
 
         await writeAuditLog(db, {
-            userId: ownerUserId,
+            userId: effectiveUserId,
             actorUid: authUser.uid,
             actorRole: authUser.role,
             module: 'billing',
@@ -268,12 +254,12 @@ financeOpsRoute.post('/payments', requireAuth, withOrganizationContext, requireP
     }
 });
 
-financeOpsRoute.post('/party-ledger/adjust', requireAuth, withOrganizationContext, requirePermission('can_manage_payments'), async (c) => {
+financeOpsRoute.post('/party-ledger/adjust', requireAuth, requirePermission('canManageBanking'), async (c) => {
     try {
-        const ownerUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
+        const effectiveUserId = c.get('effectiveUserId');
+        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
         const authUser = c.get('authUser');
-        if (!ownerUserId || !organizationId || !authUser) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
         const payload = z.object({
             partyId: z.string().min(1),
@@ -287,8 +273,7 @@ financeOpsRoute.post('/party-ledger/adjust', requireAuth, withOrganizationContex
         const delta = payload.adjustmentType === 'INCREASE' ? payload.amount : -payload.amount;
         const runningBalance = await nextBalanceForParty({
             db,
-            ownerUserId,
-            organizationId,
+            effectiveUserId,
             partyId: payload.partyId,
             delta,
         });
@@ -297,8 +282,8 @@ financeOpsRoute.post('/party-ledger/adjust', requireAuth, withOrganizationContex
         const id = nanoid();
         await db.insert(partyLedgerEntries).values({
             id,
-            userId: ownerUserId,
-            organizationId,
+            userId: effectiveUserId,
+            organizationId: effectiveOrganizationId,
             partyId: payload.partyId,
             sourceType: 'ADJUSTMENT',
             sourceId: null,
@@ -317,10 +302,9 @@ financeOpsRoute.post('/party-ledger/adjust', requireAuth, withOrganizationContex
     }
 });
 
-financeOpsRoute.get('/expenses', requireAuth, withOrganizationContext, requirePermission('can_manage_expenses'), async (c) => {
-    const ownerUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
-    if (!ownerUserId || !organizationId) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+financeOpsRoute.get('/expenses', requireAuth, requirePermission('canManageAccounting'), async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const start = parseDateInput(c.req.query('start'));
     const end = parseDateInput(c.req.query('end'));
@@ -328,8 +312,7 @@ financeOpsRoute.get('/expenses', requireAuth, withOrganizationContext, requirePe
     const limit = Math.min(Math.max(Number(c.req.query('limit') || 300), 1), 5000);
 
     const conditions = [
-        eq(expenses.userId, ownerUserId),
-        eq(expenses.organizationId, organizationId),
+        eq(expenses.userId, effectiveUserId),
     ];
     if (start) conditions.push(gte(expenses.expenseDate, start));
     if (end) conditions.push(lte(expenses.expenseDate, end));
@@ -346,12 +329,12 @@ financeOpsRoute.get('/expenses', requireAuth, withOrganizationContext, requirePe
     return c.json({ ok: true, expenses: rows });
 });
 
-financeOpsRoute.post('/expenses', requireAuth, withOrganizationContext, requirePermission('can_manage_expenses'), async (c) => {
+financeOpsRoute.post('/expenses', requireAuth, requirePermission('canManageAccounting'), async (c) => {
     try {
-        const ownerUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
+        const effectiveUserId = c.get('effectiveUserId');
+        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
         const authUser = c.get('authUser');
-        if (!ownerUserId || !organizationId || !authUser) return c.json({ ok: false, message: 'Organization context missing.' }, 400);
+        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
         const payload = z.object({
             branchId: z.string().optional(),
@@ -369,18 +352,18 @@ financeOpsRoute.post('/expenses', requireAuth, withOrganizationContext, requireP
 
         const db = c.get('db');
         const expenseDate = payload.expenseDate ?? new Date();
-        const controls = await getBusinessControls(db, ownerUserId);
+        const controls = await getBusinessControls(db, effectiveUserId);
         if (controls.periodLockEnabled) {
-            await ensurePeriodUnlockedForDate(db, ownerUserId, expenseDate);
+            await ensurePeriodUnlockedForDate(db, effectiveUserId, expenseDate);
         }
 
         const id = nanoid();
         const now = new Date();
         await db.insert(expenses).values({
             id,
-            userId: ownerUserId,
-            organizationId,
-            branchId: payload.branchId ?? null,
+            userId: effectiveUserId,
+            organizationId: effectiveOrganizationId,
+
             expenseDate,
             category: payload.category.trim(),
             amount: payload.amount,
@@ -397,7 +380,7 @@ financeOpsRoute.post('/expenses', requireAuth, withOrganizationContext, requireP
         });
 
         await writeAuditLog(db, {
-            userId: ownerUserId,
+            userId: effectiveUserId,
             actorUid: authUser.uid,
             actorRole: authUser.role,
             module: 'accounting',

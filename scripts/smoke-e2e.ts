@@ -13,9 +13,7 @@ type ApiErrorPayload = {
 
 const baseUrl = (process.env.SMOKE_API_BASE_URL ?? 'http://127.0.0.1:8787/api').replace(/\/$/, '');
 const phoneNumber = process.env.SMOKE_PHONE_NUMBER;
-const forcedOtp = process.env.SMOKE_OTP_CODE;
 const createSecondStore = String(process.env.SMOKE_CREATE_SECOND_STORE ?? 'true').toLowerCase() !== 'false';
-const reminderRecipientOverride = process.env.SMOKE_REMINDER_RECIPIENT;
 
 if (!phoneNumber) {
     throw new Error('SMOKE_PHONE_NUMBER is required.');
@@ -281,52 +279,63 @@ const main = async () => {
         throw new Error(createdBill.message || 'Failed to create estimate bill.');
     }
 
-    const reminderRecipient = reminderRecipientOverride || phoneNumber;
-    logStep('REMINDER', 'Creating student and fee invoice');
-    const createdStudent = await apiCall<{ ok: boolean; id?: string; message?: string }>('POST', '/institution/students', {
+    logStep('REMINDER', 'Creating credit sale transaction eligible for reminder');
+    const reminderDueDate = new Date(Date.now() + (2 * 24 * 60 * 60 * 1000)).toISOString();
+    const reminderBill = await apiCall<{ ok: boolean; id?: string; message?: string }>('POST', '/transactions', {
         token,
         organizationId: activeOrganizationId,
         body: {
-            name: `Smoke Student ${Date.now()}`,
-            className: 'Class 5',
-            guardianName: 'Smoke Guardian',
-            phoneNumber: reminderRecipient,
+            type: 'SALE',
+            billMode: 'GST',
+            affectsGst: true,
+            paymentMode: 'CREDIT',
+            reminderEnabled: true,
+            reminderFrequencyDays: 1,
+            dueDate: reminderDueDate,
+            items: [
+                {
+                    id: createdItem.id,
+                    name: 'Smoke Item',
+                    quantity: 1,
+                    price: 120,
+                    tax: 21.6,
+                    total: 141.6,
+                },
+            ],
+            totalAmount: 141.6,
+            discountAmount: 0,
+            taxAmount: 21.6,
+            currency: 'INR',
+            partyName: 'Smoke Reminder Customer',
+            partyPhone: phoneNumber,
+            remark: 'Smoke reminder bill',
         },
     });
-    if (!createdStudent.ok || !createdStudent.id) {
-        throw new Error(createdStudent.message || 'Failed to create smoke student.');
+    if (!reminderBill.ok || !reminderBill.id) {
+        throw new Error(reminderBill.message || 'Failed to create reminder-eligible bill.');
     }
 
-    const dueDate = new Date().toISOString();
-    const createdInvoice = await apiCall<{ ok: boolean; id?: string; message?: string }>('POST', '/institution/fee-invoices', {
+    const dueBefore = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)).toISOString();
+    logStep('REMINDER', 'Validating pending reminder listing endpoint');
+    const reminderList = await apiCall<{
+        ok: boolean;
+        reminders?: Array<{
+            id: string;
+            dueAmount: number;
+            paymentStatus: 'PAID' | 'PARTIAL' | 'PENDING';
+        }>;
+        message?: string;
+    }>('GET', `/transactions/pending-reminders?dueBefore=${encodeURIComponent(dueBefore)}`, {
         token,
         organizationId: activeOrganizationId,
-        body: {
-            studentId: createdStudent.id,
-            amount: 499,
-            dueDate,
-            notes: 'Smoke reminder invoice',
-        },
     });
-    if (!createdInvoice.ok || !createdInvoice.id) {
-        throw new Error(createdInvoice.message || 'Failed to create fee invoice.');
+    if (!reminderList.ok || !Array.isArray(reminderList.reminders)) {
+        throw new Error(reminderList.message || 'Failed to list pending reminders.');
     }
 
-    logStep('REMINDER', 'Sending fee reminder through WhatsApp endpoint');
-    const reminderSent = await apiCall<{ ok: boolean; status?: string; message?: string }>(
-        'POST',
-        `/institution/fee-reminders/${encodeURIComponent(createdInvoice.id)}/send-whatsapp`,
-        {
-            token,
-            organizationId: activeOrganizationId,
-            body: {
-                recipient: reminderRecipient,
-                customMessage: 'Smoke reminder message from E2E suite.',
-            },
-        }
-    );
-    if (!reminderSent.ok) {
-        throw new Error(reminderSent.message || 'Failed to send fee reminder.');
+    const matchedReminder = reminderList.reminders.find((entry) => entry.id === reminderBill.id);
+    if (!matchedReminder) {
+        throw new Error('Pending reminder list did not include the expected reminder bill.');
     }
 
     logStep('DONE', 'Smoke suite passed');
@@ -337,8 +346,8 @@ const main = async () => {
                 userId: verify.user.uid,
                 organizationId: activeOrganizationId,
                 billId: createdBill.id,
-                feeInvoiceId: createdInvoice.id,
-                reminderStatus: reminderSent.status ?? 'sent',
+                reminderBillId: reminderBill.id,
+                reminderPaymentStatus: matchedReminder.paymentStatus,
             },
             null,
             2

@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { and, asc, eq, or, sql } from 'drizzle-orm';
 import { parties } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { requireFeatureToggle, requirePermission, withOrganizationContext } from '../middleware/permissions';
+import { requireFeatureToggle, requirePermission } from '../middleware/permissions';
 
 const partiesRoute = new Hono<AppEnv>();
 
@@ -20,19 +20,19 @@ const partySchema = z.object({
 });
 
 // GET /parties - List parties
-partiesRoute.get('/', requireAuth, withOrganizationContext, requirePermission('can_manage_parties'), requireFeatureToggle('parties'), async (c) => {
-    const effectiveUserId = c.get('organizationOwnerId');
-    const organizationId = c.get('organizationId');
+partiesRoute.get('/', requireAuth, requirePermission('canManageParties'), requireFeatureToggle('parties'), async (c) => {
+    const effectiveUserId = c.get('effectiveUserId');
+
     const db = c.get('db');
     const queryText = c.req.query('q')?.trim();
     const type = c.req.query('type') as 'customer' | 'supplier' | undefined;
     const limit = Math.min(Number(c.req.query('limit') || 100), 500);
 
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
     const conditions = [
         eq(parties.userId, effectiveUserId),
-        eq(parties.organizationId, organizationId),
+
     ];
 
     if (type) {
@@ -59,14 +59,15 @@ partiesRoute.get('/', requireAuth, withOrganizationContext, requirePermission('c
 });
 
 // POST /parties - Create party
-partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('can_manage_parties'), requireFeatureToggle('parties'), async (c) => {
+partiesRoute.post('/', requireAuth, requirePermission('canManageParties'), requireFeatureToggle('parties'), async (c) => {
     try {
-        const effectiveUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
+        const effectiveUserId = c.get('effectiveUserId');
+        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
+
         const db = c.get('db');
         const body = await c.req.json();
 
-        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
         const payload = partySchema.parse(body);
         const id = payload.id ?? nanoid();
@@ -75,7 +76,8 @@ partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('
         const insertPayload = {
             id,
             userId: effectiveUserId,
-            organizationId,
+            organizationId: effectiveOrganizationId,
+
             name: payload.name.trim(),
             nameLowercase: payload.name.trim().toLowerCase(),
             type: payload.type,
@@ -100,15 +102,15 @@ partiesRoute.post('/', requireAuth, withOrganizationContext, requirePermission('
 });
 
 // PATCH /parties/:id - Update party
-partiesRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermission('can_manage_parties'), requireFeatureToggle('parties'), async (c) => {
+partiesRoute.patch('/:id', requireAuth, requirePermission('canManageParties'), requireFeatureToggle('parties'), async (c) => {
     try {
-        const effectiveUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
+        const effectiveUserId = c.get('effectiveUserId');
+
         const db = c.get('db');
         const id = c.req.param('id');
         const body = await c.req.json();
 
-        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
         const updateSchema = partySchema.partial();
         const payload = updateSchema.parse(body);
@@ -133,7 +135,7 @@ partiesRoute.patch('/:id', requireAuth, withOrganizationContext, requirePermissi
             .where(and(
                 eq(parties.id, id),
                 eq(parties.userId, effectiveUserId),
-                eq(parties.organizationId, organizationId),
+
             ))
             .returning({ id: parties.id });
 

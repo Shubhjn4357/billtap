@@ -9,10 +9,8 @@ import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     hasFeatureEnabled,
     hasPermission,
-    requireFeatureGate,
     requireFeatureToggle,
     requirePermission,
-    withOrganizationContext,
 } from '../middleware/permissions';
 import {
     ensurePeriodUnlockedForDate,
@@ -20,7 +18,6 @@ import {
     hasModulePermission,
     writeAuditLog,
 } from '../operations/controls';
-import { trackMonthlyBillUsage } from '../organizations/access';
 
 const transactionsRoute = new Hono<AppEnv>();
 
@@ -89,7 +86,6 @@ const toStartOfDay = (date: Date): Date => new Date(date.getFullYear(), date.get
 const getPartyRunningBalance = async (params: {
     tx: any;
     userId: string;
-    organizationId: string;
     partyId: string;
 }): Promise<number> => {
     const rows = await params.tx
@@ -97,7 +93,6 @@ const getPartyRunningBalance = async (params: {
         .from(partyLedgerEntries)
         .where(and(
             eq(partyLedgerEntries.userId, params.userId),
-            eq(partyLedgerEntries.organizationId, params.organizationId),
             eq(partyLedgerEntries.partyId, params.partyId),
         ))
         .orderBy(desc(partyLedgerEntries.entryDate), desc(partyLedgerEntries.createdAt))
@@ -139,8 +134,6 @@ const buildStockDeltaMap = (
 const applyStockDeltasInTx = async (params: {
     tx: any;
     userId: string;
-    organizationId: string;
-    branchId: string | null;
     transactionId: string;
     now: Date;
     allowNegativeStock: boolean;
@@ -154,8 +147,6 @@ const applyStockDeltasInTx = async (params: {
         const baseConditions = [
             eq(items.id, itemId),
             eq(items.userId, params.userId),
-            eq(items.organizationId, params.organizationId),
-            ...(params.branchId ? [eq(items.branchId, params.branchId)] : []),
         ];
 
         const updateConditions = [...baseConditions];
@@ -192,7 +183,6 @@ const applyStockDeltasInTx = async (params: {
             await params.tx.insert(inventoryMovements).values({
                 id: nanoid(),
                 userId: params.userId,
-                branchId: params.branchId,
                 itemId,
                 transactionId: params.transactionId,
                 movementType: delta > 0 ? 'IN' : 'OUT',
@@ -405,14 +395,12 @@ const postTransactionJournal = async (tx: any, input: AccountingPostInput) => {
 transactionsRoute.get(
     '/bill-number/check',
     requireAuth,
-    withOrganizationContext,
-    requirePermission('can_create_bill'),
+    requirePermission('canManageBilling'),
     async (c) => {
         try {
             const effectiveUserId = c.get('effectiveUserId');
-            const organizationId = c.get('organizationId');
             const authUser = c.get('authUser');
-            if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+            if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
             if (!hasModulePermission(authUser, 'billing', 'create')) {
                 return c.json({ ok: false, message: 'Billing create access denied.' }, 403);
             }
@@ -434,7 +422,6 @@ transactionsRoute.get(
                 .from(transactions)
                 .where(and(
                     eq(transactions.userId, effectiveUserId),
-                    eq(transactions.organizationId, organizationId),
                     eq(transactions.billNumber, billNumber),
                 ))
                 .limit(1);
@@ -455,19 +442,17 @@ transactionsRoute.get(
 transactionsRoute.post(
     '/',
     requireAuth,
-    withOrganizationContext,
-    requirePermission('can_create_bill'),
-    requireFeatureGate('bills_per_month'),
+    requirePermission('canManageBilling'),
+    requireFeatureToggle('bills_per_month'),
     async (c) => {
     try {
         const effectiveUserId = c.get('effectiveUserId');
-        const organizationId = c.get('organizationId');
-        const organizationSettingsPayload = c.get('organizationSettings') ?? {};
+        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
         const authUser = c.get('authUser');
         const db = c.get('db');
         const body = await c.req.json();
 
-        if (!effectiveUserId || !organizationId || !authUser) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized' }, 401);
         if (!hasModulePermission(authUser, 'billing', 'create')) {
             return c.json({ ok: false, message: 'Billing create access denied.' }, 403);
         }
@@ -483,24 +468,19 @@ transactionsRoute.post(
         if (payload.type === 'PURCHASE' && !hasFeatureEnabled(c, 'billingPurchase')) {
             return c.json({ ok: false, message: 'Purchase entry is disabled by owner settings.' }, 403);
         }
-        if (payload.type === 'SALE' && !hasPermission(c, 'can_create_sale')) {
+        if (payload.type === 'SALE' && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Sale billing is disabled for your role.' }, 403);
         }
-        if (payload.type === 'PURCHASE' && !hasPermission(c, 'can_create_purchase')) {
+        if (payload.type === 'PURCHASE' && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Purchase entry is disabled for your role.' }, 403);
         }
         const id = payload.id ?? nanoid();
         const now = new Date();
         const billDate = payload.billDate ?? now;
-        const billingSettings = ((organizationSettingsPayload as Record<string, unknown>).billing ?? {}) as Record<string, unknown>;
-        const inventorySettings = ((organizationSettingsPayload as Record<string, unknown>).inventory ?? {}) as Record<string, unknown>;
-        const allowBackDate = resolveSettingBoolean(billingSettings.allowBackDate, false);
-        const allowNegativeStock = resolveSettingBoolean(
-            inventorySettings.allowNegativeStock ?? billingSettings.allowNegativeStock,
-            false
-        );
+        const allowBackDate = false;
+        const allowNegativeStock = false;
         const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime();
-        if (isBackDate && !allowBackDate && !hasPermission(c, 'can_back_date')) {
+        if (isBackDate && !allowBackDate && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Back-date entry is disabled for your role/store.' }, 403);
         }
 
@@ -547,7 +527,6 @@ transactionsRoute.post(
                 .where(and(
                     eq(transactions.id, payload.id),
                     eq(transactions.userId, effectiveUserId),
-                    eq(transactions.organizationId, organizationId)
                 ))
                 .limit(1);
 
@@ -563,7 +542,6 @@ transactionsRoute.post(
                     .from(transactions)
                     .where(and(
                         eq(transactions.userId, effectiveUserId),
-                        eq(transactions.organizationId, organizationId),
                         eq(transactions.billNumber, normalizedBillNumber),
                     ))
                     .limit(1);
@@ -576,13 +554,11 @@ transactionsRoute.post(
             const sourceItems = itemIds.length === 0
                 ? []
                 : await tx
-                    .select({ id: items.id, purchasePrice: items.purchasePrice, name: items.name, stock: items.stock, branchId: items.branchId })
+                    .select({ id: items.id, purchasePrice: items.purchasePrice, name: items.name, stock: items.stock })
                     .from(items)
                     .where(and(
                         eq(items.userId, effectiveUserId),
-                        eq(items.organizationId, organizationId),
                         inArray(items.id, itemIds),
-                        ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
                     ));
             const purchasePriceByItemId = new Map(
                 sourceItems.map((item) => [item.id, Number(item.purchasePrice ?? 0)])
@@ -595,8 +571,6 @@ transactionsRoute.post(
                     const saleConditions = [
                         eq(items.id, itemId),
                         eq(items.userId, effectiveUserId),
-                        eq(items.organizationId, organizationId),
-                        ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
                     ];
                     if (!allowNegativeStock) {
                         saleConditions.push(gte(items.stock, qty));
@@ -618,8 +592,6 @@ transactionsRoute.post(
                             .where(and(
                                 eq(items.id, itemId),
                                 eq(items.userId, effectiveUserId),
-                                eq(items.organizationId, organizationId),
-                                ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
                             ))
                             .limit(1);
 
@@ -630,7 +602,6 @@ transactionsRoute.post(
                     await tx.insert(inventoryMovements).values({
                         id: nanoid(),
                         userId: effectiveUserId,
-                        branchId: payload.branchId ?? null,
                         itemId,
                         transactionId: id,
                         movementType: 'OUT',
@@ -650,8 +621,6 @@ transactionsRoute.post(
                         .where(and(
                             eq(items.id, itemId),
                             eq(items.userId, effectiveUserId),
-                            eq(items.organizationId, organizationId),
-                            ...(payload.branchId ? [eq(items.branchId, payload.branchId)] : []),
                         ))
                         .returning({ id: items.id, stock: items.stock });
 
@@ -670,7 +639,6 @@ transactionsRoute.post(
                     await tx.insert(inventoryMovements).values({
                         id: nanoid(),
                         userId: effectiveUserId,
-                        branchId: payload.branchId ?? null,
                         itemId,
                         transactionId: id,
                         movementType: 'IN',
@@ -686,8 +654,7 @@ transactionsRoute.post(
             await tx.insert(transactions).values({
                 id,
                 userId: effectiveUserId,
-                organizationId,
-                branchId: payload.branchId ?? null,
+                organizationId: effectiveOrganizationId,
                 type: payload.type,
                 partyId: payload.partyId ?? null,
                 partyName: payload.partyName ?? null,
@@ -725,7 +692,6 @@ transactionsRoute.post(
                 transactionId: id,
                 transactionType: payload.type,
                 transactionDate: billDate,
-                branchId: payload.branchId ?? null,
                 costCenter: payload.costCenter ?? null,
                 projectCode: payload.projectCode ?? null,
                 currency: payload.currency,
@@ -748,7 +714,6 @@ transactionsRoute.post(
                 const previousBalance = await getPartyRunningBalance({
                     tx,
                     userId: effectiveUserId,
-                    organizationId,
                     partyId: payload.partyId,
                 });
                 const delta = payload.type === 'SALE' ? dueAmount : -dueAmount;
@@ -757,7 +722,7 @@ transactionsRoute.post(
                 await tx.insert(partyLedgerEntries).values({
                     id: nanoid(),
                     userId: effectiveUserId,
-                    organizationId,
+                    organizationId: effectiveOrganizationId,
                     partyId: payload.partyId,
                     sourceType: 'BILL',
                     sourceId: id,
@@ -771,9 +736,6 @@ transactionsRoute.post(
                 });
             }
         });
-
-        await trackMonthlyBillUsage(db, effectiveUserId, 1);
-
         await writeAuditLog(db, {
             userId: effectiveUserId,
             actorUid: authUser.uid,
@@ -809,19 +771,17 @@ transactionsRoute.post(
 transactionsRoute.patch(
     '/:id',
     requireAuth,
-    withOrganizationContext,
-    requirePermission('can_create_bill'),
+    requirePermission('canManageBilling'),
     async (c) => {
     try {
         const effectiveUserId = c.get('effectiveUserId');
-        const organizationId = c.get('organizationId');
-        const organizationSettingsPayload = c.get('organizationSettings') ?? {};
+        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
         const authUser = c.get('authUser');
         const db = c.get('db');
         const id = c.req.param('id');
         const body = await c.req.json();
 
-        if (!effectiveUserId || !organizationId || !authUser) {
+        if (!effectiveUserId || !authUser) {
             return c.json({ ok: false, message: 'Unauthorized' }, 401);
         }
         if (!hasModulePermission(authUser, 'billing', 'update')) {
@@ -841,24 +801,19 @@ transactionsRoute.patch(
         if (payload.type === 'PURCHASE' && !hasFeatureEnabled(c, 'billingPurchase')) {
             return c.json({ ok: false, message: 'Purchase entry is disabled by owner settings.' }, 403);
         }
-        if (payload.type === 'SALE' && !hasPermission(c, 'can_create_sale')) {
+        if (payload.type === 'SALE' && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Sale billing is disabled for your role.' }, 403);
         }
-        if (payload.type === 'PURCHASE' && !hasPermission(c, 'can_create_purchase')) {
+        if (payload.type === 'PURCHASE' && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Purchase entry is disabled for your role.' }, 403);
         }
 
         const now = new Date();
         const billDate = payload.billDate ?? now;
-        const billingSettings = ((organizationSettingsPayload as Record<string, unknown>).billing ?? {}) as Record<string, unknown>;
-        const inventorySettings = ((organizationSettingsPayload as Record<string, unknown>).inventory ?? {}) as Record<string, unknown>;
-        const allowBackDate = resolveSettingBoolean(billingSettings.allowBackDate, false);
-        const allowNegativeStock = resolveSettingBoolean(
-            inventorySettings.allowNegativeStock ?? billingSettings.allowNegativeStock,
-            false
-        );
-        const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime();
-        if (isBackDate && !allowBackDate && !hasPermission(c, 'can_back_date')) {
+        const allowBackDate = false;
+        const allowNegativeStock = false;
+const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime();
+        if (isBackDate && !allowBackDate && !hasPermission(c, 'canManageBilling')) {
             return c.json({ ok: false, message: 'Back-date entry is disabled for your role/store.' }, 403);
         }
 
@@ -898,7 +853,6 @@ transactionsRoute.patch(
                 .where(and(
                     eq(transactions.id, id),
                     eq(transactions.userId, effectiveUserId),
-                    eq(transactions.organizationId, organizationId),
                 ))
                 .limit(1);
             const existing = existingRows[0];
@@ -912,7 +866,6 @@ transactionsRoute.patch(
                     .from(transactions)
                     .where(and(
                         eq(transactions.userId, effectiveUserId),
-                        eq(transactions.organizationId, organizationId),
                         eq(transactions.billNumber, normalizedBillNumber),
                         ne(transactions.id, id),
                     ))
@@ -939,8 +892,6 @@ transactionsRoute.patch(
             await applyStockDeltasInTx({
                 tx,
                 userId: effectiveUserId,
-                organizationId,
-                branchId: existing.branchId ?? null,
                 transactionId: id,
                 now,
                 allowNegativeStock,
@@ -953,8 +904,6 @@ transactionsRoute.patch(
                 userId: effectiveUserId,
                 transactionId: id,
             });
-
-            const effectiveBranchId = payload.branchId ?? existing.branchId ?? null;
 
             const applyStockDeltas = buildStockDeltaMap(
                 payload.type,
@@ -969,8 +918,6 @@ transactionsRoute.patch(
             await applyStockDeltasInTx({
                 tx,
                 userId: effectiveUserId,
-                organizationId,
-                branchId: effectiveBranchId,
                 transactionId: id,
                 now,
                 allowNegativeStock,
@@ -981,7 +928,6 @@ transactionsRoute.patch(
             await tx
                 .update(transactions)
                 .set({
-                    branchId: effectiveBranchId,
                     type: payload.type,
                     partyId: payload.partyId ?? null,
                     partyName: payload.partyName ?? null,
@@ -1014,7 +960,6 @@ transactionsRoute.patch(
                 .where(and(
                     eq(transactions.id, id),
                     eq(transactions.userId, effectiveUserId),
-                    eq(transactions.organizationId, organizationId),
                 ));
 
             const grouped = groupStockLines(normalizedItems.map((line) => ({
@@ -1030,9 +975,7 @@ transactionsRoute.patch(
                     .from(items)
                     .where(and(
                         eq(items.userId, effectiveUserId),
-                        eq(items.organizationId, organizationId),
                         inArray(items.id, itemIds),
-                        ...(effectiveBranchId ? [eq(items.branchId, effectiveBranchId)] : []),
                     ));
             const purchasePriceByItemId = new Map(
                 sourceItems.map((item) => [item.id, Number(item.purchasePrice ?? 0)])
@@ -1043,7 +986,6 @@ transactionsRoute.patch(
                 transactionId: id,
                 transactionType: payload.type,
                 transactionDate: billDate,
-                branchId: effectiveBranchId,
                 costCenter: payload.costCenter ?? null,
                 projectCode: payload.projectCode ?? null,
                 currency: payload.currency,
@@ -1066,7 +1008,6 @@ transactionsRoute.patch(
                 const previousBalance = await getPartyRunningBalance({
                     tx,
                     userId: effectiveUserId,
-                    organizationId,
                     partyId: payload.partyId,
                 });
                 const delta = payload.type === 'SALE' ? dueAmount : -dueAmount;
@@ -1075,7 +1016,7 @@ transactionsRoute.patch(
                 await tx.insert(partyLedgerEntries).values({
                     id: nanoid(),
                     userId: effectiveUserId,
-                    organizationId,
+                    organizationId: effectiveOrganizationId,
                     partyId: payload.partyId,
                     sourceType: 'BILL',
                     sourceId: id,
@@ -1122,30 +1063,22 @@ transactionsRoute.patch(
 transactionsRoute.delete(
     '/:id',
     requireAuth,
-    withOrganizationContext,
-    requirePermission('can_create_bill'),
+    requirePermission('canManageBilling'),
     async (c) => {
     try {
         const effectiveUserId = c.get('effectiveUserId');
-        const organizationId = c.get('organizationId');
-        const organizationSettingsPayload = c.get('organizationSettings') ?? {};
         const authUser = c.get('authUser');
         const db = c.get('db');
         const id = c.req.param('id');
 
-        if (!effectiveUserId || !organizationId || !authUser) {
+        if (!effectiveUserId || !authUser) {
             return c.json({ ok: false, message: 'Unauthorized' }, 401);
         }
         if (!hasModulePermission(authUser, 'billing', 'delete')) {
             return c.json({ ok: false, message: 'Billing delete access denied.' }, 403);
         }
 
-        const inventorySettings = ((organizationSettingsPayload as Record<string, unknown>).inventory ?? {}) as Record<string, unknown>;
-        const billingSettings = ((organizationSettingsPayload as Record<string, unknown>).billing ?? {}) as Record<string, unknown>;
-        const allowNegativeStock = resolveSettingBoolean(
-            inventorySettings.allowNegativeStock ?? billingSettings.allowNegativeStock,
-            false
-        );
+        const allowNegativeStock = false;
         const now = new Date();
 
         await withTransaction(db, async (tx) => {
@@ -1155,7 +1088,6 @@ transactionsRoute.delete(
                 .where(and(
                     eq(transactions.id, id),
                     eq(transactions.userId, effectiveUserId),
-                    eq(transactions.organizationId, organizationId),
                 ))
                 .limit(1);
             const existing = rows[0];
@@ -1180,8 +1112,6 @@ transactionsRoute.delete(
             await applyStockDeltasInTx({
                 tx,
                 userId: effectiveUserId,
-                organizationId,
-                branchId: existing.branchId ?? null,
                 transactionId: id,
                 now,
                 allowNegativeStock,
@@ -1200,7 +1130,6 @@ transactionsRoute.delete(
                 .where(and(
                     eq(transactions.id, id),
                     eq(transactions.userId, effectiveUserId),
-                    eq(transactions.organizationId, organizationId),
                 ))
                 .returning({ id: transactions.id });
 
@@ -1234,14 +1163,12 @@ transactionsRoute.delete(
 transactionsRoute.patch(
     '/:id/payment',
     requireAuth,
-    withOrganizationContext,
-    requirePermission('can_manage_payments'),
+    requirePermission('canManageBanking'),
     async (c) => {
     try {
         const effectiveUserId = c.get('effectiveUserId');
-        const organizationId = c.get('organizationId');
         const authUser = c.get('authUser');
-        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
         if (!hasModulePermission(authUser, 'billing', 'update')) {
             return c.json({ ok: false, message: 'Billing update access denied.' }, 403);
         }
@@ -1264,7 +1191,6 @@ transactionsRoute.patch(
             .where(and(
                 eq(transactions.id, id),
                 eq(transactions.userId, effectiveUserId),
-                eq(transactions.organizationId, organizationId),
             ))
             .limit(1);
         const current = rows[0];
@@ -1300,7 +1226,6 @@ transactionsRoute.patch(
             .where(and(
                 eq(transactions.id, id),
                 eq(transactions.userId, effectiveUserId),
-                eq(transactions.organizationId, organizationId),
             ));
 
         return c.json({
@@ -1319,13 +1244,11 @@ transactionsRoute.patch(
 transactionsRoute.get(
     '/pending-reminders',
     requireAuth,
-    withOrganizationContext,
-    requirePermission('can_manage_payments'),
+    requirePermission('canManageBanking'),
     async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    const organizationId = c.get('organizationId');
-    const authUser = c.get('authUser');
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        const effectiveUserId = c.get('effectiveUserId');
+        const authUser = c.get('authUser');
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
     if (!hasModulePermission(authUser, 'billing', 'view')) {
         return c.json({ ok: false, message: 'Billing access denied.' }, 403);
     }
@@ -1341,7 +1264,6 @@ transactionsRoute.get(
         .where(
             and(
                 eq(transactions.userId, effectiveUserId),
-                eq(transactions.organizationId, organizationId),
                 eq(transactions.type, 'SALE'),
                 inArray(transactions.paymentStatus, ['PENDING', 'PARTIAL'])
             )
@@ -1385,13 +1307,11 @@ transactionsRoute.get(
 transactionsRoute.get(
     '/',
     requireAuth,
-    withOrganizationContext,
-    requirePermission('can_view_reports'),
+    requirePermission('canManageAccounting'),
     requireFeatureToggle('reports', 'Reports access is disabled by owner settings.'),
     async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    const organizationId = c.get('organizationId');
-    const authUser = c.get('authUser');
+        const effectiveUserId = c.get('effectiveUserId');
+        const authUser = c.get('authUser');
     const db = c.get('db');
     const type = c.req.query('type') as 'SALE' | 'PURCHASE' | undefined;
     const paymentStatus = c.req.query('paymentStatus') as 'PAID' | 'PARTIAL' | 'PENDING' | undefined;
@@ -1399,14 +1319,13 @@ transactionsRoute.get(
     const end = c.req.query('end');
     const limit = Math.min(Number(c.req.query('limit') || 50), 200);
 
-    if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
     if (!hasModulePermission(authUser, 'billing', 'view')) {
         return c.json({ ok: false, message: 'Billing access denied.' }, 403);
     }
 
     const conditions = [
         eq(transactions.userId, effectiveUserId),
-        eq(transactions.organizationId, organizationId),
     ];
 
     if (type) conditions.push(eq(transactions.type, type));
@@ -1429,11 +1348,9 @@ transactionsRoute.get(
 transactionsRoute.get(
     '/stats/today',
     requireAuth,
-    withOrganizationContext,
     async (c) => {
-        const effectiveUserId = c.get('organizationOwnerId');
-        const organizationId = c.get('organizationId');
-        if (!effectiveUserId || !organizationId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+        const effectiveUserId = c.get('effectiveUserId');
+        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
 
         const db = c.get('db');
         const now = new Date();
@@ -1450,7 +1367,6 @@ transactionsRoute.get(
             .where(
                 and(
                     eq(transactions.userId, effectiveUserId),
-                    eq(transactions.organizationId, organizationId),
                     gte(transactions.billDate, todayStart),
                     lte(transactions.billDate, todayEnd),
                 )
