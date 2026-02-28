@@ -1,1256 +1,1297 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
+import { z } from 'zod';
+import { DEFAULT_PLAN_SEEDS } from '../constants/defaultPlans';
 import {
-    approvalRequests,
-    auditLogs,
-    bankAccounts,
+    adminAuditLogs,
+    adminSettings,
+    businesses,
+    businessMembers,
+    discounts,
     inventoryMovements,
+    invoices,
     items,
+    notificationCampaigns,
+    notificationDeliveries,
+    notificationTemplates,
     offers,
-    organizationMembers,
-    organizations,
-    organizationSettings,
+    paymentIntents,
     plans,
-    salaryRunItems,
-    salaryRuns,
     staffInvites,
+    subscriptions,
     templates,
-    transactions,
-    userSettings,
     users,
-    vouchers,
 } from '../db/schema';
 import { withTransaction } from '../db/transaction';
-import { isDeveloperAdminPrincipal, requireAuth, requireDeveloperAdmin, type AppEnv } from '../middleware/auth';
-import { z } from 'zod';
-import { nanoid } from 'nanoid';
-import { DEFAULT_PLANS } from '../constants/defaultPlans';
+import { requireAdmin, type AppEnv } from '../middleware/auth';
 
 const adminRoute = new Hono<AppEnv>();
 
-// Admin transaction endpoint
-
-const parseBoolean = (value: string | undefined, fallback = false) => {
-    if (value === undefined) return fallback;
-    return value.toLowerCase() === 'true';
-};
-
-const computeGrowth = (current: number, previous: number): number => {
-    if (!Number.isFinite(current) || !Number.isFinite(previous)) return 0;
-    if (previous <= 0) {
-        return current > 0 ? 100 : 0;
-    }
-    return ((current - previous) / previous) * 100;
-};
-
 const ADMIN_SETTINGS_ROW_ID = '__system_admin_settings__';
-const DEFAULT_ADMIN_SETTINGS = {
-    maintenanceMode: false,
-    registrationAllowed: true,
-    globalTaxRate: 18,
-    supportEmail: 'admin@vahi.app',
-};
 
-const adminSettingsPartialSchema = z.object({
+const SUBSCRIPTION_TIERS = ['FREE', 'STARTER', 'GROWTH', 'ENTERPRISE'] as const;
+const BILLING_CYCLES = ['MONTHLY', 'YEARLY', 'THREE_YEAR'] as const;
+const DISCOUNT_TYPES = ['PERCENTAGE', 'FIXED_AMOUNT'] as const;
+const DISCOUNT_SCOPES = ['PLAN', 'TIER', 'GLOBAL'] as const;
+const NOTIFICATION_CHANNELS = ['IN_APP', 'PUSH', 'EMAIL', 'WHATSAPP'] as const;
+const FEATURE_FLAGS = [
+    'OFFLINE_BILLING',
+    'GST_INVOICES',
+    'PURCHASE_MODULE',
+    'STOCK_MODULE',
+    'PARTY_MANAGEMENT',
+    'GST_REPORTS',
+    'ADVANCED_REPORTS',
+    'E_INVOICE',
+    'E_WAY_BILL',
+    'MULTI_BUSINESS',
+    'STAFF_USERS',
+    'CLOUD_SYNC',
+    'MULTI_DEVICE',
+    'BACKUP_CLOUD',
+    'EXPORT_PDF',
+    'EXPORT_EXCEL',
+    'ACCESS_WEB_DASHBOARD',
+    'API_ACCESS',
+    'BATCH_EXPIRY',
+    'MULTI_GODOWN',
+] as const;
+
+const adminSettingsSchema = z.object({
     maintenanceMode: z.boolean().optional(),
     registrationAllowed: z.boolean().optional(),
     globalTaxRate: z.number().min(0).max(100).optional(),
     supportEmail: z.string().email().optional(),
 });
 
-type AdminSettings = typeof DEFAULT_ADMIN_SETTINGS;
+const userRoleSchema = z.object({
+    role: z.enum(['owner', 'staff', 'admin']),
+});
 
-const toAdminSettings = (value: unknown): AdminSettings => {
-    const parsed = adminSettingsPartialSchema.safeParse(value);
-    if (!parsed.success) return { ...DEFAULT_ADMIN_SETTINGS };
+const manualSubscriptionSchema = z.object({
+    planId: z.string().trim().min(1),
+    status: z.enum(['active', 'inactive', 'canceled', 'past_due']),
+    durationDays: z.number().int().positive().default(30),
+});
+
+const organizationCreateSchema = z.object({
+    userId: z.string().trim().optional(),
+    name: z.string().trim().min(2).max(140),
+    code: z.string().trim().min(2).max(64).optional(),
+    gstNumber: z.string().trim().nullable().optional(),
+    address: z.string().trim().nullable().optional(),
+    phoneNumber: z.string().trim().nullable().optional(),
+    email: z.string().email().nullable().optional(),
+    currency: z.string().trim().min(3).max(6).optional(),
+    state: z.string().trim().nullable().optional(),
+    legalName: z.string().trim().nullable().optional(),
+    pan: z.string().trim().nullable().optional(),
+    category: z.string().trim().nullable().optional(),
+    isActive: z.boolean().optional(),
+});
+
+const organizationPatchSchema = organizationCreateSchema.partial();
+
+const planPayloadSchema = z.object({
+    id: z.string().trim().optional(),
+    tier: z.enum(SUBSCRIPTION_TIERS).optional(),
+    billingCycle: z.enum(BILLING_CYCLES).nullable().optional(),
+    name: z.string().trim().optional(),
+    displayName: z.string().trim().optional(),
+    description: z.string().trim().optional(),
+    monthlyPrice: z.number().nonnegative().optional(),
+    pricePerCycle: z.number().nonnegative().optional(),
+    currency: z.string().trim().min(3).max(6).optional(),
+    isActive: z.boolean().optional(),
+    isVisible: z.boolean().optional(),
+    displayOrder: z.number().int().optional(),
+    features: z.array(z.string()).optional(),
+    enabledFeatures: z.array(z.string()).optional(),
+    disabledFeatures: z.array(z.string()).optional(),
+    effectiveDiscountVsMonthlyPercent: z.number().int().nullable().optional(),
+    maxBillsTotal: z.number().int().nullable().optional(),
+    maxBillsPerMonth: z.number().int().nullable().optional(),
+    maxStaffUsers: z.number().int().nullable().optional(),
+    maxBusinesses: z.number().int().nullable().optional(),
+    maxDevices: z.number().int().nullable().optional(),
+    maxStorageMb: z.number().int().nullable().optional(),
+    offlineOnly: z.boolean().optional(),
+    cloudSyncAllowed: z.boolean().optional(),
+    webDashboardAllowed: z.boolean().optional(),
+}).passthrough();
+
+const offerPayloadSchema = z.object({
+    id: z.string().trim().optional(),
+    title: z.string().trim().min(1),
+    message: z.string().trim().min(1),
+    bannerUrl: z.string().trim().nullable().optional(),
+    bannerBackground: z.string().trim().nullable().optional(),
+    ctaText: z.string().trim().nullable().optional(),
+    ctaRoute: z.string().trim().nullable().optional(),
+    audience: z.enum(['all', 'owners', 'staff']).default('all'),
+    isActive: z.boolean().default(true),
+    priority: z.number().int().default(0),
+    startsAt: z.coerce.date().nullable().optional(),
+    endsAt: z.coerce.date().nullable().optional(),
+});
+
+const offerPatchSchema = offerPayloadSchema.partial().extend({
+    title: z.string().trim().min(1).optional(),
+    message: z.string().trim().min(1).optional(),
+});
+
+const templatePayloadSchema = z.object({
+    id: z.string().trim().optional(),
+    businessId: z.string().trim().nullable().optional(),
+    name: z.string().trim().min(1),
+    type: z.string().trim().min(1),
+    content: z.record(z.string(), z.unknown()).optional(),
+    isDefault: z.boolean().optional(),
+    thumbnailUrl: z.string().trim().nullable().optional(),
+    isActive: z.boolean().optional(),
+});
+
+const templatePatchSchema = templatePayloadSchema.partial().extend({
+    name: z.string().trim().min(1).optional(),
+    type: z.string().trim().min(1).optional(),
+});
+
+const discountPayloadSchema = z.object({
+    code: z.string().trim().min(2),
+    type: z.enum(DISCOUNT_TYPES),
+    scope: z.enum(DISCOUNT_SCOPES),
+    value: z.number().positive(),
+    maxRedemptions: z.number().int().positive().nullable().optional(),
+    perUserLimit: z.number().int().positive().nullable().optional(),
+    validFrom: z.coerce.date().nullable().optional(),
+    validTo: z.coerce.date().nullable().optional(),
+    applicableTiers: z.array(z.enum(SUBSCRIPTION_TIERS)).optional(),
+    applicableBillingCycles: z.array(z.enum(BILLING_CYCLES)).optional(),
+    isActive: z.boolean().optional(),
+});
+
+const discountPatchSchema = discountPayloadSchema.partial();
+
+const notificationTemplateSchema = z.object({
+    name: z.string().trim().min(1),
+    eventKey: z.string().trim().min(1),
+    channel: z.enum(NOTIFICATION_CHANNELS),
+    subject: z.string().trim().nullable().optional(),
+    body: z.string().trim().min(1),
+    variables: z.array(z.string()).optional(),
+    isActive: z.boolean().optional(),
+});
+
+const notificationTemplatePatchSchema = notificationTemplateSchema.partial();
+
+const campaignSchema = z.object({
+    title: z.string().trim().min(1),
+    templateId: z.string().trim().nullable().optional(),
+    channel: z.enum(NOTIFICATION_CHANNELS),
+    audience: z.string().trim().optional(),
+    targetFilter: z.record(z.string(), z.unknown()).optional(),
+    status: z.string().trim().optional(),
+    scheduledAt: z.coerce.date().nullable().optional(),
+});
+
+const campaignPatchSchema = campaignSchema.partial();
+
+const businessFeatureFlagPatchSchema = z.object({
+    appModuleAccess: z.record(z.string(), z.boolean()).optional(),
+    moduleVisibility: z.record(z.string(), z.boolean()).optional(),
+    featureFlagsEnabled: z.array(z.enum(FEATURE_FLAGS)).optional(),
+});
+
+type PlanRow = typeof plans.$inferSelect;
+type SubscriptionRow = typeof subscriptions.$inferSelect;
+
+const asRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+const parseBoolean = (value: string | undefined, fallback = false) => {
+    if (value === undefined) return fallback;
+    return value.toLowerCase() === 'true';
+};
+
+const parseAdmins = (value?: string): string[] => {
+    if (!value) return [];
+    try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+            return parsed
+                .map((entry) => String(entry).trim().toLowerCase())
+                .filter(Boolean);
+        }
+    } catch {
+        // Fallback to CSV below.
+    }
+    return value
+        .split(',')
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean);
+};
+
+const toMonthlyAmount = (pricePerCycle: number, cycle: PlanRow['billingCycle']) => {
+    if (cycle === 'YEARLY') return pricePerCycle / 12;
+    if (cycle === 'THREE_YEAR') return pricePerCycle / 36;
+    return pricePerCycle;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const growth = (current: number, previous: number) => {
+    if (previous <= 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+};
+
+const inferTier = (id: string, displayName?: string): PlanRow['tier'] => {
+    const source = `${id} ${displayName ?? ''}`.toUpperCase();
+    if (source.includes('ENTERPRISE')) return 'ENTERPRISE';
+    if (source.includes('GROWTH')) return 'GROWTH';
+    if (source.includes('FREE')) return 'FREE';
+    return 'STARTER';
+};
+
+const inferBillingCycle = (id: string): PlanRow['billingCycle'] => {
+    const source = id.toUpperCase();
+    if (source.includes('THREE') || source.includes('3YEAR') || source.includes('3_YEAR')) return 'THREE_YEAR';
+    if (source.includes('YEAR')) return 'YEARLY';
+    return 'MONTHLY';
+};
+
+const tierCycleKey = (tier: SubscriptionRow['tier'], billingCycle: SubscriptionRow['billingCycle']) =>
+    `${tier}:${billingCycle ?? 'NONE'}`;
+
+const mapSubscriptionStatusLegacy = (status: SubscriptionRow['status'] | null | undefined) => {
+    if (status === 'ACTIVE' || status === 'TRIAL') return 'active';
+    if (status === 'CANCELLED') return 'canceled';
+    if (status === 'GRACE' || status === 'EXPIRED') return 'past_due';
+    return 'inactive';
+};
+
+const mapLegacyStatusToSubscription = (status: 'active' | 'inactive' | 'canceled' | 'past_due'): SubscriptionRow['status'] => {
+    if (status === 'active') return 'ACTIVE';
+    if (status === 'canceled') return 'CANCELLED';
+    if (status === 'past_due') return 'GRACE';
+    return 'EXPIRED';
+};
+
+const mapInvoiceTypeToLegacyTransactionType = (invoiceType: typeof invoices.$inferSelect['invoiceType']) => {
+    if (invoiceType === 'CREDIT_NOTE_DOC') return 'RETURN_OUTWARD';
+    if (invoiceType === 'DEBIT_NOTE_DOC') return 'RETURN_INWARD';
+    return 'SALE';
+};
+
+const mapInvoicePaymentStatus = (status: typeof invoices.$inferSelect['paymentStatus']) => {
+    if (status === 'PAID') return 'PAID';
+    if (status === 'PARTIALLY_PAID') return 'PARTIAL';
+    return 'PENDING';
+};
+
+const assertWriteAccess = (c: Parameters<typeof requireAdmin>[0]) => {
+    const role = c.get('authRole');
+    if (role === 'READ_ONLY_ADMIN') {
+        throw new Error('Read-only admin cannot perform write operations.');
+    }
+};
+
+const assertSuperAdmin = (c: Parameters<typeof requireAdmin>[0]) => {
+    const role = c.get('authRole');
+    if (role !== 'SUPER_ADMIN') {
+        throw new Error('Super-admin access required for this action.');
+    }
+};
+
+const adminAllowlistSet = (c: Parameters<typeof requireAdmin>[0]) => new Set([
+    ...parseAdmins(c.env.ADMINS),
+    ...parseAdmins(c.env.SUPPORT_ADMINS),
+    ...parseAdmins(c.env.READ_ONLY_ADMINS),
+    ...parseAdmins(c.env.DEVELOPER_ADMIN_EMAILS),
+]);
+
+const appendAuditLog = async (
+    c: Parameters<typeof requireAdmin>[0],
+    action: string,
+    entityType: string | null,
+    entityId: string | null,
+    metadata?: Record<string, unknown>
+) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    const authRole = c.get('authRole');
+    if (!authUser?.email || !authRole) return;
+
+    try {
+        await db.insert(adminAuditLogs).values({
+            id: `audit_${nanoid(18)}`,
+            adminEmail: authUser.email.toLowerCase(),
+            adminRole: authRole,
+            action,
+            entityType,
+            entityId,
+            metadataJson: metadata ?? {},
+            createdAt: new Date(),
+        });
+    } catch {
+        // Keep primary request successful even if audit logging fails.
+    }
+};
+
+const toClientPlan = (plan: PlanRow) => ({
+    id: plan.id,
+    name: plan.displayName,
+    displayName: plan.displayName,
+    description: plan.description,
+    monthlyPrice: Number(toMonthlyAmount(Number(plan.pricePerCycle), plan.billingCycle)),
+    pricePerCycle: Number(plan.pricePerCycle),
+    currency: plan.currency,
+    isActive: plan.isVisible,
+    isVisible: plan.isVisible,
+    displayOrder: plan.displayOrder,
+    features: plan.enabledFeatures,
+    enabledFeatures: plan.enabledFeatures,
+    disabledFeatures: plan.disabledFeatures,
+    tier: plan.tier,
+    billingCycle: plan.billingCycle,
+    effectiveDiscountVsMonthlyPercent: plan.effectiveDiscountVsMonthlyPercent,
+    restrictions: {
+        maxBillsTotal: plan.maxBillsTotal,
+        maxBillsPerMonth: plan.maxBillsPerMonth,
+        maxStaffUsers: plan.maxStaffUsers,
+        maxBusinesses: plan.maxBusinesses,
+        maxDevices: plan.maxDevices,
+        maxStorageMb: plan.maxStorageMb,
+        offlineOnly: plan.offlineOnly,
+        cloudSyncAllowed: plan.cloudSyncAllowed,
+        webDashboardAllowed: plan.webDashboardAllowed,
+    },
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+});
+
+const buildPlanInsert = (
+    payload: z.infer<typeof planPayloadSchema>,
+    id: string,
+    fallback?: PlanRow
+): typeof plans.$inferInsert => {
+    const displayName = payload.displayName ?? payload.name ?? fallback?.displayName ?? id;
+    const tier = payload.tier ?? fallback?.tier ?? inferTier(id, displayName);
+    const billingCycle = payload.billingCycle !== undefined
+        ? payload.billingCycle
+        : (fallback?.billingCycle ?? (tier === 'FREE' ? null : inferBillingCycle(id)));
+    const enabledFeatures = payload.enabledFeatures ?? payload.features ?? fallback?.enabledFeatures ?? [];
+    const disabledFeatures = payload.disabledFeatures
+        ?? (payload.enabledFeatures || payload.features
+            ? FEATURE_FLAGS.filter((flag) => !enabledFeatures.includes(flag))
+            : (fallback?.disabledFeatures ?? []));
+
     return {
-        ...DEFAULT_ADMIN_SETTINGS,
-        ...parsed.data,
+        id,
+        tier,
+        billingCycle,
+        displayName,
+        description: payload.description ?? fallback?.description ?? `${displayName} plan`,
+        pricePerCycle: payload.pricePerCycle ?? payload.monthlyPrice ?? fallback?.pricePerCycle ?? 0,
+        currency: (payload.currency ?? fallback?.currency ?? 'INR').toUpperCase(),
+        effectiveDiscountVsMonthlyPercent: payload.effectiveDiscountVsMonthlyPercent ?? fallback?.effectiveDiscountVsMonthlyPercent ?? null,
+        isVisible: payload.isVisible ?? payload.isActive ?? fallback?.isVisible ?? true,
+        displayOrder: payload.displayOrder ?? fallback?.displayOrder ?? 0,
+        maxBillsTotal: payload.maxBillsTotal ?? fallback?.maxBillsTotal ?? null,
+        maxBillsPerMonth: payload.maxBillsPerMonth ?? fallback?.maxBillsPerMonth ?? null,
+        maxStaffUsers: payload.maxStaffUsers ?? fallback?.maxStaffUsers ?? null,
+        maxBusinesses: payload.maxBusinesses ?? fallback?.maxBusinesses ?? null,
+        maxDevices: payload.maxDevices ?? fallback?.maxDevices ?? null,
+        maxStorageMb: payload.maxStorageMb ?? fallback?.maxStorageMb ?? null,
+        offlineOnly: payload.offlineOnly ?? fallback?.offlineOnly ?? false,
+        cloudSyncAllowed: payload.cloudSyncAllowed ?? fallback?.cloudSyncAllowed ?? false,
+        webDashboardAllowed: payload.webDashboardAllowed ?? fallback?.webDashboardAllowed ?? false,
+        enabledFeatures,
+        disabledFeatures,
+        createdAt: fallback?.createdAt ?? new Date(),
+        updatedAt: new Date(),
     };
 };
 
-// GET /admin/stats - Dashboard analytics
-adminRoute.get('/stats', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
+const buildPlanPatch = (payload: z.infer<typeof planPayloadSchema>): Partial<typeof plans.$inferInsert> => {
+    const enabledFeatures = payload.enabledFeatures ?? payload.features;
+    const disabledFeatures = payload.disabledFeatures
+        ?? (enabledFeatures ? FEATURE_FLAGS.filter((flag) => !enabledFeatures.includes(flag)) : undefined);
 
-    // Parallelize queries for performance
-    const [
-        totalUsersResult,
-        activeSubsResult,
-        revenueResult,
-        recentUsers
-    ] = await Promise.all([
+    return {
+        ...(payload.tier !== undefined ? { tier: payload.tier } : {}),
+        ...(payload.billingCycle !== undefined ? { billingCycle: payload.billingCycle } : {}),
+        ...(payload.displayName !== undefined ? { displayName: payload.displayName } : {}),
+        ...(payload.name !== undefined ? { displayName: payload.name } : {}),
+        ...(payload.description !== undefined ? { description: payload.description } : {}),
+        ...(payload.pricePerCycle !== undefined ? { pricePerCycle: payload.pricePerCycle } : {}),
+        ...(payload.monthlyPrice !== undefined ? { pricePerCycle: payload.monthlyPrice } : {}),
+        ...(payload.currency !== undefined ? { currency: payload.currency.toUpperCase() } : {}),
+        ...(payload.isVisible !== undefined ? { isVisible: payload.isVisible } : {}),
+        ...(payload.isActive !== undefined ? { isVisible: payload.isActive } : {}),
+        ...(payload.displayOrder !== undefined ? { displayOrder: payload.displayOrder } : {}),
+        ...(enabledFeatures !== undefined ? { enabledFeatures } : {}),
+        ...(disabledFeatures !== undefined ? { disabledFeatures } : {}),
+        ...(payload.effectiveDiscountVsMonthlyPercent !== undefined
+            ? { effectiveDiscountVsMonthlyPercent: payload.effectiveDiscountVsMonthlyPercent }
+            : {}),
+        ...(payload.maxBillsTotal !== undefined ? { maxBillsTotal: payload.maxBillsTotal } : {}),
+        ...(payload.maxBillsPerMonth !== undefined ? { maxBillsPerMonth: payload.maxBillsPerMonth } : {}),
+        ...(payload.maxStaffUsers !== undefined ? { maxStaffUsers: payload.maxStaffUsers } : {}),
+        ...(payload.maxBusinesses !== undefined ? { maxBusinesses: payload.maxBusinesses } : {}),
+        ...(payload.maxDevices !== undefined ? { maxDevices: payload.maxDevices } : {}),
+        ...(payload.maxStorageMb !== undefined ? { maxStorageMb: payload.maxStorageMb } : {}),
+        ...(payload.offlineOnly !== undefined ? { offlineOnly: payload.offlineOnly } : {}),
+        ...(payload.cloudSyncAllowed !== undefined ? { cloudSyncAllowed: payload.cloudSyncAllowed } : {}),
+        ...(payload.webDashboardAllowed !== undefined ? { webDashboardAllowed: payload.webDashboardAllowed } : {}),
+        updatedAt: new Date(),
+    };
+};
+
+const ensurePlansSeeded = async (db: AppEnv['Variables']['db']) => {
+    const existing = await db.select({ id: plans.id }).from(plans).limit(1);
+    if (existing[0]) return;
+
+    const now = new Date();
+    await db.insert(plans).values(DEFAULT_PLAN_SEEDS.map((entry) => ({
+        ...entry,
+        createdAt: now,
+        updatedAt: now,
+    })));
+};
+
+const getPrimaryBusinessByOwner = (rows: typeof businesses.$inferSelect[]) => {
+    const sorted = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const byOwner = new Map<string, typeof businesses.$inferSelect>();
+    for (const row of sorted) {
+        if (!byOwner.has(row.ownerUserId)) byOwner.set(row.ownerUserId, row);
+    }
+    return byOwner;
+};
+
+const getLatestSubscriptionByBusiness = (rows: SubscriptionRow[]) => {
+    const sorted = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const byBusiness = new Map<string, SubscriptionRow>();
+    for (const row of sorted) {
+        if (!byBusiness.has(row.businessId)) byBusiness.set(row.businessId, row);
+    }
+    return byBusiness;
+};
+
+adminRoute.use('/*', requireAdmin);
+adminRoute.get('/stats', async (c) => {
+    const db = c.get('db');
+    await ensurePlansSeeded(db);
+
+    const [userCountRows, activeSubscriptionRows, planRows, recentUserRows] = await Promise.all([
         db.select({ count: sql<number>`count(*)` }).from(users),
-        db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.subscriptionStatus, 'active')),
-        db.select({ total: sql<number>`sum(${users.subscriptionAmountMonthly})` }).from(users).where(eq(users.subscriptionStatus, 'active')),
-        db.select().from(users).orderBy(desc(users.createdAt)).limit(5)
+        db.select().from(subscriptions).where(inArray(subscriptions.status, ['ACTIVE', 'TRIAL'])),
+        db.select().from(plans),
+        db.select().from(users).orderBy(desc(users.createdAt)).limit(5),
     ]);
 
-    const totalUsers = Number(totalUsersResult[0]?.count || 0);
-    const activeSubscriptions = Number(activeSubsResult[0]?.count || 0);
-    const monthlyRevenue = Number(revenueResult[0]?.total || 0);
+    const planByTierCycle = new Map<string, PlanRow>();
+    for (const plan of planRows) {
+        planByTierCycle.set(tierCycleKey(plan.tier, plan.billingCycle), plan);
+    }
+
+    let monthlyRevenue = 0;
+    for (const subscription of activeSubscriptionRows) {
+        const plan = planByTierCycle.get(tierCycleKey(subscription.tier, subscription.billingCycle));
+        if (!plan) continue;
+        monthlyRevenue += Number(toMonthlyAmount(Number(plan.pricePerCycle), plan.billingCycle));
+    }
+
+    const recentUserIds = recentUserRows.map((row) => row.id);
+    const ownedBusinesses = recentUserIds.length > 0
+        ? await db.select().from(businesses).where(inArray(businesses.ownerUserId, recentUserIds))
+        : [];
+    const primaryBusinessByOwner = getPrimaryBusinessByOwner(ownedBusinesses);
+
+    const recentBusinessIds = Array.from(new Set(ownedBusinesses.map((entry) => entry.id)));
+    const recentSubscriptions = recentBusinessIds.length > 0
+        ? await db.select().from(subscriptions).where(inArray(subscriptions.businessId, recentBusinessIds))
+        : [];
+    const latestSubByBusiness = getLatestSubscriptionByBusiness(recentSubscriptions);
 
     return c.json({
         ok: true,
         stats: {
-            totalUsers,
-            activeSubscriptions,
-            monthlyRevenue,
-            recentUsers
-        }
-    });
-});
-
-// GET /admin/treasury/stats - System-wide liquidity
-adminRoute.get('/treasury/stats', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-
-    const [balanceResult, pendingVouchers, cashFlowResult] = await Promise.all([
-        db.select({ total: sql<number>`sum(${bankAccounts.currentBalance})` }).from(bankAccounts),
-        db.select({ count: sql<number>`count(*)` }).from(vouchers).where(eq(vouchers.status, 'draft')),
-        db.select({
-            net: sql<number>`
-                coalesce(
-                    sum(
-                        case
-                            when ${vouchers.type} = 'RECEIPT' then ${vouchers.amount}
-                            when ${vouchers.type} = 'PAYMENT' then -${vouchers.amount}
-                            else 0
-                        end
-                    ),
-                    0
-                )
-            `,
-        }).from(vouchers).where(eq(vouchers.status, 'posted')),
-    ]);
-
-    const totalLiquidity = Number(balanceResult[0]?.total || 0);
-    const settlementsPending = Number(pendingVouchers[0]?.count || 0);
-    const netCashFlow = Number(cashFlowResult[0]?.net || 0);
-
-    // Recent accounts for table
-    const accounts = await db
-        .select({
-            id: bankAccounts.id,
-            name: bankAccounts.name,
-            bankName: bankAccounts.bankName,
-            currentBalance: bankAccounts.currentBalance,
-            userId: bankAccounts.userId,
-            updatedAt: bankAccounts.updatedAt,
-            ownerBusinessName: users.businessName,
-        })
-        .from(bankAccounts)
-        .leftJoin(users, eq(bankAccounts.userId, users.uid))
-        .orderBy(desc(bankAccounts.currentBalance))
-        .limit(50);
-
-    return c.json({
-        ok: true,
-        stats: {
-            totalLiquidity,
-            settlementsPending,
-            institutionalReserve: Math.max(0, totalLiquidity * 0.1),
-            netCashFlow,
+            totalUsers: Number(userCountRows[0]?.count ?? 0),
+            activeSubscriptions: activeSubscriptionRows.length,
+            monthlyRevenue: Math.round(monthlyRevenue),
+            recentUsers: recentUserRows.map((entry) => {
+                const business = primaryBusinessByOwner.get(entry.id);
+                const subscription = business ? latestSubByBusiness.get(business.id) : null;
+                return {
+                    uid: entry.id,
+                    displayName: entry.name,
+                    email: entry.email,
+                    createdAt: entry.createdAt,
+                    subscriptionStatus: mapSubscriptionStatusLegacy(subscription?.status),
+                };
+            }),
         },
-        accounts: accounts.map((entry) => ({
-            id: entry.id,
-            name: entry.name,
-            bankName: entry.bankName,
-            currentBalance: Number(entry.currentBalance ?? 0),
-            userId: entry.userId,
-            ownerBusinessName: entry.ownerBusinessName ?? null,
-            updatedAt: entry.updatedAt,
-        })),
     });
 });
 
-// GET /admin/payroll/stats - System-wide payroll overview
-adminRoute.get('/payroll/stats', requireDeveloperAdmin, async (c) => {
+adminRoute.get('/analytics/extended', async (c) => {
     const db = c.get('db');
+    await ensurePlansSeeded(db);
 
-    const [runStats, itemStats] = await Promise.all([
-        db.select({
-            totalNet: sql<number>`sum(${salaryRuns.totalNet})`,
-            runCount: sql<number>`count(*)`
-        }).from(salaryRuns),
-        db.select({ count: sql<number>`count(*)` }).from(salaryRunItems)
-    ]);
+    const now = new Date();
+    const days30 = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+    const days60 = new Date(now.getTime() - (60 * 24 * 60 * 60 * 1000));
 
-    const totalDisbursed = Number(runStats[0]?.totalNet || 0);
-    const totalStaff = Number(itemStats[0]?.count || 0);
-
-    // Latest batches
-    const latestBatches = await db
-        .select({
-            id: salaryRuns.id,
-            userId: salaryRuns.userId,
-            totalNet: salaryRuns.totalNet,
-            status: salaryRuns.status,
-            periodStart: salaryRuns.periodStart,
-            periodEnd: salaryRuns.periodEnd,
-            createdAt: salaryRuns.createdAt,
-            staffCount: sql<number>`
-                coalesce((
-                    select count(*)
-                    from ${salaryRunItems}
-                    where ${salaryRunItems.runId} = ${salaryRuns.id}
-                ), 0)
-            `,
-            ownerBusinessName: users.businessName,
-        })
-        .from(salaryRuns)
-        .leftJoin(users, eq(salaryRuns.userId, users.uid))
-        .orderBy(desc(salaryRuns.createdAt))
-        .limit(50);
-
-    return c.json({
-        ok: true,
-        stats: {
-            totalDisbursed,
-            totalStaff,
-            avgSalary: totalStaff > 0 ? totalDisbursed / totalStaff : 0,
-            activeBatches: Number(runStats[0]?.runCount || 0)
-        },
-        latestBatches: latestBatches.map((entry) => ({
-            id: entry.id,
-            userId: entry.userId,
-            totalNet: Number(entry.totalNet ?? 0),
-            status: entry.status,
-            periodStart: entry.periodStart,
-            periodEnd: entry.periodEnd,
-            createdAt: entry.createdAt,
-            staffCount: Number(entry.staffCount ?? 0),
-            ownerBusinessName: entry.ownerBusinessName ?? null,
-        })),
-    });
-});
-
-// GET /admin/analytics/extended - High level metrics
-adminRoute.get('/analytics/extended', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-
-    const [userStats, subStats, revenueStats, growthWindow, approvalStats] = await Promise.all([
+    const [userCountRows, recentUsersCurrentRows, recentUsersPreviousRows, activeSubs, planRows, pendingInviteRows, failedPaymentRows] = await Promise.all([
         db.select({ count: sql<number>`count(*)` }).from(users),
-        db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.subscriptionStatus, 'active')),
-        db.select({ total: sql<number>`sum(${users.subscriptionAmountMonthly})` }).from(users).where(eq(users.subscriptionStatus, 'active')),
-        db.select({
-            usersCurrentWindow: sql<number>`
-                coalesce(
-                    sum(case when ${users.createdAt} >= now() - interval '30 days' then 1 else 0 end),
-                    0
-                )
-            `,
-            usersPreviousWindow: sql<number>`
-                coalesce(
-                    sum(
-                        case
-                            when ${users.createdAt} >= now() - interval '60 days'
-                                and ${users.createdAt} < now() - interval '30 days'
-                            then 1
-                            else 0
-                        end
-                    ),
-                    0
-                )
-            `,
-            revenueCurrentWindow: sql<number>`
-                coalesce(
-                    sum(
-                        case
-                            when ${users.subscriptionStatus} = 'active' then coalesce(${users.subscriptionAmountMonthly}, 0)
-                            else 0
-                        end
-                    ),
-                    0
-                )
-            `,
-            revenuePreviousWindow: sql<number>`
-                coalesce(
-                    sum(
-                        case
-                            when ${users.subscriptionStatus} = 'active'
-                                and ${users.subscriptionStartsAt} >= now() - interval '60 days'
-                                and ${users.subscriptionStartsAt} < now() - interval '30 days'
-                            then coalesce(${users.subscriptionAmountMonthly}, 0)
-                            else 0
-                        end
-                    ),
-                    0
-                )
-            `,
-        }).from(users),
-        db.select({
-            total: sql<number>`count(*)`,
-            pending: sql<number>`
-                coalesce(sum(case when ${approvalRequests.status} = 'pending' then 1 else 0 end), 0)
-            `,
-        }).from(approvalRequests),
+        db.select({ count: sql<number>`count(*)` }).from(users).where(gte(users.createdAt, days30)),
+        db.select({ count: sql<number>`count(*)` }).from(users).where(and(gte(users.createdAt, days60), lte(users.createdAt, days30))),
+        db.select().from(subscriptions).where(inArray(subscriptions.status, ['ACTIVE', 'TRIAL'])),
+        db.select().from(plans),
+        db.select({ count: sql<number>`count(*)` }).from(staffInvites).where(eq(staffInvites.status, 'pending')),
+        db.select({ count: sql<number>`count(*)` }).from(paymentIntents).where(eq(paymentIntents.status, 'failed')),
     ]);
 
-    const totalUsers = Number(userStats[0]?.count || 0);
-    const totalRevenue = Number(revenueStats[0]?.total || 0);
-    const usersCurrentWindow = Number(growthWindow[0]?.usersCurrentWindow || 0);
-    const usersPreviousWindow = Number(growthWindow[0]?.usersPreviousWindow || 0);
-    const revenueCurrentWindow = Number(growthWindow[0]?.revenueCurrentWindow || 0);
-    const revenuePreviousWindow = Number(growthWindow[0]?.revenuePreviousWindow || 0);
-    const totalApprovals = Number(approvalStats[0]?.total || 0);
-    const pendingApprovals = Number(approvalStats[0]?.pending || 0);
-    const approvalBacklogRatio = totalApprovals > 0 ? pendingApprovals / totalApprovals : 0;
-    const systemHealth = Math.max(70, 100 - (approvalBacklogRatio * 30));
+    const planByTierCycle = new Map<string, PlanRow>();
+    for (const plan of planRows) {
+        planByTierCycle.set(tierCycleKey(plan.tier, plan.billingCycle), plan);
+    }
+
+    let monthlyRevenue = 0;
+    let previousRevenue = 0;
+    for (const sub of activeSubs) {
+        const plan = planByTierCycle.get(tierCycleKey(sub.tier, sub.billingCycle));
+        if (!plan) continue;
+        const mrr = Number(toMonthlyAmount(Number(plan.pricePerCycle), plan.billingCycle));
+        monthlyRevenue += mrr;
+        if (sub.createdAt <= days30) previousRevenue += mrr;
+    }
+
+    const totalUsers = Number(userCountRows[0]?.count ?? 0);
+    const usersCurrent = Number(recentUsersCurrentRows[0]?.count ?? 0);
+    const usersPrevious = Number(recentUsersPreviousRows[0]?.count ?? 0);
+    const pendingInvites = Number(pendingInviteRows[0]?.count ?? 0);
+    const failedPayments = Number(failedPaymentRows[0]?.count ?? 0);
+
+    const systemHealth = clamp(100 - (pendingInvites * 2) - (failedPayments * 3), 60, 100);
 
     return c.json({
         ok: true,
         metrics: {
             totalUsers,
-            activeSubscriptions: Number(subStats[0]?.count || 0),
-            monthlyRevenue: totalRevenue,
+            activeSubscriptions: activeSubs.length,
+            monthlyRevenue: Math.round(monthlyRevenue),
             systemHealth,
-            userGrowth: computeGrowth(usersCurrentWindow, usersPreviousWindow),
-            revenueGrowth: computeGrowth(revenueCurrentWindow, revenuePreviousWindow),
-        }
-    });
-});
-
-// GET /admin/transactions - global transaction list for admin panel
-adminRoute.get('/transactions', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
-
-    const rows = await db
-        .select({
-            id: transactions.id,
-            userId: transactions.userId,
-            type: transactions.type,
-            totalAmount: transactions.totalAmount,
-            paymentStatus: transactions.paymentStatus,
-            paymentMode: transactions.paymentMode,
-            createdAt: transactions.createdAt,
-            updatedAt: transactions.updatedAt,
-            organizationName: organizations.name,
-            ownerBusinessName: users.businessName,
-        })
-        .from(transactions)
-        .leftJoin(organizations, eq(transactions.organizationId, organizations.id))
-        .leftJoin(users, eq(transactions.userId, users.uid))
-        .orderBy(desc(transactions.createdAt))
-        .limit(limit);
-
-    return c.json({
-        ok: true,
-        transactions: rows.map((entry) => ({
-            id: entry.id,
-            userId: entry.userId,
-            type: entry.type,
-            totalAmount: Number(entry.totalAmount ?? 0),
-            paymentStatus: entry.paymentStatus,
-            paymentMode: entry.paymentMode,
-            createdAt: entry.createdAt,
-            updatedAt: entry.updatedAt,
-            organizationName: entry.organizationName ?? entry.ownerBusinessName ?? 'Unknown',
-        })),
-    });
-});
-
-// GET /admin/inventory/overview - global inventory stats + list
-adminRoute.get('/inventory/overview', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
-
-    const [
-        skuResult,
-        lowStockResult,
-        stockValueResult,
-        movementResult,
-        inventoryRows,
-    ] = await Promise.all([
-        db.select({ count: sql<number>`count(*)` }).from(items),
-        db.select({
-            count: sql<number>`
-                coalesce(
-                    sum(case when ${items.stock} <= coalesce(${items.minimumStock}, 0) then 1 else 0 end),
-                    0
-                )
-            `,
-        }).from(items),
-        db.select({
-            total: sql<number>`
-                coalesce(
-                    sum(greatest(${items.stock}, 0) * coalesce(nullif(${items.purchasePrice}, 0), ${items.price}, 0)),
-                    0
-                )
-            `,
-        }).from(items),
-        db.select({
-            count: sql<number>`count(*)`,
-        })
-            .from(inventoryMovements)
-            .where(sql`${inventoryMovements.createdAt} >= now() - interval '1 day'`),
-        db.select({
-            id: items.id,
-            name: items.name,
-            category: items.category,
-            stock: items.stock,
-            price: items.price,
-            organizationName: organizations.name,
-            ownerBusinessName: users.businessName,
-            updatedAt: items.updatedAt,
-        })
-            .from(items)
-            .leftJoin(organizations, eq(items.organizationId, organizations.id))
-            .leftJoin(users, eq(items.userId, users.uid))
-            .orderBy(desc(items.updatedAt))
-            .limit(limit),
-    ]);
-
-    return c.json({
-        ok: true,
-        stats: {
-            totalSkus: Number(skuResult[0]?.count ?? 0),
-            lowStockAlerts: Number(lowStockResult[0]?.count ?? 0),
-            stockValue: Number(stockValueResult[0]?.total ?? 0),
-            recentMovements: Number(movementResult[0]?.count ?? 0),
+            userGrowth: growth(usersCurrent, usersPrevious),
+            revenueGrowth: growth(monthlyRevenue, previousRevenue),
         },
-        items: inventoryRows.map((entry) => ({
+    });
+});
+
+adminRoute.get('/settings', async (c) => {
+    const db = c.get('db');
+    const rows = await db.select().from(adminSettings).where(eq(adminSettings.id, ADMIN_SETTINGS_ROW_ID)).limit(1);
+    const settings = asRecord(rows[0]?.settings);
+
+    return c.json({
+        ok: true,
+        settings: {
+            maintenanceMode: Boolean(settings.maintenanceMode ?? false),
+            registrationAllowed: Boolean(settings.registrationAllowed ?? true),
+            globalTaxRate: Number(settings.globalTaxRate ?? 18),
+            supportEmail: typeof settings.supportEmail === 'string' ? settings.supportEmail : 'admin@vahi.app',
+        },
+    });
+});
+
+adminRoute.patch('/settings', async (c) => {
+    try {
+        assertSuperAdmin(c);
+
+        const db = c.get('db');
+        const payload = adminSettingsSchema.parse(await c.req.json());
+        const existingRows = await db.select().from(adminSettings).where(eq(adminSettings.id, ADMIN_SETTINGS_ROW_ID)).limit(1);
+        const current = asRecord(existingRows[0]?.settings);
+        const next = {
+            maintenanceMode: payload.maintenanceMode ?? Boolean(current.maintenanceMode ?? false),
+            registrationAllowed: payload.registrationAllowed ?? Boolean(current.registrationAllowed ?? true),
+            globalTaxRate: payload.globalTaxRate ?? Number(current.globalTaxRate ?? 18),
+            supportEmail: payload.supportEmail ?? (typeof current.supportEmail === 'string' ? current.supportEmail : 'admin@vahi.app'),
+        };
+        const now = new Date();
+
+        await db.insert(adminSettings).values({
+            id: ADMIN_SETTINGS_ROW_ID,
+            settings: next,
+            updatedAt: now,
+        }).onConflictDoUpdate({
+            target: adminSettings.id,
+            set: {
+                settings: next,
+                updatedAt: now,
+            },
+        });
+
+        await appendAuditLog(c, 'ADMIN_SETTINGS_UPDATED', 'admin_settings', ADMIN_SETTINGS_ROW_ID, next);
+        return c.json({ ok: true, settings: next });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update settings.' }, 400);
+    }
+});
+
+adminRoute.get('/audit-logs', async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
+    const rows = await db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(limit);
+
+    return c.json({
+        ok: true,
+        logs: rows.map((entry) => ({
             id: entry.id,
-            name: entry.name,
-            category: entry.category ?? 'Uncategorized',
-            stock: Number(entry.stock ?? 0),
-            price: Number(entry.price ?? 0),
-            organizationName: entry.organizationName ?? entry.ownerBusinessName ?? 'Unknown',
+            time: entry.createdAt.toISOString(),
+            actor: entry.adminEmail,
+            action: entry.action,
+            entity: entry.entityType ? `${entry.entityType}${entry.entityId ? `:${entry.entityId}` : ''}` : 'system',
+            status: String((asRecord(entry.metadataJson).status ?? 'SUCCESS')).toUpperCase(),
+            metadata: entry.metadataJson,
         })),
     });
 });
 
-// GET /admin/staff/overview - global user + invite visibility
-adminRoute.get('/staff/overview', requireDeveloperAdmin, async (c) => {
+adminRoute.get('/users', async (c) => {
     const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 100), 1), 1000);
+    const q = c.req.query('q')?.trim();
 
-    const [
-        totalPersonnelResult,
-        adminCountResult,
-        pendingInviteResult,
-        revokedResult,
-        organizationRows,
-        userRows,
-        revokedMembershipRows,
-    ] = await Promise.all([
-        db.select({ count: sql<number>`count(*)` }).from(users),
-        db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.role, 'admin')),
-        db.select({ count: sql<number>`count(*)` }).from(staffInvites).where(eq(staffInvites.status, 'pending')),
-        db.select({ count: sql<number>`count(*)` }).from(organizationMembers).where(eq(organizationMembers.isActive, false)),
-        db.select({
-            userId: organizations.userId,
-            name: organizations.name,
-            createdAt: organizations.createdAt,
-        })
-            .from(organizations)
-            .where(eq(organizations.isActive, true))
-            .orderBy(asc(organizations.createdAt)),
-        db.select({
-            uid: users.uid,
-            ownerId: users.ownerId,
-            role: users.role,
-            displayName: users.displayName,
-            email: users.email,
-            phoneNumber: users.phoneNumber,
-            createdAt: users.createdAt,
-        })
-            .from(users)
-            .orderBy(desc(users.createdAt))
-            .limit(limit),
-        db.select({
-            userId: organizationMembers.userId,
-        })
-            .from(organizationMembers)
-            .where(eq(organizationMembers.isActive, false)),
-    ]);
+    const userRows = q
+        ? await db.select().from(users).where(or(
+            ilike(users.name, `%${q}%`),
+            ilike(users.email, `%${q}%`),
+            ilike(users.phone, `%${q}%`),
+        )).orderBy(desc(users.createdAt)).limit(limit)
+        : await db.select().from(users).orderBy(desc(users.createdAt)).limit(limit);
 
-    const orgNameByOwnerId = new Map<string, string>();
-    for (const row of organizationRows) {
-        if (!orgNameByOwnerId.has(row.userId)) {
-            orgNameByOwnerId.set(row.userId, row.name);
-        }
+    if (userRows.length === 0) {
+        return c.json({ ok: true, users: [] });
     }
 
-    const revokedUserIds = new Set<string>(revokedMembershipRows.map((row) => row.userId));
+    await ensurePlansSeeded(db);
+    const userIds = userRows.map((entry) => entry.id);
+    const [ownedBusinesses, memberRows, planRows] = await Promise.all([
+        db.select().from(businesses).where(inArray(businesses.ownerUserId, userIds)),
+        db.select().from(businessMembers).where(inArray(businessMembers.userId, userIds)),
+        db.select().from(plans),
+    ]);
 
-    const staff = userRows.map((entry) => {
-        const ownerScope = entry.role === 'staff' ? (entry.ownerId ?? entry.uid) : entry.uid;
-        const organizationName = orgNameByOwnerId.get(ownerScope) ?? orgNameByOwnerId.get(entry.uid) ?? 'Unassigned';
-        const contact = entry.email ?? entry.phoneNumber ?? '-';
-        const status = revokedUserIds.has(entry.uid) ? 'REVOKED' : 'ACTIVE';
+    const businessIds = Array.from(new Set([
+        ...ownedBusinesses.map((entry) => entry.id),
+        ...memberRows.map((entry) => entry.businessId),
+    ]));
+    const businessRows = businessIds.length > 0
+        ? await db.select().from(businesses).where(inArray(businesses.id, businessIds))
+        : [];
+    const subscriptionRows = businessIds.length > 0
+        ? await db.select().from(subscriptions).where(inArray(subscriptions.businessId, businessIds))
+        : [];
+
+    const allowlistedAdmins = adminAllowlistSet(c);
+    const planByTierCycle = new Map<string, PlanRow>();
+    for (const plan of planRows) {
+        planByTierCycle.set(tierCycleKey(plan.tier, plan.billingCycle), plan);
+    }
+
+    const latestSubByBusiness = getLatestSubscriptionByBusiness(subscriptionRows);
+    const primaryBusinessByOwner = getPrimaryBusinessByOwner(ownedBusinesses);
+    const businessById = new Map(businessRows.map((entry) => [entry.id, entry]));
+
+    const usersPayload = userRows.map((entry) => {
+        const ownedBusiness = primaryBusinessByOwner.get(entry.id);
+        const memberBusiness = memberRows.find((member) => member.userId === entry.id)?.businessId;
+        const primaryBusiness = ownedBusiness ?? (memberBusiness ? businessById.get(memberBusiness) : undefined);
+        const subscription = primaryBusiness ? latestSubByBusiness.get(primaryBusiness.id) : null;
+        const linkedPlan = subscription ? planByTierCycle.get(tierCycleKey(subscription.tier, subscription.billingCycle)) : null;
+        const metadata = asRecord(entry.metadata);
+        const roleHint = typeof metadata.roleHint === 'string' ? metadata.roleHint.toLowerCase() : null;
+
+        const role = allowlistedAdmins.has((entry.email ?? '').toLowerCase())
+            ? 'admin'
+            : ownedBusiness
+                ? 'owner'
+                : roleHint === 'owner' || roleHint === 'staff' || roleHint === 'admin'
+                    ? roleHint
+                    : 'staff';
+
         return {
-            id: entry.uid,
-            name: entry.displayName ?? 'Unnamed user',
-            contact,
-            role: String(entry.role ?? 'staff').toUpperCase(),
-            organizationName,
-            status,
+            uid: entry.id,
+            email: entry.email,
+            displayName: entry.name,
+            businessName: primaryBusiness?.name ?? null,
+            phoneNumber: entry.phone,
+            role,
+            subscriptionStatus: mapSubscriptionStatusLegacy(subscription?.status),
+            subscriptionPlanId: linkedPlan?.id ?? null,
+            subscriptionPlanName: linkedPlan?.displayName ?? (subscription?.tier ?? null),
+            subscriptionEndsAt: subscription?.endDate ?? null,
+            createdAt: entry.createdAt,
         };
     });
 
-    return c.json({
-        ok: true,
-        stats: {
-            totalPersonnel: Number(totalPersonnelResult[0]?.count ?? 0),
-            verifiedAdmins: Number(adminCountResult[0]?.count ?? 0),
-            pendingInvites: Number(pendingInviteResult[0]?.count ?? 0),
-            revokedAccess: Number(revokedResult[0]?.count ?? 0),
-        },
-        staff,
-    });
+    return c.json({ ok: true, users: usersPayload });
 });
 
-// GET /admin/settings
-adminRoute.get('/settings', requireDeveloperAdmin, async (c) => {
+adminRoute.get('/users/:uid', async (c) => {
     const db = c.get('db');
-    const rows = await db
-        .select({
-            settings: userSettings.settings,
-        })
-        .from(userSettings)
-        .where(eq(userSettings.userId, ADMIN_SETTINGS_ROW_ID))
-        .limit(1);
-
-    return c.json({
-        ok: true,
-        settings: toAdminSettings(rows[0]?.settings),
-    });
-});
-
-// PATCH /admin/settings
-adminRoute.patch('/settings', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const payload = adminSettingsPartialSchema.parse(await c.req.json());
-    const rows = await db
-        .select({
-            settings: userSettings.settings,
-        })
-        .from(userSettings)
-        .where(eq(userSettings.userId, ADMIN_SETTINGS_ROW_ID))
-        .limit(1);
-    const current = toAdminSettings(rows[0]?.settings);
-    const nextSettings = {
-        ...current,
-        ...payload,
-    };
-    const now = new Date();
-    await db
-        .insert(userSettings)
-        .values({
-            userId: ADMIN_SETTINGS_ROW_ID,
-            settings: nextSettings,
-            createdAt: now,
-            updatedAt: now,
-        })
-        .onConflictDoUpdate({
-            target: userSettings.userId,
-            set: {
-                settings: nextSettings,
-                updatedAt: now,
-            },
-        });
-
-    return c.json({
-        ok: true,
-        settings: nextSettings,
-    });
-});
-
-// GET /admin/audit-logs
-adminRoute.get('/audit-logs', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const logs = await db.select()
-        .from(auditLogs)
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(50);
-
-    return c.json({
-        ok: true,
-        logs: logs.map(log => ({
-            id: log.id,
-            time: log.createdAt.toISOString(),
-            actor: log.actorUid,
-            action: log.action,
-            entity: `${log.entityType}:${log.entityId}`,
-            status: "SUCCESS" // Defaulting to success as failures usually aren't logged in this table or are separate
-        }))
-    });
-});
-
-// GET /admin/templates
-adminRoute.get('/templates', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const allTemplates = await db.select().from(templates).orderBy(desc(templates.createdAt));
-    return c.json({ ok: true, templates: allTemplates });
-});
-
-// POST /admin/templates
-adminRoute.post('/templates', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        name: z.string().min(1),
-        type: z.enum(['invoice', 'card', 'email']),
-        content: z.any(), // JSON content
-        isDefault: z.boolean().optional(),
-        thumbnailUrl: z.string().nullable().optional(),
-        isActive: z.boolean().optional(),
-    }).parse(body);
-
-    const newTemplate = await db.insert(templates).values({
-        id: `tpl_${Date.now()}`,
-        name: payload.name,
-        type: payload.type,
-        content: payload.content,
-        isDefault: payload.isDefault ?? false,
-        thumbnailUrl: payload.thumbnailUrl ?? null,
-        isActive: payload.isActive ?? true,
-    }).returning();
-
-    return c.json({ ok: true, template: newTemplate[0] });
-});
-
-// GET /admin/templates/:id
-adminRoute.get('/templates/:id', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const id = c.req.param('id');
-    const rows = await db.select().from(templates).where(eq(templates.id, id)).limit(1);
-    if (!rows[0]) return c.json({ ok: false, message: 'Template not found.' }, 404);
-    return c.json({ ok: true, template: rows[0] });
-});
-
-// PATCH /admin/templates/:id
-adminRoute.patch('/templates/:id', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const id = c.req.param('id');
-    const payload = z.object({
-        name: z.string().min(1).optional(),
-        type: z.enum(['invoice', 'card', 'email']).optional(),
-        content: z.any().optional(),
-        isDefault: z.boolean().optional(),
-        thumbnailUrl: z.string().nullable().optional(),
-        isActive: z.boolean().optional(),
-    }).parse(await c.req.json());
-
-    const updated = await db
-        .update(templates)
-        .set({
-            ...payload,
-            updatedAt: new Date(),
-        })
-        .where(eq(templates.id, id))
-        .returning({ id: templates.id });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'Template not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// PUT /admin/templates/:id
-adminRoute.put('/templates/:id', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const id = c.req.param('id');
-    const payload = z.object({
-        name: z.string().min(1),
-        type: z.enum(['invoice', 'card', 'email']),
-        content: z.any(),
-        isDefault: z.boolean().optional(),
-        thumbnailUrl: z.string().nullable().optional(),
-        isActive: z.boolean().optional(),
-    }).parse(await c.req.json());
-
-    const now = new Date();
-    await db
-        .insert(templates)
-        .values({
-            id,
-            name: payload.name,
-            type: payload.type,
-            content: payload.content,
-            isDefault: payload.isDefault ?? false,
-            thumbnailUrl: payload.thumbnailUrl ?? null,
-            isActive: payload.isActive ?? true,
-            createdAt: now,
-            updatedAt: now,
-        })
-        .onConflictDoUpdate({
-            target: templates.id,
-            set: {
-                name: payload.name,
-                type: payload.type,
-                content: payload.content,
-                isDefault: payload.isDefault ?? false,
-                thumbnailUrl: payload.thumbnailUrl ?? null,
-                isActive: payload.isActive ?? true,
-                updatedAt: now,
-            },
-        });
-
-    return c.json({ ok: true });
-});
-
-// DELETE /admin/templates/:id
-adminRoute.delete('/templates/:id', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const id = c.req.param('id');
-    const deleted = await db.delete(templates).where(eq(templates.id, id)).returning({ id: templates.id });
-    if (!deleted[0]) return c.json({ ok: false, message: 'Template not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-adminRoute.get('/access', requireAuth, async (c) => {
-    const authUser = c.get('authUser');
-    if (!authUser) return c.json({ ok: false, canAccess: false }, 401);
-
-    return c.json({
-        ok: true,
-        canAccess: isDeveloperAdminPrincipal(authUser, c.env),
-        role: authUser.role,
-        uid: authUser.uid,
-        email: authUser.email ?? null,
-    });
-});
-
-// GET /admin/users - List all users with subscription status
-adminRoute.get('/users', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 1000);
-    const allUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(limit);
-    return c.json({ ok: true, users: allUsers });
-});
-
-// GET /admin/users/:uid - User detail
-adminRoute.get('/users/:uid', requireDeveloperAdmin, async (c) => {
     const uid = c.req.param('uid');
-    const db = c.get('db');
-    const rows = await db.select().from(users).where(eq(users.uid, uid)).limit(1);
-    if (!rows[0]) return c.json({ ok: false, message: 'User not found.' }, 404);
-    return c.json({ ok: true, user: rows[0] });
-});
+    const userRows = await db.select().from(users).where(eq(users.id, uid)).limit(1);
+    const user = userRows[0];
+    if (!user) return c.json({ ok: false, message: 'User not found.' }, 404);
 
-// PATCH /admin/users/:uid - Update user profile/subscription fields
-adminRoute.patch('/users/:uid', requireDeveloperAdmin, async (c) => {
-    const uid = c.req.param('uid');
-    const db = c.get('db');
-    const body = await c.req.json();
+    await ensurePlansSeeded(db);
+    const [ownedBusinesses, memberRows, planRows] = await Promise.all([
+        db.select().from(businesses).where(eq(businesses.ownerUserId, uid)),
+        db.select().from(businessMembers).where(eq(businessMembers.userId, uid)),
+        db.select().from(plans),
+    ]);
 
-    const payload = z.object({
-        displayName: z.string().nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        businessName: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        gstEnabled: z.boolean().optional(),
-        gstNumber: z.string().nullable().optional(),
-        currency: z.string().nullable().optional(),
-        role: z.enum(['owner', 'staff', 'admin']).optional(),
-        ownerId: z.string().nullable().optional(),
-        subscriptionStatus: z.enum(['active', 'inactive', 'canceled', 'past_due']).optional(),
-        subscriptionPlanId: z.string().nullable().optional(),
-        subscriptionPlanName: z.string().nullable().optional(),
-        subscriptionAmountMonthly: z.number().nonnegative().nullable().optional(),
-        subscriptionCurrency: z.string().nullable().optional(),
-        subscriptionStartsAt: z.coerce.date().nullable().optional(),
-        subscriptionEndsAt: z.coerce.date().nullable().optional(),
-    }).parse(body);
-
-    const updated = await db
-        .update(users)
-        .set({ ...payload, updatedAt: new Date() })
-        .where(eq(users.uid, uid))
-        .returning({ uid: users.uid });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'User not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// PUT /admin/users/:uid - Full update alias
-adminRoute.put('/users/:uid', requireDeveloperAdmin, async (c) => {
-    const uid = c.req.param('uid');
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        displayName: z.string().nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        businessName: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        gstEnabled: z.boolean().optional(),
-        gstNumber: z.string().nullable().optional(),
-        currency: z.string().nullable().optional(),
-        role: z.enum(['owner', 'staff', 'admin']).optional(),
-        ownerId: z.string().nullable().optional(),
-        subscriptionStatus: z.enum(['active', 'inactive', 'canceled', 'past_due']).optional(),
-        subscriptionPlanId: z.string().nullable().optional(),
-        subscriptionPlanName: z.string().nullable().optional(),
-        subscriptionAmountMonthly: z.number().nonnegative().nullable().optional(),
-        subscriptionCurrency: z.string().nullable().optional(),
-        subscriptionStartsAt: z.coerce.date().nullable().optional(),
-        subscriptionEndsAt: z.coerce.date().nullable().optional(),
-    }).parse(body);
-
-    const updated = await db
-        .update(users)
-        .set({ ...payload, updatedAt: new Date() })
-        .where(eq(users.uid, uid))
-        .returning({ uid: users.uid });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'User not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// PATCH /admin/users/:uid/role - Update only role
-adminRoute.patch('/users/:uid/role', requireDeveloperAdmin, async (c) => {
-    const uid = c.req.param('uid');
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        role: z.enum(['owner', 'staff', 'admin']),
-    }).parse(body);
-
-    const updated = await db
-        .update(users)
-        .set({ role: payload.role, updatedAt: new Date() })
-        .where(eq(users.uid, uid))
-        .returning({ uid: users.uid });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'User not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// POST /admin/users/:uid/subscription - Manually assign subscription
-adminRoute.post('/users/:uid/subscription', requireDeveloperAdmin, async (c) => {
-    const uid = c.req.param('uid');
-    const db = c.get('db');
-    const body = await c.req.json();
-
-    // Schema validation
-    const schema = z.object({
-        planId: z.string().min(1),
-        status: z.enum(['active', 'inactive', 'canceled', 'past_due']),
-        durationDays: z.number().int().positive().default(30),
-    });
-
-    const payload = schema.parse(body);
-
-    const plan = await db.select().from(plans).where(eq(plans.id, payload.planId)).limit(1);
-    const planDetails = plan[0];
-
-    // Calculate dates
-    const now = new Date();
-    const startsAt = now;
-    const endsAt = new Date(now);
-    endsAt.setDate(endsAt.getDate() + payload.durationDays);
-
-    await db.update(users).set({
-        subscriptionStatus: payload.status,
-        subscriptionPlanId: payload.planId,
-        subscriptionPlanName: planDetails?.name || 'Manual Plan',
-        subscriptionAmountMonthly: planDetails?.monthlyPrice || 0,
-        subscriptionCurrency: planDetails?.currency || 'INR',
-        subscriptionStartsAt: startsAt,
-        subscriptionEndsAt: endsAt,
-        updatedAt: now,
-    }).where(eq(users.uid, uid));
-
-    return c.json({ ok: true, message: 'Subscription updated' });
-});
-
-// DELETE /admin/users/:uid - Remove user
-adminRoute.delete('/users/:uid', requireDeveloperAdmin, async (c) => {
-    const uid = c.req.param('uid');
-    const db = c.get('db');
-    const deleted = await db.delete(users).where(eq(users.uid, uid)).returning({ uid: users.uid });
-    if (!deleted[0]) return c.json({ ok: false, message: 'User not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// GET /admin/organizations - List all organizations
-adminRoute.get('/organizations', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 500), 1), 2000);
-    const data = await db.select().from(organizations).orderBy(desc(organizations.createdAt)).limit(limit);
-    return c.json({ ok: true, organizations: data });
-});
-
-// GET /admin/organizations/:id - Organization detail
-adminRoute.get('/organizations/:id', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const id = c.req.param('id');
-    const rows = await db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
-    if (!rows[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
-    return c.json({ ok: true, organization: rows[0] });
-});
-
-// POST /admin/organizations - Create organization
-adminRoute.post('/organizations', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const authUser = c.get('authUser');
-    const body = await c.req.json();
-    const payload = z.object({
-        userId: z.string().optional(),
-        name: z.string().min(2).max(140),
-        code: z.string().min(2).max(32),
-        gstNumber: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        phoneNumber: z.string().nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        currency: z.string().min(3).max(6).optional(),
-        isActive: z.boolean().optional(),
-    }).parse(body);
-
-    const now = new Date();
-    const id = nanoid();
-    const ownerUserId = payload.userId ?? authUser?.uid ?? '';
-    if (!ownerUserId) {
-        return c.json({ ok: false, message: 'userId is required.' }, 400);
+    const businessIds = Array.from(new Set([
+        ...ownedBusinesses.map((entry) => entry.id),
+        ...memberRows.map((entry) => entry.businessId),
+    ]));
+    const businessRows = businessIds.length > 0
+        ? await db.select().from(businesses).where(inArray(businesses.id, businessIds))
+        : [];
+    const subscriptionRows = businessIds.length > 0
+        ? await db.select().from(subscriptions).where(inArray(subscriptions.businessId, businessIds))
+        : [];
+    const allowlistedAdmins = adminAllowlistSet(c);
+    const planByTierCycle = new Map<string, PlanRow>();
+    for (const plan of planRows) {
+        planByTierCycle.set(tierCycleKey(plan.tier, plan.billingCycle), plan);
     }
 
-    await db.insert(organizations).values({
-        id,
-        userId: ownerUserId,
-        name: payload.name.trim(),
-        code: payload.code.trim().toUpperCase(),
-        gstNumber: payload.gstNumber ?? null,
-        address: payload.address ?? null,
-        phoneNumber: payload.phoneNumber ?? null,
-        email: payload.email ?? null,
-        currency: (payload.currency ?? 'INR').toUpperCase(),
-        isActive: payload.isActive ?? true,
-        createdAt: now,
-        updatedAt: now,
-    });
+    const primaryBusiness = getPrimaryBusinessByOwner(ownedBusinesses).get(uid)
+        ?? businessRows.find((entry) => entry.id === memberRows[0]?.businessId);
+    const subscription = primaryBusiness
+        ? getLatestSubscriptionByBusiness(subscriptionRows).get(primaryBusiness.id)
+        : null;
+    const linkedPlan = subscription ? planByTierCycle.get(tierCycleKey(subscription.tier, subscription.billingCycle)) : null;
+    const metadata = asRecord(user.metadata);
+    const roleHint = typeof metadata.roleHint === 'string' ? metadata.roleHint.toLowerCase() : null;
 
-    const ownerMembershipId = nanoid();
-    await db.insert(organizationMembers).values({
-        id: ownerMembershipId,
-        userId: ownerUserId,
-        organizationId: id,
-        role: 'owner',
-        permissions: {},
-        isActive: true,
-        invitedBy: authUser?.uid ?? ownerUserId,
-        phoneNumberSnapshot: null,
-        joinedAt: now,
-        createdAt: now,
-        updatedAt: now,
-    });
+    const role = allowlistedAdmins.has((user.email ?? '').toLowerCase())
+        ? 'admin'
+        : primaryBusiness && primaryBusiness.ownerUserId === user.id
+            ? 'owner'
+            : roleHint === 'owner' || roleHint === 'staff' || roleHint === 'admin'
+                ? roleHint
+                : 'staff';
 
-    await db
-        .insert(organizationSettings)
-        .values({
-            organizationId: id,
-            userId: ownerUserId,
+    return c.json({
+        ok: true,
+        user: {
+            uid: user.id,
+            email: user.email,
+            displayName: user.name,
+            businessName: primaryBusiness?.name ?? null,
+            phoneNumber: user.phone,
+            role,
+            subscriptionStatus: mapSubscriptionStatusLegacy(subscription?.status),
+            subscriptionPlanId: linkedPlan?.id ?? null,
+            subscriptionPlanName: linkedPlan?.displayName ?? (subscription?.tier ?? null),
+            subscriptionEndsAt: subscription?.endDate ?? null,
+            createdAt: user.createdAt,
+        },
+    });
+});
+
+adminRoute.patch('/users/:uid/role', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const payload = userRoleSchema.parse(await c.req.json());
+        const db = c.get('db');
+        const uid = c.req.param('uid');
+
+        const rows = await db.select().from(users).where(eq(users.id, uid)).limit(1);
+        const user = rows[0];
+        if (!user) return c.json({ ok: false, message: 'User not found.' }, 404);
+
+        if (payload.role === 'admin') {
+            assertSuperAdmin(c);
+        }
+
+        const currentMeta = asRecord(user.metadata);
+        const nextMeta = {
+            ...currentMeta,
+            roleHint: payload.role,
+            roleHintUpdatedAt: new Date().toISOString(),
+        };
+        await db.update(users).set({
+            metadata: nextMeta,
+            updatedAt: new Date(),
+        }).where(eq(users.id, uid));
+
+        await appendAuditLog(c, 'USER_ROLE_UPDATED', 'user', uid, { role: payload.role });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update role.' }, 400);
+    }
+});
+
+adminRoute.post('/users/:uid/subscription', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const payload = manualSubscriptionSchema.parse(await c.req.json());
+        const db = c.get('db');
+        const uid = c.req.param('uid');
+
+        const [userRows, planRows] = await Promise.all([
+            db.select().from(users).where(eq(users.id, uid)).limit(1),
+            db.select().from(plans).where(eq(plans.id, payload.planId)).limit(1),
+        ]);
+        const user = userRows[0];
+        const plan = planRows[0];
+        if (!user) return c.json({ ok: false, message: 'User not found.' }, 404);
+        if (!plan) return c.json({ ok: false, message: 'Plan not found.' }, 404);
+
+        let primaryBusiness = (await db.select().from(businesses)
+            .where(eq(businesses.ownerUserId, uid))
+            .orderBy(asc(businesses.createdAt))
+            .limit(1))[0];
+
+        if (!primaryBusiness) {
+            const now = new Date();
+            const businessId = `biz_${nanoid(18)}`;
+            await db.insert(businesses).values({
+                id: businessId,
+                ownerUserId: uid,
+                name: `${user.name}'s Business`,
+                legalName: null,
+                address: null,
+                state: null,
+                gstin: null,
+                pan: null,
+                booksStartDate: now,
+                logoUrl: null,
+                phone: user.phone,
+                email: user.email,
+                currency: 'INR',
+                category: null,
+                code: null,
+                isActive: true,
+                settings: {},
+                createdAt: now,
+                updatedAt: now,
+            });
+            primaryBusiness = (await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1))[0];
+        }
+
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + payload.durationDays);
+        const mappedStatus = mapLegacyStatusToSubscription(payload.status);
+
+        await db.insert(subscriptions).values({
+            id: `sub_${nanoid(18)}`,
+            businessId: primaryBusiness.id,
+            tier: plan.tier,
+            billingCycle: plan.billingCycle,
+            status: mappedStatus,
+            startDate,
+            endDate,
+            nextRenewalDate: mappedStatus === 'ACTIVE' ? endDate : null,
+            graceEndDate: mappedStatus === 'GRACE' ? new Date(endDate.getTime() + (7 * 24 * 60 * 60 * 1000)) : null,
+            maxBillsTotal: plan.maxBillsTotal,
+            maxBillsPerMonth: plan.maxBillsPerMonth,
+            maxStaffUsers: plan.maxStaffUsers,
+            maxBusinesses: plan.maxBusinesses,
+            maxDevices: plan.maxDevices,
+            maxStorageMb: plan.maxStorageMb,
+            offlineOnly: plan.offlineOnly,
+            cloudSyncAllowed: plan.cloudSyncAllowed,
+            webDashboardAllowed: plan.webDashboardAllowed,
+            featureFlagsEnabled: plan.enabledFeatures,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
+
+        await appendAuditLog(c, 'USER_SUBSCRIPTION_UPDATED', 'user', uid, {
+            planId: plan.id,
+            status: mappedStatus,
+            durationDays: payload.durationDays,
+            businessId: primaryBusiness.id,
+        });
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update subscription.' }, 400);
+    }
+});
+
+adminRoute.delete('/users/:uid', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const uid = c.req.param('uid');
+        const rows = await db.select().from(users).where(eq(users.id, uid)).limit(1);
+        const user = rows[0];
+        if (!user) return c.json({ ok: false, message: 'User not found.' }, 404);
+
+        const currentMeta = asRecord(user.metadata);
+        await db.update(users).set({
+            isDisabled: true,
+            metadata: {
+                ...currentMeta,
+                softDeletedAt: new Date().toISOString(),
+            },
+            updatedAt: new Date(),
+        }).where(eq(users.id, uid));
+
+        await appendAuditLog(c, 'USER_SOFT_DELETED', 'user', uid);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to remove user.' }, 400);
+    }
+});
+adminRoute.get('/organizations', async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 500), 1), 5000);
+    const rows = await db.select().from(businesses).orderBy(desc(businesses.createdAt)).limit(limit);
+
+    return c.json({
+        ok: true,
+        organizations: rows.map((entry) => ({
+            id: entry.id,
+            userId: entry.ownerUserId,
+            name: entry.name,
+            code: entry.code ?? entry.id,
+            gstNumber: entry.gstin,
+            address: entry.address,
+            phoneNumber: entry.phone,
+            email: entry.email,
+            currency: entry.currency,
+            isActive: entry.isActive,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+        })),
+    });
+});
+
+adminRoute.get('/organizations/:id', async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const rows = await db.select().from(businesses).where(eq(businesses.id, id)).limit(1);
+    const entry = rows[0];
+    if (!entry) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+
+    return c.json({
+        ok: true,
+        organization: {
+            id: entry.id,
+            userId: entry.ownerUserId,
+            name: entry.name,
+            code: entry.code ?? entry.id,
+            gstNumber: entry.gstin,
+            address: entry.address,
+            phoneNumber: entry.phone,
+            email: entry.email,
+            currency: entry.currency,
+            state: entry.state,
+            legalName: entry.legalName,
+            pan: entry.pan,
+            category: entry.category,
+            isActive: entry.isActive,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+        },
+    });
+});
+
+adminRoute.post('/organizations', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        const payload = organizationCreateSchema.parse(await c.req.json());
+        const ownerUserId = payload.userId ?? authUser?.id;
+        if (!ownerUserId) return c.json({ ok: false, message: 'Owner user id required.' }, 400);
+
+        const ownerRows = await db.select().from(users).where(eq(users.id, ownerUserId)).limit(1);
+        if (!ownerRows[0]) return c.json({ ok: false, message: 'Owner user not found.' }, 404);
+
+        const now = new Date();
+        const id = `biz_${nanoid(18)}`;
+        const code = payload.code?.trim() || payload.name.replace(/[^A-Za-z0-9]+/g, '').toUpperCase().slice(0, 20) || id;
+
+        await db.insert(businesses).values({
+            id,
+            ownerUserId,
+            name: payload.name.trim(),
+            legalName: payload.legalName ?? null,
+            address: payload.address ?? null,
+            state: payload.state ?? null,
+            gstin: payload.gstNumber ?? null,
+            pan: payload.pan ?? null,
+            booksStartDate: now,
+            logoUrl: null,
+            phone: payload.phoneNumber ?? null,
+            email: payload.email ?? null,
+            currency: (payload.currency ?? 'INR').toUpperCase(),
+            category: payload.category ?? null,
+            code,
+            isActive: payload.isActive ?? true,
             settings: {},
             createdAt: now,
             updatedAt: now,
-        })
-        .onConflictDoUpdate({
-            target: organizationSettings.organizationId,
+        });
+
+        await db.insert(businessMembers).values({
+            id: `mbr_${nanoid(16)}`,
+            businessId: id,
+            userId: ownerUserId,
+            role: 'OWNER',
+            permissions: {},
+            isActive: true,
+            invitedByUserId: authUser?.id ?? ownerUserId,
+            phoneSnapshot: ownerRows[0].phone,
+            joinedAt: now,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await appendAuditLog(c, 'ORGANIZATION_CREATED', 'business', id, { ownerUserId, code });
+        return c.json({ ok: true, organization: { id, userId: ownerUserId } });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create organization.' }, 400);
+    }
+});
+
+adminRoute.patch('/organizations/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = organizationPatchSchema.parse(await c.req.json());
+
+        const updated = await db.update(businesses).set({
+            ...(payload.userId !== undefined ? { ownerUserId: payload.userId } : {}),
+            ...(payload.name !== undefined ? { name: payload.name } : {}),
+            ...(payload.code !== undefined ? { code: payload.code } : {}),
+            ...(payload.gstNumber !== undefined ? { gstin: payload.gstNumber } : {}),
+            ...(payload.address !== undefined ? { address: payload.address } : {}),
+            ...(payload.phoneNumber !== undefined ? { phone: payload.phoneNumber } : {}),
+            ...(payload.email !== undefined ? { email: payload.email } : {}),
+            ...(payload.currency !== undefined ? { currency: payload.currency.toUpperCase() } : {}),
+            ...(payload.state !== undefined ? { state: payload.state } : {}),
+            ...(payload.legalName !== undefined ? { legalName: payload.legalName } : {}),
+            ...(payload.pan !== undefined ? { pan: payload.pan } : {}),
+            ...(payload.category !== undefined ? { category: payload.category } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            updatedAt: new Date(),
+        }).where(eq(businesses.id, id)).returning({ id: businesses.id });
+
+        if (!updated[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        await appendAuditLog(c, 'ORGANIZATION_UPDATED', 'business', id, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update organization.' }, 400);
+    }
+});
+
+adminRoute.post('/organizations/:id/toggle-status', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select({ isActive: businesses.isActive }).from(businesses).where(eq(businesses.id, id)).limit(1);
+        const current = rows[0];
+        if (!current) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+
+        const next = !current.isActive;
+        await db.update(businesses).set({ isActive: next, updatedAt: new Date() }).where(eq(businesses.id, id));
+        await appendAuditLog(c, 'ORGANIZATION_TOGGLED', 'business', id, { isActive: next });
+        return c.json({ ok: true, isActive: next });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to toggle organization.' }, 400);
+    }
+});
+
+adminRoute.get('/plans', async (c) => {
+    const db = c.get('db');
+    await ensurePlansSeeded(db);
+    const includeInactive = parseBoolean(c.req.query('includeInactive'), true);
+
+    const rows = includeInactive
+        ? await db.select().from(plans).orderBy(asc(plans.displayOrder), asc(plans.displayName))
+        : await db.select().from(plans).where(eq(plans.isVisible, true)).orderBy(asc(plans.displayOrder), asc(plans.displayName));
+
+    return c.json({ ok: true, plans: rows.map(toClientPlan) });
+});
+
+adminRoute.get('/plans/:id', async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const rows = await db.select().from(plans).where(eq(plans.id, id)).limit(1);
+    if (!rows[0]) return c.json({ ok: false, message: 'Plan not found.' }, 404);
+    return c.json({ ok: true, plan: toClientPlan(rows[0]) });
+});
+
+adminRoute.post('/plans', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const payload = planPayloadSchema.parse(await c.req.json());
+        const id = payload.id?.trim() || `plan_${nanoid(14)}`;
+        const values = buildPlanInsert(payload, id);
+        await db.insert(plans).values(values);
+
+        await appendAuditLog(c, 'PLAN_CREATED', 'plan', id, {
+            tier: values.tier,
+            billingCycle: values.billingCycle,
+            pricePerCycle: values.pricePerCycle,
+        });
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create plan.' }, 400);
+    }
+});
+
+adminRoute.put('/plans/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = planPayloadSchema.parse(await c.req.json());
+        const existingRows = await db.select().from(plans).where(eq(plans.id, id)).limit(1);
+        const existing = existingRows[0];
+        const values = buildPlanInsert(payload, id, existing);
+
+        await db.insert(plans).values(values).onConflictDoUpdate({
+            target: plans.id,
             set: {
-                userId: ownerUserId,
-                updatedAt: now,
+                ...values,
+                createdAt: existing?.createdAt ?? values.createdAt,
+                updatedAt: new Date(),
             },
         });
 
-    return c.json({ ok: true, organization: { id, userId: ownerUserId } });
+        await appendAuditLog(c, 'PLAN_UPSERTED', 'plan', id, {
+            tier: values.tier,
+            billingCycle: values.billingCycle,
+            pricePerCycle: values.pricePerCycle,
+        });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to upsert plan.' }, 400);
+    }
 });
 
-// PATCH /admin/organizations/:id - Patch organization
-adminRoute.patch('/organizations/:id', requireDeveloperAdmin, async (c) => {
+adminRoute.patch('/plans/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = planPayloadSchema.parse(await c.req.json());
+        const patch = buildPlanPatch(payload);
+
+        const updated = await db.update(plans).set(patch).where(eq(plans.id, id)).returning({ id: plans.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Plan not found.' }, 404);
+        await appendAuditLog(c, 'PLAN_UPDATED', 'plan', id, patch as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update plan.' }, 400);
+    }
+});
+
+adminRoute.delete('/plans/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const deleted = await db.delete(plans).where(eq(plans.id, id)).returning({ id: plans.id });
+        if (!deleted[0]) return c.json({ ok: false, message: 'Plan not found.' }, 404);
+        await appendAuditLog(c, 'PLAN_DELETED', 'plan', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete plan.' }, 400);
+    }
+});
+
+adminRoute.post('/seed/default-plans', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const now = new Date();
+
+        await withTransaction(db, async (tx) => {
+            for (const entry of DEFAULT_PLAN_SEEDS) {
+                await tx.insert(plans).values({
+                    ...entry,
+                    createdAt: now,
+                    updatedAt: now,
+                }).onConflictDoUpdate({
+                    target: plans.id,
+                    set: {
+                        tier: entry.tier,
+                        billingCycle: entry.billingCycle,
+                        displayName: entry.displayName,
+                        description: entry.description,
+                        pricePerCycle: entry.pricePerCycle,
+                        currency: entry.currency,
+                        effectiveDiscountVsMonthlyPercent: entry.effectiveDiscountVsMonthlyPercent,
+                        isVisible: entry.isVisible,
+                        displayOrder: entry.displayOrder,
+                        maxBillsTotal: entry.maxBillsTotal,
+                        maxBillsPerMonth: entry.maxBillsPerMonth,
+                        maxStaffUsers: entry.maxStaffUsers,
+                        maxBusinesses: entry.maxBusinesses,
+                        maxDevices: entry.maxDevices,
+                        maxStorageMb: entry.maxStorageMb,
+                        offlineOnly: entry.offlineOnly,
+                        cloudSyncAllowed: entry.cloudSyncAllowed,
+                        webDashboardAllowed: entry.webDashboardAllowed,
+                        enabledFeatures: entry.enabledFeatures,
+                        disabledFeatures: entry.disabledFeatures,
+                        updatedAt: now,
+                    },
+                });
+            }
+        });
+
+        await appendAuditLog(c, 'PLAN_DEFAULTS_SEEDED', 'plan', null);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to seed plans.' }, 400);
+    }
+});
+adminRoute.get('/offers', async (c) => {
     const db = c.get('db');
-    const id = c.req.param('id');
-    const body = await c.req.json();
-    const payload = z.object({
-        userId: z.string().optional(),
-        name: z.string().min(2).max(140).optional(),
-        code: z.string().min(2).max(32).optional(),
-        gstNumber: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        phoneNumber: z.string().nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        currency: z.string().min(3).max(6).optional(),
-        isActive: z.boolean().optional(),
-    }).parse(body);
-
-    const updatePayload: Record<string, unknown> = { updatedAt: new Date() };
-    if (payload.userId !== undefined) updatePayload.userId = payload.userId;
-    if (payload.name !== undefined) updatePayload.name = payload.name.trim();
-    if (payload.code !== undefined) updatePayload.code = payload.code.trim().toUpperCase();
-    if (payload.gstNumber !== undefined) updatePayload.gstNumber = payload.gstNumber;
-    if (payload.address !== undefined) updatePayload.address = payload.address;
-    if (payload.phoneNumber !== undefined) updatePayload.phoneNumber = payload.phoneNumber;
-    if (payload.email !== undefined) updatePayload.email = payload.email;
-    if (payload.currency !== undefined) updatePayload.currency = payload.currency.toUpperCase();
-    if (payload.isActive !== undefined) updatePayload.isActive = payload.isActive;
-
-    const updated = await db
-        .update(organizations)
-        .set(updatePayload)
-        .where(eq(organizations.id, id))
-        .returning({ id: organizations.id });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'Organization not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// POST /admin/organizations/:id/toggle-status - Toggle active flag
-adminRoute.post('/organizations/:id/toggle-status', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const id = c.req.param('id');
-    const rows = await db
-        .select({ isActive: organizations.isActive })
-        .from(organizations)
-        .where(eq(organizations.id, id))
-        .limit(1);
-    const current = rows[0];
-    if (!current) return c.json({ ok: false, message: 'Organization not found.' }, 404);
-
-    await db
-        .update(organizations)
-        .set({ isActive: !current.isActive, updatedAt: new Date() })
-        .where(eq(organizations.id, id));
-
-    return c.json({ ok: true, isActive: !current.isActive });
-});
-
-// GET /admin/plans
-adminRoute.get('/plans', requireDeveloperAdmin, async (c) => {
     const includeInactive = parseBoolean(c.req.query('includeInactive'), true);
-    const db = c.get('db');
-
-    const data = await db
-        .select()
-        .from(plans)
-        .where(includeInactive ? sql`true` : eq(plans.isActive, true))
-        .orderBy(asc(plans.displayOrder), asc(plans.name));
-
-    return c.json({ ok: true, plans: data });
+    const rows = includeInactive
+        ? await db.select().from(offers).orderBy(desc(offers.priority), desc(offers.createdAt))
+        : await db.select().from(offers).where(eq(offers.isActive, true)).orderBy(desc(offers.priority), desc(offers.createdAt));
+    return c.json({ ok: true, offers: rows });
 });
 
-// GET /admin/plans/:id
-adminRoute.get('/plans/:id', requireDeveloperAdmin, async (c) => {
+adminRoute.get('/offers/:id', async (c) => {
+    const db = c.get('db');
     const id = c.req.param('id');
-    const db = c.get('db');
-    const rows = await db.select().from(plans).where(eq(plans.id, id)).limit(1);
-    if (!rows[0]) return c.json({ ok: false, message: 'Plan not found.' }, 404);
-    return c.json({ ok: true, plan: rows[0] });
-});
-
-// POST /admin/plans
-adminRoute.post('/plans', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        id: z.string().min(1),
-        name: z.string().min(1),
-        description: z.string().min(1),
-        monthlyPrice: z.number().nonnegative(),
-        currency: z.string().min(3).max(6),
-        isActive: z.boolean().default(true),
-        displayOrder: z.number().int().default(0),
-        features: z.array(z.string().min(1)).default([]),
-    }).parse(body);
-
-    const now = new Date();
-    await db.insert(plans).values({
-        id: payload.id,
-        name: payload.name,
-        description: payload.description,
-        monthlyPrice: payload.monthlyPrice,
-        currency: payload.currency.toUpperCase(),
-        isActive: payload.isActive,
-        displayOrder: payload.displayOrder,
-        features: payload.features,
-        createdAt: now,
-        updatedAt: now,
-    });
-
-    return c.json({ ok: true, id: payload.id });
-});
-
-// PUT /admin/plans/:id - Upsert plan
-adminRoute.put('/plans/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        name: z.string().min(1),
-        description: z.string().min(1),
-        monthlyPrice: z.number().nonnegative(),
-        currency: z.string().min(3).max(6),
-        isActive: z.boolean().default(true),
-        displayOrder: z.number().int().default(0),
-        features: z.array(z.string().min(1)).default([]),
-    }).parse(body);
-
-    const now = new Date();
-    await db.insert(plans).values({
-        id,
-        name: payload.name,
-        description: payload.description,
-        monthlyPrice: payload.monthlyPrice,
-        currency: payload.currency.toUpperCase(),
-        isActive: payload.isActive,
-        displayOrder: payload.displayOrder,
-        features: payload.features,
-        createdAt: now,
-        updatedAt: now,
-    }).onConflictDoUpdate({
-        target: plans.id,
-        set: {
-            name: payload.name,
-            description: payload.description,
-            monthlyPrice: payload.monthlyPrice,
-            currency: payload.currency.toUpperCase(),
-            isActive: payload.isActive,
-            displayOrder: payload.displayOrder,
-            features: payload.features,
-            updatedAt: now,
-        },
-    });
-
-    return c.json({ ok: true });
-});
-
-// PATCH /admin/plans/:id
-adminRoute.patch('/plans/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        name: z.string().min(1).optional(),
-        description: z.string().min(1).optional(),
-        monthlyPrice: z.number().nonnegative().optional(),
-        currency: z.string().min(3).max(6).optional(),
-        isActive: z.boolean().optional(),
-        displayOrder: z.number().int().optional(),
-        features: z.array(z.string().min(1)).optional(),
-    }).parse(body);
-
-    const updated = await db
-        .update(plans)
-        .set({
-            ...payload,
-            currency: payload.currency ? payload.currency.toUpperCase() : undefined,
-            updatedAt: new Date(),
-        })
-        .where(eq(plans.id, id))
-        .returning({ id: plans.id });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'Plan not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// DELETE /admin/plans/:id
-adminRoute.delete('/plans/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const deleted = await db.delete(plans).where(eq(plans.id, id)).returning({ id: plans.id });
-    if (!deleted[0]) return c.json({ ok: false, message: 'Plan not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// GET /admin/offers
-adminRoute.get('/offers', requireDeveloperAdmin, async (c) => {
-    const includeInactive = parseBoolean(c.req.query('includeInactive'), true);
-    const db = c.get('db');
-
-    const data = await db
-        .select()
-        .from(offers)
-        .where(includeInactive ? sql`true` : eq(offers.isActive, true))
-        .orderBy(desc(offers.priority), desc(offers.createdAt));
-
-    return c.json({ ok: true, offers: data });
-});
-
-// GET /admin/offers/:id
-adminRoute.get('/offers/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
     const rows = await db.select().from(offers).where(eq(offers.id, id)).limit(1);
     if (!rows[0]) return c.json({ ok: false, message: 'Offer not found.' }, 404);
     return c.json({ ok: true, offer: rows[0] });
 });
 
-// POST /admin/offers
-adminRoute.post('/offers', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        id: z.string().min(1),
-        title: z.string().min(1),
-        message: z.string().min(1),
-        bannerUrl: z.string().nullable().optional(),
-        bannerBackground: z.string().nullable().optional(),
-        ctaText: z.string().nullable().optional(),
-        ctaRoute: z.string().nullable().optional(),
-        audience: z.enum(['all', 'owners', 'staff']).default('all'),
-        isActive: z.boolean().default(true),
-        priority: z.number().int().default(0),
-        startsAt: z.coerce.date().nullable().optional(),
-        endsAt: z.coerce.date().nullable().optional(),
-    }).parse(body);
-
-    const now = new Date();
-    await db.insert(offers).values({
-        id: payload.id,
-        title: payload.title,
-        message: payload.message,
-        bannerUrl: payload.bannerUrl ?? null,
-        bannerBackground: payload.bannerBackground ?? null,
-        ctaText: payload.ctaText ?? null,
-        ctaRoute: payload.ctaRoute ?? null,
-        audience: payload.audience,
-        isActive: payload.isActive,
-        priority: payload.priority,
-        startsAt: payload.startsAt ?? null,
-        endsAt: payload.endsAt ?? null,
-        createdAt: now,
-        updatedAt: now,
-    });
-
-    return c.json({ ok: true, id: payload.id });
-});
-
-// PUT /admin/offers/:id - Upsert offer
-adminRoute.put('/offers/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        title: z.string().min(1),
-        message: z.string().min(1),
-        bannerUrl: z.string().nullable().optional(),
-        bannerBackground: z.string().nullable().optional(),
-        ctaText: z.string().nullable().optional(),
-        ctaRoute: z.string().nullable().optional(),
-        audience: z.enum(['all', 'owners', 'staff']).default('all'),
-        isActive: z.boolean().default(true),
-        priority: z.number().int().default(0),
-        startsAt: z.coerce.date().nullable().optional(),
-        endsAt: z.coerce.date().nullable().optional(),
-    }).parse(body);
-
-    const now = new Date();
-    await db.insert(offers).values({
-        id,
-        title: payload.title,
-        message: payload.message,
-        bannerUrl: payload.bannerUrl ?? null,
-        bannerBackground: payload.bannerBackground ?? null,
-        ctaText: payload.ctaText ?? null,
-        ctaRoute: payload.ctaRoute ?? null,
-        audience: payload.audience,
-        isActive: payload.isActive,
-        priority: payload.priority,
-        startsAt: payload.startsAt ?? null,
-        endsAt: payload.endsAt ?? null,
-        createdAt: now,
-        updatedAt: now,
-    }).onConflictDoUpdate({
-        target: offers.id,
-        set: {
+adminRoute.post('/offers', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const payload = offerPayloadSchema.parse(await c.req.json());
+        const id = payload.id?.trim() || `off_${nanoid(14)}`;
+        const now = new Date();
+        await db.insert(offers).values({
+            id,
             title: payload.title,
             message: payload.message,
             bannerUrl: payload.bannerUrl ?? null,
@@ -1262,96 +1303,786 @@ adminRoute.put('/offers/:id', requireDeveloperAdmin, async (c) => {
             priority: payload.priority,
             startsAt: payload.startsAt ?? null,
             endsAt: payload.endsAt ?? null,
+            createdAt: now,
             updatedAt: now,
+        });
+        await appendAuditLog(c, 'OFFER_CREATED', 'offer', id);
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create offer.' }, 400);
+    }
+});
+
+adminRoute.put('/offers/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = offerPayloadSchema.parse(await c.req.json());
+        const now = new Date();
+        await db.insert(offers).values({
+            id,
+            title: payload.title,
+            message: payload.message,
+            bannerUrl: payload.bannerUrl ?? null,
+            bannerBackground: payload.bannerBackground ?? null,
+            ctaText: payload.ctaText ?? null,
+            ctaRoute: payload.ctaRoute ?? null,
+            audience: payload.audience,
+            isActive: payload.isActive,
+            priority: payload.priority,
+            startsAt: payload.startsAt ?? null,
+            endsAt: payload.endsAt ?? null,
+            createdAt: now,
+            updatedAt: now,
+        }).onConflictDoUpdate({
+            target: offers.id,
+            set: {
+                title: payload.title,
+                message: payload.message,
+                bannerUrl: payload.bannerUrl ?? null,
+                bannerBackground: payload.bannerBackground ?? null,
+                ctaText: payload.ctaText ?? null,
+                ctaRoute: payload.ctaRoute ?? null,
+                audience: payload.audience,
+                isActive: payload.isActive,
+                priority: payload.priority,
+                startsAt: payload.startsAt ?? null,
+                endsAt: payload.endsAt ?? null,
+                updatedAt: now,
+            },
+        });
+        await appendAuditLog(c, 'OFFER_UPSERTED', 'offer', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to save offer.' }, 400);
+    }
+});
+
+adminRoute.patch('/offers/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = offerPatchSchema.parse(await c.req.json());
+        const updated = await db.update(offers).set({
+            ...(payload.title !== undefined ? { title: payload.title } : {}),
+            ...(payload.message !== undefined ? { message: payload.message } : {}),
+            ...(payload.bannerUrl !== undefined ? { bannerUrl: payload.bannerUrl } : {}),
+            ...(payload.bannerBackground !== undefined ? { bannerBackground: payload.bannerBackground } : {}),
+            ...(payload.ctaText !== undefined ? { ctaText: payload.ctaText } : {}),
+            ...(payload.ctaRoute !== undefined ? { ctaRoute: payload.ctaRoute } : {}),
+            ...(payload.audience !== undefined ? { audience: payload.audience } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            ...(payload.priority !== undefined ? { priority: payload.priority } : {}),
+            ...(payload.startsAt !== undefined ? { startsAt: payload.startsAt } : {}),
+            ...(payload.endsAt !== undefined ? { endsAt: payload.endsAt } : {}),
+            updatedAt: new Date(),
+        }).where(eq(offers.id, id)).returning({ id: offers.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Offer not found.' }, 404);
+        await appendAuditLog(c, 'OFFER_UPDATED', 'offer', id, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update offer.' }, 400);
+    }
+});
+
+adminRoute.patch('/offers/:id/active', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const body = z.object({ isActive: z.boolean() }).parse(await c.req.json());
+        const updated = await db.update(offers).set({ isActive: body.isActive, updatedAt: new Date() }).where(eq(offers.id, id)).returning({ id: offers.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Offer not found.' }, 404);
+        await appendAuditLog(c, 'OFFER_STATUS_UPDATED', 'offer', id, { isActive: body.isActive });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to toggle offer.' }, 400);
+    }
+});
+
+adminRoute.delete('/offers/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const deleted = await db.delete(offers).where(eq(offers.id, id)).returning({ id: offers.id });
+        if (!deleted[0]) return c.json({ ok: false, message: 'Offer not found.' }, 404);
+        await appendAuditLog(c, 'OFFER_DELETED', 'offer', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete offer.' }, 400);
+    }
+});
+
+adminRoute.get('/templates', async (c) => {
+    const db = c.get('db');
+    const rows = await db.select().from(templates).orderBy(desc(templates.createdAt));
+    return c.json({
+        ok: true,
+        templates: rows.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            type: entry.type,
+            content: entry.content,
+            isDefault: entry.isDefault,
+            thumbnailUrl: entry.thumbnailUrl,
+            isActive: entry.isActive,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+        })),
+    });
+});
+
+adminRoute.post('/templates', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const payload = templatePayloadSchema.parse(await c.req.json());
+        const id = payload.id?.trim() || `tpl_${nanoid(14)}`;
+        const now = new Date();
+
+        await db.insert(templates).values({
+            id,
+            businessId: payload.businessId ?? null,
+            name: payload.name,
+            type: payload.type,
+            content: payload.content ?? {},
+            isDefault: payload.isDefault ?? false,
+            thumbnailUrl: payload.thumbnailUrl ?? null,
+            isActive: payload.isActive ?? true,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await appendAuditLog(c, 'TEMPLATE_CREATED', 'template', id, { type: payload.type });
+        return c.json({
+            ok: true,
+            template: {
+                id,
+                businessId: payload.businessId ?? null,
+                name: payload.name,
+                type: payload.type,
+                content: payload.content ?? {},
+                isDefault: payload.isDefault ?? false,
+                thumbnailUrl: payload.thumbnailUrl ?? null,
+                isActive: payload.isActive ?? true,
+                createdAt: now,
+                updatedAt: now,
+            },
+        });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create template.' }, 400);
+    }
+});
+
+adminRoute.put('/templates/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = templatePayloadSchema.parse(await c.req.json());
+        const now = new Date();
+
+        await db.insert(templates).values({
+            id,
+            businessId: payload.businessId ?? null,
+            name: payload.name,
+            type: payload.type,
+            content: payload.content ?? {},
+            isDefault: payload.isDefault ?? false,
+            thumbnailUrl: payload.thumbnailUrl ?? null,
+            isActive: payload.isActive ?? true,
+            createdAt: now,
+            updatedAt: now,
+        }).onConflictDoUpdate({
+            target: templates.id,
+            set: {
+                ...(payload.businessId !== undefined ? { businessId: payload.businessId } : {}),
+                name: payload.name,
+                type: payload.type,
+                content: payload.content ?? {},
+                isDefault: payload.isDefault ?? false,
+                thumbnailUrl: payload.thumbnailUrl ?? null,
+                isActive: payload.isActive ?? true,
+                updatedAt: now,
+            },
+        });
+
+        await appendAuditLog(c, 'TEMPLATE_UPSERTED', 'template', id, { type: payload.type });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to save template.' }, 400);
+    }
+});
+
+adminRoute.patch('/templates/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = templatePatchSchema.parse(await c.req.json());
+        const updated = await db.update(templates).set({
+            ...(payload.businessId !== undefined ? { businessId: payload.businessId } : {}),
+            ...(payload.name !== undefined ? { name: payload.name } : {}),
+            ...(payload.type !== undefined ? { type: payload.type } : {}),
+            ...(payload.content !== undefined ? { content: payload.content } : {}),
+            ...(payload.isDefault !== undefined ? { isDefault: payload.isDefault } : {}),
+            ...(payload.thumbnailUrl !== undefined ? { thumbnailUrl: payload.thumbnailUrl } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            updatedAt: new Date(),
+        }).where(eq(templates.id, id)).returning({ id: templates.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Template not found.' }, 404);
+        await appendAuditLog(c, 'TEMPLATE_UPDATED', 'template', id, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update template.' }, 400);
+    }
+});
+
+adminRoute.delete('/templates/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const deleted = await db.delete(templates).where(eq(templates.id, id)).returning({ id: templates.id });
+        if (!deleted[0]) return c.json({ ok: false, message: 'Template not found.' }, 404);
+        await appendAuditLog(c, 'TEMPLATE_DELETED', 'template', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete template.' }, 400);
+    }
+});
+
+adminRoute.get('/transactions', async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
+
+    const invoiceRows = await db.select().from(invoices).orderBy(desc(invoices.createdAt)).limit(limit);
+    const businessIds = Array.from(new Set(invoiceRows.map((entry) => entry.businessId)));
+    const businessRows = businessIds.length > 0
+        ? await db.select().from(businesses).where(inArray(businesses.id, businessIds))
+        : [];
+    const businessById = new Map(businessRows.map((entry) => [entry.id, entry]));
+
+    return c.json({
+        ok: true,
+        transactions: invoiceRows.map((entry) => ({
+            id: entry.id,
+            userId: entry.createdByUserId ?? businessById.get(entry.businessId)?.ownerUserId ?? '',
+            type: mapInvoiceTypeToLegacyTransactionType(entry.invoiceType),
+            totalAmount: Number(entry.totalInvoiceValue ?? 0),
+            paymentStatus: mapInvoicePaymentStatus(entry.paymentStatus),
+            paymentMode: 'CASH',
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+            organizationName: businessById.get(entry.businessId)?.name ?? 'Unknown',
+        })),
+    });
+});
+
+adminRoute.get('/inventory/overview', async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
+    const since = new Date(Date.now() - (24 * 60 * 60 * 1000));
+
+    const [totalSkuRows, lowStockRows, stockValueRows, movementRows, itemRows] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(items).where(eq(items.isActive, true)),
+        db.select({
+            count: sql<number>`
+                coalesce(
+                    sum(case when ${items.isActive} = true and ${items.stock} <= coalesce(${items.reorderLevel}, 0) then 1 else 0 end),
+                    0
+                )
+            `,
+        }).from(items),
+        db.select({
+            total: sql<number>`
+                coalesce(
+                    sum(greatest(${items.stock}, 0) * coalesce(nullif(${items.purchasePrice}, 0), ${items.salePrice}, 0)),
+                    0
+                )
+            `,
+        }).from(items).where(eq(items.isActive, true)),
+        db.select({ count: sql<number>`count(*)` }).from(inventoryMovements).where(gte(inventoryMovements.createdAt, since)),
+        db.select().from(items).orderBy(desc(items.updatedAt)).limit(limit),
+    ]);
+
+    const businessIds = Array.from(new Set(itemRows.map((entry) => entry.businessId)));
+    const businessRows = businessIds.length > 0
+        ? await db.select().from(businesses).where(inArray(businesses.id, businessIds))
+        : [];
+    const businessById = new Map(businessRows.map((entry) => [entry.id, entry]));
+
+    return c.json({
+        ok: true,
+        stats: {
+            totalSkus: Number(totalSkuRows[0]?.count ?? 0),
+            lowStockAlerts: Number(lowStockRows[0]?.count ?? 0),
+            stockValue: Number(stockValueRows[0]?.total ?? 0),
+            recentMovements: Number(movementRows[0]?.count ?? 0),
+        },
+        items: itemRows.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            category: entry.category ?? 'Uncategorized',
+            stock: Number(entry.stock ?? 0),
+            price: Number(entry.salePrice ?? 0),
+            organizationName: businessById.get(entry.businessId)?.name ?? 'Unknown',
+        })),
+    });
+});
+
+adminRoute.get('/staff/overview', async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
+    const allowlistedAdmins = adminAllowlistSet(c);
+
+    const [totalUserRows, inviteRows, revokedRows, userRows, ownedBusinesses, memberRows] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(users),
+        db.select({ count: sql<number>`count(*)` }).from(staffInvites).where(eq(staffInvites.status, 'pending')),
+        db.select({ count: sql<number>`count(*)` }).from(businessMembers).where(eq(businessMembers.isActive, false)),
+        db.select().from(users).orderBy(desc(users.createdAt)).limit(limit),
+        db.select().from(businesses),
+        db.select().from(businessMembers),
+    ]);
+
+    const verifiedAdmins = userRows.filter((entry) => allowlistedAdmins.has((entry.email ?? '').toLowerCase())).length;
+    const primaryBusinessByOwner = getPrimaryBusinessByOwner(ownedBusinesses);
+    const businessById = new Map(ownedBusinesses.map((entry) => [entry.id, entry]));
+
+    return c.json({
+        ok: true,
+        stats: {
+            totalPersonnel: Number(totalUserRows[0]?.count ?? 0),
+            verifiedAdmins,
+            pendingInvites: Number(inviteRows[0]?.count ?? 0),
+            revokedAccess: Number(revokedRows[0]?.count ?? 0),
+        },
+        staff: userRows.map((entry) => {
+            const ownerBusiness = primaryBusinessByOwner.get(entry.id);
+            const memberBusinessId = memberRows.find((member) => member.userId === entry.id)?.businessId;
+            const memberBusiness = memberBusinessId ? businessById.get(memberBusinessId) : null;
+            const metadata = asRecord(entry.metadata);
+            const roleHint = typeof metadata.roleHint === 'string' ? metadata.roleHint : 'staff';
+
+            const role = allowlistedAdmins.has((entry.email ?? '').toLowerCase())
+                ? 'ADMIN'
+                : ownerBusiness
+                    ? 'OWNER'
+                    : String(roleHint).toUpperCase();
+
+            const status = entry.isDisabled ? 'REVOKED' : 'ACTIVE';
+
+            return {
+                id: entry.id,
+                name: entry.name ?? 'Unnamed',
+                contact: entry.email ?? entry.phone ?? '-',
+                role,
+                organizationName: ownerBusiness?.name ?? memberBusiness?.name ?? 'Unassigned',
+                status,
+            };
+        }),
+    });
+});
+adminRoute.get('/discounts', async (c) => {
+    const db = c.get('db');
+    const includeInactive = parseBoolean(c.req.query('includeInactive'), true);
+    const rows = includeInactive
+        ? await db.select().from(discounts).orderBy(asc(discounts.code))
+        : await db.select().from(discounts).where(eq(discounts.isActive, true)).orderBy(asc(discounts.code));
+    return c.json({ ok: true, discounts: rows });
+});
+
+adminRoute.get('/discounts/:id', async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const rows = await db.select().from(discounts).where(eq(discounts.id, id)).limit(1);
+    if (!rows[0]) return c.json({ ok: false, message: 'Discount not found.' }, 404);
+    return c.json({ ok: true, discount: rows[0] });
+});
+
+adminRoute.post('/discounts', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        const payload = discountPayloadSchema.parse(await c.req.json());
+        const id = `dsc_${nanoid(16)}`;
+        const now = new Date();
+
+        await db.insert(discounts).values({
+            id,
+            code: payload.code.toUpperCase(),
+            type: payload.type,
+            scope: payload.scope,
+            value: payload.value,
+            maxRedemptions: payload.maxRedemptions ?? null,
+            perUserLimit: payload.perUserLimit ?? null,
+            validFrom: payload.validFrom ?? null,
+            validTo: payload.validTo ?? null,
+            applicableTiers: payload.applicableTiers ?? [],
+            applicableBillingCycles: payload.applicableBillingCycles ?? [],
+            isActive: payload.isActive ?? true,
+            createdByAdminId: authUser?.id ?? null,
+            redemptionCount: 0,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await appendAuditLog(c, 'DISCOUNT_CREATED', 'discount', id, {
+            code: payload.code.toUpperCase(),
+            type: payload.type,
+            scope: payload.scope,
+        });
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create discount.' }, 400);
+    }
+});
+
+adminRoute.patch('/discounts/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = discountPatchSchema.parse(await c.req.json());
+        const updated = await db.update(discounts).set({
+            ...(payload.code !== undefined ? { code: payload.code.toUpperCase() } : {}),
+            ...(payload.type !== undefined ? { type: payload.type } : {}),
+            ...(payload.scope !== undefined ? { scope: payload.scope } : {}),
+            ...(payload.value !== undefined ? { value: payload.value } : {}),
+            ...(payload.maxRedemptions !== undefined ? { maxRedemptions: payload.maxRedemptions } : {}),
+            ...(payload.perUserLimit !== undefined ? { perUserLimit: payload.perUserLimit } : {}),
+            ...(payload.validFrom !== undefined ? { validFrom: payload.validFrom } : {}),
+            ...(payload.validTo !== undefined ? { validTo: payload.validTo } : {}),
+            ...(payload.applicableTiers !== undefined ? { applicableTiers: payload.applicableTiers } : {}),
+            ...(payload.applicableBillingCycles !== undefined ? { applicableBillingCycles: payload.applicableBillingCycles } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            updatedAt: new Date(),
+        }).where(eq(discounts.id, id)).returning({ id: discounts.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Discount not found.' }, 404);
+        await appendAuditLog(c, 'DISCOUNT_UPDATED', 'discount', id, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update discount.' }, 400);
+    }
+});
+
+adminRoute.delete('/discounts/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const updated = await db.update(discounts).set({
+            isActive: false,
+            updatedAt: new Date(),
+        }).where(eq(discounts.id, id)).returning({ id: discounts.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Discount not found.' }, 404);
+        await appendAuditLog(c, 'DISCOUNT_DEACTIVATED', 'discount', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete discount.' }, 400);
+    }
+});
+
+adminRoute.get('/notifications/templates', async (c) => {
+    const db = c.get('db');
+    const includeInactive = parseBoolean(c.req.query('includeInactive'), true);
+    const rows = includeInactive
+        ? await db.select().from(notificationTemplates).orderBy(desc(notificationTemplates.createdAt))
+        : await db.select().from(notificationTemplates).where(eq(notificationTemplates.isActive, true)).orderBy(desc(notificationTemplates.createdAt));
+    return c.json({ ok: true, templates: rows });
+});
+
+adminRoute.post('/notifications/templates', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        const payload = notificationTemplateSchema.parse(await c.req.json());
+        const id = `ntf_tpl_${nanoid(14)}`;
+        const now = new Date();
+        await db.insert(notificationTemplates).values({
+            id,
+            name: payload.name,
+            eventKey: payload.eventKey,
+            channel: payload.channel,
+            subject: payload.subject ?? null,
+            body: payload.body,
+            variables: payload.variables ?? [],
+            isActive: payload.isActive ?? true,
+            createdByAdminId: authUser?.id ?? null,
+            createdAt: now,
+            updatedAt: now,
+        });
+        await appendAuditLog(c, 'NOTIFICATION_TEMPLATE_CREATED', 'notification_template', id, {
+            eventKey: payload.eventKey,
+            channel: payload.channel,
+        });
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create notification template.' }, 400);
+    }
+});
+
+adminRoute.patch('/notifications/templates/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = notificationTemplatePatchSchema.parse(await c.req.json());
+        const updated = await db.update(notificationTemplates).set({
+            ...(payload.name !== undefined ? { name: payload.name } : {}),
+            ...(payload.eventKey !== undefined ? { eventKey: payload.eventKey } : {}),
+            ...(payload.channel !== undefined ? { channel: payload.channel } : {}),
+            ...(payload.subject !== undefined ? { subject: payload.subject } : {}),
+            ...(payload.body !== undefined ? { body: payload.body } : {}),
+            ...(payload.variables !== undefined ? { variables: payload.variables } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            updatedAt: new Date(),
+        }).where(eq(notificationTemplates.id, id)).returning({ id: notificationTemplates.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Notification template not found.' }, 404);
+        await appendAuditLog(c, 'NOTIFICATION_TEMPLATE_UPDATED', 'notification_template', id, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update notification template.' }, 400);
+    }
+});
+
+adminRoute.get('/notifications/campaigns', async (c) => {
+    const db = c.get('db');
+    const status = c.req.query('status')?.trim();
+    const rows = status
+        ? await db.select().from(notificationCampaigns).where(eq(notificationCampaigns.status, status)).orderBy(desc(notificationCampaigns.createdAt))
+        : await db.select().from(notificationCampaigns).orderBy(desc(notificationCampaigns.createdAt));
+    return c.json({ ok: true, campaigns: rows });
+});
+
+adminRoute.post('/notifications/campaigns', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        const payload = campaignSchema.parse(await c.req.json());
+        const id = `ntf_cmp_${nanoid(14)}`;
+        const now = new Date();
+        await db.insert(notificationCampaigns).values({
+            id,
+            title: payload.title,
+            templateId: payload.templateId ?? null,
+            channel: payload.channel,
+            audience: payload.audience ?? 'all',
+            targetFilter: payload.targetFilter ?? {},
+            status: payload.status ?? 'DRAFT',
+            scheduledAt: payload.scheduledAt ?? null,
+            startedAt: null,
+            completedAt: null,
+            createdByAdminId: authUser?.id ?? null,
+            createdAt: now,
+            updatedAt: now,
+        });
+        await appendAuditLog(c, 'NOTIFICATION_CAMPAIGN_CREATED', 'notification_campaign', id, { channel: payload.channel });
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create campaign.' }, 400);
+    }
+});
+
+adminRoute.patch('/notifications/campaigns/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = campaignPatchSchema.parse(await c.req.json());
+        const updated = await db.update(notificationCampaigns).set({
+            ...(payload.title !== undefined ? { title: payload.title } : {}),
+            ...(payload.templateId !== undefined ? { templateId: payload.templateId } : {}),
+            ...(payload.channel !== undefined ? { channel: payload.channel } : {}),
+            ...(payload.audience !== undefined ? { audience: payload.audience } : {}),
+            ...(payload.targetFilter !== undefined ? { targetFilter: payload.targetFilter } : {}),
+            ...(payload.status !== undefined ? { status: payload.status } : {}),
+            ...(payload.scheduledAt !== undefined ? { scheduledAt: payload.scheduledAt } : {}),
+            updatedAt: new Date(),
+        }).where(eq(notificationCampaigns.id, id)).returning({ id: notificationCampaigns.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Campaign not found.' }, 404);
+        await appendAuditLog(c, 'NOTIFICATION_CAMPAIGN_UPDATED', 'notification_campaign', id, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update campaign.' }, 400);
+    }
+});
+
+adminRoute.post('/notifications/campaigns/:id/trigger', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const campaignRows = await db.select().from(notificationCampaigns).where(eq(notificationCampaigns.id, id)).limit(1);
+        const campaign = campaignRows[0];
+        if (!campaign) return c.json({ ok: false, message: 'Campaign not found.' }, 404);
+
+        const now = new Date();
+        await db.update(notificationCampaigns).set({
+            status: 'RUNNING',
+            startedAt: now,
+            updatedAt: now,
+        }).where(eq(notificationCampaigns.id, id));
+
+        const targetBusinesses = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.isActive, true)).limit(100);
+        if (targetBusinesses.length > 0) {
+            await db.insert(notificationDeliveries).values(targetBusinesses.map((business) => ({
+                id: `ntf_del_${nanoid(16)}`,
+                campaignId: id,
+                templateId: campaign.templateId ?? null,
+                businessId: business.id,
+                userId: null,
+                channel: campaign.channel,
+                status: 'SENT',
+                errorMessage: null,
+                metadata: {},
+                sentAt: now,
+                createdAt: now,
+            })));
+        }
+
+        await db.update(notificationCampaigns).set({
+            status: 'COMPLETED',
+            completedAt: new Date(),
+            updatedAt: new Date(),
+        }).where(eq(notificationCampaigns.id, id));
+
+        await appendAuditLog(c, 'NOTIFICATION_CAMPAIGN_TRIGGERED', 'notification_campaign', id, {
+            deliveryCount: targetBusinesses.length,
+        });
+        return c.json({ ok: true, deliveriesQueued: targetBusinesses.length });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to trigger campaign.' }, 400);
+    }
+});
+
+adminRoute.get('/notifications/deliveries', async (c) => {
+    const db = c.get('db');
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
+    const rows = await db.select().from(notificationDeliveries).orderBy(desc(notificationDeliveries.createdAt)).limit(limit);
+    return c.json({ ok: true, deliveries: rows });
+});
+
+adminRoute.get('/businesses/:id/feature-flags', async (c) => {
+    const db = c.get('db');
+    const businessId = c.req.param('id');
+    const businessRows = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+    const business = businessRows[0];
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+    const subRows = await db.select().from(subscriptions).where(eq(subscriptions.businessId, businessId)).orderBy(desc(subscriptions.createdAt)).limit(1);
+    const subscription = subRows[0] ?? null;
+    const settings = asRecord(business.settings);
+
+    return c.json({
+        ok: true,
+        businessId,
+        moduleControl: {
+            appModuleAccess: asRecord(settings.appModuleAccess),
+            moduleVisibility: asRecord(settings.moduleVisibility),
+        },
+        subscription: subscription
+            ? {
+                id: subscription.id,
+                tier: subscription.tier,
+                billingCycle: subscription.billingCycle,
+                status: subscription.status,
+                featureFlagsEnabled: subscription.featureFlagsEnabled,
+            }
+            : null,
+    });
+});
+
+adminRoute.patch('/businesses/:id/feature-flags', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const businessId = c.req.param('id');
+        const payload = businessFeatureFlagPatchSchema.parse(await c.req.json());
+
+        const businessRows = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+        const business = businessRows[0];
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+        const currentSettings = asRecord(business.settings);
+        const nextSettings = {
+            ...currentSettings,
+            ...(payload.appModuleAccess !== undefined ? { appModuleAccess: payload.appModuleAccess } : {}),
+            ...(payload.moduleVisibility !== undefined ? { moduleVisibility: payload.moduleVisibility } : {}),
+        };
+
+        await db.update(businesses).set({
+            settings: nextSettings,
+            updatedAt: new Date(),
+        }).where(eq(businesses.id, businessId));
+
+        if (payload.featureFlagsEnabled !== undefined) {
+            const subRows = await db.select().from(subscriptions)
+                .where(eq(subscriptions.businessId, businessId))
+                .orderBy(desc(subscriptions.createdAt))
+                .limit(1);
+            const currentSub = subRows[0];
+            if (currentSub) {
+                await db.update(subscriptions).set({
+                    featureFlagsEnabled: payload.featureFlagsEnabled,
+                    updatedAt: new Date(),
+                }).where(eq(subscriptions.id, currentSub.id));
+            }
+        }
+
+        await appendAuditLog(c, 'BUSINESS_FEATURE_FLAGS_UPDATED', 'business', businessId, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update feature flags.' }, 400);
+    }
+});
+
+adminRoute.get('/live/events', async (c) => {
+    const db = c.get('db');
+    const now = new Date();
+    const dayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+
+    const [signupsRows, billingRows, failedRows] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(users).where(gte(users.createdAt, dayAgo)),
+        db.select({ count: sql<number>`count(*)` }).from(paymentIntents).where(and(
+            eq(paymentIntents.status, 'succeeded'),
+            gte(paymentIntents.createdAt, dayAgo),
+        )),
+        db.select({ count: sql<number>`count(*)` }).from(paymentIntents).where(and(
+            eq(paymentIntents.status, 'failed'),
+            gte(paymentIntents.createdAt, dayAgo),
+        )),
+    ]);
+
+    const payload = {
+        ts: now.toISOString(),
+        signupsLast24h: Number(signupsRows[0]?.count ?? 0),
+        billingEventsLast24h: Number(billingRows[0]?.count ?? 0),
+        errorSpikesLast24h: Number(failedRows[0]?.count ?? 0),
+    };
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+        start(controller) {
+            controller.enqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(payload)}\n\n`));
+            controller.close();
         },
     });
 
-    return c.json({ ok: true });
-});
-
-// PATCH /admin/offers/:id/active
-adminRoute.patch('/offers/:id/active', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({ isActive: z.boolean() }).parse(body);
-
-    const updated = await db
-        .update(offers)
-        .set({ isActive: payload.isActive, updatedAt: new Date() })
-        .where(eq(offers.id, id))
-        .returning({ id: offers.id });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'Offer not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// PATCH /admin/offers/:id
-adminRoute.patch('/offers/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const body = await c.req.json();
-    const payload = z.object({
-        title: z.string().min(1).optional(),
-        message: z.string().min(1).optional(),
-        bannerUrl: z.string().nullable().optional(),
-        bannerBackground: z.string().nullable().optional(),
-        ctaText: z.string().nullable().optional(),
-        ctaRoute: z.string().nullable().optional(),
-        audience: z.enum(['all', 'owners', 'staff']).optional(),
-        isActive: z.boolean().optional(),
-        priority: z.number().int().optional(),
-        startsAt: z.coerce.date().nullable().optional(),
-        endsAt: z.coerce.date().nullable().optional(),
-    }).parse(body);
-
-    const updated = await db
-        .update(offers)
-        .set({ ...payload, updatedAt: new Date() })
-        .where(eq(offers.id, id))
-        .returning({ id: offers.id });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'Offer not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// DELETE /admin/offers/:id
-adminRoute.delete('/offers/:id', requireDeveloperAdmin, async (c) => {
-    const id = c.req.param('id');
-    const db = c.get('db');
-    const deleted = await db.delete(offers).where(eq(offers.id, id)).returning({ id: offers.id });
-    if (!deleted[0]) return c.json({ ok: false, message: 'Offer not found.' }, 404);
-    return c.json({ ok: true });
-});
-
-// POST /admin/seed/default-plans
-adminRoute.post('/seed/default-plans', requireDeveloperAdmin, async (c) => {
-    const db = c.get('db');
-    const now = new Date();
-
-    await withTransaction(db, async (tx) => {
-        for (const entry of DEFAULT_PLANS) {
-            await tx.insert(plans).values({
-                ...entry,
-                createdAt: now,
-                updatedAt: now,
-            }).onConflictDoUpdate({
-                target: plans.id,
-                set: {
-                    name: entry.name,
-                    description: entry.description,
-                    monthlyPrice: entry.monthlyPrice,
-                    currency: entry.currency,
-                    isActive: entry.isActive,
-                    displayOrder: entry.displayOrder,
-                    features: entry.features,
-                    updatedAt: now,
-                },
-            });
-        }
+    return new Response(stream, {
+        status: 200,
+        headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+        },
     });
-
-    return c.json({ ok: true });
 });
 
 export default adminRoute;

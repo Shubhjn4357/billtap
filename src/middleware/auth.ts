@@ -1,41 +1,33 @@
 import type { Context, Next } from 'hono';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { verifySessionToken } from '../auth/tokens';
-import { organizationMembers, organizations, users } from '../db/schema';
+import { businessMembers, businesses, users } from '../db/schema';
 import type { DrizzleClient } from '../db/client';
 import type { UserRow } from '../db/schema';
 
-// Define App Variables for Hono Context
 export type Bindings = {
     DATABASE_URL: string;
-    MEDIA_BUCKET?: R2Bucket;
-    MEDIA_UPLOAD_SECRET?: string;
-    MEDIA_PUBLIC_BASE_URL?: string;
-    MEDIA_MAX_UPLOAD_MB?: string;
-    CRON_SECRET?: string;
-    PAYMENT_PROVIDER?: string;
-    PAYMENT_WEBHOOK_SECRET?: string;
-    RAZORPAY_KEY_ID?: string;
-    RAZORPAY_KEY_SECRET?: string;
-    RAZORPAY_WEBHOOK_SECRET?: string;
-    CHECKOUT_BASE_URL?: string;
     CORS_ORIGINS?: string;
+    JWT_SECRET?: string;
     API_JWT_SECRET?: string;
+    GOOGLE_CLIENT_ID?: string;
     GOOGLE_OAUTH_CLIENT_ID?: string;
     GOOGLE_OAUTH_CLIENT_IDS?: string;
     GOOGLE_OAUTH_ANDROID_CLIENT_ID?: string;
     GOOGLE_OAUTH_IOS_CLIENT_ID?: string;
-    DEVELOPER_ADMIN_UIDS?: string;
+    ADMINS?: string;
+    SUPPORT_ADMINS?: string;
+    READ_ONLY_ADMINS?: string;
     DEVELOPER_ADMIN_EMAILS?: string;
-    APK_OWNER_UID?: string;
-    OTP_RETENTION_HOURS?: string;
-    WHATSAPP_API_URL?: string;
-    WHATSAPP_API_TOKEN?: string;
 };
+
+export type AdminAccessRole = 'SUPER_ADMIN' | 'SUPPORT_ADMIN' | 'READ_ONLY_ADMIN' | null;
 
 export type AppVariables = {
     authUser: UserRow | null;
-    effectiveUserId: string | null; // Active organization ID (legacy alias).
+    authRole: AdminAccessRole;
+    activeBusinessId: string | null;
+    effectiveUserId: string | null;
     effectiveOwnerUserId: string | null;
     effectiveOrganizationId: string | null;
     organizationRole: 'owner' | 'manager' | 'salesman' | null;
@@ -50,190 +42,36 @@ export type AppEnv = {
 
 export type AppContext = Context<AppEnv>;
 
+const parseAdmins = (value?: string): string[] => {
+    if (!value) return [];
+
+    try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+            return parsed
+                .map((entry) => String(entry).trim().toLowerCase())
+                .filter(Boolean);
+        }
+    } catch {
+        // Fallback to CSV.
+    }
+
+    return value
+        .split(',')
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean);
+};
+
 const getBearerToken = (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
     return authHeader.slice('Bearer '.length).trim() || null;
 };
 
-const parseEnvCsv = (value: string | undefined): string[] =>
-    (value ?? '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean);
-
-const extractErrorCode = (error: unknown): string => {
-    if (!error || typeof error !== 'object') return '';
-    if (!('code' in error)) return '';
-    const value = (error as { code?: unknown }).code;
-    return typeof value === 'string' ? value : String(value ?? '');
-};
-
-const extractErrorMessage = (error: unknown): string => {
-    if (error instanceof Error && error.message) return error.message;
-    if (!error || typeof error !== 'object') return '';
-    if (!('message' in error)) return '';
-    const value = (error as { message?: unknown }).message;
-    return typeof value === 'string' ? value : String(value ?? '');
-};
-
-const isMissingRelationError = (error: unknown, relationName: string): boolean => {
-    const code = extractErrorCode(error);
-    if (code === '42P01') return true;
-    return new RegExp(relationName, 'i').test(extractErrorMessage(error));
-};
-
-const normalizeOrgId = (value: string | undefined | null): string | null => {
-    const normalized = value?.trim();
-    return normalized ? normalized : null;
-};
-
-const getRequestedOrganizationId = (c: AppContext): string | null => {
-    const byHeader = normalizeOrgId(
-        c.req.header('X-Organization-Id')
-        ?? c.req.header('x-organization-id')
-    );
-    if (byHeader) return byHeader;
-
-    return normalizeOrgId(c.req.query('organizationId'));
-};
-
-type OrganizationAccessContext = {
-    ownerUserId: string;
-    organizationId: string;
-    role: 'owner' | 'manager' | 'salesman';
-    permissions: Record<string, boolean>;
-};
-
-const resolveOrganizationAccessContext = async (
-    c: AppContext,
-    authUser: UserRow
-): Promise<OrganizationAccessContext | null> => {
-    const db = c.get('db');
-    const requestedOrganizationId = getRequestedOrganizationId(c);
-    const inferredOwnerUserId = authUser.role === 'staff' && authUser.ownerId ? authUser.ownerId : authUser.uid;
-
-    const fallbackContext: OrganizationAccessContext = {
-        ownerUserId: inferredOwnerUserId,
-        organizationId: inferredOwnerUserId,
-        role: authUser.role === 'staff' ? 'salesman' : 'owner',
-        permissions: {},
-    };
-
-    try {
-        if (authUser.role === 'admin') {
-            if (!requestedOrganizationId) {
-                return {
-                    ownerUserId: authUser.uid,
-                    organizationId: authUser.uid,
-                    role: 'owner',
-                    permissions: {},
-                };
-            }
-
-            const rows = await db
-                .select({
-                    id: organizations.id,
-                    userId: organizations.userId,
-                })
-                .from(organizations)
-                .where(eq(organizations.id, requestedOrganizationId))
-                .limit(1);
-
-            const org = rows[0];
-            if (!org) {
-                if (requestedOrganizationId === authUser.uid) {
-                    return {
-                        ownerUserId: authUser.uid,
-                        organizationId: authUser.uid,
-                        role: 'owner',
-                        permissions: {},
-                    };
-                }
-                return null;
-            }
-
-            return {
-                ownerUserId: org.userId,
-                organizationId: org.id,
-                role: 'owner',
-                permissions: {},
-            };
-        }
-
-        if (authUser.role === 'staff') {
-            const whereConditions = [
-                eq(organizationMembers.userId, authUser.uid),
-                eq(organizationMembers.isActive, true),
-            ];
-            if (requestedOrganizationId) {
-                whereConditions.push(eq(organizationMembers.organizationId, requestedOrganizationId));
-            }
-
-            const rows = await db
-                .select({
-                    organizationId: organizationMembers.organizationId,
-                    role: organizationMembers.role,
-                    permissions: organizationMembers.permissions,
-                    ownerUserId: organizations.userId,
-                    isActive: organizations.isActive,
-                })
-                .from(organizationMembers)
-                .innerJoin(organizations, eq(organizationMembers.organizationId, organizations.id))
-                .where(and(...whereConditions))
-                .orderBy(asc(organizationMembers.joinedAt))
-                .limit(1);
-
-            const membership = rows[0];
-            if (!membership || membership.isActive !== true) {
-                if (requestedOrganizationId && requestedOrganizationId !== inferredOwnerUserId) {
-                    return null;
-                }
-                return fallbackContext;
-            }
-
-            return {
-                ownerUserId: membership.ownerUserId,
-                organizationId: membership.organizationId,
-                role: membership.role,
-                permissions: membership.permissions ?? {},
-            };
-        }
-
-        const ownerConditions = [eq(organizations.userId, inferredOwnerUserId), eq(organizations.isActive, true)];
-        if (requestedOrganizationId) {
-            ownerConditions.push(eq(organizations.id, requestedOrganizationId));
-        }
-
-        const ownerRows = await db
-            .select({
-                id: organizations.id,
-            })
-            .from(organizations)
-            .where(and(...ownerConditions))
-            .orderBy(asc(organizations.createdAt))
-            .limit(1);
-
-        const org = ownerRows[0];
-        if (!org) {
-            if (requestedOrganizationId && requestedOrganizationId !== inferredOwnerUserId) {
-                return null;
-            }
-            return fallbackContext;
-        }
-
-        return {
-            ownerUserId: inferredOwnerUserId,
-            organizationId: org.id,
-            role: 'owner',
-            permissions: {},
-        };
-    } catch (error: unknown) {
-        const missingOrgTables =
-            isMissingRelationError(error, 'organizations')
-            || isMissingRelationError(error, 'organization_members');
-        if (!missingOrgTables) throw error;
-        return fallbackContext;
-    }
+const getRequestedBusinessId = (c: AppContext): string | null => {
+    const fromHeader = c.req.header('X-Organization-Id') ?? c.req.header('x-organization-id');
+    const fromQuery = c.req.query('organizationId') ?? c.req.query('businessId');
+    const value = (fromHeader ?? fromQuery ?? '').trim();
+    return value || null;
 };
 
 const getAuthUserFromRequest = async (
@@ -247,130 +85,239 @@ const getAuthUserFromRequest = async (
     const payload = verifySessionToken(token, jwtSecret);
     if (!payload) return null;
 
-    const entry = await db.select().from(users).where(eq(users.uid, payload.uid)).limit(1);
+    const entry = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
     return entry[0] ?? null;
 };
 
-export const isDeveloperAdminPrincipal = (authUser: UserRow, bindings: Bindings): boolean => {
-    const configuredUids = new Set<string>([
-        ...parseEnvCsv(bindings.DEVELOPER_ADMIN_UIDS),
-        ...(bindings.APK_OWNER_UID ? [bindings.APK_OWNER_UID] : []),
+const resolveAdminRole = (authUser: UserRow | null, bindings: Bindings): AdminAccessRole => {
+    if (!authUser?.email) return null;
+    const email = authUser.email.toLowerCase();
+    const superAdmins = new Set([
+        ...parseAdmins(bindings.ADMINS),
+        ...parseAdmins(bindings.DEVELOPER_ADMIN_EMAILS),
     ]);
-    const configuredEmails = new Set<string>(
-        parseEnvCsv(bindings.DEVELOPER_ADMIN_EMAILS).map((email) => email.toLowerCase())
-    );
+    if (superAdmins.has(email)) {
+        return 'SUPER_ADMIN';
+    }
+    const supportAdmins = new Set(parseAdmins(bindings.SUPPORT_ADMINS));
+    if (supportAdmins.has(email)) return 'SUPPORT_ADMIN';
 
-    const hasConfiguredPrincipals = configuredUids.size > 0 || configuredEmails.size > 0;
-    const uidMatch = configuredUids.has(authUser.uid);
-    const emailMatch = !!authUser.email && configuredEmails.has(authUser.email.toLowerCase());
+    const readOnlyAdmins = new Set(parseAdmins(bindings.READ_ONLY_ADMINS));
+    if (readOnlyAdmins.has(email)) return 'READ_ONLY_ADMIN';
 
-    if (hasConfiguredPrincipals) {
-        return uidMatch || emailMatch;
+    return null;
+};
+
+const resolveActiveBusinessId = async (
+    c: AppContext,
+    db: DrizzleClient,
+    authUser: UserRow
+): Promise<string | null> => {
+    const requestedBusinessId = getRequestedBusinessId(c);
+
+    if (requestedBusinessId) {
+        const owned = await db
+            .select({ id: businesses.id })
+            .from(businesses)
+            .where(and(eq(businesses.id, requestedBusinessId), eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)))
+            .limit(1);
+
+        if (owned[0]) return owned[0].id;
+
+        const membership = await db
+            .select({ businessId: businessMembers.businessId })
+            .from(businessMembers)
+            .where(and(
+                eq(businessMembers.businessId, requestedBusinessId),
+                eq(businessMembers.userId, authUser.id),
+                eq(businessMembers.isActive, true),
+            ))
+            .limit(1);
+
+        if (membership[0]) return membership[0].businessId;
+
+        return null;
     }
 
-    // Fallback for setups where principal env values are not configured yet.
-    return authUser.role === 'admin';
+    const firstOwned = await db
+        .select({ id: businesses.id })
+        .from(businesses)
+        .where(and(eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)))
+        .limit(1);
+
+    if (firstOwned[0]) return firstOwned[0].id;
+
+    const firstMember = await db
+        .select({ businessId: businessMembers.businessId })
+        .from(businessMembers)
+        .where(and(eq(businessMembers.userId, authUser.id), eq(businessMembers.isActive, true)))
+        .limit(1);
+
+    return firstMember[0]?.businessId ?? null;
+};
+
+const setAnonymousContext = (c: AppContext) => {
+    c.set('authUser', null);
+    c.set('authRole', null);
+    c.set('activeBusinessId', null);
+    c.set('effectiveUserId', null);
+    c.set('effectiveOwnerUserId', null);
+    c.set('effectiveOrganizationId', null);
+    c.set('organizationRole', null);
+    c.set('organizationPermissions', {});
+};
+
+const resolveOrganizationContext = async (
+    db: DrizzleClient,
+    user: UserRow,
+    businessId: string | null
+) => {
+    if (!businessId) {
+        return {
+            organizationRole: null as AppVariables['organizationRole'],
+            organizationPermissions: {} as Record<string, boolean>,
+            ownerUserId: user.id,
+        };
+    }
+
+    const businessRows = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+    const business = businessRows[0];
+    if (!business) {
+        return {
+            organizationRole: null as AppVariables['organizationRole'],
+            organizationPermissions: {},
+            ownerUserId: user.id,
+        };
+    }
+
+    if (business.ownerUserId === user.id) {
+        return {
+            organizationRole: 'owner' as const,
+            organizationPermissions: {} as Record<string, boolean>,
+            ownerUserId: business.ownerUserId,
+        };
+    }
+
+    const membershipRows = await db
+        .select()
+        .from(businessMembers)
+        .where(and(
+            eq(businessMembers.businessId, businessId),
+            eq(businessMembers.userId, user.id),
+            eq(businessMembers.isActive, true),
+        ))
+        .limit(1);
+    const membership = membershipRows[0];
+
+    if (!membership) {
+        return {
+            organizationRole: null as AppVariables['organizationRole'],
+            organizationPermissions: {} as Record<string, boolean>,
+            ownerUserId: business.ownerUserId,
+        };
+    }
+
+    return {
+        organizationRole: membership.role === 'OWNER' ? 'manager' as const : 'salesman' as const,
+        organizationPermissions: (membership.permissions ?? {}) as Record<string, boolean>,
+        ownerUserId: business.ownerUserId,
+    };
+};
+
+const setAuthenticatedContext = async (
+    c: AppContext,
+    db: DrizzleClient,
+    user: UserRow,
+    role: AdminAccessRole,
+    businessId: string | null
+) => {
+    const organizationContext = await resolveOrganizationContext(db, user, businessId);
+
+    c.set('authUser', user);
+    c.set('authRole', role);
+    c.set('activeBusinessId', businessId);
+    c.set('effectiveUserId', user.id);
+    c.set('effectiveOwnerUserId', organizationContext.ownerUserId);
+    c.set('effectiveOrganizationId', businessId);
+    c.set('organizationRole', organizationContext.organizationRole);
+    c.set('organizationPermissions', organizationContext.organizationPermissions);
 };
 
 export const optionalAuth = async (c: AppContext, next: Next) => {
-    const authHeader = c.req.header('Authorization');
     const db = c.get('db');
-    const authUser = await getAuthUserFromRequest(authHeader, db, c.env.API_JWT_SECRET);
+    const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
+    const authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
 
     if (!authUser) {
-        c.set('authUser', null);
-        c.set('effectiveUserId', null);
-        c.set('effectiveOwnerUserId', null);
-        c.set('effectiveOrganizationId', null);
-        c.set('organizationRole', null);
-        c.set('organizationPermissions', {});
+        setAnonymousContext(c);
         await next();
         return;
     }
 
-    const context = await resolveOrganizationAccessContext(c, authUser);
-    c.set('authUser', authUser);
-    c.set('effectiveUserId', context?.organizationId ?? authUser.uid);
-    c.set('effectiveOwnerUserId', context?.ownerUserId ?? authUser.uid);
-    c.set('effectiveOrganizationId', context?.organizationId ?? authUser.uid);
-    c.set('organizationRole', context?.role ?? (authUser.role === 'staff' ? 'salesman' : 'owner'));
-    c.set('organizationPermissions', context?.permissions ?? {});
-
+    const businessId = await resolveActiveBusinessId(c, db, authUser);
+    await setAuthenticatedContext(c, db, authUser, resolveAdminRole(authUser, c.env), businessId);
     await next();
 };
 
 export const requireAuth = async (c: AppContext, next: Next) => {
-    const authHeader = c.req.header('Authorization');
     const db = c.get('db');
-    const authUser = await getAuthUserFromRequest(authHeader, db, c.env.API_JWT_SECRET);
+    const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
+    const authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     }
 
-    c.set('authUser', authUser);
-
-    const context = await resolveOrganizationAccessContext(c, authUser);
-    const requestedOrganizationId = getRequestedOrganizationId(c);
-    if (requestedOrganizationId && !context) {
-        return c.json({ ok: false, message: 'Organization access denied.' }, 403);
+    const businessId = await resolveActiveBusinessId(c, db, authUser);
+    if (getRequestedBusinessId(c) && !businessId) {
+        return c.json({ ok: false, message: 'Business access denied.' }, 403);
     }
 
-    const ownerUserId = context?.ownerUserId
-        ?? (authUser.role === 'staff' && authUser.ownerId ? authUser.ownerId : authUser.uid);
-    const organizationId = context?.organizationId ?? ownerUserId;
-
-    c.set('effectiveUserId', organizationId);
-    c.set('effectiveOwnerUserId', ownerUserId);
-    c.set('effectiveOrganizationId', organizationId);
-    c.set('organizationRole', context?.role ?? (authUser.role === 'staff' ? 'salesman' : 'owner'));
-    c.set('organizationPermissions', context?.permissions ?? {});
-
+    await setAuthenticatedContext(c, db, authUser, resolveAdminRole(authUser, c.env), businessId);
     await next();
 };
 
 export const requireAdmin = async (c: AppContext, next: Next) => {
-    const authHeader = c.req.header('Authorization');
     const db = c.get('db');
-    const authUser = await getAuthUserFromRequest(authHeader, db, c.env.API_JWT_SECRET);
+    const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
+    const authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     }
 
-    if (authUser.role !== 'admin') {
+    const authRole = resolveAdminRole(authUser, c.env);
+    if (!authRole) {
         return c.json({ ok: false, message: 'Admin access required.' }, 403);
     }
 
-    c.set('authUser', authUser);
-    c.set('effectiveUserId', authUser.uid);
-    c.set('effectiveOwnerUserId', authUser.uid);
-    c.set('effectiveOrganizationId', authUser.uid);
-    c.set('organizationRole', 'owner');
-    c.set('organizationPermissions', {});
-
+    const businessId = await resolveActiveBusinessId(c, db, authUser);
+    await setAuthenticatedContext(c, db, authUser, authRole, businessId);
     await next();
 };
 
-export const requireDeveloperAdmin = async (c: AppContext, next: Next) => {
-    const authHeader = c.req.header('Authorization');
+export const requireSuperAdmin = async (c: AppContext, next: Next) => {
     const db = c.get('db');
-    const authUser = await getAuthUserFromRequest(authHeader, db, c.env.API_JWT_SECRET);
+    const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
+    const authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     }
 
-    if (!isDeveloperAdminPrincipal(authUser, c.env)) {
-        return c.json({ ok: false, message: 'Developer admin access required.' }, 403);
+    const authRole = resolveAdminRole(authUser, c.env);
+    if (authRole !== 'SUPER_ADMIN') {
+        return c.json({ ok: false, message: 'Super-admin access required.' }, 403);
     }
 
-    c.set('authUser', authUser);
-    c.set('effectiveUserId', authUser.uid);
-    c.set('effectiveOwnerUserId', authUser.uid);
-    c.set('effectiveOrganizationId', authUser.uid);
-    c.set('organizationRole', 'owner');
-    c.set('organizationPermissions', {});
-
+    const businessId = await resolveActiveBusinessId(c, db, authUser);
+    await setAuthenticatedContext(c, db, authUser, authRole, businessId);
     await next();
+};
+
+export const requireDeveloperAdmin = requireSuperAdmin;
+
+export const isDeveloperAdminPrincipal = (authUser: UserRow, bindings: Bindings): boolean => {
+    const role = resolveAdminRole(authUser, bindings);
+    return role === 'SUPER_ADMIN';
 };

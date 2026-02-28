@@ -1,152 +1,198 @@
 import { Hono } from 'hono';
+import { and, asc, eq, ilike, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { and, asc, eq, or, sql } from 'drizzle-orm';
 import { parties } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { requireFeatureToggle, requirePermission } from '../middleware/permissions';
+import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    assertFeatureFlag,
+    assertModuleEnabled,
+    assertSubscriptionWriteAllowed,
+} from '../services/subscriptionPolicy';
 
 const partiesRoute = new Hono<AppEnv>();
 
-const partySchema = z.object({
+const partyTypeValues = ['customer', 'supplier'] as const;
+
+const createPartySchema = z.object({
     id: z.string().optional(),
-    name: z.string().min(1),
-    type: z.enum(['customer', 'supplier']),
-    phone: z.string().optional().nullable(),
-    email: z.union([z.string().email(), z.literal(''), z.null()]).optional(),
-    address: z.string().optional().nullable(),
-    gstNumber: z.string().optional().nullable(),
-    isActive: z.boolean().default(true),
+    name: z.string().trim().min(1),
+    type: z.enum(partyTypeValues),
+    phone: z.string().trim().optional(),
+    email: z.string().email().optional(),
+    address: z.string().trim().optional(),
+    gstNumber: z.string().trim().optional(),
+    isActive: z.boolean().optional(),
 });
 
-// GET /parties - List parties
-partiesRoute.get('/', requireAuth, requirePermission('canManageParties'), requireFeatureToggle('parties'), async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
+const patchPartySchema = createPartySchema.partial();
 
+const toClientParty = (entry: typeof parties.$inferSelect, userId: string) => ({
+    id: entry.id,
+    userId,
+    name: entry.name,
+    type: entry.type === 'CUSTOMER' ? 'customer' : 'supplier',
+    phone: entry.phone,
+    email: entry.email,
+    address: entry.billingAddress,
+    gstNumber: entry.gstin,
+    isActive: entry.isActive,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+});
+
+partiesRoute.use('/*', requireAuth);
+
+partiesRoute.get('/', async (c) => {
     const db = c.get('db');
-    const queryText = c.req.query('q')?.trim();
-    const type = c.req.query('type') as 'customer' | 'supplier' | undefined;
-    const limit = Math.min(Number(c.req.query('limit') || 100), 500);
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
+    assertModuleEnabled(business, 'parties');
 
-    const conditions = [
-        eq(parties.userId, effectiveUserId),
+    const q = c.req.query('q')?.trim();
+    const type = c.req.query('type')?.trim().toLowerCase();
 
-    ];
+    const whereFilters = [eq(parties.businessId, business.id)];
+    if (type === 'customer') whereFilters.push(eq(parties.type, 'CUSTOMER'));
+    if (type === 'supplier') whereFilters.push(eq(parties.type, 'SUPPLIER'));
 
-    if (type) {
-        conditions.push(eq(parties.type, type));
-    }
+    const rows = q
+        ? await db
+            .select()
+            .from(parties)
+            .where(and(
+                ...whereFilters,
+                or(
+                    ilike(parties.name, `%${q}%`),
+                    ilike(parties.nameLowercase, `%${q.toLowerCase()}%`),
+                    ilike(parties.phone, `%${q}%`),
+                ),
+            ))
+            .orderBy(asc(parties.nameLowercase))
+        : await db
+            .select()
+            .from(parties)
+            .where(and(...whereFilters))
+            .orderBy(asc(parties.nameLowercase));
 
-    if (queryText) {
-        const normalized = queryText.toLowerCase();
-        const searchCondition = or(
-            sql`${parties.nameLowercase} like ${`%${normalized}%`}`,
-            sql`coalesce(${parties.phone}, '') like ${`%${queryText}%`}`
-        );
-        if (searchCondition) conditions.push(searchCondition);
-    }
-
-    const data = await db
-        .select()
-        .from(parties)
-        .where(and(...conditions))
-        .orderBy(asc(parties.nameLowercase))
-        .limit(limit);
-
-    return c.json({ ok: true, parties: data });
+    return c.json({ ok: true, parties: rows.map((entry) => toClientParty(entry, authUser.id)) });
 });
 
-// POST /parties - Create party
-partiesRoute.post('/', requireAuth, requirePermission('canManageParties'), requireFeatureToggle('parties'), async (c) => {
+partiesRoute.post('/', async (c) => {
     try {
-        const effectiveUserId = c.get('effectiveUserId');
-        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
-
         const db = c.get('db');
-        const body = await c.req.json();
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
-
-        const payload = partySchema.parse(body);
-        const id = payload.id ?? nanoid();
+        const business = await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
+        assertModuleEnabled(business, 'parties');
+        const payload = createPartySchema.parse(await c.req.json());
         const now = new Date();
+        const id = payload.id?.trim() || `pty_${nanoid(18)}`;
 
-        const insertPayload = {
+        await db.insert(parties).values({
             id,
-            userId: effectiveUserId,
-            organizationId: effectiveOrganizationId,
-
-            name: payload.name.trim(),
-            nameLowercase: payload.name.trim().toLowerCase(),
-            type: payload.type,
-            phone: payload.phone?.trim() || null,
-            email: payload.email?.trim() || null,
-            address: payload.address?.trim() || null,
-            gstNumber: payload.gstNumber?.trim() || null,
-            isActive: payload.isActive,
+            businessId: business.id,
+            type: payload.type === 'customer' ? 'CUSTOMER' : 'SUPPLIER',
+            name: payload.name,
+            nameLowercase: payload.name.toLowerCase(),
+            phone: payload.phone ?? null,
+            email: payload.email ?? null,
+            billingAddress: payload.address ?? null,
+            shippingAddress: null,
+            gstin: payload.gstNumber?.toUpperCase() ?? null,
+            openingBalance: 0,
+            creditLimit: 0,
+            isActive: payload.isActive ?? true,
             createdAt: now,
             updatedAt: now,
-        };
-
-        await db.insert(parties).values(insertPayload).onConflictDoUpdate({
+        }).onConflictDoUpdate({
             target: parties.id,
-            set: { ...insertPayload, createdAt: sql`parties."createdAt"` } // Preserve original createdAt
+            set: {
+                type: payload.type === 'customer' ? 'CUSTOMER' : 'SUPPLIER',
+                name: payload.name,
+                nameLowercase: payload.name.toLowerCase(),
+                phone: payload.phone ?? null,
+                email: payload.email ?? null,
+                billingAddress: payload.address ?? null,
+                gstin: payload.gstNumber?.toUpperCase() ?? null,
+                isActive: payload.isActive ?? true,
+                updatedAt: now,
+            },
         });
 
         return c.json({ ok: true, id });
-    } catch (error: unknown) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Invalid request.' }, 400);
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to save party.' }, 400);
     }
 });
 
-// PATCH /parties/:id - Update party
-partiesRoute.patch('/:id', requireAuth, requirePermission('canManageParties'), requireFeatureToggle('parties'), async (c) => {
+partiesRoute.patch('/:id', async (c) => {
     try {
-        const effectiveUserId = c.get('effectiveUserId');
-
         const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
+        assertModuleEnabled(business, 'parties');
+
         const id = c.req.param('id');
-        const body = await c.req.json();
+        const payload = patchPartySchema.parse(await c.req.json());
 
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
-
-        const updateSchema = partySchema.partial();
-        const payload = updateSchema.parse(body);
-
-        const updatePayload: Partial<typeof parties.$inferInsert> = {
+        await db.update(parties).set({
+            ...(payload.name !== undefined ? { name: payload.name, nameLowercase: payload.name.toLowerCase() } : {}),
+            ...(payload.type !== undefined ? { type: payload.type === 'customer' ? 'CUSTOMER' : 'SUPPLIER' } : {}),
+            ...(payload.phone !== undefined ? { phone: payload.phone } : {}),
+            ...(payload.email !== undefined ? { email: payload.email } : {}),
+            ...(payload.address !== undefined ? { billingAddress: payload.address } : {}),
+            ...(payload.gstNumber !== undefined ? { gstin: payload.gstNumber?.toUpperCase() ?? null } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
             updatedAt: new Date(),
-        };
-
-        if (payload.name !== undefined) {
-            updatePayload.name = payload.name.trim();
-            updatePayload.nameLowercase = payload.name.trim().toLowerCase();
-        }
-        if (payload.phone !== undefined) updatePayload.phone = payload.phone;
-        if (payload.email !== undefined) updatePayload.email = payload.email;
-        if (payload.address !== undefined) updatePayload.address = payload.address;
-        if (payload.gstNumber !== undefined) updatePayload.gstNumber = payload.gstNumber;
-        if (payload.isActive !== undefined) updatePayload.isActive = payload.isActive;
-
-        const updated = await db
-            .update(parties)
-            .set(updatePayload)
-            .where(and(
-                eq(parties.id, id),
-                eq(parties.userId, effectiveUserId),
-
-            ))
-            .returning({ id: parties.id });
-
-        if (!updated[0]) {
-            return c.json({ ok: false, message: 'Party not found.' }, 404);
-        }
+        }).where(and(eq(parties.id, id), eq(parties.businessId, business.id)));
 
         return c.json({ ok: true });
-    } catch (error: unknown) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Invalid request.' }, 400);
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update party.' }, 400);
     }
+});
+
+partiesRoute.get('/:id', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
+    assertModuleEnabled(business, 'parties');
+
+    const id = c.req.param('id');
+    const rows = await db
+        .select()
+        .from(parties)
+        .where(and(eq(parties.id, id), eq(parties.businessId, business.id)))
+        .limit(1);
+
+    const party = rows[0];
+    if (!party) {
+        return c.json({ ok: false, message: 'Party not found.' }, 404);
+    }
+
+    return c.json({ ok: true, party: toClientParty(party, authUser.id) });
 });
 
 export default partiesRoute;

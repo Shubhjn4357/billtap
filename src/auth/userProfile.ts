@@ -1,23 +1,47 @@
-import type { UserRow } from '../db/schema';
+import type { BusinessRow, SubscriptionRow, UserRow } from '../db/schema';
 
-export const toUserProfile = (row: UserRow) => ({
-    uid: row.uid,
-    email: row.email,
-    phoneNumber: row.phoneNumber,
-    displayName: row.displayName,
-    photoURL: row.photoURL,
-    businessName: row.businessName,
-    address: row.address,
-    gstEnabled: row.gstEnabled ?? false,
-    gstNumber: row.gstNumber,
-    currency: row.currency ?? 'INR',
-    role: row.role ?? 'owner',
-    ownerId: row.ownerId,
-    subscriptionStatus: row.subscriptionStatus ?? 'inactive',
-    subscriptionPlanId: row.subscriptionPlanId,
-    subscriptionPlanName: row.subscriptionPlanName,
-    subscriptionAmountMonthly: row.subscriptionAmountMonthly,
-    subscriptionCurrency: row.subscriptionCurrency,
-    subscriptionStartsAt: row.subscriptionStartsAt,
-    subscriptionEndsAt: row.subscriptionEndsAt,
+type LegacySubscriptionStatus = 'inactive' | 'active' | 'expired' | 'canceled' | 'past_due';
+
+const toLegacySubscriptionStatus = (status: SubscriptionRow['status'] | null | undefined): LegacySubscriptionStatus => {
+    switch (status) {
+        case 'ACTIVE':
+        case 'TRIAL':
+            return 'active';
+        case 'GRACE':
+            return 'past_due';
+        case 'EXPIRED':
+            return 'expired';
+        case 'CANCELLED':
+            return 'canceled';
+        default:
+            return 'inactive';
+    }
+};
+
+export const toUserProfile = (
+    user: UserRow,
+    business?: BusinessRow | null,
+    subscription?: SubscriptionRow | null,
+    role: 'owner' | 'staff' | 'admin' = 'owner'
+) => ({
+    uid: user.id,
+    email: user.email,
+    phoneNumber: user.phone,
+    displayName: user.name,
+    photoURL: user.photoUrl,
+    businessName: business?.name,
+    address: business?.address,
+    gstEnabled: Boolean(business?.gstin),
+    gstNumber: business?.gstin,
+    currency: business?.currency ?? 'INR',
+    category: business?.category,
+    role,
+    ownerId: null,
+    subscriptionStatus: toLegacySubscriptionStatus(subscription?.status),
+    subscriptionPlanId: subscription?.tier,
+    subscriptionPlanName: subscription?.tier,
+    subscriptionAmountMonthly: undefined,
+    subscriptionCurrency: 'INR',
+    subscriptionStartsAt: subscription?.startDate,
+    subscriptionEndsAt: subscription?.endDate,
 });

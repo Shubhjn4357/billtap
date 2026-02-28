@@ -1,71 +1,67 @@
 import { Hono } from 'hono';
-import { and, desc, eq, gte, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { analyticsEvents } from '../db/schema';
 import { requireAdmin, requireAuth, type AppEnv } from '../middleware/auth';
+import { ensurePrimaryBusiness, getAccessibleBusiness, getRequestedBusinessId } from './helpers';
 
 const analyticsRoute = new Hono<AppEnv>();
 
+const eventSchema = z.object({
+    eventType: z.string().trim().min(2),
+    source: z.string().trim().optional(),
+    planId: z.string().trim().optional(),
+    offerId: z.string().trim().optional(),
+    value: z.number().optional(),
+    currency: z.string().trim().optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
 analyticsRoute.post('/events', requireAuth, async (c) => {
-    const authUser = c.get('authUser');
-    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const body = await c.req.json();
-    const payload = z.object({
-        eventType: z.string().min(2).max(64),
-        source: z.string().max(120).optional(),
-        planId: z.string().max(80).optional(),
-        offerId: z.string().max(80).optional(),
-        value: z.number().optional(),
-        currency: z.string().max(6).optional(),
-        metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
-    }).parse(body);
+        const payload = eventSchema.parse(await c.req.json());
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+            ?? await ensurePrimaryBusiness(db, authUser);
 
-    const db = c.get('db');
-    await db.insert(analyticsEvents).values({
-        id: nanoid(),
-        userId: authUser.uid,
-        eventType: payload.eventType,
-        source: payload.source ?? null,
-        planId: payload.planId ?? null,
-        offerId: payload.offerId ?? null,
-        value: payload.value ?? null,
-        currency: payload.currency?.toUpperCase() ?? null,
-        metadata: payload.metadata ?? null,
-        createdAt: new Date(),
-    });
+        const now = new Date();
+        await db.insert(analyticsEvents).values({
+            id: `evt_${nanoid(16)}`,
+            businessId: business.id,
+            userId: authUser.id,
+            eventType: payload.eventType,
+            source: payload.source ?? null,
+            planId: payload.planId ?? null,
+            offerId: payload.offerId ?? null,
+            value: payload.value ?? null,
+            currency: payload.currency ?? null,
+            metadata: payload.metadata ?? {},
+            createdAt: now,
+        });
 
-    return c.json({ ok: true });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to track event.' }, 400);
+    }
 });
 
 analyticsRoute.get('/events', requireAdmin, async (c) => {
     const db = c.get('db');
-    const startDate = c.req.query('startDate');
-    const userId = c.req.query('userId');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 5000);
+    const days = Math.max(1, Math.min(Number(c.req.query('days') ?? 7), 365));
+    const from = new Date(Date.now() - (days * 24 * 60 * 60 * 1000));
 
-    const conditions: SQL[] = [];
-
-    if (startDate) {
-        const parsed = new Date(startDate);
-        if (!Number.isNaN(parsed.getTime())) {
-            conditions.push(gte(analyticsEvents.createdAt, parsed));
-        }
-    }
-
-    if (userId) {
-        conditions.push(eq(analyticsEvents.userId, userId));
-    }
-
-    const data = await db
+    const rows = await db
         .select()
         .from(analyticsEvents)
-        .where(conditions.length > 0 ? and(...conditions) : sql`true`)
+        .where(gte(analyticsEvents.createdAt, from))
         .orderBy(desc(analyticsEvents.createdAt))
-        .limit(limit);
+        .limit(5000);
 
-    return c.json({ ok: true, events: data });
+    return c.json({ ok: true, events: rows });
 });
 
 export default analyticsRoute;

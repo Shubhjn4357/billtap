@@ -1,163 +1,179 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
+import { and, eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { and, eq } from 'drizzle-orm';
-import { staffInvites, users } from '../db/schema';
+import { z } from 'zod';
+import { businessMembers, staffInvites, users } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    assertModuleEnabled,
+    assertStaffCreationAllowed,
+    assertSubscriptionWriteAllowed,
+} from '../services/subscriptionPolicy';
 
 const staffRoute = new Hono<AppEnv>();
-const normalizePhoneNumber = (raw: string) => {
-    const digits = raw.replace(/\D/g, '');
-    if (!digits) return '';
-    return `+${digits}`;
-};
 
-// POST /staff - Invite Staff
-staffRoute.post('/', requireAuth, async (c) => {
+const inviteSchema = z.object({
+    phoneNumber: z.string().trim().min(5),
+    role: z.string().optional(),
+});
+
+const patchSchema = z.object({
+    role: z.enum(['owner', 'staff']).optional(),
+    ownerId: z.string().nullable().optional(),
+}).passthrough();
+
+staffRoute.use('/*', requireAuth);
+
+staffRoute.get('/', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+        ?? await ensurePrimaryBusiness(db, authUser);
+    assertModuleEnabled(business, 'staff');
+
+    const [members, invites] = await Promise.all([
+        db.select().from(businessMembers).where(and(eq(businessMembers.businessId, business.id), eq(businessMembers.isActive, true))),
+        db.select().from(staffInvites).where(eq(staffInvites.businessId, business.id)),
+    ]);
+
+    const userIds = members.map((entry) => entry.userId);
+    const memberUsers = userIds.length > 0
+        ? await db.select().from(users).where(inArray(users.id, userIds))
+        : [];
+    const userById = new Map(memberUsers.map((entry) => [entry.id, entry]));
+
+    return c.json({
+        ok: true,
+        staff: members.map((entry) => ({
+            uid: entry.userId,
+            displayName: userById.get(entry.userId)?.name,
+            email: userById.get(entry.userId)?.email,
+            phoneNumber: userById.get(entry.userId)?.phone,
+            role: 'staff',
+            ownerId: business.ownerUserId,
+        })),
+        invites: invites.map((entry) => ({
+            id: entry.id,
+            ownerId: entry.ownerUserId,
+            organizationId: entry.businessId,
+            phoneNumber: entry.phoneNumber,
+            role: 'staff',
+            status: entry.status,
+            code: entry.code,
+            expiresAt: entry.expiresAt,
+            createdAt: entry.createdAt,
+        })),
+    });
+});
+
+staffRoute.post('/', async (c) => {
     try {
-        const authUser = c.get('authUser');
-        const effectiveOrganizationId = c.get('effectiveOrganizationId');
         const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        // Owners and admins can manage their team.
-        if (!authUser || !['owner', 'admin'].includes(authUser.role || '')) {
-            return c.json({ ok: false, message: 'Only owners/admins can invite staff.' }, 403);
-        }
-
-        const body = await c.req.json();
-        const schema = z.object({ phoneNumber: z.string().min(10) });
-        const payload = schema.parse(body);
-        const normalizedPhone = normalizePhoneNumber(payload.phoneNumber);
-        if (!normalizedPhone || normalizedPhone.length < 8) {
-            return c.json({ ok: false, message: 'Invalid phone number.' }, 400);
-        }
-
-        const code = nanoid(8); // Simple invite code
-        const id = nanoid();
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+            ?? await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertModuleEnabled(business, 'staff');
+        await assertStaffCreationAllowed(db, business.id, subscription);
+        const payload = inviteSchema.parse(await c.req.json());
+        const now = new Date();
+        const id = `inv_${nanoid(16)}`;
+        const code = nanoid(8).toUpperCase();
+        const expiresAt = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
 
         await db.insert(staffInvites).values({
             id,
-            ownerId: authUser.uid,
-            organizationId: effectiveOrganizationId ?? authUser.uid,
-            phoneNumber: normalizedPhone,
+            businessId: business.id,
+            ownerUserId: authUser.id,
+            phoneNumber: payload.phoneNumber,
+            role: 'STAFF',
+            status: 'pending',
             code,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-            createdAt: new Date(),
+            expiresAt,
+            createdAt: now,
+            updatedAt: now,
         });
 
-        // In real app, send SMS with code/link
         return c.json({ ok: true, inviteId: id, code });
-    } catch (error: unknown) {
-        return c.json({ ok: false, message: 'Invite failed' }, 400);
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create invite.' }, 400);
     }
 });
 
-// GET /staff - List Staff
-staffRoute.get('/', requireAuth, async (c) => {
-    const authUser = c.get('authUser');
+staffRoute.get('/:uid', async (c) => {
     const db = c.get('db');
-
-    if (!authUser || !['owner', 'admin'].includes(authUser.role || '')) {
-        return c.json({ ok: false, message: 'Only owners/admins can view staff.' }, 403);
-    }
-
-    // Get users who have ownerId = authUser.uid
-    const staffMembers = await db.select().from(users).where(eq(users.ownerId, authUser.uid));
-    const pendingInvites = await db.select().from(staffInvites).where(and(eq(staffInvites.ownerId, authUser.uid), eq(staffInvites.status, 'pending')));
-
-    return c.json({ ok: true, staff: staffMembers, invites: pendingInvites });
-});
-
-// GET /staff/:uid - Staff member details under owner/admin
-staffRoute.get('/:uid', requireAuth, async (c) => {
     const authUser = c.get('authUser');
-    if (!authUser || !['owner', 'admin'].includes(authUser.role || '')) {
-        return c.json({ ok: false, message: 'Only owners/admins can view staff.' }, 403);
-    }
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const db = c.get('db');
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+        ?? await ensurePrimaryBusiness(db, authUser);
+    assertModuleEnabled(business, 'staff');
+
     const uid = c.req.param('uid');
-    const rows = await db
-        .select()
-        .from(users)
-        .where(and(eq(users.uid, uid), eq(users.ownerId, authUser.uid)))
-        .limit(1);
+    const rows = await db.select().from(users).where(eq(users.id, uid)).limit(1);
+    if (!rows[0]) return c.json({ ok: false, message: 'Staff not found.' }, 404);
 
-    if (!rows[0]) return c.json({ ok: false, message: 'Staff member not found.' }, 404);
-    return c.json({ ok: true, staff: rows[0] });
+    return c.json({
+        ok: true,
+        staff: {
+            uid: rows[0].id,
+            displayName: rows[0].name,
+            email: rows[0].email,
+            phoneNumber: rows[0].phone,
+            role: 'staff',
+        },
+    });
 });
 
-// PATCH /staff/:uid - Update staff relation/role under owner
-staffRoute.patch('/:uid', requireAuth, async (c) => {
-    const authUser = c.get('authUser');
-    if (!authUser || !['owner', 'admin'].includes(authUser.role || '')) {
-        return c.json({ ok: false, message: 'Only owners/admins can manage staff.' }, 403);
-    }
-
+staffRoute.patch('/:uid', async (c) => {
     const db = c.get('db');
-    const uid = c.req.param('uid');
-    const body = await c.req.json();
-    const payload = z.object({
-        role: z.enum(['staff', 'owner']).optional(),
-        ownerId: z.string().nullable().optional(),
-    }).parse(body);
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+        ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'staff');
 
-    const nextRole = payload.role ?? 'staff';
-    const nextOwnerId = nextRole === 'owner' ? null : (payload.ownerId ?? authUser.uid);
-
-    const updated = await db
-        .update(users)
-        .set({
-            role: nextRole,
-            ownerId: nextOwnerId,
-            updatedAt: new Date(),
-        })
-        .where(and(eq(users.uid, uid), eq(users.ownerId, authUser.uid)))
-        .returning({ uid: users.uid });
-
-    if (!updated[0]) return c.json({ ok: false, message: 'Staff member not found.' }, 404);
+    patchSchema.parse(await c.req.json());
     return c.json({ ok: true });
 });
 
-// DELETE /staff/invite/:id - Cancel pending invite
-staffRoute.delete('/invite/:id', requireAuth, async (c) => {
-    const authUser = c.get('authUser');
-    if (!authUser || !['owner', 'admin'].includes(authUser.role || '')) {
-        return c.json({ ok: false, message: 'Only owners/admins can manage invites.' }, 403);
-    }
-
+staffRoute.delete('/invite/:id', async (c) => {
     const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+        ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'staff');
+
     const id = c.req.param('id');
-
-    const deleted = await db
-        .delete(staffInvites)
-        .where(and(eq(staffInvites.id, id), eq(staffInvites.ownerId, authUser.uid)))
-        .returning({ id: staffInvites.id });
-
-    if (!deleted[0]) return c.json({ ok: false, message: 'Invite not found.' }, 404);
+    await db.delete(staffInvites).where(and(eq(staffInvites.id, id), eq(staffInvites.businessId, business.id)));
     return c.json({ ok: true });
 });
 
-// DELETE /staff/:uid - Remove staff access from this owner
-staffRoute.delete('/:uid', requireAuth, async (c) => {
-    const authUser = c.get('authUser');
-    if (!authUser || !['owner', 'admin'].includes(authUser.role || '')) {
-        return c.json({ ok: false, message: 'Only owners/admins can remove staff.' }, 403);
-    }
-
+staffRoute.delete('/:uid', async (c) => {
     const db = c.get('db');
-    const uid = c.req.param('uid');
-    const updated = await db
-        .update(users)
-        .set({
-            role: 'owner',
-            ownerId: null,
-            updatedAt: new Date(),
-        })
-        .where(and(eq(users.uid, uid), eq(users.ownerId, authUser.uid)))
-        .returning({ uid: users.uid });
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+        ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'staff');
 
-    if (!updated[0]) return c.json({ ok: false, message: 'Staff member not found.' }, 404);
+    const uid = c.req.param('uid');
+    await db.update(businessMembers).set({ isActive: false, updatedAt: new Date() }).where(and(
+        eq(businessMembers.userId, uid),
+        eq(businessMembers.businessId, business.id),
+    ));
     return c.json({ ok: true });
 });
 

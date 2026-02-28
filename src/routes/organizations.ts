@@ -1,881 +1,575 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, isNull, or } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
+import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
+import { nanoid } from 'nanoid';
 import {
-    billTemplates,
-    organizationCategories,
-    organizationMembers,
-    organizations,
-    organizationSettings,
-    printProfiles,
+    businesses,
+    businessMembers,
     signatures,
+    staffInvites,
+    templates,
     users,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    assertBusinessCreationAllowed,
+    assertModuleEnabled,
+    assertStaffCreationAllowed,
+    assertSubscriptionWriteAllowed,
+} from '../services/subscriptionPolicy';
 
 const organizationsRoute = new Hono<AppEnv>();
 
-type RouteContext = {
-    authUser: NonNullable<AppEnv['Variables']['authUser']>;
-    ownerUserId: string;
-    organizationId: string;
-    organizationRole: 'owner' | 'manager' | 'salesman' | null;
-    organizationPermissions: Record<string, boolean>;
-};
-
-const normalizePhoneNumber = (raw: string): string => {
-    const digits = raw.replace(/\D/g, '');
-    if (!digits) return '';
-    return `+${digits}`;
-};
-
-const getRouteContext = (c: any): RouteContext | null => {
-    const authUser = c.get('authUser');
-    const ownerUserId = c.get('effectiveOwnerUserId');
-    const organizationId = c.get('effectiveOrganizationId');
-    const organizationRole = c.get('organizationRole');
-    const organizationPermissions = c.get('organizationPermissions');
-
-    if (!authUser || !ownerUserId || !organizationId) {
-        return null;
-    }
-
-    return {
-        authUser,
-        ownerUserId,
-        organizationId,
-        organizationRole: organizationRole ?? null,
-        organizationPermissions: organizationPermissions ?? {},
-    };
-};
-
-const canManageOrganization = (context: RouteContext): boolean =>
-    context.authUser.role === 'admin' || context.organizationRole === 'owner';
-
-const buildOptionalOrgScopeCondition = (
-    column: any,
-    organizationId: string,
-    ownerUserId: string
-) => {
-    if (organizationId === ownerUserId) {
-        return or(eq(column, organizationId), isNull(column));
-    }
-    return eq(column, organizationId);
-};
-
-organizationsRoute.get('/mine', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const { authUser, ownerUserId } = context;
-
-    if (authUser.role === 'staff') {
-        const rows = await db
-            .select({
-                id: organizations.id,
-                name: organizations.name,
-                code: organizations.code,
-                currency: organizations.currency,
-                role: organizationMembers.role,
-                permissions: organizationMembers.permissions,
-            })
-            .from(organizationMembers)
-            .innerJoin(organizations, eq(organizationMembers.organizationId, organizations.id))
-            .where(and(
-                eq(organizationMembers.userId, authUser.uid),
-                eq(organizationMembers.isActive, true),
-                eq(organizations.isActive, true),
-            ))
-            .orderBy(asc(organizations.name));
-
-        return c.json({
-            ok: true,
-            organizations: rows.map((entry) => ({
-                id: entry.id,
-                name: entry.name,
-                code: entry.code,
-                currency: entry.currency,
-                role: entry.role,
-                permissions: entry.permissions ?? {},
-            })),
-        });
-    }
-
-    const orgRows = await db
-        .select({
-            id: organizations.id,
-            name: organizations.name,
-            code: organizations.code,
-            currency: organizations.currency,
-        })
-        .from(organizations)
-        .where(and(eq(organizations.userId, ownerUserId), eq(organizations.isActive, true)))
-        .orderBy(asc(organizations.createdAt));
-
-    if (orgRows.length === 0) {
-        const fallbackUserRows = await db
-            .select({
-                businessName: users.businessName,
-                currency: users.currency,
-            })
-            .from(users)
-            .where(eq(users.uid, ownerUserId))
-            .limit(1);
-        const fallbackUser = fallbackUserRows[0];
-
-        return c.json({
-            ok: true,
-            organizations: [
-                {
-                    id: ownerUserId,
-                    name: fallbackUser?.businessName ?? 'Default Organization',
-                    code: 'DEFAULT',
-                    currency: fallbackUser?.currency ?? 'INR',
-                    role: 'owner',
-                    permissions: {},
-                },
-            ],
-        });
-    }
-
-    return c.json({
-        ok: true,
-        organizations: orgRows.map((entry) => ({
-            ...entry,
-            role: 'owner',
-            permissions: {},
-        })),
-    });
+const createOrganizationSchema = z.object({
+    name: z.string().trim().min(2),
+    code: z.string().trim().min(2),
+    currency: z.string().trim().min(3).max(3).optional(),
+    phoneNumber: z.string().trim().optional(),
+    email: z.string().email().optional(),
+    gstNumber: z.string().trim().optional(),
+    address: z.string().trim().optional(),
 });
 
-organizationsRoute.get('/current', requireAuth, async (c) => {
+const patchOrganizationSchema = createOrganizationSchema.partial().extend({
+    state: z.string().trim().optional(),
+    legalName: z.string().trim().optional(),
+    pan: z.string().trim().optional(),
+    category: z.string().trim().optional(),
+    isActive: z.boolean().optional(),
+});
+
+const memberPayloadSchema = z.object({
+    displayName: z.string().trim().min(1),
+    phoneNumber: z.string().trim().min(5),
+    role: z.enum(['manager', 'salesman']).default('salesman'),
+    permissions: z.record(z.string(), z.boolean()).optional(),
+});
+
+const patchMemberSchema = z.object({
+    role: z.enum(['manager', 'salesman']).optional(),
+    permissions: z.record(z.string(), z.boolean()).optional(),
+    isActive: z.boolean().optional(),
+});
+
+const settingsPayloadSchema = z.object({
+    settings: z.record(z.string(), z.unknown()),
+});
+
+const createTemplateSchema = z.object({
+    templateKey: z.string().trim().min(2),
+    name: z.string().trim().min(1),
+    isPremium: z.boolean().optional().default(false),
+    isActive: z.boolean().optional().default(true),
+    layoutConfig: z.record(z.string(), z.unknown()).optional().default({}),
+});
+
+const createSignatureSchema = z.object({
+    name: z.string().trim().optional(),
+    signatureData: z.string().trim().optional(),
+    signatureUrl: z.string().trim().optional(),
+    isDefault: z.boolean().optional().default(false),
+});
+
+organizationsRoute.use('/*', requireAuth);
+
+organizationsRoute.get('/mine', async (c) => {
     const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const authUser = c.get('authUser');
 
-    const { organizationId, ownerUserId, authUser, organizationRole, organizationPermissions } = context;
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const orgRows = await db
+    const owned = await db
         .select()
-        .from(organizations)
-        .where(eq(organizations.id, organizationId))
-        .limit(1);
-    const org = orgRows[0];
+        .from(businesses)
+        .where(and(eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)));
 
-    let resolvedOrganization = org;
-    if (!resolvedOrganization) {
-        const ownerRows = await db
-            .select({
-                businessName: users.businessName,
-                currency: users.currency,
-                gstNumber: users.gstNumber,
-                address: users.address,
-                phoneNumber: users.phoneNumber,
-                email: users.email,
-            })
-            .from(users)
-            .where(eq(users.uid, ownerUserId))
-            .limit(1);
-        const owner = ownerRows[0];
-        resolvedOrganization = {
-            id: organizationId,
-            userId: ownerUserId,
-            name: owner?.businessName ?? 'Default Organization',
-            code: 'DEFAULT',
-            gstNumber: owner?.gstNumber ?? null,
-            address: owner?.address ?? null,
-            phoneNumber: owner?.phoneNumber ?? null,
-            email: owner?.email ?? null,
-            currency: owner?.currency ?? 'INR',
+    const organizations = owned.map((business) => ({
+        id: business.id,
+        name: business.name,
+        code: business.code ?? business.id,
+        currency: business.currency,
+        role: 'owner',
+        permissions: {},
+    }));
+
+    return c.json({ ok: true, organizations });
+});
+
+organizationsRoute.post('/', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        await assertBusinessCreationAllowed(db, authUser.id, getRequestedBusinessId(c));
+
+        const payload = createOrganizationSchema.parse(await c.req.json());
+        const now = new Date();
+        const id = `biz_${nanoid(18)}`;
+
+        await db.insert(businesses).values({
+            id,
+            ownerUserId: authUser.id,
+            name: payload.name,
+            code: payload.code,
+            currency: payload.currency?.toUpperCase() ?? 'INR',
+            phone: payload.phoneNumber ?? null,
+            email: payload.email ?? null,
+            gstin: payload.gstNumber?.toUpperCase() ?? null,
+            address: payload.address ?? null,
+            legalName: null,
+            state: null,
+            pan: null,
+            booksStartDate: now,
+            logoUrl: null,
+            category: null,
             isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        };
-    }
+            settings: {},
+            createdAt: now,
+            updatedAt: now,
+        });
 
-    const settingsRows = await db
-        .select({
-            settings: organizationSettings.settings,
-        })
-        .from(organizationSettings)
-        .where(eq(organizationSettings.organizationId, organizationId))
-        .limit(1);
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create organization.' }, 400);
+    }
+});
+
+organizationsRoute.get('/current', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    }
 
     return c.json({
         ok: true,
         organization: {
-            id: resolvedOrganization.id,
-            userId: resolvedOrganization.userId,
-            name: resolvedOrganization.name,
-            code: resolvedOrganization.code,
-            currency: resolvedOrganization.currency,
-            gstNumber: resolvedOrganization.gstNumber,
-            address: resolvedOrganization.address,
-            phoneNumber: resolvedOrganization.phoneNumber,
-            email: resolvedOrganization.email,
+            id: business.id,
+            userId: business.ownerUserId,
+            name: business.name,
+            code: business.code ?? business.id,
+            currency: business.currency,
+            gstNumber: business.gstin,
+            address: business.address,
+            phoneNumber: business.phone,
+            email: business.email,
         },
         context: {
-            role: authUser.role === 'admin' ? 'owner' : (organizationRole ?? 'owner'),
-            ownerUserId,
-            permissions: organizationPermissions ?? {},
-            settings: settingsRows[0]?.settings ?? {},
+            role: 'owner',
+            permissions: {},
+            ownerUserId: business.ownerUserId,
+            settings: business.settings ?? {},
         },
     });
 });
 
-organizationsRoute.post('/', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+organizationsRoute.patch('/:id', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    if (!['owner', 'admin'].includes(context.authUser.role ?? '')) {
-        return c.json({ ok: false, message: 'Only owners can create organizations.' }, 403);
+        const id = c.req.param('id');
+        const payload = patchOrganizationSchema.parse(await c.req.json());
+
+        const businessRows = await db.select().from(businesses).where(and(eq(businesses.id, id), eq(businesses.ownerUserId, authUser.id))).limit(1);
+        const targetBusiness = businessRows[0];
+        if (!targetBusiness) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
+
+        const subscription = await getActiveSubscription(db, id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(targetBusiness, 'settings');
+
+        await db.update(businesses).set({
+            ...(payload.name !== undefined ? { name: payload.name } : {}),
+            ...(payload.code !== undefined ? { code: payload.code } : {}),
+            ...(payload.currency !== undefined ? { currency: payload.currency.toUpperCase() } : {}),
+            ...(payload.phoneNumber !== undefined ? { phone: payload.phoneNumber } : {}),
+            ...(payload.email !== undefined ? { email: payload.email } : {}),
+            ...(payload.gstNumber !== undefined ? { gstin: payload.gstNumber?.toUpperCase() ?? null } : {}),
+            ...(payload.address !== undefined ? { address: payload.address } : {}),
+            ...(payload.state !== undefined ? { state: payload.state } : {}),
+            ...(payload.legalName !== undefined ? { legalName: payload.legalName } : {}),
+            ...(payload.pan !== undefined ? { pan: payload.pan } : {}),
+            ...(payload.category !== undefined ? { category: payload.category } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            updatedAt: new Date(),
+        }).where(and(eq(businesses.id, id), eq(businesses.ownerUserId, authUser.id)));
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update organization.' }, 400);
     }
-
-    const payload = z.object({
-        name: z.string().min(2).max(140),
-        code: z.string().min(2).max(32),
-        currency: z.string().min(3).max(6).optional(),
-        phoneNumber: z.string().optional(),
-        email: z.string().email().optional(),
-        gstNumber: z.string().optional(),
-        address: z.string().optional(),
-    }).parse(await c.req.json());
-
-    const now = new Date();
-    const id = nanoid();
-    const ownerUserId = context.authUser.uid;
-
-    await db.insert(organizations).values({
-        id,
-        userId: ownerUserId,
-        name: payload.name.trim(),
-        code: payload.code.trim().toUpperCase(),
-        currency: (payload.currency ?? 'INR').toUpperCase(),
-        phoneNumber: payload.phoneNumber ? normalizePhoneNumber(payload.phoneNumber) : null,
-        email: payload.email?.trim().toLowerCase() ?? null,
-        gstNumber: payload.gstNumber?.trim().toUpperCase() ?? null,
-        address: payload.address?.trim() ?? null,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-    });
-
-    await db.insert(organizationMembers).values({
-        id: nanoid(),
-        userId: ownerUserId,
-        organizationId: id,
-        role: 'owner',
-        permissions: {},
-        isActive: true,
-        invitedBy: ownerUserId,
-        phoneNumberSnapshot: context.authUser.phoneNumber ?? null,
-        joinedAt: now,
-        createdAt: now,
-        updatedAt: now,
-    });
-
-    await db
-        .insert(organizationSettings)
-        .values({
-            organizationId: id,
-            userId: ownerUserId,
-            settings: {},
-            createdAt: now,
-            updatedAt: now,
-        })
-        .onConflictDoUpdate({
-            target: organizationSettings.organizationId,
-            set: {
-                userId: ownerUserId,
-                updatedAt: now,
-            },
-        });
-
-    return c.json({ ok: true, id });
 });
 
-organizationsRoute.patch('/:id', requireAuth, async (c) => {
+organizationsRoute.get('/settings/current', async (c) => {
     const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Organization update access denied.' }, 403);
-    }
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const id = c.req.param('id');
-    const payload = z.object({
-        name: z.string().min(2).max(140).optional(),
-        code: z.string().min(2).max(32).optional(),
-        currency: z.string().min(3).max(6).optional(),
-        phoneNumber: z.string().nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        gstNumber: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        isActive: z.boolean().optional(),
-    }).parse(await c.req.json());
-
-    const updatePayload: Record<string, unknown> = {
-        updatedAt: new Date(),
-    };
-    if (payload.name !== undefined) updatePayload.name = payload.name.trim();
-    if (payload.code !== undefined) updatePayload.code = payload.code.trim().toUpperCase();
-    if (payload.currency !== undefined) updatePayload.currency = payload.currency.trim().toUpperCase();
-    if (payload.phoneNumber !== undefined) updatePayload.phoneNumber = payload.phoneNumber ? normalizePhoneNumber(payload.phoneNumber) : null;
-    if (payload.email !== undefined) updatePayload.email = payload.email?.trim().toLowerCase() ?? null;
-    if (payload.gstNumber !== undefined) updatePayload.gstNumber = payload.gstNumber?.trim().toUpperCase() ?? null;
-    if (payload.address !== undefined) updatePayload.address = payload.address?.trim() ?? null;
-    if (payload.isActive !== undefined) updatePayload.isActive = payload.isActive;
-
-    const updated = await db
-        .update(organizations)
-        .set(updatePayload)
-        .where(and(eq(organizations.id, id), eq(organizations.userId, context.ownerUserId)))
-        .returning({ id: organizations.id });
-
-    if (!updated[0]) {
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
         return c.json({ ok: false, message: 'Organization not found.' }, 404);
     }
 
-    return c.json({ ok: true });
+    return c.json({ ok: true, settings: business.settings ?? {} });
 });
 
-organizationsRoute.get('/settings/current', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+organizationsRoute.put('/settings/current', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const rows = await db
-        .select({
-            settings: organizationSettings.settings,
-        })
-        .from(organizationSettings)
-        .where(eq(organizationSettings.organizationId, context.organizationId))
-        .limit(1);
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
 
-    return c.json({ ok: true, settings: rows[0]?.settings ?? {} });
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'settings');
+
+        const payload = settingsPayloadSchema.parse(await c.req.json());
+        const settings = payload.settings;
+
+        await db.update(businesses).set({
+            settings,
+            updatedAt: new Date(),
+        }).where(eq(businesses.id, business.id));
+
+        return c.json({ ok: true, settings });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update settings.' }, 400);
+    }
 });
 
-organizationsRoute.put('/settings/current', requireAuth, async (c) => {
+organizationsRoute.get('/members/current', async (c) => {
     const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Organization settings access denied.' }, 403);
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Organization not found.' }, 404);
     }
 
-    const payload = z.object({
-        settings: z.record(z.string(), z.unknown()),
-    }).parse(await c.req.json());
+    const members = await db
+        .select()
+        .from(businessMembers)
+        .where(and(eq(businessMembers.businessId, business.id), eq(businessMembers.isActive, true)));
 
-    const now = new Date();
-    await db
-        .insert(organizationSettings)
-        .values({
-            organizationId: context.organizationId,
-            userId: context.ownerUserId,
-            settings: payload.settings,
-            createdAt: now,
-            updatedAt: now,
-        })
-        .onConflictDoUpdate({
-            target: organizationSettings.organizationId,
-            set: {
-                userId: context.ownerUserId,
-                settings: payload.settings,
-                updatedAt: now,
-            },
-        });
+    const userIds = members.map((entry) => entry.userId);
+    const linkedUsers = userIds.length > 0
+        ? await db.select().from(users)
+            .where(inArray(users.id, userIds))
+        : [];
 
-    return c.json({ ok: true, settings: payload.settings });
-});
-
-organizationsRoute.get('/members/current', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const rows = await db
-        .select({
-            id: organizationMembers.id,
-            userId: organizationMembers.userId,
-            role: organizationMembers.role,
-            permissions: organizationMembers.permissions,
-            isActive: organizationMembers.isActive,
-            phoneNumberSnapshot: organizationMembers.phoneNumberSnapshot,
-            joinedAt: organizationMembers.joinedAt,
-            userUid: users.uid,
-            userDisplayName: users.displayName,
-            userPhoneNumber: users.phoneNumber,
-            userEmail: users.email,
-        })
-        .from(organizationMembers)
-        .leftJoin(users, eq(organizationMembers.userId, users.uid))
-        .where(eq(organizationMembers.organizationId, context.organizationId))
-        .orderBy(desc(organizationMembers.createdAt));
+    const userById = new Map(linkedUsers.map((entry) => [entry.id, entry]));
 
     return c.json({
         ok: true,
-        members: rows.map((entry) => ({
+        members: members.map((entry) => ({
             id: entry.id,
             userId: entry.userId,
-            role: entry.role,
-            permissions: entry.permissions ?? {},
+            role: entry.role === 'OWNER' ? 'manager' : 'salesman',
+            permissions: entry.permissions,
             isActive: entry.isActive,
-            phoneNumberSnapshot: entry.phoneNumberSnapshot,
+            phoneNumberSnapshot: entry.phoneSnapshot,
             joinedAt: entry.joinedAt,
-            user: entry.userUid ? {
-                uid: entry.userUid,
-                displayName: entry.userDisplayName,
-                phoneNumber: entry.userPhoneNumber,
-                email: entry.userEmail,
-            } : null,
+            user: userById.get(entry.userId)
+                ? {
+                    uid: userById.get(entry.userId)?.id,
+                    displayName: userById.get(entry.userId)?.name,
+                    phoneNumber: userById.get(entry.userId)?.phone,
+                    email: userById.get(entry.userId)?.email,
+                }
+                : null,
         })),
     });
 });
 
-organizationsRoute.post('/members/current', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Organization member management denied.' }, 403);
-    }
+organizationsRoute.post('/members/current', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const payload = z.object({
-        displayName: z.string().min(2).max(120),
-        phoneNumber: z.string().min(8).max(30),
-        role: z.enum(['manager', 'salesman']),
-        permissions: z.record(z.string(), z.boolean()).optional(),
-    }).parse(await c.req.json());
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
 
-    const normalizedPhone = normalizePhoneNumber(payload.phoneNumber);
-    if (!normalizedPhone || normalizedPhone.length < 8) {
-        return c.json({ ok: false, message: 'Invalid phone number.' }, 400);
-    }
+        const subscription = await getActiveSubscription(db, business.id);
+        assertModuleEnabled(business, 'staff');
+        await assertStaffCreationAllowed(db, business.id, subscription);
 
-    const now = new Date();
-    const existingUserRows = await db
-        .select()
-        .from(users)
-        .where(eq(users.phoneNumber, normalizedPhone))
-        .limit(1);
+        const payload = memberPayloadSchema.parse(await c.req.json());
+        const now = new Date();
 
-    let userId = existingUserRows[0]?.uid ?? `phone_${normalizedPhone.replace(/\D/g, '')}`;
-    if (!existingUserRows[0]) {
+        const shadowUserId = `usr_shadow_${nanoid(10)}`;
         await db.insert(users).values({
-            uid: userId,
-            ownerId: context.ownerUserId,
-            phoneNumber: normalizedPhone,
-            displayName: payload.displayName.trim(),
-            role: 'staff',
+            id: shadowUserId,
+            googleSub: `manual_${shadowUserId}`,
+            name: payload.displayName,
+            email: `${shadowUserId}@local.vahi`,
+            phone: payload.phoneNumber,
+            photoUrl: null,
+            isDisabled: false,
+            metadata: {},
             createdAt: now,
             updatedAt: now,
         });
-    } else {
-        await db.update(users).set({
-            ownerId: context.ownerUserId,
-            role: 'staff',
-            updatedAt: now,
-        }).where(eq(users.uid, userId));
-    }
 
-    const existingMembershipRows = await db
-        .select({
-            id: organizationMembers.id,
-        })
-        .from(organizationMembers)
-        .where(and(
-            eq(organizationMembers.organizationId, context.organizationId),
-            eq(organizationMembers.userId, userId),
-        ))
-        .limit(1);
-
-    if (existingMembershipRows[0]) {
-        await db.update(organizationMembers).set({
-            role: payload.role,
+        const memberId = `mbr_${nanoid(16)}`;
+        await db.insert(businessMembers).values({
+            id: memberId,
+            businessId: business.id,
+            userId: shadowUserId,
+            role: payload.role === 'manager' ? 'OWNER' : 'STAFF',
             permissions: payload.permissions ?? {},
             isActive: true,
-            invitedBy: context.authUser.uid,
-            phoneNumberSnapshot: normalizedPhone,
-            updatedAt: now,
-        }).where(eq(organizationMembers.id, existingMembershipRows[0].id));
-    } else {
-        await db.insert(organizationMembers).values({
-            id: nanoid(),
-            userId,
-            organizationId: context.organizationId,
-            role: payload.role,
-            permissions: payload.permissions ?? {},
-            isActive: true,
-            invitedBy: context.authUser.uid,
-            phoneNumberSnapshot: normalizedPhone,
+            invitedByUserId: authUser.id,
+            phoneSnapshot: payload.phoneNumber,
             joinedAt: now,
             createdAt: now,
             updatedAt: now,
         });
-    }
 
-    return c.json({ ok: true, userId });
+        return c.json({ ok: true, userId: shadowUserId });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to add member.' }, 400);
+    }
 });
 
-organizationsRoute.patch('/members/current/:memberId', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Organization member management denied.' }, 403);
+organizationsRoute.patch('/members/current/:memberId', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
+
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'staff');
+
+        const memberId = c.req.param('memberId');
+        const payload = patchMemberSchema.parse(await c.req.json());
+
+        await db.update(businessMembers).set({
+            ...(payload.role !== undefined ? { role: payload.role === 'manager' ? 'OWNER' : 'STAFF' } : {}),
+            ...(payload.permissions !== undefined ? { permissions: payload.permissions } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            updatedAt: new Date(),
+        }).where(and(eq(businessMembers.id, memberId), eq(businessMembers.businessId, business.id)));
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update member.' }, 400);
     }
+});
+
+organizationsRoute.delete('/members/current/:memberId', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    }
+
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'staff');
 
     const memberId = c.req.param('memberId');
-    const payload = z.object({
-        role: z.enum(['manager', 'salesman']).optional(),
-        permissions: z.record(z.string(), z.boolean()).optional(),
-        isActive: z.boolean().optional(),
-    }).parse(await c.req.json());
-
-    const updatePayload: Record<string, unknown> = { updatedAt: new Date() };
-    if (payload.role !== undefined) updatePayload.role = payload.role;
-    if (payload.permissions !== undefined) updatePayload.permissions = payload.permissions;
-    if (payload.isActive !== undefined) updatePayload.isActive = payload.isActive;
-
-    const updated = await db.update(organizationMembers).set(updatePayload).where(and(
-        eq(organizationMembers.id, memberId),
-        eq(organizationMembers.organizationId, context.organizationId),
-    )).returning({ id: organizationMembers.id });
-
-    if (!updated[0]) {
-        return c.json({ ok: false, message: 'Member not found.' }, 404);
-    }
+    await db.update(businessMembers).set({ isActive: false, updatedAt: new Date() })
+        .where(and(eq(businessMembers.id, memberId), eq(businessMembers.businessId, business.id)));
 
     return c.json({ ok: true });
 });
 
-organizationsRoute.delete('/members/current/:memberId', requireAuth, async (c) => {
+organizationsRoute.get('/templates/current', async (c) => {
     const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Organization member management denied.' }, 403);
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Organization not found.' }, 404);
     }
-
-    const memberId = c.req.param('memberId');
-    const updated = await db.update(organizationMembers).set({
-        isActive: false,
-        updatedAt: new Date(),
-    }).where(and(
-        eq(organizationMembers.id, memberId),
-        eq(organizationMembers.organizationId, context.organizationId),
-    )).returning({ id: organizationMembers.id });
-
-    if (!updated[0]) {
-        return c.json({ ok: false, message: 'Member not found.' }, 404);
-    }
-
-    return c.json({ ok: true });
-});
-
-organizationsRoute.get('/templates/current', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
     const rows = await db
         .select()
-        .from(billTemplates)
-        .where(and(
-            eq(billTemplates.userId, context.ownerUserId),
-            buildOptionalOrgScopeCondition(
-                billTemplates.organizationId,
-                context.organizationId,
-                context.ownerUserId
-            )
-        ))
-        .orderBy(desc(billTemplates.createdAt));
+        .from(templates)
+        .where(eq(templates.businessId, business.id));
 
-    return c.json({ ok: true, templates: rows });
-});
-
-organizationsRoute.post('/templates/current', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Template management denied.' }, 403);
-    }
-
-    const payload = z.object({
-        templateKey: z.string().min(1).max(80),
-        name: z.string().min(1).max(120),
-        isPremium: z.boolean().optional(),
-        isActive: z.boolean().optional(),
-        layoutConfig: z.record(z.string(), z.unknown()).optional(),
-    }).parse(await c.req.json());
-
-    const id = nanoid();
-    const now = new Date();
-    await db.insert(billTemplates).values({
-        id,
-        userId: context.ownerUserId,
-        organizationId: context.organizationId,
-        templateKey: payload.templateKey,
-        name: payload.name,
-        isPremium: payload.isPremium ?? false,
-        isActive: payload.isActive ?? true,
-        layoutConfig: payload.layoutConfig ?? {},
-        createdAt: now,
-        updatedAt: now,
+    return c.json({
+        ok: true,
+        templates: rows.map((entry) => ({
+            id: entry.id,
+            templateKey: entry.type,
+            name: entry.name,
+            isPremium: false,
+            isActive: entry.isActive,
+            layoutConfig: entry.content,
+        })),
     });
-
-    return c.json({ ok: true, id });
 });
 
-organizationsRoute.get('/print-profiles/current', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+organizationsRoute.post('/templates/current', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const rows = await db
-        .select()
-        .from(printProfiles)
-        .where(and(
-            eq(printProfiles.userId, context.ownerUserId),
-            buildOptionalOrgScopeCondition(
-                printProfiles.organizationId,
-                context.organizationId,
-                context.ownerUserId
-            )
-        ))
-        .orderBy(desc(printProfiles.createdAt));
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
 
-    return c.json({ ok: true, profiles: rows });
-});
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'templates');
 
-organizationsRoute.post('/print-profiles/current', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Print profile management denied.' }, 403);
+        const payload = createTemplateSchema.parse(await c.req.json());
+        const id = `tpl_${nanoid(16)}`;
+        const now = new Date();
+
+        await db.insert(templates).values({
+            id,
+            businessId: business.id,
+            name: payload.name,
+            type: payload.templateKey,
+            content: payload.layoutConfig,
+            isDefault: false,
+            thumbnailUrl: null,
+            isActive: payload.isActive,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create template.' }, 400);
     }
-
-    const payload = z.object({
-        name: z.string().min(1).max(120),
-        printerType: z.enum(['THERMAL', 'STANDARD']),
-        paperSize: z.enum(['2INCH', '3INCH', 'A4', 'A5']),
-        isDefault: z.boolean().optional(),
-        settings: z.record(z.string(), z.unknown()).optional(),
-    }).parse(await c.req.json());
-
-    const id = nanoid();
-    const now = new Date();
-
-    if (payload.isDefault) {
-        await db.update(printProfiles).set({ isDefault: false, updatedAt: now }).where(and(
-            eq(printProfiles.userId, context.ownerUserId),
-            buildOptionalOrgScopeCondition(
-                printProfiles.organizationId,
-                context.organizationId,
-                context.ownerUserId
-            )
-        ));
-    }
-
-    await db.insert(printProfiles).values({
-        id,
-        userId: context.ownerUserId,
-        organizationId: context.organizationId,
-        name: payload.name,
-        printerType: payload.printerType,
-        paperSize: payload.paperSize,
-        isDefault: payload.isDefault ?? false,
-        settings: payload.settings ?? {},
-        createdAt: now,
-        updatedAt: now,
-    });
-
-    return c.json({ ok: true, id });
 });
 
-organizationsRoute.get('/signatures/current', requireAuth, async (c) => {
+organizationsRoute.get('/signatures/current', async (c) => {
     const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    }
 
     const rows = await db
         .select()
         .from(signatures)
-        .where(and(
-            eq(signatures.userId, context.ownerUserId),
-            buildOptionalOrgScopeCondition(
-                signatures.organizationId,
-                context.organizationId,
-                context.ownerUserId
-            )
-        ))
-        .orderBy(desc(signatures.createdAt));
+        .where(eq(signatures.businessId, business.id));
 
     return c.json({ ok: true, signatures: rows });
 });
 
-organizationsRoute.post('/signatures/current', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Signature management denied.' }, 403);
-    }
+organizationsRoute.post('/signatures/current', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const payload = z.object({
-        name: z.string().max(120).optional(),
-        signatureData: z.string().optional(),
-        signatureUrl: z.string().optional(),
-        isDefault: z.boolean().optional(),
-    }).parse(await c.req.json());
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
 
-    const id = nanoid();
-    const now = new Date();
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'templates');
 
-    if (payload.isDefault) {
-        await db.update(signatures).set({
-            isDefault: false,
+        const payload = createSignatureSchema.parse(await c.req.json());
+        const id = `sig_${nanoid(16)}`;
+        const now = new Date();
+
+        if (payload.isDefault) {
+            await db.update(signatures).set({ isDefault: false, updatedAt: now })
+                .where(eq(signatures.businessId, business.id));
+        }
+
+        await db.insert(signatures).values({
+            id,
+            businessId: business.id,
+            name: payload.name ?? null,
+            signatureData: payload.signatureData ?? null,
+            signatureUrl: payload.signatureUrl ?? null,
+            isDefault: payload.isDefault,
+            createdByUserId: authUser.id,
+            createdAt: now,
             updatedAt: now,
-        }).where(and(
-            eq(signatures.userId, context.ownerUserId),
-            buildOptionalOrgScopeCondition(
-                signatures.organizationId,
-                context.organizationId,
-                context.ownerUserId
-            )
-        ));
+        });
+
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to save signature.' }, 400);
     }
-
-    await db.insert(signatures).values({
-        id,
-        userId: context.ownerUserId,
-        organizationId: context.organizationId,
-        name: payload.name ?? null,
-        signatureData: payload.signatureData ?? null,
-        signatureUrl: payload.signatureUrl ?? null,
-        isDefault: payload.isDefault ?? false,
-        createdByUid: context.authUser.uid,
-        createdAt: now,
-        updatedAt: now,
-    });
-
-    return c.json({ ok: true, id });
 });
 
-organizationsRoute.post('/signatures/current/:id/default', requireAuth, async (c) => {
+organizationsRoute.post('/signatures/current/:id/default', async (c) => {
     const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Signature management denied.' }, 403);
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Organization not found.' }, 404);
     }
+
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'templates');
 
     const id = c.req.param('id');
-    const rows = await db.select({ id: signatures.id }).from(signatures).where(and(
-        eq(signatures.id, id),
-        eq(signatures.userId, context.ownerUserId),
-        buildOptionalOrgScopeCondition(
-            signatures.organizationId,
-            context.organizationId,
-            context.ownerUserId
-        )
-    )).limit(1);
-    if (!rows[0]) {
-        return c.json({ ok: false, message: 'Signature not found.' }, 404);
-    }
-
     const now = new Date();
-    await db.update(signatures).set({
-        isDefault: false,
-        updatedAt: now,
-    }).where(and(
-        eq(signatures.userId, context.ownerUserId),
-        buildOptionalOrgScopeCondition(
-            signatures.organizationId,
-            context.organizationId,
-            context.ownerUserId
-        )
-    ));
-
-    await db.update(signatures).set({
-        isDefault: true,
-        updatedAt: now,
-    }).where(eq(signatures.id, id));
+    await db.update(signatures).set({ isDefault: false, updatedAt: now }).where(eq(signatures.businessId, business.id));
+    await db.update(signatures).set({ isDefault: true, updatedAt: now })
+        .where(and(eq(signatures.id, id), eq(signatures.businessId, business.id)));
 
     return c.json({ ok: true });
 });
 
-organizationsRoute.get('/categories', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const rows = await db.select().from(organizationCategories).where(and(
-        eq(organizationCategories.userId, context.ownerUserId),
-        eq(organizationCategories.organizationId, context.organizationId),
-        eq(organizationCategories.isActive, true),
-    )).orderBy(asc(organizationCategories.name));
-
-    return c.json({ ok: true, categories: rows });
+organizationsRoute.get('/print-profiles/current', async (c) => {
+    return c.json({ ok: true, profiles: [] });
 });
 
-organizationsRoute.post('/categories', requireAuth, async (c) => {
-    const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Category management denied.' }, 403);
-    }
-
-    const payload = z.object({
-        name: z.string().min(1).max(100),
-        emoji: z.string().min(1).max(8).optional(),
-    }).parse(await c.req.json());
-
-    const id = nanoid();
-    const now = new Date();
-    await db.insert(organizationCategories).values({
-        id,
-        userId: context.ownerUserId,
-        organizationId: context.organizationId,
-        name: payload.name.trim(),
-        emoji: payload.emoji ?? '📦',
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-    });
-
-    return c.json({ ok: true, id, name: payload.name.trim(), emoji: payload.emoji ?? '📦' });
+organizationsRoute.post('/print-profiles/current', async (c) => {
+    return c.json({ ok: true, id: `prf_${nanoid(12)}` });
 });
 
-organizationsRoute.delete('/categories/:id', requireAuth, async (c) => {
+organizationsRoute.get('/invites', async (c) => {
     const db = c.get('db');
-    const context = getRouteContext(c);
-    if (!context) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!canManageOrganization(context)) {
-        return c.json({ ok: false, message: 'Category management denied.' }, 403);
-    }
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const id = c.req.param('id');
-    const deleted = await db.delete(organizationCategories).where(and(
-        eq(organizationCategories.id, id),
-        eq(organizationCategories.userId, context.ownerUserId),
-        eq(organizationCategories.organizationId, context.organizationId),
-    )).returning({ id: organizationCategories.id });
+    const business = await ensurePrimaryBusiness(db, authUser);
+    const invites = await db
+        .select()
+        .from(staffInvites)
+        .where(eq(staffInvites.businessId, business.id));
 
-    if (!deleted[0]) {
-        return c.json({ ok: false, message: 'Category not found.' }, 404);
-    }
-
-    return c.json({ ok: true });
+    return c.json({ ok: true, invites });
 });
 
 export default organizationsRoute;
-

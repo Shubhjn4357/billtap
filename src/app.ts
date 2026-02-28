@@ -6,23 +6,18 @@ import * as schema from './db/schema';
 import type { AppEnv } from './middleware/auth';
 import type { DrizzleClient } from './db/client';
 import authRoute from './routes/auth';
+import usersRoute from './routes/users';
 import itemsRoute from './routes/items';
 import partiesRoute from './routes/parties';
 import transactionsRoute from './routes/transactions';
-import adminRoute from './routes/admin';
-import staffRoute from './routes/staff';
 import subscriptionRoute from './routes/subscription';
 import reportingRoute from './routes/reporting';
-import analyticsRoute from './routes/analytics';
-import jobsRoute from './routes/jobs';
-import usersRoute from './routes/users';
 import accountingRoute from './routes/accounting';
-import operationsRoute from './routes/operations';
-import payrollRoute from './routes/payroll';
-import treasuryRoute from './routes/treasury';
-import financeOpsRoute from './routes/financeOps';
-import mediaRoute from './routes/media';
+import analyticsRoute from './routes/analytics';
+import adminRoute from './routes/admin';
 import organizationsRoute from './routes/organizations';
+import staffRoute from './routes/staff';
+import operationsRoute from './routes/operations';
 
 const app = new Hono<AppEnv>();
 const apiRoutes = new Hono<AppEnv>();
@@ -49,8 +44,6 @@ app.use('*', async (c, next) => {
         allowHeaders: [
             'Content-Type',
             'Authorization',
-            'X-Cron-Secret',
-            'X-Webhook-Secret',
             'X-Organization-Id',
             'x-organization-id',
             'X-Requested-With',
@@ -62,7 +55,6 @@ app.use('*', async (c, next) => {
 app.get('/', (c) => c.json({ ok: true, service: 'vahi-api', now: new Date().toISOString() }));
 app.get('/health', (c) => c.json({ ok: true, service: 'vahi-api', now: new Date().toISOString() }));
 
-// Database Middleware for all API business routes.
 apiRoutes.use(async (c, next) => {
     if (c.req.path === '/' || c.req.path === '/api' || c.req.path === '/api/') {
         await next();
@@ -77,26 +69,21 @@ apiRoutes.use(async (c, next) => {
     await next();
 });
 
-// Mount routes on both `/` and `/api` so clients using either base path work.
 apiRoutes.get('/health', (c) => c.json({ ok: true, service: 'vahi-api', now: new Date().toISOString() }));
 apiRoutes.route('/auth', authRoute);
+apiRoutes.route('/users', usersRoute);
+apiRoutes.route('/organizations', organizationsRoute);
 apiRoutes.route('/items', itemsRoute);
 apiRoutes.route('/parties', partiesRoute);
-apiRoutes.route('/transactions', transactionsRoute); // formerly bills
-apiRoutes.route('/staff', staffRoute);
+apiRoutes.route('/transactions', transactionsRoute);
 apiRoutes.route('/subscription', subscriptionRoute);
 apiRoutes.route('/reporting', reportingRoute);
-apiRoutes.route('/analytics', analyticsRoute);
-apiRoutes.route('/jobs', jobsRoute);
-apiRoutes.route('/users', usersRoute);
-apiRoutes.route('/admin', adminRoute);
 apiRoutes.route('/accounting', accountingRoute);
+apiRoutes.route('/analytics', analyticsRoute);
+apiRoutes.route('/staff', staffRoute);
 apiRoutes.route('/operations', operationsRoute);
-apiRoutes.route('/payroll', payrollRoute);
-apiRoutes.route('/treasury', treasuryRoute);
-apiRoutes.route('/finance', financeOpsRoute);
-apiRoutes.route('/media', mediaRoute);
-apiRoutes.route('/organizations', organizationsRoute);
+apiRoutes.route('/admin', adminRoute);
+
 app.route('/api', apiRoutes);
 app.route('/', apiRoutes);
 

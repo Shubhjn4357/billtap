@@ -14,15 +14,7 @@ app.route('/api', apiApp);
 
 export default {
     fetch: app.fetch,
-    scheduled: async (_event: ScheduledEvent, env: AppEnv['Bindings'], ctx: ExecutionContext) => {
-        const url = 'http://internal/api/jobs/run-all';
-        const req = new Request(url, {
-            method: 'POST',
-            headers: {
-                'X-Cron-Secret': env.CRON_SECRET || '',
-                Authorization: `Bearer ${env.CRON_SECRET || ''}`,
-            },
-        });
-        await app.fetch(req, env, ctx);
+    scheduled: async (_event: ScheduledEvent, _env: AppEnv['Bindings'], _ctx: ExecutionContext) => {
+        // Reserved for future scheduled jobs.
     },
 };

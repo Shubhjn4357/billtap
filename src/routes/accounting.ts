@@ -1,255 +1,238 @@
 import { Hono } from 'hono';
-import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
-import { SYSTEM_ACCOUNT_DEFINITIONS, ensureSystemAccounts } from '../accounting/systemAccounts';
-import { withTransaction } from '../db/transaction';
 import {
     accounts,
+    invoices,
+    invoiceItems,
     inventoryMovements,
     items,
-    journalEntries,
-    journalLines,
-    transactions,
+    voucherLines,
+    vouchers,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
 import {
-    createApprovalRequest,
-    ensurePeriodUnlockedForDate,
-    getBusinessControls,
-    hasModulePermission,
-    shouldRequireApproval,
-    writeAuditLog,
-} from '../operations/controls';
-import { createJournalEntryInTx } from '../operations/executors';
+    GST_RATE_SLABS,
+    assertFeatureFlag,
+    assertModuleEnabled,
+    assertSubscriptionWriteAllowed,
+} from '../services/subscriptionPolicy';
 
 const accountingRoute = new Hono<AppEnv>();
 
-const dateParam = z
-    .string()
-    .optional()
-    .transform((value) => {
-        if (!value) return undefined;
-        const parsed = new Date(value);
-        if (Number.isNaN(parsed.getTime())) return undefined;
-        return parsed;
-    });
+const accountSchema = z.object({
+    code: z.string().trim().min(1),
+    name: z.string().trim().min(1),
+    type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
+    parentId: z.string().optional().nullable(),
+});
 
-const roundAmount = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+const journalLineSchema = z.object({
+    accountId: z.string().min(1),
+    debit: z.number().nonnegative().optional().default(0),
+    credit: z.number().nonnegative().optional().default(0),
+});
 
-const getAgeBucket = (ageDays: number): '0-30' | '31-60' | '61-90' | '90+' => {
-    if (ageDays <= 30) return '0-30';
-    if (ageDays <= 60) return '31-60';
-    if (ageDays <= 90) return '61-90';
-    return '90+';
+const journalSchema = z.object({
+    date: z.coerce.date().optional(),
+    narration: z.string().trim().optional(),
+    lines: z.array(journalLineSchema).min(2),
+});
+
+const DEFAULT_SYSTEM_ACCOUNTS = [
+    { code: '1000', name: 'Cash in Hand', type: 'ASSET' as const },
+    { code: '1010', name: 'Bank Account', type: 'ASSET' as const },
+    { code: '1100', name: 'Accounts Receivable', type: 'ASSET' as const },
+    { code: '2000', name: 'Accounts Payable', type: 'LIABILITY' as const },
+    { code: '3000', name: 'Owner Equity', type: 'EQUITY' as const },
+    { code: '4000', name: 'Sales', type: 'INCOME' as const },
+    { code: '5000', name: 'Purchases', type: 'EXPENSE' as const },
+    { code: '5100', name: 'Direct Expense', type: 'EXPENSE' as const },
+    { code: '5200', name: 'Indirect Expense', type: 'EXPENSE' as const },
+];
+
+const resolveBusiness = async (c: Parameters<typeof requireAuth>[0]) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return null;
+
+    return getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
 };
 
-accountingRoute.get('/accounts', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    const authUser = c.get('authUser');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!hasModulePermission(authUser, 'accounting', 'view')) {
-        return c.json({ ok: false, message: 'Accounting access denied.' }, 403);
-    }
+accountingRoute.use('/*', requireAuth);
 
+accountingRoute.get('/accounts', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertModuleEnabled(business, 'accounting');
     const type = c.req.query('type');
-    const db = c.get('db');
 
-    const conditions = [eq(accounts.userId, effectiveUserId)];
-    if (type) conditions.push(eq(accounts.type, type as any));
-
-    const data = await db
-        .select()
-        .from(accounts)
-        .where(and(...conditions))
-        .orderBy(asc(accounts.code), asc(accounts.name));
-
-    return c.json({ ok: true, accounts: data });
-});
-
-accountingRoute.post('/accounts', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    const authUser = c.get('authUser');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!hasModulePermission(authUser, 'accounting', 'create')) {
-        return c.json({ ok: false, message: 'Accounting create access denied.' }, 403);
-    }
-
-    const body = await c.req.json();
-    const payload = z.object({
-
-        code: z.string().min(2).max(20),
-        name: z.string().min(2).max(120),
-        type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
-        parentId: z.string().optional(),
-        isActive: z.boolean().optional(),
-    }).parse(body);
-
-    const id = nanoid();
-    const now = new Date();
-    const db = c.get('db');
-    await db.insert(accounts).values({
-        id,
-        userId: effectiveUserId,
-
-        code: payload.code.trim().toUpperCase(),
-        name: payload.name.trim(),
-        type: payload.type,
-        parentId: payload.parentId ?? null,
-        isSystem: false,
-        isActive: payload.isActive ?? true,
-        createdAt: now,
-        updatedAt: now,
-    });
-
-    return c.json({ ok: true, id });
-});
-
-accountingRoute.post('/accounts/seed-default', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    const authUser = c.get('authUser');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-    if (!hasModulePermission(authUser, 'accounting', 'create')) {
-        return c.json({ ok: false, message: 'Accounting create access denied.' }, 403);
-    }
-
-    const db = c.get('db');
-    const map = await withTransaction(db, async (tx) => ensureSystemAccounts(tx, effectiveUserId, new Date()));
+    const rows = type
+        ? await db.select().from(accounts)
+            .where(and(eq(accounts.businessId, business.id), eq(accounts.type, type as typeof accounts.$inferSelect['type'])))
+            .orderBy(asc(accounts.code))
+        : await db.select().from(accounts)
+            .where(eq(accounts.businessId, business.id))
+            .orderBy(asc(accounts.code));
 
     return c.json({
         ok: true,
-        seededCount: SYSTEM_ACCOUNT_DEFINITIONS.length,
-        availableSystemAccounts: map.size,
+        accounts: rows.map((entry) => ({
+            id: entry.id,
+            code: entry.code,
+            name: entry.name,
+            type: entry.type,
+            parentId: entry.parentAccountId,
+            isDefault: entry.isDefault,
+            isActive: entry.isActive,
+            isSystem: entry.isSystem,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+            balance: 0,
+        })),
     });
 });
 
-accountingRoute.post('/journals', requireAuth, async (c) => {
+accountingRoute.post('/accounts', async (c) => {
     try {
-        const effectiveUserId = c.get('effectiveUserId');
-        const authUser = c.get('authUser');
-        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-        const canCreateAccounting = hasModulePermission(authUser, 'accounting', 'create');
-        if (!canCreateAccounting && authUser.role !== 'staff') {
-            return c.json({ ok: false, message: 'Accounting create access denied.' }, 403);
-        }
-
-        const body = await c.req.json();
-        const payload = z.object({
-
-            costCenter: z.string().optional(),
-            projectCode: z.string().optional(),
-            entryDate: z.coerce.date().optional(),
-            batchNumber: z.string().optional(),
-            referenceType: z.string().optional(),
-            referenceId: z.string().optional(),
-            narration: z.string().optional(),
-            currency: z.string().optional(),
-            lines: z.array(z.object({
-                accountId: z.string().min(1),
-                partyId: z.string().optional(),
-                debit: z.number().nonnegative().default(0),
-                credit: z.number().nonnegative().default(0),
-                hsn: z.string().optional(),
-                gstRate: z.number().nonnegative().optional(),
-                taxType: z.enum(['CGST', 'SGST', 'IGST', 'CESS']).optional(),
-            })).min(2),
-        }).parse(body);
-
         const db = c.get('db');
-        const controls = await getBusinessControls(db, effectiveUserId);
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        if (shouldRequireApproval(authUser, controls, 'JOURNAL_ENTRY')) {
-            const requestId = await createApprovalRequest(db, {
-                userId: effectiveUserId,
-                module: 'accounting',
-                requestType: 'JOURNAL_ENTRY',
-                requestedBy: authUser.uid,
-                requestedByRole: authUser.role,
-                body: JSON.parse(JSON.stringify(payload)) as Record<string, unknown>,
-                reason: payload.narration,
-            });
-            if (requestId) {
-                await writeAuditLog(db, {
-                    userId: effectiveUserId,
-                    actorUid: authUser.uid,
-                    actorRole: authUser.role,
-                    module: 'accounting',
-                    action: 'approval.requested',
-                    entityType: 'approval_request',
-                    entityId: requestId,
-                    after: {
-                        requestType: 'JOURNAL_ENTRY',
-                        status: 'pending',
-                    },
-                });
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounting');
+    const payload = accountSchema.parse(await c.req.json());
 
-                return c.json({ ok: true, approvalRequired: true, requestId, status: 'pending' });
-            }
-        }
-
-        const effectiveDate = payload.entryDate ?? new Date();
-        if (controls.periodLockEnabled) {
-            await ensurePeriodUnlockedForDate(db, effectiveUserId, effectiveDate);
-        }
-
-        const entryId = await withTransaction(db, async (tx) => {
-            return await createJournalEntryInTx(tx, effectiveUserId, payload, new Date());
+        const now = new Date();
+        const id = `acc_${nanoid(18)}`;
+        await db.insert(accounts).values({
+            id,
+            businessId: business.id,
+            code: payload.code,
+            name: payload.name,
+            type: payload.type,
+            parentAccountId: payload.parentId ?? null,
+            isDefault: false,
+            isSystem: false,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now,
         });
 
-        await writeAuditLog(db, {
-            userId: effectiveUserId,
-            actorUid: authUser.uid,
-            actorRole: authUser.role,
-            module: 'accounting',
-            action: 'journal.created',
-            entityType: 'journal_entry',
-            entityId: entryId,
-            after: {
-                referenceType: payload.referenceType ?? null,
-                lineCount: payload.lines.length,
-            },
-        });
-
-        return c.json({ ok: true, entryId });
-    } catch (error: unknown) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create journal entry.' }, 400);
+        return c.json({ ok: true, id });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create account.' }, 400);
     }
 });
 
-accountingRoute.get('/trial-balance', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const start = dateParam.parse(c.req.query('start'));
-    const end = dateParam.parse(c.req.query('end'));
+accountingRoute.post('/accounts/seed-default', async (c) => {
     const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const accountRows = await db
-        .select()
-        .from(accounts)
-        .where(eq(accounts.userId, effectiveUserId))
-        .orderBy(asc(accounts.code));
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounting');
 
-    const entryConditions = [eq(journalEntries.userId, effectiveUserId)];
-    if (start) entryConditions.push(gte(journalEntries.entryDate, start));
-    if (end) entryConditions.push(lte(journalEntries.entryDate, end));
+    const existing = await db.select().from(accounts).where(eq(accounts.businessId, business.id)).limit(1);
+    if (existing[0]) {
+        return c.json({ ok: true, message: 'Accounts already initialized.' });
+    }
 
-    const entries = await db
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(and(...entryConditions));
-    const entryIds = entries.map((entry) => entry.id);
+    const now = new Date();
+    await db.insert(accounts).values(DEFAULT_SYSTEM_ACCOUNTS.map((entry, index) => ({
+        id: `acc_${nanoid(16)}`,
+        businessId: business.id,
+        code: entry.code,
+        name: entry.name,
+        type: entry.type,
+        parentAccountId: null,
+        isDefault: true,
+        isSystem: true,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+    })));
 
-    const lineRows = entryIds.length === 0
+    return c.json({ ok: true });
+});
+
+accountingRoute.post('/journals', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'accounting');
+        const payload = journalSchema.parse(await c.req.json());
+
+        const debitTotal = payload.lines.reduce((sum, line) => sum + Number(line.debit ?? 0), 0);
+        const creditTotal = payload.lines.reduce((sum, line) => sum + Number(line.credit ?? 0), 0);
+
+        if (Math.abs(debitTotal - creditTotal) > 0.0001) {
+            return c.json({ ok: false, message: 'Double-entry mismatch: debit and credit totals must be equal.' }, 400);
+        }
+
+        const now = new Date();
+        const voucherId = `vch_${nanoid(18)}`;
+        await db.insert(vouchers).values({
+            id: voucherId,
+            businessId: business.id,
+            voucherType: 'JOURNAL',
+            date: payload.date ?? now,
+            number: `JRN-${Date.now()}`,
+            partyId: null,
+            totalAmount: debitTotal,
+            narration: payload.narration ?? null,
+            status: 'POSTED',
+            createdByUserId: authUser.id,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await db.insert(voucherLines).values(payload.lines.map((line) => ({
+            id: `vln_${nanoid(16)}`,
+            voucherId,
+            accountId: line.accountId,
+            debit: Number(line.debit ?? 0),
+            credit: Number(line.credit ?? 0),
+            createdAt: now,
+        })));
+
+        return c.json({ ok: true, id: voucherId });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to post journal.' }, 400);
+    }
+});
+
+accountingRoute.get('/trial-balance', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
+    assertModuleEnabled(business, 'accounting');
+
+    const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
+    const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
+    const voucherIds = voucherRows.map((entry) => entry.id);
+    const lineRows = voucherIds.length === 0
         ? []
-        : await db
-            .select({
-                accountId: journalLines.accountId,
-                debit: journalLines.debit,
-                credit: journalLines.credit,
-            })
-            .from(journalLines)
-            .where(and(eq(journalLines.userId, effectiveUserId), inArray(journalLines.entryId, entryIds)));
+        : await db.select().from(voucherLines).where(inArray(voucherLines.voucherId, voucherIds));
 
     const totalsByAccount = new Map<string, { debit: number; credit: number }>();
     for (const line of lineRows) {
@@ -261,545 +244,315 @@ accountingRoute.get('/trial-balance', requireAuth, async (c) => {
 
     const rows = accountRows.map((account) => {
         const totals = totalsByAccount.get(account.id) ?? { debit: 0, credit: 0 };
-        const balance = totals.debit - totals.credit;
         return {
             accountId: account.id,
-            code: account.code,
-            name: account.name,
-            type: account.type,
-            debit: totals.debit,
-            credit: totals.credit,
-            balance,
+            accountName: account.name,
+            accountType: account.type,
+            debitTotal: totals.debit,
+            creditTotal: totals.credit,
         };
     });
 
-    const summary = rows.reduce((acc, row) => {
-        acc.totalDebit += row.debit;
-        acc.totalCredit += row.credit;
-        return acc;
-    }, { totalDebit: 0, totalCredit: 0 });
+    const debitTotal = rows.reduce((sum, row) => sum + row.debitTotal, 0);
+    const creditTotal = rows.reduce((sum, row) => sum + row.creditTotal, 0);
 
     return c.json({
         ok: true,
-        period: { start, end },
         rows,
-        summary: {
-            ...summary,
-            isBalanced: Math.abs(summary.totalDebit - summary.totalCredit) < 0.001,
+        totals: {
+            debit: debitTotal,
+            credit: creditTotal,
+            isBalanced: Math.abs(debitTotal - creditTotal) < 0.0001,
         },
     });
 });
 
-accountingRoute.get('/gst/summary', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const start = dateParam.parse(c.req.query('start'));
-    const end = dateParam.parse(c.req.query('end'));
+accountingRoute.get('/gst/summary', async (c) => {
     const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const conditions = [eq(transactions.userId, effectiveUserId)];
-    if (start) conditions.push(gte(transactions.billDate, start));
-    if (end) conditions.push(lte(transactions.billDate, end));
-
-    const txnRows = await db
-        .select()
-        .from(transactions)
-        .where(and(...conditions));
-
-    const itemRows = await db
-        .select({ id: items.id, hsn: items.hsn })
-        .from(items)
-        .where(eq(items.userId, effectiveUserId));
-    const hsnByItem = new Map(itemRows.map((item) => [item.id, item.hsn ?? 'UNSPECIFIED']));
-
-    const byHsn = new Map<string, { taxableValue: number; gstAmount: number; qty: number }>();
-    let outputTax = 0;
-    let inputTax = 0;
-    let taxableTurnover = 0;
-
-    for (const tx of txnRows) {
-        for (const line of tx.items) {
-            const taxable = Number(line.quantity) * Number(line.price);
-            const gstAmount = taxable * (Number(line.tax ?? 0) / 100);
-            const hsn = hsnByItem.get(line.id) ?? 'UNSPECIFIED';
-            const isReturn = tx.type === 'RETURN_INWARD' || tx.type === 'RETURN_OUTWARD';
-            const signedTaxable = isReturn ? -taxable : taxable;
-            const signedGst = isReturn ? -gstAmount : gstAmount;
-            const signedQty = isReturn ? -Number(line.quantity) : Number(line.quantity);
-
-            const bucket = byHsn.get(hsn) ?? { taxableValue: 0, gstAmount: 0, qty: 0 };
-            bucket.taxableValue += signedTaxable;
-            bucket.gstAmount += signedGst;
-            bucket.qty += signedQty;
-            byHsn.set(hsn, bucket);
-
-            taxableTurnover += signedTaxable;
-            if (tx.type === 'SALE') outputTax += gstAmount;
-            if (tx.type === 'RETURN_INWARD') outputTax -= gstAmount;
-            if (tx.type === 'PURCHASE') inputTax += gstAmount;
-            if (tx.type === 'RETURN_OUTWARD') inputTax -= gstAmount;
-        }
-    }
-
-    return c.json({
-        ok: true,
-        period: { start, end },
-        taxableTurnover,
-        outputTax,
-        inputTax,
-        netGstPayable: outputTax - inputTax,
-        byHsn: [...byHsn.entries()].map(([hsn, value]) => ({
-            hsn,
-            taxableValue: value.taxableValue,
-            gstAmount: value.gstAmount,
-            quantity: value.qty,
-        })).sort((a, b) => b.taxableValue - a.taxableValue),
-    });
-});
-
-accountingRoute.get('/profit-loss', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const start = dateParam.parse(c.req.query('start'));
-    const end = dateParam.parse(c.req.query('end'));
-    const db = c.get('db');
-
-    const accountRows = await db
-        .select({
-            id: accounts.id,
-            code: accounts.code,
-            name: accounts.name,
-            type: accounts.type,
-        })
-        .from(accounts)
-        .where(
-            and(
-                eq(accounts.userId, effectiveUserId),
-                inArray(accounts.type, ['INCOME', 'EXPENSE'])
-            )
-        )
-        .orderBy(asc(accounts.code));
-
-    const entryConditions = [eq(journalEntries.userId, effectiveUserId)];
-    if (start) entryConditions.push(gte(journalEntries.entryDate, start));
-    if (end) entryConditions.push(lte(journalEntries.entryDate, end));
-
-    const entryRows = await db
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(and(...entryConditions));
-    const entryIds = entryRows.map((entry) => entry.id);
-    const accountIds = accountRows.map((account) => account.id);
-
-    const lineRows = entryIds.length === 0 || accountIds.length === 0
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'GST_REPORTS');
+    assertModuleEnabled(business, 'accounting');
+    const invoiceRows = await db.select({ id: invoices.id }).from(invoices).where(eq(invoices.businessId, business.id));
+    const invoiceIds = invoiceRows.map((entry) => entry.id);
+    const lines = invoiceIds.length === 0
         ? []
-        : await db
-            .select({
-                accountId: journalLines.accountId,
-                debit: journalLines.debit,
-                credit: journalLines.credit,
-            })
-            .from(journalLines)
-            .where(
-                and(
-                    eq(journalLines.userId, effectiveUserId),
-                    inArray(journalLines.entryId, entryIds),
-                    inArray(journalLines.accountId, accountIds)
-                )
-            );
+        : await db.select().from(invoiceItems)
+            .where(inArray(invoiceItems.invoiceId, invoiceIds))
+            .orderBy(asc(invoiceItems.createdAt));
 
-    const totalsByAccount = new Map<string, { debit: number; credit: number }>();
-    for (const line of lineRows) {
-        const totals = totalsByAccount.get(line.accountId) ?? { debit: 0, credit: 0 };
-        totals.debit += Number(line.debit ?? 0);
-        totals.credit += Number(line.credit ?? 0);
-        totalsByAccount.set(line.accountId, totals);
+    const summary = new Map<number, {
+        gstRate: number;
+        taxableTurnover: number;
+        cgstAmount: number;
+        sgstAmount: number;
+        igstAmount: number;
+        totalTax: number;
+    }>();
+
+    for (const line of lines) {
+        const rate = Number((line.cgstRate ?? 0) + (line.sgstRate ?? 0) + (line.igstRate ?? 0));
+        const row = summary.get(rate) ?? {
+            gstRate: rate,
+            taxableTurnover: 0,
+            cgstAmount: 0,
+            sgstAmount: 0,
+            igstAmount: 0,
+            totalTax: 0,
+        };
+
+        row.taxableTurnover += Number(line.taxableValue ?? 0);
+        row.cgstAmount += Number(line.cgstAmount ?? 0);
+        row.sgstAmount += Number(line.sgstAmount ?? 0);
+        row.igstAmount += Number(line.igstAmount ?? 0);
+        row.totalTax += Number(line.cgstAmount ?? 0) + Number(line.sgstAmount ?? 0) + Number(line.igstAmount ?? 0) + Number(line.cessAmount ?? 0);
+        summary.set(rate, row);
     }
 
-    const incomeRows: Array<{ accountId: string; code: string; name: string; debit: number; credit: number; net: number }> = [];
-    const expenseRows: Array<{ accountId: string; code: string; name: string; debit: number; credit: number; net: number }> = [];
-
-    for (const account of accountRows) {
-        const totals = totalsByAccount.get(account.id) ?? { debit: 0, credit: 0 };
-        if (account.type === 'INCOME') {
-            incomeRows.push({
-                accountId: account.id,
-                code: account.code,
-                name: account.name,
-                debit: roundAmount(totals.debit),
-                credit: roundAmount(totals.credit),
-                net: roundAmount(totals.credit - totals.debit),
+    for (const slab of GST_RATE_SLABS) {
+        if (!summary.has(slab)) {
+            summary.set(slab, {
+                gstRate: slab,
+                taxableTurnover: 0,
+                cgstAmount: 0,
+                sgstAmount: 0,
+                igstAmount: 0,
+                totalTax: 0,
             });
-            continue;
         }
-
-        expenseRows.push({
-            accountId: account.id,
-            code: account.code,
-            name: account.name,
-            debit: roundAmount(totals.debit),
-            credit: roundAmount(totals.credit),
-            net: roundAmount(totals.debit - totals.credit),
-        });
     }
 
-    const totalIncome = roundAmount(incomeRows.reduce((sum, row) => sum + row.net, 0));
-    const totalExpenses = roundAmount(expenseRows.reduce((sum, row) => sum + row.net, 0));
-    const netProfit = roundAmount(totalIncome - totalExpenses);
-
-    return c.json({
-        ok: true,
-        period: { start, end },
-        income: incomeRows,
-        expenses: expenseRows,
-        totalIncome,
-        totalExpenses,
-        netProfit,
-    });
+    return c.json({ ok: true, rows: [...summary.values()].sort((a, b) => a.gstRate - b.gstRate) });
 });
 
-accountingRoute.get('/balance-sheet', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const asOf = dateParam.parse(c.req.query('asOf')) ?? new Date();
+accountingRoute.get('/profit-loss', async (c) => {
     const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const accountRows = await db
-        .select({
-            id: accounts.id,
-            code: accounts.code,
-            name: accounts.name,
-            type: accounts.type,
-        })
-        .from(accounts)
-        .where(
-            and(
-                eq(accounts.userId, effectiveUserId),
-                inArray(accounts.type, ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'])
-            )
-        )
-        .orderBy(asc(accounts.code));
-
-    const entryRows = await db
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(and(eq(journalEntries.userId, effectiveUserId), lte(journalEntries.entryDate, asOf)));
-    const entryIds = entryRows.map((entry) => entry.id);
-    const accountIds = accountRows.map((account) => account.id);
-
-    const lineRows = entryIds.length === 0 || accountIds.length === 0
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
+    assertModuleEnabled(business, 'accounting');
+    const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
+    const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
+    const voucherIds = voucherRows.map((entry) => entry.id);
+    const lineRows = voucherIds.length === 0
         ? []
-        : await db
-            .select({
-                accountId: journalLines.accountId,
-                debit: journalLines.debit,
-                credit: journalLines.credit,
-            })
-            .from(journalLines)
-            .where(
-                and(
-                    eq(journalLines.userId, effectiveUserId),
-                    inArray(journalLines.entryId, entryIds),
-                    inArray(journalLines.accountId, accountIds)
-                )
-            );
+        : await db.select().from(voucherLines).where(inArray(voucherLines.voucherId, voucherIds));
 
     const totalsByAccount = new Map<string, { debit: number; credit: number }>();
     for (const line of lineRows) {
-        const totals = totalsByAccount.get(line.accountId) ?? { debit: 0, credit: 0 };
-        totals.debit += Number(line.debit ?? 0);
-        totals.credit += Number(line.credit ?? 0);
-        totalsByAccount.set(line.accountId, totals);
+        const current = totalsByAccount.get(line.accountId) ?? { debit: 0, credit: 0 };
+        current.debit += Number(line.debit ?? 0);
+        current.credit += Number(line.credit ?? 0);
+        totalsByAccount.set(line.accountId, current);
     }
 
-    const assets: Array<{ accountId: string; code: string; name: string; balance: number }> = [];
-    const liabilities: Array<{ accountId: string; code: string; name: string; balance: number }> = [];
-    const equity: Array<{ accountId: string; code: string; name: string; balance: number }> = [];
-
-    let totalIncome = 0;
-    let totalExpense = 0;
-
-    for (const account of accountRows) {
-        const totals = totalsByAccount.get(account.id) ?? { debit: 0, credit: 0 };
-
-        if (account.type === 'INCOME') {
-            totalIncome += totals.credit - totals.debit;
-            continue;
-        }
-        if (account.type === 'EXPENSE') {
-            totalExpense += totals.debit - totals.credit;
-            continue;
-        }
-
-        const balance = account.type === 'ASSET'
-            ? totals.debit - totals.credit
-            : totals.credit - totals.debit;
-        const roundedBalance = roundAmount(balance);
-
-        if (Math.abs(roundedBalance) < 0.001) continue;
-
-        const row = {
-            accountId: account.id,
-            code: account.code,
-            name: account.name,
-            balance: roundedBalance,
-        };
-
-        if (account.type === 'ASSET') assets.push(row);
-        if (account.type === 'LIABILITY') liabilities.push(row);
-        if (account.type === 'EQUITY') equity.push(row);
-    }
-
-    const retainedEarnings = roundAmount(totalIncome - totalExpense);
-    const totalAssets = roundAmount(assets.reduce((sum, row) => sum + row.balance, 0));
-    const totalLiabilities = roundAmount(liabilities.reduce((sum, row) => sum + row.balance, 0));
-    const totalEquityWithoutRetained = roundAmount(equity.reduce((sum, row) => sum + row.balance, 0));
-    const totalEquity = roundAmount(totalEquityWithoutRetained + retainedEarnings);
-    const equationDelta = roundAmount(totalAssets - (totalLiabilities + totalEquity));
-
-    return c.json({
-        ok: true,
-        asOf,
-        assets: { rows: assets, totalAssets },
-        liabilities: { rows: liabilities, totalLiabilities },
-        equity: {
-            rows: equity,
-            retainedEarnings,
-            totalEquity,
-        },
-        equationDelta,
-        isBalanced: Math.abs(equationDelta) < 0.01,
-    });
-});
-
-accountingRoute.get('/inventory/valuation', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const db = c.get('db');
-    const itemRows = await db
-        .select({
-            id: items.id,
-            name: items.name,
-            stock: items.stock,
-            purchasePrice: items.purchasePrice,
-            sellingPrice: items.price,
-            minimumStock: items.minimumStock,
-            unit: items.unit,
-            category: items.category,
-            isActive: items.isActive,
-        })
-        .from(items)
-        .where(eq(items.userId, effectiveUserId));
-
-    const rows = itemRows
-        .filter((item) => item.isActive !== false && Number(item.stock) > 0)
-        .map((item) => {
-            const stock = Number(item.stock ?? 0);
-            const purchasePrice = Number(item.purchasePrice ?? 0);
-            const sellingPrice = Number(item.sellingPrice ?? 0);
+    const incomeLines = accountRows
+        .filter((entry) => entry.type === 'INCOME')
+        .map((entry) => {
+            const totals = totalsByAccount.get(entry.id) ?? { debit: 0, credit: 0 };
             return {
-                itemId: item.id,
-                name: item.name,
-                category: item.category ?? null,
-                stock,
-                unit: item.unit ?? 'pcs',
-                minimumStock: Number(item.minimumStock ?? 0),
-                costValue: roundAmount(stock * purchasePrice),
-                retailValue: roundAmount(stock * sellingPrice),
+                accountId: entry.id,
+                accountName: entry.name,
+                amount: totals.credit - totals.debit,
             };
         });
 
-    const totalCostValue = roundAmount(rows.reduce((sum, row) => sum + row.costValue, 0));
-    const totalRetailValue = roundAmount(rows.reduce((sum, row) => sum + row.retailValue, 0));
-    const lowStockCount = rows.filter((row) => row.minimumStock > 0 && row.stock <= row.minimumStock).length;
-
-    return c.json({
-        ok: true,
-        totalCostValue,
-        totalRetailValue,
-        potentialGrossMargin: roundAmount(totalRetailValue - totalCostValue),
-        lowStockCount,
-        rows: rows.sort((a, b) => b.costValue - a.costValue),
-    });
-});
-
-accountingRoute.get('/inventory/reorder-suggestions', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const db = c.get('db');
-    const itemRows = await db
-        .select({
-            id: items.id,
-            name: items.name,
-            stock: items.stock,
-            minimumStock: items.minimumStock,
-            purchasePrice: items.purchasePrice,
-            unit: items.unit,
-            category: items.category,
-            isActive: items.isActive,
-        })
-        .from(items)
-        .where(eq(items.userId, effectiveUserId));
-
-    const suggestions = itemRows
-        .filter((item) => item.isActive !== false)
-        .map((item) => {
-            const stock = Number(item.stock ?? 0);
-            const minimumStock = Number(item.minimumStock ?? 0);
-            const shortage = Math.max(minimumStock - stock, 0);
-            const targetStock = minimumStock > 0 ? minimumStock * 2 : 0;
-            const suggestedOrderQty = minimumStock > 0 ? Math.max(targetStock - stock, shortage) : 0;
-            const purchasePrice = Number(item.purchasePrice ?? 0);
-
+    const expenseLines = accountRows
+        .filter((entry) => entry.type === 'EXPENSE')
+        .map((entry) => {
+            const totals = totalsByAccount.get(entry.id) ?? { debit: 0, credit: 0 };
             return {
-                itemId: item.id,
-                name: item.name,
-                category: item.category ?? null,
-                unit: item.unit ?? 'pcs',
-                stock,
-                minimumStock,
-                shortage,
-                suggestedOrderQty,
-                estimatedCost: roundAmount(suggestedOrderQty * purchasePrice),
+                accountId: entry.id,
+                accountName: entry.name,
+                amount: totals.debit - totals.credit,
             };
-        })
-        .filter((row) => row.shortage > 0)
-        .sort((a, b) => b.shortage - a.shortage);
+        });
+
+    const totalIncome = incomeLines.reduce((sum, row) => sum + row.amount, 0);
+    const totalExpense = expenseLines.reduce((sum, row) => sum + row.amount, 0);
 
     return c.json({
         ok: true,
-        count: suggestions.length,
-        suggestions,
+        income: incomeLines,
+        expenses: expenseLines,
+        totals: {
+            income: totalIncome,
+            expenses: totalExpense,
+            netProfit: totalIncome - totalExpense,
+        },
     });
 });
 
-accountingRoute.get('/inventory/stock-aging', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
+accountingRoute.get('/balance-sheet', async (c) => {
     const db = c.get('db');
-    const now = new Date();
-    const msPerDay = 1000 * 60 * 60 * 24;
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const itemRows = await db
-        .select({
-            id: items.id,
-            name: items.name,
-            stock: items.stock,
-            purchasePrice: items.purchasePrice,
-            unit: items.unit,
-            category: items.category,
-            isActive: items.isActive,
-            createdAt: items.createdAt,
-        })
-        .from(items)
-        .where(eq(items.userId, effectiveUserId));
-
-    const itemIds = itemRows.map((item) => item.id);
-
-    const movementRows = itemIds.length === 0
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
+    assertModuleEnabled(business, 'accounting');
+    const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
+    const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
+    const voucherIds = voucherRows.map((entry) => entry.id);
+    const lineRows = voucherIds.length === 0
         ? []
-        : await db
-            .select({
-                itemId: inventoryMovements.itemId,
-                createdAt: inventoryMovements.createdAt,
-            })
-            .from(inventoryMovements)
-            .where(and(
-                eq(inventoryMovements.userId, effectiveUserId),
-                inArray(inventoryMovements.itemId, itemIds)
-            ))
-            .orderBy(asc(inventoryMovements.createdAt));
+        : await db.select().from(voucherLines).where(inArray(voucherLines.voucherId, voucherIds));
 
-    const lastMovementByItemId = new Map<string, Date>();
+    const totalsByAccount = new Map<string, { debit: number; credit: number }>();
+    for (const line of lineRows) {
+        const current = totalsByAccount.get(line.accountId) ?? { debit: 0, credit: 0 };
+        current.debit += Number(line.debit ?? 0);
+        current.credit += Number(line.credit ?? 0);
+        totalsByAccount.set(line.accountId, current);
+    }
+
+    const makeSection = (types: Array<typeof accounts.$inferSelect['type']>) => accountRows
+        .filter((entry) => types.includes(entry.type))
+        .map((entry) => {
+            const totals = totalsByAccount.get(entry.id) ?? { debit: 0, credit: 0 };
+            const amount = entry.type === 'ASSET'
+                ? totals.debit - totals.credit
+                : totals.credit - totals.debit;
+            return {
+                accountId: entry.id,
+                accountName: entry.name,
+                accountType: entry.type,
+                amount,
+            };
+        });
+
+    const assets = makeSection(['ASSET']);
+    const liabilities = makeSection(['LIABILITY']);
+    const equity = makeSection(['EQUITY']);
+
+    return c.json({
+        ok: true,
+        assets,
+        liabilities,
+        equity,
+        totals: {
+            assets: assets.reduce((sum, row) => sum + row.amount, 0),
+            liabilities: liabilities.reduce((sum, row) => sum + row.amount, 0),
+            equity: equity.reduce((sum, row) => sum + row.amount, 0),
+        },
+    });
+});
+
+accountingRoute.get('/inventory/valuation', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertModuleEnabled(business, 'accounting');
+    const rows = await db.select().from(items).where(eq(items.businessId, business.id));
+
+    const entries = rows.map((entry) => ({
+        itemId: entry.id,
+        itemName: entry.name,
+        quantity: Number(entry.stock ?? 0),
+        unitCost: Number(entry.purchasePrice ?? 0),
+        value: Number(entry.stock ?? 0) * Number(entry.purchasePrice ?? 0),
+    }));
+
+    return c.json({
+        ok: true,
+        rows: entries,
+        totalValue: entries.reduce((sum, row) => sum + row.value, 0),
+    });
+});
+
+accountingRoute.get('/inventory/reorder-suggestions', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertModuleEnabled(business, 'accounting');
+    const rows = await db.select().from(items).where(eq(items.businessId, business.id));
+
+    const suggestions = rows
+        .filter((entry) => Number(entry.stock ?? 0) <= Number(entry.reorderLevel ?? 0))
+        .map((entry) => ({
+            itemId: entry.id,
+            itemName: entry.name,
+            stock: Number(entry.stock ?? 0),
+            reorderLevel: Number(entry.reorderLevel ?? 0),
+            suggestedOrderQty: Math.max(Number(entry.reorderLevel ?? 0) - Number(entry.stock ?? 0), 0),
+        }));
+
+    return c.json({ ok: true, suggestions });
+});
+
+accountingRoute.get('/inventory/stock-aging', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertModuleEnabled(business, 'accounting');
+    const rows = await db.select().from(items).where(eq(items.businessId, business.id));
+    const movementRows = await db
+        .select()
+        .from(inventoryMovements)
+        .where(eq(inventoryMovements.businessId, business.id))
+        .orderBy(desc(inventoryMovements.createdAt));
+
+    const latestMovementDate = new Map<string, Date>();
     for (const movement of movementRows) {
-        const current = lastMovementByItemId.get(movement.itemId);
-        if (!current || movement.createdAt > current) {
-            lastMovementByItemId.set(movement.itemId, movement.createdAt);
+        if (!latestMovementDate.has(movement.itemId)) {
+            latestMovementDate.set(movement.itemId, movement.createdAt ?? new Date());
         }
     }
 
-    const summary = new Map<'0-30' | '31-60' | '61-90' | '90+', { count: number; quantity: number; costValue: number }>([
-        ['0-30', { count: 0, quantity: 0, costValue: 0 }],
-        ['31-60', { count: 0, quantity: 0, costValue: 0 }],
-        ['61-90', { count: 0, quantity: 0, costValue: 0 }],
-        ['90+', { count: 0, quantity: 0, costValue: 0 }],
-    ]);
-
-    const rows = itemRows
-        .filter((item) => item.isActive !== false && Number(item.stock) > 0)
-        .map((item) => {
-            const stock = Number(item.stock ?? 0);
-            const lastMovementAt = lastMovementByItemId.get(item.id) ?? item.createdAt;
-            const ageDays = Math.max(0, Math.floor((now.getTime() - lastMovementAt.getTime()) / msPerDay));
-            const bucket = getAgeBucket(ageDays);
-            const costValue = roundAmount(stock * Number(item.purchasePrice ?? 0));
-
-            const bucketSummary = summary.get(bucket);
-            if (bucketSummary) {
-                bucketSummary.count += 1;
-                bucketSummary.quantity += stock;
-                bucketSummary.costValue += costValue;
-            }
-
-            return {
-                itemId: item.id,
-                name: item.name,
-                category: item.category ?? null,
-                stock,
-                unit: item.unit ?? 'pcs',
-                ageDays,
-                bucket,
-                lastMovementAt,
-                costValue,
-            };
-        })
-        .sort((a, b) => b.ageDays - a.ageDays);
-
-    return c.json({
-        ok: true,
-        asOf: now,
-        summary: [...summary.entries()].map(([bucket, value]) => ({
-            bucket,
-            itemCount: value.count,
-            quantity: roundAmount(value.quantity),
-            costValue: roundAmount(value.costValue),
-        })),
-        rows,
+    const now = Date.now();
+    const aging = rows.map((entry) => {
+        const referenceDate = latestMovementDate.get(entry.id) ?? entry.updatedAt ?? entry.createdAt ?? new Date();
+        const ageDays = Math.max(0, Math.floor((now - referenceDate.getTime()) / (24 * 60 * 60 * 1000)));
+        return {
+            itemId: entry.id,
+            itemName: entry.name,
+            ageDays,
+            stock: Number(entry.stock ?? 0),
+        };
     });
+
+    return c.json({ ok: true, rows: aging });
 });
 
-accountingRoute.get('/stock-ledger/:itemId', requireAuth, async (c) => {
-    const effectiveUserId = c.get('effectiveUserId');
-    if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const itemId = c.req.param('itemId');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') || 200), 1), 2000);
+accountingRoute.get('/stock-ledger/:itemId', async (c) => {
     const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const [item] = await db
-        .select({ id: items.id })
-        .from(items)
-        .where(and(
-            eq(items.id, itemId),
-            eq(items.userId, effectiveUserId)
-        ))
-        .limit(1);
-    if (!item) return c.json({ ok: false, message: 'Item not found.' }, 404);
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertModuleEnabled(business, 'accounting');
+    const itemId = c.req.param('itemId');
+    const limit = Math.min(Number(c.req.query('limit') ?? 100), 500);
 
     const rows = await db
         .select()
         .from(inventoryMovements)
-        .where(and(eq(inventoryMovements.userId, effectiveUserId), eq(inventoryMovements.itemId, itemId)))
-        .orderBy(asc(inventoryMovements.createdAt))
+        .where(and(eq(inventoryMovements.businessId, business.id), eq(inventoryMovements.itemId, itemId)))
+        .orderBy(desc(inventoryMovements.createdAt))
         .limit(limit);
 
-    return c.json({ ok: true, movements: rows });
+    return c.json({ ok: true, entries: rows });
 });
 
 export default accountingRoute;

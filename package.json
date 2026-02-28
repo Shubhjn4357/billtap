@@ -10,7 +10,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:push": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs push",
+    "db:repair": "node ./scripts/normalizeSubscriptionStatus.cjs",
+    "db:push": "npm run db:repair && node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs push",
     "db:studio": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {

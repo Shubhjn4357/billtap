@@ -1,16 +1,17 @@
 import * as jwt from 'jsonwebtoken';
 
 export interface SessionTokenPayload {
-    uid: string;
+    sub: string;
+    email?: string | null;
     role?: string | null;
 }
 
 const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 const getJwtSecret = (secretOverride?: string) => {
-    const secret = secretOverride ?? process.env.API_JWT_SECRET;
-    if (!secret || secret.length < 32 || secret === 'change-this-dev-secret-before-production') {
-        throw new Error('API_JWT_SECRET is not configured securely (minimum 32 characters required).');
+    const secret = secretOverride ?? process.env.JWT_SECRET ?? process.env.API_JWT_SECRET;
+    if (!secret || secret.length < 32) {
+        throw new Error('JWT secret is not configured securely (minimum 32 characters required).');
     }
     return secret;
 };
@@ -28,13 +29,14 @@ export const verifySessionToken = (token: string, secretOverride?: string): Sess
             return null;
         }
 
-        const uid = 'uid' in decoded ? String(decoded.uid) : '';
-        if (!uid) {
+        const sub = 'sub' in decoded ? String(decoded.sub) : '';
+        if (!sub) {
             return null;
         }
 
         return {
-            uid,
+            sub,
+            email: 'email' in decoded ? (decoded.email ? String(decoded.email) : null) : null,
             role: 'role' in decoded ? (decoded.role ? String(decoded.role) : null) : null,
         };
     } catch {

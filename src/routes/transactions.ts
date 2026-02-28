@@ -1,1510 +1,653 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
+import { and, asc, desc, eq, gte, inArray, lte, ne } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { and, desc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
-import { ensureSystemAccounts, type SystemAccountCode } from '../accounting/systemAccounts';
-import { withTransaction } from '../db/transaction';
-import { inventoryMovements, items, journalEntries, journalLines, parties, partyLedgerEntries, transactions } from '../db/schema';
+import { z } from 'zod';
+import {
+    invoiceItems,
+    invoices,
+    inventoryMovements,
+    items,
+    parties,
+} from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
+import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
 import {
-    hasFeatureEnabled,
-    hasPermission,
-    requireFeatureToggle,
-    requirePermission,
-} from '../middleware/permissions';
-import {
-    ensurePeriodUnlockedForDate,
-    getBusinessControls,
-    hasModulePermission,
-    writeAuditLog,
-} from '../operations/controls';
+    assertAllowedGstRate,
+    assertBillCreationAllowed,
+    assertFeatureFlag,
+    assertModuleEnabled,
+    assertSubscriptionWriteAllowed,
+    bumpMonthlyBillUsage,
+} from '../services/subscriptionPolicy';
 
 const transactionsRoute = new Hono<AppEnv>();
 
-const lineItemSchema = z.object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    quantity: z.number().positive(),
-    price: z.number().nonnegative(), // Unit Price
-    tax: z.number().nonnegative().default(0),
-    total: z.number().nonnegative(),
-});
-
-const transactionTypeValues = ['SALE', 'PURCHASE', 'RETURN_INWARD', 'RETURN_OUTWARD'] as const;
-type SupportedTransactionType = (typeof transactionTypeValues)[number];
-
-const isSalesFlow = (type: SupportedTransactionType): boolean =>
-    type === 'SALE' || type === 'RETURN_INWARD';
-
-const isPurchaseFlow = (type: SupportedTransactionType): boolean =>
-    type === 'PURCHASE' || type === 'RETURN_OUTWARD';
-
-const isStockOutflow = (type: SupportedTransactionType): boolean =>
-    type === 'SALE' || type === 'RETURN_OUTWARD';
-
-const getPartyLedgerDirection = (type: SupportedTransactionType): 'DEBIT' | 'CREDIT' =>
-    type === 'SALE' || type === 'RETURN_OUTWARD' ? 'DEBIT' : 'CREDIT';
-
-const getPartyLedgerDelta = (type: SupportedTransactionType, dueAmount: number): number =>
-    type === 'SALE' || type === 'RETURN_OUTWARD'
-        ? dueAmount
-        : -dueAmount;
-
-const getExpectedPartyType = (type: SupportedTransactionType): 'customer' | 'supplier' =>
-    isSalesFlow(type) ? 'customer' : 'supplier';
-
-const transactionSchema = z.object({
+const transactionItemSchema = z.object({
     id: z.string().optional(),
-    type: z.enum(transactionTypeValues),
-    organizationId: z.string().optional(),
-    branchId: z.string().optional(),
-    partyId: z.string().optional(),
-    partyName: z.string().optional(),
-    partyPhone: z.string().optional(),
-    billNumber: z.string().optional(),
-    billDate: z.coerce.date().optional(),
-    businessName: z.string().optional(),
-    businessAddress: z.string().optional(),
-    gstNumber: z.string().optional(),
-    items: z.array(lineItemSchema).min(1),
-    totalAmount: z.number().nonnegative(),
-    discountAmount: z.number().nonnegative().default(0),
-    taxAmount: z.number().nonnegative().default(0),
-    paidAmount: z.number().nonnegative().optional(),
-    paymentMode: z.enum(['CASH', 'CREDIT']).default('CASH'),
-    paymentStatus: z.enum(['PAID', 'PARTIAL', 'PENDING']).optional(),
-    billMode: z.enum(['GST', 'ESTIMATE']).default('GST'),
-    affectsGst: z.boolean().optional(),
-    dueDate: z.coerce.date().optional(),
-    reminderEnabled: z.boolean().default(false),
-    reminderFrequencyDays: z.number().int().positive().default(3),
-    nextReminderAt: z.coerce.date().optional(),
-    costCenter: z.string().optional(),
-    projectCode: z.string().optional(),
-    currency: z.string().default('INR'),
-    remark: z.string().optional(),
+    name: z.string().trim().min(1),
+    quantity: z.number().positive(),
+    price: z.number().nonnegative(),
+    tax: z.number().nonnegative().default(0),
+    total: z.number().nonnegative().optional(),
 });
 
-const roundAmount = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
-const normalizeBillNumber = (value: string | null | undefined): string | null => {
-    if (!value) return null;
-    const normalized = value.trim().toUpperCase().replace(/\s+/g, '');
-    return normalized.length > 0 ? normalized : null;
-};
-const toStatusFromAmounts = (totalAmount: number, paidAmount: number): 'PAID' | 'PARTIAL' | 'PENDING' => {
-    const roundedTotal = roundAmount(Math.max(totalAmount, 0));
-    const roundedPaid = roundAmount(Math.max(paidAmount, 0));
-    if (roundedPaid >= roundedTotal) return 'PAID';
-    if (roundedPaid <= 0) return 'PENDING';
-    return 'PARTIAL';
+const createTransactionSchema = z.object({
+    type: z.enum(['SALE', 'PURCHASE', 'RETURN_INWARD', 'RETURN_OUTWARD']).default('SALE'),
+    invoiceType: z.enum([
+        'TAX_INVOICE',
+        'BILL_OF_SUPPLY',
+        'ESTIMATE',
+        'PROFORMA',
+        'CREDIT_NOTE_DOC',
+        'DEBIT_NOTE_DOC',
+        'DELIVERY_CHALLAN',
+    ]).optional(),
+    partyId: z.string().optional(),
+    partyName: z.string().trim().optional(),
+    partyPhone: z.string().trim().optional(),
+    billNumber: z.string().trim().optional(),
+    billDate: z.coerce.date().optional(),
+    businessName: z.string().trim().optional(),
+    businessAddress: z.string().trim().optional(),
+    gstNumber: z.string().trim().optional(),
+    currency: z.string().trim().optional(),
+    totalAmount: z.number().nonnegative(),
+    discountAmount: z.number().nonnegative().optional(),
+    taxAmount: z.number().nonnegative().optional(),
+    paidAmount: z.number().nonnegative().optional(),
+    paymentMode: z.enum(['CASH', 'BANK', 'UPI', 'CARD', 'CREDIT']).optional(),
+    paymentStatus: z.enum(['PAID', 'PARTIAL', 'PENDING']).optional(),
+    billMode: z.enum(['GST', 'ESTIMATE']).optional(),
+    affectsGst: z.boolean().optional(),
+    placeOfSupply: z.string().trim().optional(),
+    reverseCharge: z.boolean().optional(),
+    eInvoiceIrn: z.string().trim().optional(),
+    eInvoiceStatus: z.string().trim().optional(),
+    eWayBillNumber: z.string().trim().optional(),
+    dueDate: z.coerce.date().optional().nullable(),
+    reminderEnabled: z.boolean().optional(),
+    reminderFrequencyDays: z.number().int().positive().optional(),
+    nextReminderAt: z.coerce.date().optional().nullable(),
+    remark: z.string().trim().optional(),
+    items: z.array(transactionItemSchema).min(1),
+});
+
+const patchPaymentSchema = z.object({
+    paidAmount: z.number().nonnegative().optional(),
+    paymentStatus: z.enum(['PAID', 'PARTIAL', 'PENDING']).optional(),
+    reminderEnabled: z.boolean().optional(),
+    reminderFrequencyDays: z.number().int().positive().optional(),
+    nextReminderAt: z.coerce.date().optional().nullable(),
+});
+
+const complianceActionSchema = z.object({
+    reason: z.string().trim().optional(),
+});
+
+const toCanonicalPaymentStatus = (status: 'PAID' | 'PARTIAL' | 'PENDING' | undefined) => {
+    if (status === 'PAID') return 'PAID';
+    if (status === 'PARTIAL') return 'PARTIALLY_PAID';
+    return 'UNPAID';
 };
 
-const resolveSettingBoolean = (value: unknown, fallback = false): boolean => {
-    if (typeof value === 'boolean') return value;
-    return fallback;
+const toLegacyPaymentStatus = (status: typeof invoices.$inferSelect['paymentStatus']) => {
+    if (status === 'PAID') return 'PAID';
+    if (status === 'PARTIALLY_PAID') return 'PARTIAL';
+    return 'PENDING';
 };
 
-const toStartOfDay = (date: Date): Date => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const resolveTypeDelta = (type: 'SALE' | 'PURCHASE' | 'RETURN_INWARD' | 'RETURN_OUTWARD') => {
+    if (type === 'SALE' || type === 'RETURN_OUTWARD') return -1;
+    return 1;
+};
 
-const getPartyRunningBalance = async (params: {
-    tx: any;
-    userId: string;
-    partyId: string;
-}): Promise<number> => {
-    const rows = await params.tx
-        .select({ runningBalance: partyLedgerEntries.runningBalance })
-        .from(partyLedgerEntries)
-        .where(and(
-            eq(partyLedgerEntries.userId, params.userId),
-            eq(partyLedgerEntries.partyId, params.partyId),
-        ))
-        .orderBy(desc(partyLedgerEntries.entryDate), desc(partyLedgerEntries.createdAt))
+const generateInvoiceNumber = () => {
+    const now = new Date();
+    const prefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return `INV-${prefix}-${nanoid(6).toUpperCase()}`;
+};
+
+const toInvoiceType = (
+    billMode: 'GST' | 'ESTIMATE' | undefined,
+    invoiceType?: 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'ESTIMATE' | 'PROFORMA' | 'CREDIT_NOTE_DOC' | 'DEBIT_NOTE_DOC' | 'DELIVERY_CHALLAN'
+) => {
+    if (invoiceType) return invoiceType;
+    if (billMode === 'ESTIMATE') return 'ESTIMATE';
+    return 'TAX_INVOICE';
+};
+
+transactionsRoute.use('/*', requireAuth);
+
+transactionsRoute.get('/bill-number/check', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const billNumber = (c.req.query('billNumber') ?? '').trim();
+    if (!billNumber) {
+        return c.json({ ok: true, exists: false });
+    }
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Business not found.' }, 404);
+    }
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'GST_INVOICES');
+    assertModuleEnabled(business, 'billing');
+
+    const rows = await db
+        .select({ id: invoices.id })
+        .from(invoices)
+        .where(and(eq(invoices.businessId, business.id), eq(invoices.invoiceNumber, billNumber)))
         .limit(1);
-    return Number(rows[0]?.runningBalance ?? 0);
-};
 
-type StockLine = {
-    id: string;
-    quantity: number;
-    price?: number;
-};
+    return c.json({ ok: true, exists: Boolean(rows[0]) });
+});
 
-const groupStockLines = (lines: StockLine[]): Map<string, number> => {
-    const grouped = new Map<string, number>();
-    for (const line of lines) {
-        if (!line.id) continue;
-        const qty = Number(line.quantity ?? 0);
-        if (!Number.isFinite(qty) || qty <= 0) continue;
-        grouped.set(line.id, (grouped.get(line.id) ?? 0) + qty);
-    }
-    return grouped;
-};
-
-const buildStockDeltaMap = (
-    transactionType: SupportedTransactionType,
-    lines: StockLine[],
-    multiplier = 1
-): Map<string, number> => {
-    const grouped = groupStockLines(lines);
-    const direction = isStockOutflow(transactionType) ? -1 : 1;
-    const output = new Map<string, number>();
-    for (const [itemId, quantity] of grouped.entries()) {
-        output.set(itemId, direction * quantity * multiplier);
-    }
-    return output;
-};
-
-const applyStockDeltasInTx = async (params: {
-    tx: any;
-    userId: string;
-    transactionId: string;
-    now: Date;
-    allowNegativeStock: boolean;
-    stockDeltas: Map<string, number>;
-    recordMovements: boolean;
-}) => {
-    for (const [itemId, delta] of params.stockDeltas.entries()) {
-        if (delta === 0) continue;
-
-        const quantity = Math.abs(delta);
-        const baseConditions = [
-            eq(items.id, itemId),
-            eq(items.userId, params.userId),
-        ];
-
-        const updateConditions = [...baseConditions];
-        if (delta < 0 && !params.allowNegativeStock) {
-            updateConditions.push(gte(items.stock, quantity));
-        }
-
-        const updatedRows = await params.tx
-            .update(items)
-            .set({
-                stock: sql`${items.stock} + ${delta}`,
-                updatedAt: params.now,
-            })
-            .where(and(...updateConditions))
-            .returning({ id: items.id, name: items.name, stock: items.stock });
-
-        if (!updatedRows[0]) {
-            const existingRows = await params.tx
-                .select({ id: items.id, name: items.name, stock: items.stock })
-                .from(items)
-                .where(and(...baseConditions))
-                .limit(1);
-
-            if (!existingRows[0]) {
-                throw new Error(`Item ${itemId} not found.`);
-            }
-
-            const itemName = existingRows[0].name ?? itemId;
-            const available = Number(existingRows[0].stock ?? 0);
-            throw new Error(`Insufficient stock for "${itemName}". Available: ${available}`);
-        }
-
-        if (params.recordMovements) {
-            await params.tx.insert(inventoryMovements).values({
-                id: nanoid(),
-                userId: params.userId,
-                itemId,
-                transactionId: params.transactionId,
-                movementType: delta > 0 ? 'IN' : 'OUT',
-                quantity,
-                balanceAfter: Number(updatedRows[0].stock ?? 0),
-                unitCost: null,
-                createdAt: params.now,
-            });
-        }
-    }
-};
-
-const deleteTransactionArtifactsInTx = async (params: {
-    tx: any;
-    userId: string;
-    transactionId: string;
-}) => {
-    await params.tx
-        .delete(inventoryMovements)
-        .where(and(
-            eq(inventoryMovements.userId, params.userId),
-            eq(inventoryMovements.transactionId, params.transactionId),
-        ));
-
-    const entryRows = await params.tx
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(and(
-            eq(journalEntries.userId, params.userId),
-            eq(journalEntries.referenceType, 'TRANSACTION'),
-            eq(journalEntries.referenceId, params.transactionId),
-        ));
-
-    const entryIds = entryRows.map((entry: { id: string }) => entry.id);
-    if (entryIds.length > 0) {
-        await params.tx
-            .delete(journalLines)
-            .where(and(
-                eq(journalLines.userId, params.userId),
-                inArray(journalLines.entryId, entryIds),
-            ));
-    }
-
-    await params.tx
-        .delete(journalEntries)
-        .where(and(
-            eq(journalEntries.userId, params.userId),
-            eq(journalEntries.referenceType, 'TRANSACTION'),
-            eq(journalEntries.referenceId, params.transactionId),
-        ));
-
-    await params.tx
-        .delete(partyLedgerEntries)
-        .where(and(
-            eq(partyLedgerEntries.userId, params.userId),
-            eq(partyLedgerEntries.sourceType, 'BILL'),
-            eq(partyLedgerEntries.sourceId, params.transactionId),
-        ));
-};
-
-interface AccountingPostInput {
-    userId: string;
-    transactionId: string;
-    transactionType: SupportedTransactionType;
-    transactionDate: Date;
-    branchId?: string | null;
-    costCenter?: string | null;
-    projectCode?: string | null;
-    currency: string;
-    totalAmount: number;
-    taxAmount: number;
-    paidAmount: number;
-    paymentMode: 'CASH' | 'CREDIT';
-    partyId?: string | null;
-    narration?: string | null;
-    itemLines: Array<{ id: string; quantity: number }>;
-    purchasePriceByItemId: Map<string, number>;
-    now: Date;
-}
-
-const postTransactionJournal = async (tx: any, input: AccountingPostInput) => {
-    const accountMap = await ensureSystemAccounts(tx, input.userId, input.now);
-    const getAccountId = (code: SystemAccountCode): string => {
-        const accountId = accountMap.get(code);
-        if (!accountId) {
-            throw new Error(`Missing required system account: ${code}`);
-        }
-        return accountId;
-    };
-
-    const totalAmount = roundAmount(Math.max(input.totalAmount, 0));
-    const taxAmount = roundAmount(Math.max(input.taxAmount, 0));
-    const taxableBase = roundAmount(Math.max(totalAmount - taxAmount, 0));
-    const paidAmount = roundAmount(Math.max(input.paidAmount, 0));
-    const receivableAmount = roundAmount(Math.max(totalAmount - paidAmount, 0));
-    const payableAmount = roundAmount(Math.max(totalAmount - paidAmount, 0));
-
-    const cashAccountId = getAccountId('1000');
-    const receivableAccountId = getAccountId('1200');
-    const payableAccountId = getAccountId('2000');
-    const salesAccountId = getAccountId('4000');
-    const inventoryAccountId = getAccountId('1300');
-    const cogsAccountId = getAccountId('5000');
-    const purchaseAccountId = getAccountId('5100');
-    const gstPayableAccountId = getAccountId('2100');
-
-    const lines: Array<{ accountId: string; debit: number; credit: number; partyId: string | null }> = [];
-    const pushLine = (accountId: string, debit: number, credit: number, partyId: string | null = null) => {
-        const roundedDebit = roundAmount(debit);
-        const roundedCredit = roundAmount(credit);
-        if (roundedDebit <= 0 && roundedCredit <= 0) return;
-        lines.push({ accountId, debit: roundedDebit, credit: roundedCredit, partyId });
-    };
-
-    const cogsValue = roundAmount(
-        input.itemLines.reduce((sum, line) => {
-            const purchasePrice = input.purchasePriceByItemId.get(line.id) ?? 0;
-            return sum + (purchasePrice * Number(line.quantity));
-        }, 0)
-    );
-
-    switch (input.transactionType) {
-        case 'SALE': {
-            if (paidAmount > 0) {
-                pushLine(cashAccountId, paidAmount, 0, input.partyId ?? null);
-            }
-            if (input.paymentMode === 'CREDIT' && receivableAmount > 0) {
-                pushLine(receivableAccountId, receivableAmount, 0, input.partyId ?? null);
-            }
-            if (input.paymentMode !== 'CREDIT' && receivableAmount > 0) {
-                pushLine(cashAccountId, receivableAmount, 0, input.partyId ?? null);
-            }
-            pushLine(salesAccountId, 0, taxableBase, null);
-            if (taxAmount > 0) {
-                pushLine(gstPayableAccountId, 0, taxAmount, null);
-            }
-            if (cogsValue > 0) {
-                pushLine(cogsAccountId, cogsValue, 0, null);
-                pushLine(inventoryAccountId, 0, cogsValue, null);
-            }
-            break;
-        }
-        case 'RETURN_INWARD': {
-            if (paidAmount > 0) {
-                pushLine(cashAccountId, 0, paidAmount, input.partyId ?? null);
-            }
-            if (input.paymentMode === 'CREDIT' && receivableAmount > 0) {
-                pushLine(receivableAccountId, 0, receivableAmount, input.partyId ?? null);
-            }
-            if (input.paymentMode !== 'CREDIT' && receivableAmount > 0) {
-                pushLine(cashAccountId, 0, receivableAmount, input.partyId ?? null);
-            }
-            pushLine(salesAccountId, taxableBase, 0, null);
-            if (taxAmount > 0) {
-                pushLine(gstPayableAccountId, taxAmount, 0, null);
-            }
-            if (cogsValue > 0) {
-                pushLine(inventoryAccountId, cogsValue, 0, null);
-                pushLine(cogsAccountId, 0, cogsValue, null);
-            }
-            break;
-        }
-        case 'PURCHASE': {
-            pushLine(purchaseAccountId, taxableBase, 0, null);
-            if (taxAmount > 0) {
-                pushLine(gstPayableAccountId, taxAmount, 0, null);
-            }
-            if (paidAmount > 0) {
-                pushLine(cashAccountId, 0, paidAmount, input.partyId ?? null);
-            }
-            if (input.paymentMode === 'CREDIT' && payableAmount > 0) {
-                pushLine(payableAccountId, 0, payableAmount, input.partyId ?? null);
-            }
-            if (input.paymentMode !== 'CREDIT' && payableAmount > 0) {
-                pushLine(cashAccountId, 0, payableAmount, input.partyId ?? null);
-            }
-            break;
-        }
-        case 'RETURN_OUTWARD': {
-            pushLine(purchaseAccountId, 0, taxableBase, null);
-            if (taxAmount > 0) {
-                pushLine(gstPayableAccountId, 0, taxAmount, null);
-            }
-            if (paidAmount > 0) {
-                pushLine(cashAccountId, paidAmount, 0, input.partyId ?? null);
-            }
-            if (input.paymentMode === 'CREDIT' && payableAmount > 0) {
-                pushLine(payableAccountId, payableAmount, 0, input.partyId ?? null);
-            }
-            if (input.paymentMode !== 'CREDIT' && payableAmount > 0) {
-                pushLine(cashAccountId, payableAmount, 0, input.partyId ?? null);
-            }
-            break;
-        }
-        default:
-            break;
-    }
-
-    if (lines.length < 2) return;
-
-    const totalDebit = roundAmount(lines.reduce((sum, line) => sum + line.debit, 0));
-    const totalCredit = roundAmount(lines.reduce((sum, line) => sum + line.credit, 0));
-    const delta = roundAmount(totalDebit - totalCredit);
-
-    if (Math.abs(delta) >= 0.01) {
-        const adjustableLine = lines.find((line) => line.accountId === cashAccountId)
-            ?? lines.find((line) => line.debit > 0 || line.credit > 0);
-        if (!adjustableLine) {
-            throw new Error('Unable to auto-balance accounting entry.');
-        }
-
-        if (delta > 0) {
-            adjustableLine.credit = roundAmount(adjustableLine.credit + delta);
-        } else {
-            adjustableLine.debit = roundAmount(adjustableLine.debit + Math.abs(delta));
-        }
-    }
-
-    const entryId = nanoid();
-    await tx.insert(journalEntries).values({
-        id: entryId,
-        userId: input.userId,
-        branchId: input.branchId ?? null,
-        costCenter: input.costCenter ?? null,
-        projectCode: input.projectCode ?? null,
-        entryDate: input.transactionDate,
-        batchNumber: null,
-        referenceType: 'TRANSACTION',
-        referenceId: input.transactionId,
-        narration: input.narration ?? `${input.transactionType} auto-posted from transaction.`,
-        currency: input.currency.toUpperCase(),
-        createdAt: input.now,
-    });
-
-    for (const line of lines) {
-        await tx.insert(journalLines).values({
-            id: nanoid(),
-            entryId,
-            userId: input.userId,
-            accountId: line.accountId,
-            partyId: line.partyId,
-            debit: line.debit,
-            credit: line.credit,
-            hsn: null,
-            gstRate: 0,
-            taxType: null,
-            createdAt: input.now,
-        });
-    }
-};
-
-// GET /transactions/bill-number/check - validate bill number availability inside organization scope
-transactionsRoute.get(
-    '/bill-number/check',
-    requireAuth,
-    requirePermission('canManageBilling'),
-    async (c) => {
-        try {
-            const effectiveUserId = c.get('effectiveUserId');
-            const authUser = c.get('authUser');
-            if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
-            if (!hasModulePermission(authUser, 'billing', 'create')) {
-                return c.json({ ok: false, message: 'Billing create access denied.' }, 403);
-            }
-
-            const db = c.get('db');
-            const query = z.object({
-                billNumber: z.string().min(1),
-            }).parse({
-                billNumber: c.req.query('billNumber') ?? '',
-            });
-
-            const billNumber = normalizeBillNumber(query.billNumber);
-            if (!billNumber) {
-                return c.json({ ok: false, message: 'billNumber is required.' }, 400);
-            }
-
-            const existing = await db
-                .select({ id: transactions.id })
-                .from(transactions)
-                .where(and(
-                    eq(transactions.userId, effectiveUserId),
-                    eq(transactions.billNumber, billNumber),
-                ))
-                .limit(1);
-
-            return c.json({
-                ok: true,
-                billNumber,
-                available: existing.length === 0,
-                existingTransactionId: existing[0]?.id ?? null,
-            });
-        } catch (error: unknown) {
-            return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to validate bill number.' }, 400);
-        }
-    }
-);
-
-// POST /transactions - Create a Purchase or Sale
-transactionsRoute.post(
-    '/',
-    requireAuth,
-    requirePermission('canManageBilling'),
-    requireFeatureToggle('bills_per_month'),
-    async (c) => {
+transactionsRoute.post('/', async (c) => {
     try {
-        const effectiveUserId = c.get('effectiveUserId');
-        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
-        const authUser = c.get('authUser');
         const db = c.get('db');
-        const body = await c.req.json();
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        if (!effectiveUserId || !authUser) return c.json({ ok: false, message: 'Unauthorized' }, 401);
-        if (!hasModulePermission(authUser, 'billing', 'create')) {
-            return c.json({ ok: false, message: 'Billing create access denied.' }, 403);
+        const business = await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'GST_INVOICES');
+        assertModuleEnabled(business, 'billing');
+        const payload = createTransactionSchema.parse(await c.req.json());
+        if (payload.type === 'PURCHASE' || payload.type === 'RETURN_INWARD') {
+            assertFeatureFlag(subscription, 'PURCHASE_MODULE');
         }
-
-        const payload = transactionSchema.parse(body);
-        const normalizedBillNumber = normalizeBillNumber(payload.billNumber);
-        if (!hasFeatureEnabled(c, 'billing')) {
-            return c.json({ ok: false, message: 'Billing module is disabled for your role.' }, 403);
-        }
-        if (isSalesFlow(payload.type) && !hasFeatureEnabled(c, 'billingSale')) {
-            return c.json({ ok: false, message: 'Sales billing is disabled by owner settings.' }, 403);
-        }
-        if (isPurchaseFlow(payload.type) && !hasFeatureEnabled(c, 'billingPurchase')) {
-            return c.json({ ok: false, message: 'Purchase entry is disabled by owner settings.' }, 403);
-        }
-        if (isSalesFlow(payload.type) && !hasPermission(c, 'canManageBilling')) {
-            return c.json({ ok: false, message: 'Sale billing is disabled for your role.' }, 403);
-        }
-        if (isPurchaseFlow(payload.type) && !hasPermission(c, 'canManageBilling')) {
-            return c.json({ ok: false, message: 'Purchase entry is disabled for your role.' }, 403);
-        }
-        const id = payload.id ?? nanoid();
+        await assertBillCreationAllowed(db, business.id, subscription, payload.billDate);
         const now = new Date();
-        const billDate = payload.billDate ?? now;
-        const allowBackDate = false;
-        const allowNegativeStock = false;
-        const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime();
-        if (isBackDate && !allowBackDate && !hasPermission(c, 'canManageBilling')) {
-            return c.json({ ok: false, message: 'Back-date entry is disabled for your role/store.' }, 403);
-        }
 
-        const billMode = payload.billMode;
-        const affectsGst = payload.affectsGst ?? billMode !== 'ESTIMATE';
-        const normalizedItems = payload.items.map((line) => ({
-            ...line,
-            tax: affectsGst ? line.tax : 0,
-        }));
-        const effectiveTaxAmount = affectsGst ? payload.taxAmount : 0;
-        const initialPaidAmount = roundAmount(
-            payload.paidAmount !== undefined
-                ? payload.paidAmount
-                : payload.paymentMode === 'CREDIT'
-                    ? 0
-                    : payload.totalAmount
-        );
-        const paymentStatus = payload.paymentStatus ?? toStatusFromAmounts(payload.totalAmount, initialPaidAmount);
-        const dueDate = payload.paymentMode === 'CREDIT'
-            ? (payload.dueDate ?? new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000))
-            : null;
-        const reminderEnabled = payload.paymentMode === 'CREDIT' && payload.reminderEnabled;
-        const reminderFrequencyDays = payload.reminderFrequencyDays;
-        const nextReminderAt = reminderEnabled
-            ? (payload.nextReminderAt ?? dueDate)
-            : null;
-        const controls = await getBusinessControls(db, effectiveUserId);
-        if (controls.periodLockEnabled) {
-            await ensurePeriodUnlockedForDate(db, effectiveUserId, billDate);
-        }
-
-        // Group items for batch updates
-        const grouped = new Map<string, number>();
-        for (const line of payload.items) {
-            grouped.set(line.id, (grouped.get(line.id) ?? 0) + line.quantity);
-        }
-
-        // Deep-Level Sync Duplicate Protection
-        // If the client retries syncing an offline transaction, we must not run side-effects twice.
-        if (payload.id) {
-            const existingSync = await db
-                .select({ id: transactions.id })
-                .from(transactions)
-                .where(and(
-                    eq(transactions.id, payload.id),
-                    eq(transactions.userId, effectiveUserId),
-                ))
-                .limit(1);
-
-            if (existingSync[0]) {
-                return c.json({ ok: true, id: payload.id, message: 'Transaction already synced.' });
-            }
-        }
-
-        await withTransaction(db, async (tx) => {
-            if (normalizedBillNumber) {
-                const existingBill = await tx
-                    .select({ id: transactions.id })
-                    .from(transactions)
-                    .where(and(
-                        eq(transactions.userId, effectiveUserId),
-                        eq(transactions.billNumber, normalizedBillNumber),
-                    ))
-                    .limit(1);
-                if (existingBill[0]) {
-                    throw new Error(`Bill number ${normalizedBillNumber} already exists.`);
-                }
-            }
-
-            if (payload.partyId) {
-                const expectedPartyType = getExpectedPartyType(payload.type);
-                const partyRows = await tx
-                    .select({ id: parties.id, type: parties.type, name: parties.name })
-                    .from(parties)
-                    .where(and(
-                        eq(parties.id, payload.partyId),
-                        eq(parties.userId, effectiveUserId),
-                    ))
-                    .limit(1);
-                const party = partyRows[0];
-                if (!party) {
-                    throw new Error('Selected party was not found.');
-                }
-                if (party.type !== expectedPartyType) {
-                    throw new Error(
-                        `Selected party "${party.name}" is ${party.type}. Expected ${expectedPartyType} for ${payload.type}.`
-                    );
-                }
-            }
-
-            const itemIds = [...grouped.keys()];
-            const sourceItems = itemIds.length === 0
-                ? []
-                : await tx
-                    .select({ id: items.id, purchasePrice: items.purchasePrice, name: items.name, stock: items.stock })
-                    .from(items)
-                    .where(and(
-                        eq(items.userId, effectiveUserId),
-                        inArray(items.id, itemIds),
-                    ));
-            const purchasePriceByItemId = new Map(
-                sourceItems.map((item) => [item.id, Number(item.purchasePrice ?? 0)])
-            );
-
-            // Update stock for sale/purchase/return entries.
-            for (const [itemId, qty] of grouped.entries()) {
-                const outflow = isStockOutflow(payload.type);
-                const updateConditions = [
-                    eq(items.id, itemId),
-                    eq(items.userId, effectiveUserId),
-                ];
-                if (outflow && !allowNegativeStock) {
-                    updateConditions.push(gte(items.stock, qty));
-                }
-
-                const updatedRows = await tx
-                    .update(items)
-                    .set({
-                        stock: outflow
-                            ? sql`${items.stock} - ${qty}`
-                            : sql`${items.stock} + ${qty}`,
-                        updatedAt: now,
-                    })
-                    .where(and(...updateConditions))
-                    .returning({ id: items.id, name: items.name, stock: items.stock });
-
-                if (!updatedRows[0]) {
-                    const existing = await tx
-                        .select({ id: items.id, name: items.name, stock: items.stock })
-                        .from(items)
-                        .where(and(
-                            eq(items.id, itemId),
-                            eq(items.userId, effectiveUserId),
-                        ))
-                        .limit(1);
-
-                    if (!existing[0]) throw new Error(`Item ${itemId} not found.`);
-                    if (outflow) {
-                        throw new Error(`Insufficient stock for "${existing[0].name}". Available: ${existing[0].stock}`);
-                    }
-                    throw new Error(`Failed to update stock for "${existing[0].name}".`);
-                }
-
-                const totalQty = payload.items
-                    .filter((line) => line.id === itemId)
-                    .reduce((sum, line) => sum + line.quantity, 0);
-                const totalValue = payload.items
-                    .filter((line) => line.id === itemId)
-                    .reduce((sum, line) => sum + line.quantity * line.price, 0);
-                const unitCost = !outflow && totalQty > 0 ? totalValue / totalQty : null;
-
-                await tx.insert(inventoryMovements).values({
-                    id: nanoid(),
-                    userId: effectiveUserId,
-                    itemId,
-                    transactionId: id,
-                    movementType: outflow ? 'OUT' : 'IN',
-                    quantity: qty,
-                    balanceAfter: Number(updatedRows[0].stock ?? 0),
-                    unitCost,
-                    createdAt: now,
-                });
-            }
-
-            // Create Transaction Record
-            await tx.insert(transactions).values({
-                id,
-                userId: effectiveUserId,
-                organizationId: effectiveOrganizationId,
-                type: payload.type,
-                partyId: payload.partyId ?? null,
-                partyName: payload.partyName ?? null,
-                partyPhone: payload.partyPhone ?? null,
-                billNumber: normalizedBillNumber,
-                billDate: billDate,
-                totalAmount: payload.totalAmount,
-                discountAmount: payload.discountAmount,
-                taxAmount: effectiveTaxAmount,
-                paidAmount: initialPaidAmount,
-                paymentMode: payload.paymentMode,
-                paymentStatus,
-                billMode,
-                affectsGst,
-                createdByUid: authUser.uid,
-                dueDate,
-                reminderEnabled,
-                reminderFrequencyDays,
-                nextReminderAt,
-                lastReminderAt: null,
-                currency: payload.currency,
-                costCenter: payload.costCenter ?? null,
-                projectCode: payload.projectCode ?? null,
-                businessName: payload.businessName ?? null,
-                businessAddress: payload.businessAddress ?? null,
-                gstNumber: payload.gstNumber ?? null,
-                items: normalizedItems,
-                remark: payload.remark ?? null,
+        let partyId = payload.partyId ?? null;
+        if (!partyId && payload.partyName) {
+            const newPartyId = `pty_${nanoid(16)}`;
+            await db.insert(parties).values({
+                id: newPartyId,
+                businessId: business.id,
+                type: payload.type === 'PURCHASE' ? 'SUPPLIER' : 'CUSTOMER',
+                name: payload.partyName,
+                nameLowercase: payload.partyName.toLowerCase(),
+                phone: payload.partyPhone ?? null,
+                email: null,
+                billingAddress: null,
+                shippingAddress: null,
+                gstin: null,
+                openingBalance: 0,
+                creditLimit: 0,
+                isActive: true,
                 createdAt: now,
                 updatedAt: now,
             });
-
-            await postTransactionJournal(tx, {
-                userId: effectiveUserId,
-                transactionId: id,
-                transactionType: payload.type,
-                transactionDate: billDate,
-                costCenter: payload.costCenter ?? null,
-                projectCode: payload.projectCode ?? null,
-                currency: payload.currency,
-                totalAmount: payload.totalAmount,
-                taxAmount: effectiveTaxAmount,
-                paidAmount: initialPaidAmount,
-                paymentMode: payload.paymentMode,
-                partyId: payload.partyId ?? null,
-                narration: payload.remark ?? null,
-                itemLines: normalizedItems.map((line) => ({
-                    id: line.id,
-                    quantity: line.quantity,
-                })),
-                purchasePriceByItemId,
-                now,
-            });
-
-            const dueAmount = roundAmount(Math.max(payload.totalAmount - initialPaidAmount, 0));
-            if (payload.partyId && dueAmount > 0) {
-                const previousBalance = await getPartyRunningBalance({
-                    tx,
-                    userId: effectiveUserId,
-                    partyId: payload.partyId,
-                });
-                const delta = getPartyLedgerDelta(payload.type, dueAmount);
-                const runningBalance = roundAmount(previousBalance + delta);
-
-                await tx.insert(partyLedgerEntries).values({
-                    id: nanoid(),
-                    userId: effectiveUserId,
-                    organizationId: effectiveOrganizationId,
-                    partyId: payload.partyId,
-                    sourceType: 'BILL',
-                    sourceId: id,
-                    direction: getPartyLedgerDirection(payload.type),
-                    amount: dueAmount,
-                    runningBalance,
-                    entryDate: billDate,
-                    narration: payload.remark ?? `${payload.type} bill outstanding`,
-                    createdByUid: authUser.uid,
-                    createdAt: now,
-                });
-            }
-        });
-        await writeAuditLog(db, {
-            userId: effectiveUserId,
-            actorUid: authUser.uid,
-            actorRole: authUser.role,
-            module: 'billing',
-            action: 'transaction.created',
-            entityType: 'transaction',
-            entityId: id,
-            after: {
-                type: payload.type,
-                totalAmount: payload.totalAmount,
-                itemCount: payload.items.length,
-                paymentMode: payload.paymentMode,
-                billMode,
-                affectsGst,
-            },
-        });
-
-        return c.json({ ok: true, id });
-    } catch (error: any) {
-            console.error('Transaction create error:', error);
-            return c.json({
-                ok: false,
-                message: error.message || 'Transaction failed.',
-                cause: error.cause,
-                detail: error.detail || error.routine ? JSON.stringify({ detail: error.detail, routine: error.routine, code: error.code }) : undefined,
-            }, 400);
-        }
-    }
-);
-
-// PATCH /transactions/:id - Update a transaction and re-apply stock/accounting side-effects
-transactionsRoute.patch(
-    '/:id',
-    requireAuth,
-    requirePermission('canManageBilling'),
-    async (c) => {
-    try {
-        const effectiveUserId = c.get('effectiveUserId');
-        const effectiveOrganizationId = c.get('effectiveOrganizationId') ?? effectiveUserId;
-        const authUser = c.get('authUser');
-        const db = c.get('db');
-        const id = c.req.param('id');
-        const body = await c.req.json();
-
-        if (!effectiveUserId || !authUser) {
-            return c.json({ ok: false, message: 'Unauthorized' }, 401);
-        }
-        if (!hasModulePermission(authUser, 'billing', 'update')) {
-            return c.json({ ok: false, message: 'Billing update access denied.' }, 403);
+            partyId = newPartyId;
         }
 
-        const payload = transactionSchema.parse(body);
-        if (payload.id && payload.id !== id) {
-            return c.json({ ok: false, message: 'Transaction ID mismatch.' }, 400);
-        }
-        if (!hasFeatureEnabled(c, 'billing')) {
-            return c.json({ ok: false, message: 'Billing module is disabled for your role.' }, 403);
-        }
-        if (isSalesFlow(payload.type) && !hasFeatureEnabled(c, 'billingSale')) {
-            return c.json({ ok: false, message: 'Sales billing is disabled by owner settings.' }, 403);
-        }
-        if (isPurchaseFlow(payload.type) && !hasFeatureEnabled(c, 'billingPurchase')) {
-            return c.json({ ok: false, message: 'Purchase entry is disabled by owner settings.' }, 403);
-        }
-        if (isSalesFlow(payload.type) && !hasPermission(c, 'canManageBilling')) {
-            return c.json({ ok: false, message: 'Sale billing is disabled for your role.' }, 403);
-        }
-        if (isPurchaseFlow(payload.type) && !hasPermission(c, 'canManageBilling')) {
-            return c.json({ ok: false, message: 'Purchase entry is disabled for your role.' }, 403);
-        }
-
-        const now = new Date();
+        const invoiceId = `inv_${nanoid(18)}`;
+        const invoiceNumber = payload.billNumber?.trim() || generateInvoiceNumber();
         const billDate = payload.billDate ?? now;
-        const allowBackDate = false;
-        const allowNegativeStock = false;
-const isBackDate = toStartOfDay(billDate).getTime() < toStartOfDay(now).getTime();
-        if (isBackDate && !allowBackDate && !hasPermission(c, 'canManageBilling')) {
-            return c.json({ ok: false, message: 'Back-date entry is disabled for your role/store.' }, 403);
-        }
+        const placeOfSupply = payload.placeOfSupply?.trim() || business.state || null;
+        const businessState = business.state?.trim().toLowerCase();
+        const supplyState = placeOfSupply?.trim().toLowerCase() ?? null;
+        const isInterStateSupply = Boolean(businessState && supplyState && businessState !== supplyState);
 
-        const billMode = payload.billMode;
-        const affectsGst = payload.affectsGst ?? billMode !== 'ESTIMATE';
-        const normalizedItems = payload.items.map((line) => ({
-            ...line,
-            tax: affectsGst ? line.tax : 0,
-        }));
-        const effectiveTaxAmount = affectsGst ? payload.taxAmount : 0;
-        const nextPaidAmount = roundAmount(
-            payload.paidAmount !== undefined
-                ? payload.paidAmount
-                : payload.paymentMode === 'CREDIT'
-                    ? 0
-                    : payload.totalAmount
-        );
-        const paymentStatus = payload.paymentStatus ?? toStatusFromAmounts(payload.totalAmount, nextPaidAmount);
-        const dueDate = payload.paymentMode === 'CREDIT'
-            ? (payload.dueDate ?? new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000))
-            : null;
-        const reminderEnabled = payload.paymentMode === 'CREDIT' && payload.reminderEnabled;
-        const reminderFrequencyDays = payload.reminderFrequencyDays;
-        const nextReminderAt = reminderEnabled
-            ? (payload.nextReminderAt ?? dueDate)
-            : null;
-        const normalizedBillNumber = normalizeBillNumber(payload.billNumber);
-        const controls = await getBusinessControls(db, effectiveUserId);
-        if (controls.periodLockEnabled) {
-            await ensurePeriodUnlockedForDate(db, effectiveUserId, billDate);
-        }
+        await db.insert(invoices).values({
+            id: invoiceId,
+            businessId: business.id,
+            invoiceType: toInvoiceType(payload.billMode, payload.invoiceType),
+            invoiceNumber,
+            invoiceDate: billDate,
+            partyId,
+            placeOfSupply,
+            totalTaxableValue: payload.totalAmount - (payload.taxAmount ?? 0),
+            totalTaxAmount: payload.taxAmount ?? 0,
+            totalInvoiceValue: payload.totalAmount,
+            reverseCharge: payload.reverseCharge ?? false,
+            gstRateBreakupJson: {},
+            eInvoiceIrn: payload.eInvoiceIrn ?? null,
+            eInvoiceStatus: payload.eInvoiceStatus ?? null,
+            eWayBillNumber: payload.eWayBillNumber ?? null,
+            paymentStatus: toCanonicalPaymentStatus(payload.paymentStatus),
+            paidAmount: payload.paidAmount ?? 0,
+            dueDate: payload.dueDate ?? null,
+            notes: payload.remark ?? null,
+            createdByUserId: authUser.id,
+            createdAt: now,
+            updatedAt: now,
+        });
 
-        await withTransaction(db, async (tx) => {
-            const existingRows = await tx
-                .select()
-                .from(transactions)
-                .where(and(
-                    eq(transactions.id, id),
-                    eq(transactions.userId, effectiveUserId),
-                ))
-                .limit(1);
-            const existing = existingRows[0];
-            if (!existing) {
-                throw new Error('Transaction not found.');
-            }
+        const delta = resolveTypeDelta(payload.type);
 
-            if (normalizedBillNumber) {
-                const duplicateRows = await tx
-                    .select({ id: transactions.id })
-                    .from(transactions)
-                    .where(and(
-                        eq(transactions.userId, effectiveUserId),
-                        eq(transactions.billNumber, normalizedBillNumber),
-                        ne(transactions.id, id),
-                    ))
-                    .limit(1);
-                if (duplicateRows[0]) {
-                    throw new Error(`Bill number ${normalizedBillNumber} already exists.`);
-                }
-            }
+        for (const entry of payload.items) {
+            assertAllowedGstRate(entry.tax);
+            const lineTaxableValue = entry.price * entry.quantity;
+            const lineTaxAmount = lineTaxableValue * (entry.tax / 100);
+            const cgstRate = isInterStateSupply ? 0 : (entry.tax > 0 ? entry.tax / 2 : 0);
+            const sgstRate = isInterStateSupply ? 0 : (entry.tax > 0 ? entry.tax / 2 : 0);
+            const igstRate = isInterStateSupply ? entry.tax : 0;
+            const cgstAmount = isInterStateSupply ? 0 : lineTaxAmount / 2;
+            const sgstAmount = isInterStateSupply ? 0 : lineTaxAmount / 2;
+            const igstAmount = isInterStateSupply ? lineTaxAmount : 0;
 
-            if (payload.partyId) {
-                const expectedPartyType = getExpectedPartyType(payload.type);
-                const partyRows = await tx
-                    .select({ id: parties.id, type: parties.type, name: parties.name })
-                    .from(parties)
-                    .where(and(
-                        eq(parties.id, payload.partyId),
-                        eq(parties.userId, effectiveUserId),
-                    ))
-                    .limit(1);
-                const party = partyRows[0];
-                if (!party) {
-                    throw new Error('Selected party was not found.');
-                }
-                if (party.type !== expectedPartyType) {
-                    throw new Error(
-                        `Selected party "${party.name}" is ${party.type}. Expected ${expectedPartyType} for ${payload.type}.`
-                    );
-                }
-            }
-
-            const existingLines = Array.isArray(existing.items)
-                ? existing.items.map((line) => ({
-                    id: line.id,
-                    quantity: Number(line.quantity ?? 0),
-                    price: Number(line.price ?? 0),
-                }))
-                : [];
-
-            const existingType: SupportedTransactionType =
-                existing.type === 'PURCHASE'
-                || existing.type === 'RETURN_INWARD'
-                || existing.type === 'RETURN_OUTWARD'
-                    ? existing.type
-                    : 'SALE';
-
-            const reverseStockDeltas = buildStockDeltaMap(
-                existingType,
-                existingLines,
-                -1
-            );
-
-            await applyStockDeltasInTx({
-                tx,
-                userId: effectiveUserId,
-                transactionId: id,
-                now,
-                allowNegativeStock,
-                stockDeltas: reverseStockDeltas,
-                recordMovements: false,
+            await db.insert(invoiceItems).values({
+                id: `invi_${nanoid(16)}`,
+                invoiceId,
+                itemId: entry.id ?? null,
+                description: entry.name,
+                quantity: entry.quantity,
+                unit: 'pcs',
+                rate: entry.price,
+                discountPercent: 0,
+                taxableValue: lineTaxableValue,
+                cgstRate,
+                cgstAmount,
+                sgstRate,
+                sgstAmount,
+                igstRate,
+                igstAmount,
+                cessRate: 0,
+                cessAmount: 0,
             });
 
-            await deleteTransactionArtifactsInTx({
-                tx,
-                userId: effectiveUserId,
-                transactionId: id,
-            });
-
-            const applyStockDeltas = buildStockDeltaMap(
-                payload.type,
-                normalizedItems.map((line) => ({
-                    id: line.id,
-                    quantity: Number(line.quantity ?? 0),
-                    price: Number(line.price ?? 0),
-                })),
-                1
-            );
-
-            await applyStockDeltasInTx({
-                tx,
-                userId: effectiveUserId,
-                transactionId: id,
-                now,
-                allowNegativeStock,
-                stockDeltas: applyStockDeltas,
-                recordMovements: true,
-            });
-
-            await tx
-                .update(transactions)
-                .set({
-                    type: payload.type,
-                    partyId: payload.partyId ?? null,
-                    partyName: payload.partyName ?? null,
-                    partyPhone: payload.partyPhone ?? null,
-                    billNumber: normalizedBillNumber,
-                    billDate,
-                    totalAmount: payload.totalAmount,
-                    discountAmount: payload.discountAmount,
-                    taxAmount: effectiveTaxAmount,
-                    paidAmount: nextPaidAmount,
-                    paymentMode: payload.paymentMode,
-                    paymentStatus,
-                    billMode,
-                    affectsGst,
-                    dueDate,
-                    reminderEnabled,
-                    reminderFrequencyDays,
-                    nextReminderAt,
-                    lastReminderAt: existing.lastReminderAt,
-                    currency: payload.currency,
-                    costCenter: payload.costCenter ?? null,
-                    projectCode: payload.projectCode ?? null,
-                    businessName: payload.businessName ?? null,
-                    businessAddress: payload.businessAddress ?? null,
-                    gstNumber: payload.gstNumber ?? null,
-                    items: normalizedItems,
-                    remark: payload.remark ?? null,
-                    updatedAt: now,
-                })
-                .where(and(
-                    eq(transactions.id, id),
-                    eq(transactions.userId, effectiveUserId),
-                ));
-
-            const grouped = groupStockLines(normalizedItems.map((line) => ({
-                id: line.id,
-                quantity: Number(line.quantity ?? 0),
-                price: Number(line.price ?? 0),
-            })));
-            const itemIds = [...grouped.keys()];
-            const sourceItems = itemIds.length === 0
-                ? []
-                : await tx
-                    .select({ id: items.id, purchasePrice: items.purchasePrice })
+            if (entry.id) {
+                const itemRows = await db
+                    .select()
                     .from(items)
-                    .where(and(
-                        eq(items.userId, effectiveUserId),
-                        inArray(items.id, itemIds),
-                    ));
-            const purchasePriceByItemId = new Map(
-                sourceItems.map((item) => [item.id, Number(item.purchasePrice ?? 0)])
-            );
+                    .where(and(eq(items.id, entry.id), eq(items.businessId, business.id)))
+                    .limit(1);
 
-            await postTransactionJournal(tx, {
-                userId: effectiveUserId,
-                transactionId: id,
-                transactionType: payload.type,
-                transactionDate: billDate,
-                costCenter: payload.costCenter ?? null,
-                projectCode: payload.projectCode ?? null,
-                currency: payload.currency,
-                totalAmount: payload.totalAmount,
-                taxAmount: effectiveTaxAmount,
-                paidAmount: nextPaidAmount,
-                paymentMode: payload.paymentMode,
-                partyId: payload.partyId ?? null,
-                narration: payload.remark ?? null,
-                itemLines: normalizedItems.map((line) => ({
-                    id: line.id,
-                    quantity: line.quantity,
-                })),
-                purchasePriceByItemId,
-                now,
-            });
+                const item = itemRows[0];
+                if (item) {
+                    const currentStock = Number(item.stock ?? 0);
+                    const nextStock = currentStock + (delta * entry.quantity);
 
-            const dueAmount = roundAmount(Math.max(payload.totalAmount - nextPaidAmount, 0));
-            if (payload.partyId && dueAmount > 0) {
-                const previousBalance = await getPartyRunningBalance({
-                    tx,
-                    userId: effectiveUserId,
-                    partyId: payload.partyId,
-                });
-                const delta = getPartyLedgerDelta(payload.type, dueAmount);
-                const runningBalance = roundAmount(previousBalance + delta);
+                    await db.update(items).set({
+                        stock: nextStock,
+                        updatedAt: now,
+                    }).where(and(eq(items.id, entry.id), eq(items.businessId, business.id)));
 
-                await tx.insert(partyLedgerEntries).values({
-                    id: nanoid(),
-                    userId: effectiveUserId,
-                    organizationId: effectiveOrganizationId,
-                    partyId: payload.partyId,
-                    sourceType: 'BILL',
-                    sourceId: id,
-                    direction: getPartyLedgerDirection(payload.type),
-                    amount: dueAmount,
-                    runningBalance,
-                    entryDate: billDate,
-                    narration: payload.remark ?? `${payload.type} bill outstanding`,
-                    createdByUid: authUser.uid,
-                    createdAt: now,
-                });
+                    await db.insert(inventoryMovements).values({
+                        id: `mov_${nanoid(16)}`,
+                        businessId: business.id,
+                        itemId: entry.id,
+                        movementType: delta >= 0 ? 'IN' : 'OUT',
+                        quantity: entry.quantity,
+                        balanceAfter: nextStock,
+                        reason: payload.type,
+                        referenceId: invoiceId,
+                        createdByUserId: authUser.id,
+                        createdAt: now,
+                    });
+                }
             }
-        });
-
-        await writeAuditLog(db, {
-            userId: effectiveUserId,
-            actorUid: authUser.uid,
-            actorRole: authUser.role,
-            module: 'billing',
-            action: 'transaction.updated',
-            entityType: 'transaction',
-            entityId: id,
-            after: {
-                type: payload.type,
-                totalAmount: payload.totalAmount,
-                itemCount: payload.items.length,
-                paymentMode: payload.paymentMode,
-                billMode,
-                affectsGst,
-            },
-        });
-
-        return c.json({ ok: true, id });
-    } catch (error: any) {
-        return c.json({
-            ok: false,
-            message: error.message || 'Failed to update transaction.',
-            cause: error.cause,
-        }, 400);
-    }
-    }
-);
-
-transactionsRoute.delete(
-    '/:id',
-    requireAuth,
-    requirePermission('canManageBilling'),
-    async (c) => {
-    try {
-        const effectiveUserId = c.get('effectiveUserId');
-        const authUser = c.get('authUser');
-        const db = c.get('db');
-        const id = c.req.param('id');
-
-        if (!effectiveUserId || !authUser) {
-            return c.json({ ok: false, message: 'Unauthorized' }, 401);
-        }
-        if (!hasModulePermission(authUser, 'billing', 'delete')) {
-            return c.json({ ok: false, message: 'Billing delete access denied.' }, 403);
         }
 
-        const allowNegativeStock = false;
-        const now = new Date();
+        await bumpMonthlyBillUsage(db, business.id, subscription, billDate);
 
-        await withTransaction(db, async (tx) => {
-            const rows = await tx
-                .select()
-                .from(transactions)
-                .where(and(
-                    eq(transactions.id, id),
-                    eq(transactions.userId, effectiveUserId),
-                ))
-                .limit(1);
-            const existing = rows[0];
-            if (!existing) {
-                throw new Error('Transaction not found.');
-            }
-
-            const existingLines = Array.isArray(existing.items)
-                ? existing.items.map((line) => ({
-                    id: line.id,
-                    quantity: Number(line.quantity ?? 0),
-                    price: Number(line.price ?? 0),
-                }))
-                : [];
-
-            const existingType: SupportedTransactionType =
-                existing.type === 'PURCHASE'
-                || existing.type === 'RETURN_INWARD'
-                || existing.type === 'RETURN_OUTWARD'
-                    ? existing.type
-                    : 'SALE';
-
-            const reverseStockDeltas = buildStockDeltaMap(
-                existingType,
-                existingLines,
-                -1
-            );
-
-            await applyStockDeltasInTx({
-                tx,
-                userId: effectiveUserId,
-                transactionId: id,
-                now,
-                allowNegativeStock,
-                stockDeltas: reverseStockDeltas,
-                recordMovements: false,
-            });
-
-            await deleteTransactionArtifactsInTx({
-                tx,
-                userId: effectiveUserId,
-                transactionId: id,
-            });
-
-            const deleted = await tx
-                .delete(transactions)
-                .where(and(
-                    eq(transactions.id, id),
-                    eq(transactions.userId, effectiveUserId),
-                ))
-                .returning({ id: transactions.id });
-
-            if (!deleted[0]) {
-                throw new Error('Transaction not found.');
-            }
-        });
-
-        await writeAuditLog(db, {
-            userId: effectiveUserId,
-            actorUid: authUser.uid,
-            actorRole: authUser.role,
-            module: 'billing',
-            action: 'transaction.deleted',
-            entityType: 'transaction',
-            entityId: id,
-        });
-
-        return c.json({ ok: true });
-    } catch (error: any) {
-        return c.json({
-            ok: false,
-            message: error.message || 'Failed to delete transaction.',
-            cause: error.cause,
-        }, 400);
+        return c.json({ ok: true, id: invoiceId });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create transaction.' }, 400);
     }
-    }
-);
+});
 
-// PATCH /transactions/:id/payment - Update payment status/reminder schedule
-transactionsRoute.patch(
-    '/:id/payment',
-    requireAuth,
-    requirePermission('canManageBanking'),
-    async (c) => {
-    try {
-        const effectiveUserId = c.get('effectiveUserId');
-        const authUser = c.get('authUser');
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
-        if (!hasModulePermission(authUser, 'billing', 'update')) {
-            return c.json({ ok: false, message: 'Billing update access denied.' }, 403);
-        }
-
-        const db = c.get('db');
-        const id = c.req.param('id');
-        const body = await c.req.json();
-        const payload = z.object({
-            paidAmount: z.number().nonnegative().optional(),
-            markAsPaid: z.boolean().optional(),
-            dueDate: z.coerce.date().nullable().optional(),
-            reminderEnabled: z.boolean().optional(),
-            reminderFrequencyDays: z.number().int().positive().optional(),
-            nextReminderAt: z.coerce.date().nullable().optional(),
-        }).parse(body);
-
-        const rows = await db
-            .select()
-            .from(transactions)
-            .where(and(
-                eq(transactions.id, id),
-                eq(transactions.userId, effectiveUserId),
-            ))
-            .limit(1);
-        const current = rows[0];
-        if (!current) return c.json({ ok: false, message: 'Transaction not found.' }, 404);
-
-        const totalAmount = Number(current.totalAmount ?? 0);
-        const computedPaidAmount = payload.markAsPaid
-            ? totalAmount
-            : roundAmount(payload.paidAmount ?? Number(current.paidAmount ?? 0));
-        const nextPaidAmount = roundAmount(Math.min(totalAmount, Math.max(computedPaidAmount, 0)));
-        const nextStatus = toStatusFromAmounts(totalAmount, nextPaidAmount);
-
-        const nextReminderEnabled = payload.reminderEnabled ?? Boolean(current.reminderEnabled);
-        const nextReminderFrequencyDays = payload.reminderFrequencyDays ?? Number(current.reminderFrequencyDays ?? 3);
-        const nextDueDate = payload.dueDate !== undefined ? payload.dueDate : current.dueDate;
-        const nextNextReminderAt = payload.nextReminderAt !== undefined
-            ? payload.nextReminderAt
-            : (nextReminderEnabled ? (current.nextReminderAt ?? nextDueDate ?? null) : null);
-
-        await db
-            .update(transactions)
-            .set({
-                paidAmount: nextPaidAmount,
-                paymentStatus: nextStatus,
-                paymentMode: nextStatus === 'PAID' ? 'CASH' : current.paymentMode,
-                dueDate: nextDueDate,
-                reminderEnabled: nextReminderEnabled,
-                reminderFrequencyDays: nextReminderFrequencyDays,
-                nextReminderAt: nextNextReminderAt,
-                lastReminderAt: payload.nextReminderAt !== undefined ? current.lastReminderAt : current.lastReminderAt,
-                updatedAt: new Date(),
-            })
-            .where(and(
-                eq(transactions.id, id),
-                eq(transactions.userId, effectiveUserId),
-            ));
-
-        return c.json({
-            ok: true,
-            paymentStatus: nextStatus,
-            paidAmount: nextPaidAmount,
-            dueAmount: roundAmount(Math.max(totalAmount - nextPaidAmount, 0)),
-        });
-    } catch (error: unknown) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update payment.' }, 400);
-    }
-    }
-);
-
-// GET /transactions/pending-reminders - credit/pending records requiring reminders
-transactionsRoute.get(
-    '/pending-reminders',
-    requireAuth,
-    requirePermission('canManageBanking'),
-    async (c) => {
-        const effectiveUserId = c.get('effectiveUserId');
-        const authUser = c.get('authUser');
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
-    if (!hasModulePermission(authUser, 'billing', 'view')) {
-        return c.json({ ok: false, message: 'Billing access denied.' }, 403);
-    }
-
+transactionsRoute.get('/', async (c) => {
     const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Business not found.' }, 404);
+    }
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'GST_INVOICES');
+    assertModuleEnabled(business, 'billing');
+
+    const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
+    const start = c.req.query('start');
+    const end = c.req.query('end');
+
+    const whereFilters = [eq(invoices.businessId, business.id)];
+    if (start) whereFilters.push(gte(invoices.invoiceDate, new Date(start)));
+    if (end) whereFilters.push(lte(invoices.invoiceDate, new Date(end)));
+
+    const invoiceRows = await db
+        .select()
+        .from(invoices)
+        .where(and(...whereFilters))
+        .orderBy(desc(invoices.invoiceDate))
+        .limit(limit);
+
+    if (invoiceRows.length === 0) {
+        return c.json({ ok: true, transactions: [] });
+    }
+
+    const invoiceIds = invoiceRows.map((entry) => entry.id);
+    const lines = await db
+        .select()
+        .from(invoiceItems)
+        .where(inArray(invoiceItems.invoiceId, invoiceIds))
+        .orderBy(asc(invoiceItems.createdAt));
+
+    const partyIds = Array.from(new Set(invoiceRows.map((entry) => entry.partyId).filter(Boolean))) as string[];
+    const partyRows = partyIds.length > 0
+        ? await db.select().from(parties).where(inArray(parties.id, partyIds))
+        : [];
+    const partyById = new Map(partyRows.map((entry) => [entry.id, entry]));
+
+    const linesByInvoiceId = new Map<string, typeof lines>();
+    for (const line of lines) {
+        const bucket = linesByInvoiceId.get(line.invoiceId) ?? [];
+        bucket.push(line);
+        linesByInvoiceId.set(line.invoiceId, bucket);
+    }
+
+    const transactions = invoiceRows.map((entry) => {
+        const party = entry.partyId ? partyById.get(entry.partyId) : null;
+        const mappedLines = (linesByInvoiceId.get(entry.id) ?? []).map((line) => ({
+            id: line.itemId ?? `line_${line.id}`,
+            name: line.description,
+            quantity: Number(line.quantity ?? 0),
+            price: Number(line.rate ?? 0),
+            tax: Number((line.cgstRate ?? 0) + (line.sgstRate ?? 0) + (line.igstRate ?? 0)),
+            total: Number((line.taxableValue ?? 0) + (line.cgstAmount ?? 0) + (line.sgstAmount ?? 0) + (line.igstAmount ?? 0) + (line.cessAmount ?? 0)),
+        }));
+
+        return {
+            id: entry.id,
+            userId: authUser.id,
+            type: 'SALE',
+            partyId: entry.partyId,
+            partyName: party?.name,
+            partyPhone: party?.phone,
+            billNumber: entry.invoiceNumber,
+            billDate: entry.invoiceDate,
+            items: mappedLines,
+            totalAmount: Number(entry.totalInvoiceValue ?? 0),
+            discountAmount: 0,
+            taxAmount: Number(entry.totalTaxAmount ?? 0),
+            paidAmount: Number(entry.paidAmount ?? 0),
+            paymentMode: 'CASH',
+            paymentStatus: toLegacyPaymentStatus(entry.paymentStatus),
+            billMode: entry.invoiceType === 'ESTIMATE' ? 'ESTIMATE' : 'GST',
+            affectsGst: entry.invoiceType !== 'ESTIMATE',
+            dueDate: entry.dueDate,
+            reminderEnabled: Boolean(entry.dueDate && entry.paymentStatus !== 'PAID'),
+            reminderFrequencyDays: 3,
+            nextReminderAt: entry.dueDate,
+            lastReminderAt: null,
+            billingAddress: business.address,
+            currency: business.currency ?? 'INR',
+            remark: entry.notes,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+            businessName: business.name,
+            businessAddress: business.address,
+            gstNumber: business.gstin,
+        };
+    });
+
+return c.json({ ok: true, transactions });
+});
+
+transactionsRoute.get('/pending-reminders', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Business not found.' }, 404);
+    }
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'GST_INVOICES');
+    assertModuleEnabled(business, 'billing');
+
     const dueBeforeRaw = c.req.query('dueBefore');
-    const dueBefore = dueBeforeRaw ? new Date(dueBeforeRaw) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-    const now = new Date();
+    const dueBefore = dueBeforeRaw ? new Date(dueBeforeRaw) : new Date();
 
     const rows = await db
         .select()
-        .from(transactions)
-        .where(
-            and(
-                eq(transactions.userId, effectiveUserId),
-                eq(transactions.type, 'SALE'),
-                inArray(transactions.paymentStatus, ['PENDING', 'PARTIAL'])
-            )
-        )
-        .orderBy(desc(transactions.dueDate), desc(transactions.billDate))
-        .limit(500);
+        .from(invoices)
+        .where(and(
+            eq(invoices.businessId, business.id),
+            ne(invoices.paymentStatus, 'PAID'),
+            lte(invoices.dueDate, dueBefore),
+        ))
+        .orderBy(asc(invoices.dueDate));
 
-    const reminders = rows
-        .filter((entry) => {
-            if (!entry.reminderEnabled) return false;
-            const dueDate = entry.dueDate ?? entry.nextReminderAt;
-            if (!dueDate) return false;
-            return dueDate.getTime() <= dueBefore.getTime();
-        })
-        .map((entry) => {
-            const totalAmount = Number(entry.totalAmount ?? 0);
-            const paidAmount = Number(entry.paidAmount ?? 0);
-            const dueAmount = roundAmount(Math.max(totalAmount - paidAmount, 0));
-            const nextReminderAt = entry.nextReminderAt ?? entry.dueDate ?? now;
-            return {
-                id: entry.id,
-                billNumber: entry.billNumber,
-                partyName: entry.partyName,
-                partyPhone: entry.partyPhone,
-                totalAmount,
-                paidAmount,
-                dueAmount,
-                currency: entry.currency ?? 'INR',
-                dueDate: entry.dueDate,
-                reminderFrequencyDays: entry.reminderFrequencyDays,
-                nextReminderAt,
-                paymentStatus: entry.paymentStatus,
-            };
-        });
+    return c.json({
+        ok: true,
+        reminders: rows.map((entry) => ({
+            id: entry.id,
+            billNumber: entry.invoiceNumber,
+            dueDate: entry.dueDate,
+            totalAmount: entry.totalInvoiceValue,
+            paidAmount: entry.paidAmount,
+            paymentStatus: toLegacyPaymentStatus(entry.paymentStatus),
+        })),
+    });
+});
 
-    return c.json({ ok: true, reminders });
-    }
-);
-
-// GET /transactions - List transactions
-transactionsRoute.get(
-    '/',
-    requireAuth,
-    requirePermission('canManageAccounting'),
-    requireFeatureToggle('reports', 'Reports access is disabled by owner settings.'),
-    async (c) => {
-        const effectiveUserId = c.get('effectiveUserId');
-        const authUser = c.get('authUser');
+transactionsRoute.get('/:id', async (c) => {
     const db = c.get('db');
-    const typeQuery = c.req.query('type');
-    const type = typeQuery && transactionTypeValues.includes(typeQuery as SupportedTransactionType)
-        ? typeQuery as SupportedTransactionType
-        : undefined;
-    const paymentStatus = c.req.query('paymentStatus') as 'PAID' | 'PARTIAL' | 'PENDING' | undefined;
-    const start = c.req.query('start');
-    const end = c.req.query('end');
-    const limit = Math.min(Number(c.req.query('limit') || 50), 200);
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
-    if (!hasModulePermission(authUser, 'billing', 'view')) {
-        return c.json({ ok: false, message: 'Billing access denied.' }, 403);
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Business not found.' }, 404);
     }
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'GST_INVOICES');
+    assertModuleEnabled(business, 'billing');
 
-    const conditions = [
-        eq(transactions.userId, effectiveUserId),
-    ];
-
-    if (type) conditions.push(eq(transactions.type, type));
-    if (paymentStatus) conditions.push(eq(transactions.paymentStatus, paymentStatus));
-    if (start) conditions.push(gte(transactions.billDate, new Date(start)));
-    if (end) conditions.push(lte(transactions.billDate, new Date(end)));
-
-    const data = await db
+    const id = c.req.param('id');
+    const rows = await db
         .select()
-        .from(transactions)
-        .where(and(...conditions))
-        .orderBy(desc(transactions.billDate))
-        .limit(limit);
+        .from(invoices)
+        .where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)))
+        .limit(1);
 
-    return c.json({ ok: true, transactions: data });
+    if (!rows[0]) {
+        return c.json({ ok: false, message: 'Transaction not found.' }, 404);
     }
-);
 
-// GET /transactions/stats/today — today's sales + purchase totals
-transactionsRoute.get(
-    '/stats/today',
-    requireAuth,
-    async (c) => {
-        const effectiveUserId = c.get('effectiveUserId');
-        if (!effectiveUserId) return c.json({ ok: false, message: 'Unauthorized' }, 401);
+    const lines = await db
+        .select()
+        .from(invoiceItems)
+        .where(eq(invoiceItems.invoiceId, id));
 
+    return c.json({
+        ok: true,
+        transaction: {
+            id: rows[0].id,
+            userId: authUser.id,
+            type: 'SALE',
+            billNumber: rows[0].invoiceNumber,
+            billDate: rows[0].invoiceDate,
+            totalAmount: Number(rows[0].totalInvoiceValue ?? 0),
+            taxAmount: Number(rows[0].totalTaxAmount ?? 0),
+            paidAmount: Number(rows[0].paidAmount ?? 0),
+            paymentStatus: toLegacyPaymentStatus(rows[0].paymentStatus),
+            items: lines.map((line) => ({
+                id: line.itemId ?? `line_${line.id}`,
+                name: line.description,
+                quantity: Number(line.quantity ?? 0),
+                price: Number(line.rate ?? 0),
+                tax: Number((line.cgstRate ?? 0) + (line.sgstRate ?? 0) + (line.igstRate ?? 0)),
+                total: Number((line.taxableValue ?? 0) + (line.cgstAmount ?? 0) + (line.sgstAmount ?? 0) + (line.igstAmount ?? 0) + (line.cessAmount ?? 0)),
+            })),
+        },
+    });
+});
+
+transactionsRoute.patch('/:id/payment', async (c) => {
+    try {
         const db = c.get('db');
-        const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        const rows = await db
-            .select({
-                type: transactions.type,
-                totalAmount: sql<number>`coalesce(sum(${transactions.totalAmount}), 0)`,
-                count: sql<number>`count(*)`,
-            })
-            .from(transactions)
-            .where(
-                and(
-                    eq(transactions.userId, effectiveUserId),
-                    gte(transactions.billDate, todayStart),
-                    lte(transactions.billDate, todayEnd),
-                )
-            )
-            .groupBy(transactions.type);
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) {
+            return c.json({ ok: false, message: 'Business not found.' }, 404);
+        }
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'GST_INVOICES');
+        assertModuleEnabled(business, 'billing');
 
-        let salesToday = 0;
-        let salesCount = 0;
-        let purchasesToday = 0;
-        let purchasesCount = 0;
+        const id = c.req.param('id');
+        const payload = patchPaymentSchema.parse(await c.req.json());
 
-        for (const row of rows) {
-            if (row.type === 'SALE') {
-                salesToday += Number(row.totalAmount);
-                salesCount += Number(row.count);
-            } else if (row.type === 'RETURN_INWARD') {
-                salesToday -= Number(row.totalAmount);
-                salesCount += Number(row.count);
-            } else if (row.type === 'PURCHASE') {
-                purchasesToday += Number(row.totalAmount);
-                purchasesCount += Number(row.count);
-            } else if (row.type === 'RETURN_OUTWARD') {
-                purchasesToday -= Number(row.totalAmount);
-                purchasesCount += Number(row.count);
-            }
+        const currentRows = await db
+            .select()
+            .from(invoices)
+            .where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)))
+            .limit(1);
+
+        const current = currentRows[0];
+        if (!current) {
+            return c.json({ ok: false, message: 'Transaction not found.' }, 404);
         }
 
-        return c.json({
-            ok: true,
-            stats: {
-                salesToday: roundAmount(salesToday),
-                salesCount,
-                purchasesToday: roundAmount(purchasesToday),
-                purchasesCount,
-                netCashFlow: roundAmount(salesToday - purchasesToday),
-                date: todayStart.toISOString().slice(0, 10),
-            },
-        });
+        const nextPaid = payload.paidAmount ?? Number(current.paidAmount ?? 0);
+        const total = Number(current.totalInvoiceValue ?? 0);
+
+        let status = payload.paymentStatus;
+        if (!status) {
+            if (nextPaid >= total) status = 'PAID';
+            else if (nextPaid > 0) status = 'PARTIAL';
+            else status = 'PENDING';
+        }
+
+        await db.update(invoices).set({
+            paidAmount: nextPaid,
+            paymentStatus: toCanonicalPaymentStatus(status),
+            dueDate: payload.nextReminderAt ?? current.dueDate,
+            updatedAt: new Date(),
+        }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update payment.' }, 400);
     }
-);
+});
+
+transactionsRoute.post('/:id/e-invoice/generate', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'E_INVOICE');
+        assertModuleEnabled(business, 'billing');
+
+        const id = c.req.param('id');
+        const rows = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id))).limit(1);
+        const invoice = rows[0];
+        if (!invoice) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
+
+        const irn = invoice.eInvoiceIrn ?? `IRN${new Date().getUTCFullYear()}${nanoid(18).toUpperCase()}`;
+        await db.update(invoices).set({
+            eInvoiceIrn: irn,
+            eInvoiceStatus: 'GENERATED',
+            updatedAt: new Date(),
+        }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
+
+        return c.json({ ok: true, eInvoiceIrn: irn, eInvoiceStatus: 'GENERATED' });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to generate e-invoice.' }, 400);
+    }
+});
+
+transactionsRoute.post('/:id/e-invoice/cancel', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'E_INVOICE');
+        assertModuleEnabled(business, 'billing');
+
+        complianceActionSchema.parse(await c.req.json().catch(() => ({})));
+        const id = c.req.param('id');
+        await db.update(invoices).set({
+            eInvoiceStatus: 'CANCELLED',
+            updatedAt: new Date(),
+        }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
+
+        return c.json({ ok: true, eInvoiceStatus: 'CANCELLED' });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to cancel e-invoice.' }, 400);
+    }
+});
+
+transactionsRoute.post('/:id/e-way-bill/generate', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'E_WAY_BILL');
+        assertModuleEnabled(business, 'billing');
+
+        const id = c.req.param('id');
+        const rows = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id))).limit(1);
+        const invoice = rows[0];
+        if (!invoice) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
+
+        const eWayBillNumber = invoice.eWayBillNumber ?? `${Math.floor(100000000000 + Math.random() * 900000000000)}`;
+        await db.update(invoices).set({
+            eWayBillNumber,
+            updatedAt: new Date(),
+        }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
+
+        return c.json({ ok: true, eWayBillNumber });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to generate e-way bill.' }, 400);
+    }
+});
+
+transactionsRoute.post('/:id/e-way-bill/cancel', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'E_WAY_BILL');
+        assertModuleEnabled(business, 'billing');
+
+        complianceActionSchema.parse(await c.req.json().catch(() => ({})));
+        const id = c.req.param('id');
+        await db.update(invoices).set({
+            eWayBillNumber: null,
+            updatedAt: new Date(),
+        }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to cancel e-way bill.' }, 400);
+    }
+});
 
 export default transactionsRoute;

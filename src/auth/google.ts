@@ -1,5 +1,3 @@
-// import { OAuth2Client } from 'google-auth-library';
-
 interface GoogleIdentity {
     sub: string;
     email?: string;
@@ -7,9 +5,8 @@ interface GoogleIdentity {
     picture?: string;
 }
 
-// let oauthClient: OAuth2Client | null = null;
-
 export type GoogleOAuthEnv = {
+    GOOGLE_CLIENT_ID?: string;
     GOOGLE_OAUTH_CLIENT_ID?: string;
     GOOGLE_OAUTH_CLIENT_IDS?: string;
     GOOGLE_OAUTH_ANDROID_CLIENT_ID?: string;
@@ -25,6 +22,7 @@ const parseEnvClientIds = (value?: string): string[] =>
 const getGoogleAudiences = (env?: GoogleOAuthEnv): string[] => {
     const source = env ?? (process.env as GoogleOAuthEnv);
     const audiences = new Set<string>([
+        ...parseEnvClientIds(source.GOOGLE_CLIENT_ID),
         ...parseEnvClientIds(source.GOOGLE_OAUTH_CLIENT_ID),
         ...parseEnvClientIds(source.GOOGLE_OAUTH_CLIENT_IDS),
         ...parseEnvClientIds(source.GOOGLE_OAUTH_ANDROID_CLIENT_ID),
@@ -34,11 +32,7 @@ const getGoogleAudiences = (env?: GoogleOAuthEnv): string[] => {
     return [...audiences];
 };
 
-const verifyGoogleTokenViaApi = async (idToken: string): Promise<any> => {
-    // Determine the verification URL.
-    // For ID tokens, use: https://oauth2.googleapis.com/tokeninfo?id_token=XYZ
-    // For Access tokens, use: https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=XYZ
-    // Here we assume idToken.
+const verifyGoogleTokenViaApi = async (idToken: string): Promise<Record<string, unknown>> => {
     const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
 
     if (!response.ok) {
@@ -46,48 +40,33 @@ const verifyGoogleTokenViaApi = async (idToken: string): Promise<any> => {
         throw new Error(`Google token verification failed: ${text}`);
     }
 
-    const payload = await response.json();
-    return payload;
+    return (await response.json()) as Record<string, unknown>;
 };
 
 export const verifyGoogleIdentityToken = async (idToken: string, env?: GoogleOAuthEnv): Promise<GoogleIdentity> => {
     const audiences = getGoogleAudiences(env);
 
     if (audiences.length === 0) {
-        throw new Error(
-            'Google OAuth is not configured. Set GOOGLE_OAUTH_CLIENT_ID (or GOOGLE_OAUTH_CLIENT_IDS).'
-        );
+        throw new Error('Google OAuth is not configured. Set GOOGLE_CLIENT_ID on the server.');
     }
 
-    // Use fetch-based verification to avoid Node.js crypto dependencies in Cloudflare Workers
     const payload = await verifyGoogleTokenViaApi(idToken);
+    const tokenAud = typeof payload.aud === 'string' ? payload.aud : '';
+    const azp = typeof payload.azp === 'string' ? payload.azp : '';
 
-    // Verify audience
-    if (!payload.aud) {
-        throw new Error('Invalid Google token: missing audience.');
+    if (!tokenAud || (!audiences.includes(tokenAud) && (!azp || !audiences.includes(azp)))) {
+        throw new Error(`Invalid Google token audience. Expected one of: ${audiences.join(', ')}`);
     }
 
-    const tokenAud = payload.aud;
-    // payload.aud can be a string, check if it matches any of our allowed audiences
-    const isValidAudience = audiences.includes(tokenAud);
-
-    if (!isValidAudience) {
-        // Also check for azimuth (authorized party) if present, though audience is primary.
-        // Some Google tokens sets 'azp' to the client ID of the app that issued the token.
-        const azp = payload.azp;
-        if (!azp || !audiences.includes(azp)) {
-            throw new Error(`Invalid Google token audience. Expected one of: ${audiences.join(', ')}, got: ${tokenAud} (azp: ${azp})`);
-        }
-    }
-
-    if (!payload.sub) {
+    const sub = typeof payload.sub === 'string' ? payload.sub : '';
+    if (!sub) {
         throw new Error('Invalid Google token payload.');
     }
 
     return {
-        sub: payload.sub,
-        email: payload.email,
-        name: payload.name,
-        picture: payload.picture,
+        sub,
+        email: typeof payload.email === 'string' ? payload.email : undefined,
+        name: typeof payload.name === 'string' ? payload.name : undefined,
+        picture: typeof payload.picture === 'string' ? payload.picture : undefined,
     };
 };
