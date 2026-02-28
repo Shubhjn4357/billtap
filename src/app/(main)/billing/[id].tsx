@@ -19,7 +19,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { format, parseISO } from 'date-fns';
-
 import { invoiceApi, settingsApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import type { Invoice } from '../../../types/domain';
