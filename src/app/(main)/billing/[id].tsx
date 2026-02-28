@@ -16,8 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+import { printToFileAsync } from 'expo-print';
+import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import { format, parseISO } from 'date-fns';
 import { invoiceApi, settingsApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
@@ -156,9 +156,9 @@ export default function InvoiceDetailScreen() {
             printConfig,
         });
         try {
-            const { uri } = await Print.printToFileAsync({ html });
-            if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+            const { uri } = await printToFileAsync({ html });
+            if (await isAvailableAsync()) {
+                await shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
             }
         } catch {
             Alert.alert('Error', 'Could not generate PDF');
