@@ -17,6 +17,7 @@ import { ThemeToggle } from "./ThemeToggle";
 export function UserNav() {
     const { data: session } = useSession();
     const { toggleMobile } = useSidebar();
+    const adminRole = (session as { adminRole?: string } | null)?.adminRole ?? "SUPER_ADMIN";
 
     return (
         <div className="flex items-center justify-between w-full h-full lg:justify-end">
@@ -55,7 +56,7 @@ export function UserNav() {
                                 {session?.user?.name || "Admin User"}
                             </p>
                             <p className="text-[10px] text-muted-foreground truncate">
-                                {session?.user?.email || "admin@vahi.com"}
+                                {adminRole}
                             </p>
                         </div>
                         <button

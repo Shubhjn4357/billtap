@@ -8,15 +8,11 @@ import {
     Users,
     CreditCard,
     LayoutDashboard,
-    FileText,
     ChevronLeft,
     X,
     Store,
-    ShieldCheck,
     Box,
     FileSpreadsheet,
-    Wallet,
-    Receipt,
     Megaphone,
     BarChart3,
     History,
@@ -39,12 +35,12 @@ interface NavCategory {
 
 const navCategories: NavCategory[] = [
     {
-        label: "Management",
+        label: "Core",
         items: [
             { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
             { href: "/organizations", label: "Organizations", icon: Store },
             { href: "/users", label: "Users", icon: Users },
-            { href: "/staff", label: "Staff & Roles", icon: ShieldCheck },
+            { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
         ]
     },
     {
@@ -52,21 +48,7 @@ const navCategories: NavCategory[] = [
         items: [
             { href: "/transactions", label: "Transactions", icon: FileSpreadsheet },
             { href: "/inventory", label: "Inventory", icon: Box },
-            { href: "/templates", label: "Bill Templates", icon: FileText },
-        ]
-    },
-    {
-        label: "Finance",
-        items: [
-            { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
-            { href: "/treasury", label: "Treasury", icon: Wallet },
-            { href: "/payroll", label: "Payroll", icon: Receipt },
-        ]
-    },
-    {
-        label: "Marketing",
-        items: [
-            { href: "/banners", label: "Banners & Offers", icon: Megaphone },
+            { href: "/banners", label: "Offers", icon: Megaphone },
         ]
     },
     {
@@ -74,6 +56,7 @@ const navCategories: NavCategory[] = [
         items: [
             { href: "/analytics", label: "Analytics", icon: BarChart3 },
             { href: "/audit-logs", label: "Audit Logs", icon: History },
+            { href: "/templates", label: "Templates", icon: FileSpreadsheet },
             { href: "/settings", label: "Settings", icon: Settings },
         ]
     }

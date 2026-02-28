@@ -11,6 +11,7 @@ import { LayoutDashboard } from "lucide-react";
 function SignInContent() {
     const searchParams = useSearchParams();
     const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+    const error = searchParams.get("error");
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
@@ -36,6 +37,11 @@ function SignInContent() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="grid gap-4">
+                        {error === "not_admin" ? (
+                            <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                                This Google account is not in the admin allowlist (`ADMINS` / `SUPPORT_ADMINS` / `READ_ONLY_ADMINS`).
+                            </p>
+                        ) : null}
                         <Button
                             variant="outline"
                             className="h-12 text-base font-semibold"

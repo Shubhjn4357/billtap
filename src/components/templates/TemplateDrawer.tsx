@@ -49,6 +49,7 @@ export function TemplateDrawer({
 
     useEffect(() => {
         if (!isOpen) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setValidationError(null);
         if (template) {
             setName(template.name);
