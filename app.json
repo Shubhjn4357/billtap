@@ -2,13 +2,13 @@
   "expo": {
     "name": "vahi",
     "slug": "vahi",
-    "version": "1.0.0",
+    "version": "4.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "vahi",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon/icon.json"
     },
     "android": {
       "adaptiveIcon": {
@@ -34,7 +34,15 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Vahi to access your camera for barcode and QR scanning."
+        }
+      ],
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,
