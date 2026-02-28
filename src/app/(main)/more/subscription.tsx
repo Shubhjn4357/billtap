@@ -34,7 +34,6 @@ type PlanLike = {
 
 const formatPlanPrice = (plan: PlanLike) => {
     const value = Number(plan.pricePerCycle ?? plan.monthlyPrice ?? 0);
-    const currency = (plan.currency ?? 'INR').toUpperCase();
     const cycle = plan.billingCycle ?? 'MONTHLY';
     const cycleLabel = cycle === 'YEARLY' ? 'year' : cycle === 'THREE_YEAR' ? '3 years' : 'month';
 

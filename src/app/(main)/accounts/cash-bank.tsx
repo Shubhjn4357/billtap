@@ -1,8 +1,8 @@
 // @ts-nocheck
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { cashBankApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import type { Account } from '../../../types/domain';
@@ -10,7 +10,6 @@ import type { Account } from '../../../types/domain';
 export default function CashBankScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);
-    const qc = useQueryClient();
     const s = styles(colors);
 
     const { data, isLoading } = useQuery({

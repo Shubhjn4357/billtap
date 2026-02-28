@@ -1,10 +1,10 @@
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { expenseApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import { ExpenseCategory } from '../../../constants/enums';
 import { format, parseISO } from 'date-fns';
 import type { Expense } from '../../../types/domain';

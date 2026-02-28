@@ -9,6 +9,7 @@ import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../..
 import type { Item } from '../../types/domain';
 
 type FilterType = 'all' | 'in' | 'low' | 'out';
+const EMPTY_ITEMS: Item[] = [];
 
 const getStockHealth = (item: Item): FilterType => {
     if (item.stock <= 0) return 'out';
@@ -39,7 +40,7 @@ export default function InventoryScreen() {
         staleTime: 30_000,
     });
 
-    const items: Item[] = data?.items ?? [];
+    const items: Item[] = data?.items ?? EMPTY_ITEMS;
 
     const stats = useMemo(() => {
         let inStock = 0;

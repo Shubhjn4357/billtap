@@ -1,6 +1,6 @@
 // GST computation utilities per India GST 2026
 
-export const GST_SLABS = [0, 0.25, 3, 5, 12, 18, 28] as const;
+export const GST_SLABS = [0, 0.25, 3, 5, 18, 40] as const;
 export type GstSlab = typeof GST_SLABS[number];
 
 export type GstComponents = { cgst: number; sgst: number; igst: number; cess: number; total: number };
@@ -54,7 +54,7 @@ export const INDIAN_STATES: Record<string, string> = {
 export const INDIAN_STATE_LIST = Object.entries(INDIAN_STATES).map(([code, name]) => ({ code, name, label: `${name} (${code})` }));
 
 export const GST_RATE_LABELS: Record<number, string> = {
-    0: 'Exempt/Nil', 0.25: '0.25%', 3: '3% (Gold)', 5: '5%', 12: '12%', 18: '18%', 28: '28%',
+    0: 'Exempt/Nil', 0.25: '0.25%', 3: '3% (Gold)', 5: '5%', 18: '18%', 40: '40% (Luxury/Sin)',
 };
 
 function r2(n: number): number { return Math.round(n * 100) / 100; }

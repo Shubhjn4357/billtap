@@ -1,56 +1,100 @@
-# Welcome to your Expo app 👋
+# Vahi Billing App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Vahi is a React Native (Expo) app for Indian GST billing, inventory, POS, cash-bank, loans, and business accounting with Cloudflare Workers + Neon backend and a separate admin app.
 
-## Get started
+## Tech Stack
+
+- Mobile app: Expo + React Native + Expo Router + TypeScript
+- API: Cloudflare Workers + Hono + Drizzle ORM
+- Database: Neon PostgreSQL
+- Admin: Next.js (App Router) on Vercel
+- Validation and contracts: Zod + shared domain types
+
+## App Modules
+
+- Billing: sales invoice, POS, credit/debit note, estimates, orders
+- Inventory: item master, stock, godown support, scan flows
+- Accounts: ledgers, expenses, cash and bank, loans, contra
+- Reports: GST and financial reports
+- Settings: section-wise feature settings
+- Legal: terms, privacy, version changelog, app about
+
+## Screen Navigation (High Level)
+
+- Login: `/(auth)/login`
+- Main tabs: `/(main)`
+- Settings root: `/(main)/more/settings`
+- Legal center: `/legal`
+- Terms: `/legal/terms`
+- Privacy: `/legal/privacy`
+- Changelog: `/legal/changelog`
+- About: `/legal/about`
+
+The legal screens are linked from:
+
+- Login consent block
+- More tab (Legal section)
+- Settings root (Legal and Compliance card)
+
+## Docs
+
+- Terms of Service: `docs/TERMS_OF_SERVICE.md`
+- Privacy Policy: `docs/PRIVACY_POLICY.md`
+- Changelog: `CHANGELOG.md`
+
+## Getting Started
 
 1. Install dependencies
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
 ```bash
-npm run reset-project
+pnpm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+2. Start Expo
 
-### Other setup steps
+```bash
+pnpm start
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+3. Run Android dev client
 
-## Learn more
+```bash
+pnpm android
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Quality and Verification
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- Doctor: `pnpm doctor`
+- Lint: `pnpm lint`
+- Typecheck: `pnpm typecheck`
+- API contract verification: `pnpm verify:api-contract`
+- Web smoke build test: `pnpm smoke:web`
+- CI unified verification (doctor + lint + typecheck + API contract + web smoke): `pnpm verify:ci`
+- Pre-push full verification: `pnpm verify:prepush`
 
-## Join the community
+## CI/CD Workflows
 
-Join our community of developers creating universal apps.
+- Android debug APK: `.github/workflows/android-debug.yml`
+- Android dev-track pipeline: `.github/workflows/android-dev-track.yml`
+- Android release APK pipeline: `.github/workflows/android-release.yml`
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Android Signing and Release Secrets
+
+Use repository secrets (or local env values) for signing and packaging:
+
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+- `ANDROID_PACKAGE_NAME`
+- `PLAY_SERVICE_ACCOUNT_JSON` (optional if Play upload is not used)
+
+## Local APK Build (No Play Account Required)
+
+You can build and install APK locally without Play Console integration:
+
+```bash
+pnpm android
+```
+
+For CI signing flows, keep keystore values in `.env` locally and GitHub Actions secrets in CI.

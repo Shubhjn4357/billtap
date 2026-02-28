@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -13,9 +14,6 @@ const RANGES = [
     { label: 'Last 3 Months', from: format(startOfMonth(subMonths(TODAY, 2)), 'yyyy-MM-dd'), to: format(endOfMonth(TODAY), 'yyyy-MM-dd') },
     { label: 'This Year', from: `${TODAY.getFullYear()}-04-01`, to: `${TODAY.getFullYear() + (TODAY.getMonth() >= 3 ? 1 : 0)}-03-31` },
 ] as const;
-
-import { useState } from 'react';
-
 export default function PnLReportScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);

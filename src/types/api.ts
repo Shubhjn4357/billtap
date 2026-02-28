@@ -91,7 +91,7 @@ export interface SalesTrendPoint {
 
 export interface GSTR1Data {
     period: string;
-    invoices: Array<{
+    invoices: {
         invoiceNumber: string;
         invoiceDate: string;
         gstin: string | null;
@@ -102,7 +102,7 @@ export interface GSTR1Data {
         cgst: number;
         sgst: number;
         invoiceType: string;
-    }>;
+    }[];
     summary: {
         totalTaxable: number;
         totalTax: number;

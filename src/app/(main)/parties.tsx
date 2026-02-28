@@ -1,11 +1,11 @@
 // @ts-nocheck
 import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { partyApi } from '../../api/endpoints';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 import type { Party } from '../../types/domain';
 
 export default function PartiesScreen() {

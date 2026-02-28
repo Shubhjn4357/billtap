@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { View, Text, StyleSheet, FlatList, Pressable, useColorScheme, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { invoiceApi } from '../../api/endpoints';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 import { PaymentStatus } from '../../constants/enums';
 import { useState } from 'react';
 import { format, parseISO } from 'date-fns';
@@ -14,7 +14,6 @@ export default function BillingScreen() {
     const scheme = useColorScheme() ?? 'light';
     const colors = Colors[scheme];
     const [activeTab, setActiveTab] = useState<'sales' | 'purchases' | 'orders'>('sales');
-    const { type } = useLocalSearchParams<{ type?: string }>();
     const s = styles(colors);
 
     const { data, isLoading } = useQuery({

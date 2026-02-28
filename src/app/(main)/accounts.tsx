@@ -9,7 +9,7 @@ import type { Account, Expense, Loan } from '../../types/domain';
 
 export default function AccountsScreen() {
     const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const colors = getColors(scheme);
     const s = styles(colors);
 
     const { data: balancesData, isLoading: balancesLoading } = useQuery({
@@ -33,12 +33,6 @@ export default function AccountsScreen() {
     const accounts = (balancesData?.data ?? []) as Account[];
     const expenses = (expensesData?.data ?? []) as Expense[];
     const loans = (loansData?.data ?? []) as Loan[];
-
-    const ACCOUNT_SECTIONS = [
-        { title: 'Cash & Bank', route: 'cash-bank', icon: '🏦', data: accounts },
-        { title: 'Expenses', route: 'expenses', icon: '💸', data: expenses },
-        { title: 'Loans', route: 'loans', icon: '🏛️', data: loans },
-    ];
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>

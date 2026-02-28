@@ -42,6 +42,19 @@
           "cameraPermission": "Allow Vahi to access your camera for barcode and QR scanning."
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#007B83"
+        }
+      ],
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": true
+        }
+      ],
       "@react-native-google-signin/google-signin"
     ],
     "experiments": {

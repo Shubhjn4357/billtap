@@ -6,16 +6,14 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
-import { authApi } from '../../api/endpoints';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
-import { storeBusinessId } from '../../api/client';
 
-const APP_LOGO = require('../../../assets/icon.png');
+const APP_LOGO = require('../../../assets/images/icon.png');
 
 export default function LoginScreen() {
     const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
-    const { setAuth, isAuthenticated } = useAuthStore();
+    const colors = getColors(scheme);
+    const { isAuthenticated } = useAuthStore();
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -75,14 +73,21 @@ export default function LoginScreen() {
                         ) : (
                             <>
                                 <Text style={s.googleIcon}>G</Text>
-                                <Text style={s.googleBtnText}>Continue with Google</Text>
+                            <Text style={s.googleBtnText}>Continue with Google</Text>
                             </>
                         )}
                     </Pressable>
 
-                    <Text style={s.terms}>
-                        By continuing you agree to our Terms of Service and Privacy Policy
-                    </Text>
+                    <Text style={s.terms}>By continuing you agree to our</Text>
+                    <View style={s.termsLinksRow}>
+                        <Pressable onPress={() => router.push('/legal/terms')}>
+                            <Text style={s.termsLink}>Terms of Service</Text>
+                        </Pressable>
+                        <Text style={s.termsAnd}>and</Text>
+                        <Pressable onPress={() => router.push('/legal/privacy')}>
+                            <Text style={s.termsLink}>Privacy Policy</Text>
+                        </Pressable>
+                    </View>
                 </View>
             </View>
         </SafeAreaView>
@@ -121,6 +126,9 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     googleIcon: { color: '#fff', fontWeight: '700', fontSize: 20 },
     googleBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
     terms: { textAlign: 'center', fontSize: 11, color: colors.textSecondary, lineHeight: 16 },
+    termsLinksRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.xs },
+    termsLink: { fontSize: 12, fontWeight: '700', color: colors.primary },
+    termsAnd: { fontSize: 11, color: colors.textSecondary },
 });
 
 

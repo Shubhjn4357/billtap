@@ -1,8 +1,8 @@
 // @ts-nocheck
-import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { loanApi } from '../../../../api/endpoints';
 import { Colors, Spacing, Radius } from '../../../../constants/theme';
 import format from 'date-fns/format';
@@ -13,7 +13,6 @@ export default function LoanDetailScreen() {
     const scheme = useColorScheme() ?? 'light';
     const colors = Colors[scheme as 'light' | 'dark'] ?? Colors.light;
     const { id } = useLocalSearchParams<{ id: string }>();
-    const qc = useQueryClient();
     const s = styles(colors);
 
     const { data: loanData, isLoading } = useQuery({

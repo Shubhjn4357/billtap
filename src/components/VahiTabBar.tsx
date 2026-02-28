@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { View, Text, Pressable, StyleSheet, useColorScheme, Platform } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Colors, Spacing, Typography } from '../constants/theme';
+import { Colors, Spacing } from '../constants/theme';
 
 const TABS = [
     { name: 'index', icon: '🏠', label: 'Home' },

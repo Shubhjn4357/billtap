@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/authStore';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 import { reportApi } from '../../api/endpoints';
 import { format } from 'date-fns';
 

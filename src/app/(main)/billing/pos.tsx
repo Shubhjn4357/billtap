@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { usePosStore } from '../../../store/posStore';
 import { posApi, itemApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
+import { Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
 import type { Item } from '../../../types/domain';
 
 export default function PosScreen() {

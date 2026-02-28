@@ -5,7 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useInvoiceBuilderStore, useInvoiceTotals } from '../../../store/invoiceBuilderStore';
 import { invoiceApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
+import { Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
 import { InvoiceType } from '../../../constants/enums';
 import { useEffect } from 'react';
 import type { InvoiceLineItem } from '../../../types/domain';
@@ -27,13 +27,13 @@ export default function InvoiceCreateScreen() {
     const { type } = useLocalSearchParams<{ type?: string }>();
     const queryClient = useQueryClient();
 
-    const { init, state, addLine, removeLine, updateLine, setNotes, setPaymentMode, setPaidAmount, setParty, setDiscount, setRoundOff } = useInvoiceBuilderStore();
+    const { init, state, addLine, removeLine, updateLine, setNotes } = useInvoiceBuilderStore();
     const totals = useInvoiceTotals();
     const s = styles(colors);
 
     useEffect(() => {
         init((type ?? InvoiceType.TAX_INVOICE) as InvoiceType);
-    }, [type]);
+    }, [init, type]);
 
     const { mutate: submit, isPending } = useMutation({
         mutationFn: () => invoiceApi.create({

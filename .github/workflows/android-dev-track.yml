@@ -102,11 +102,8 @@ jobs:
             exit 1
           fi
 
-      - name: Validate code quality
-        run: |
-          pnpm run doctor
-          pnpm run lint
-          pnpm run typecheck
+      - name: Run unified verification (includes web smoke gate)
+        run: pnpm run verify:ci
 
       - name: Prebuild Android
         run: pnpm exec expo prebuild --platform android --no-install --clean

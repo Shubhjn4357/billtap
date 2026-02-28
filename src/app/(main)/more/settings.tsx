@@ -68,6 +68,22 @@ export default function SettingsRootScreen() {
                             <Text style={[s.chevron, { color: colors.textSecondary }]}>{'>'}</Text>
                         </Pressable>
                     ))}
+                    <Pressable
+                        style={({ pressed }) => [
+                            s.card,
+                            { backgroundColor: colors.card, borderColor: colors.border },
+                            pressed && { opacity: 0.8 },
+                        ]}
+                        onPress={() => router.push('/legal')}
+                    >
+                        <View>
+                            <Text style={[s.cardTitle, { color: colors.text }]}>Legal and Compliance</Text>
+                            <Text style={[s.cardMeta, { color: colors.textSecondary }]}>
+                                Terms, privacy policy, changelog, and app information
+                            </Text>
+                        </View>
+                        <Text style={[s.chevron, { color: colors.textSecondary }]}>{'>'}</Text>
+                    </Pressable>
                     <View style={{ height: 80 }} />
                 </ScrollView>
             )}

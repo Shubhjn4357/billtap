@@ -9,8 +9,9 @@ import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { itemApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { GST_SLABS } from '../../../constants/gstRates';
 
-const GST_RATES = [0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 18, 28];
+const GST_RATES = [...GST_SLABS];
 
 const itemSchema = z.object({
     name: z.string().min(1, 'Name is required'),
@@ -87,7 +88,6 @@ export default function AddItemScreen() {
     });
 
     const gstRate = watch('gstRate');
-    const inclusive = watch('isSalesPriceInclusiveGst');
 
     const UNITS = ['pcs', 'kg', 'g', 'L', 'mL', 'box', 'm', 'ft', 'dozen', 'pack'];
 

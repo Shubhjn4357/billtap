@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-redeclare */
 export const SubscriptionTier = { FREE: 'FREE', STARTER: 'STARTER', GROWTH: 'GROWTH', ENTERPRISE: 'ENTERPRISE' } as const;
 export type SubscriptionTier = typeof SubscriptionTier[keyof typeof SubscriptionTier];
 

@@ -20,7 +20,7 @@ export default function AnimatedSplashOverlay() {
             }).start();
         }, 600);
         return () => clearTimeout(timer);
-    }, [isAuthenticated]);
+    }, [isAuthenticated, opacity]);
 
     return (
         <Animated.View

@@ -9,7 +9,7 @@ const BUSINESS_ID_KEY = 'vahi_business_id';
 let _token: string | null = null;
 let _businessId: string | null = null;
 
-async function getStoredToken(): Promise<string | null> {
+export async function getStoredToken(): Promise<string | null> {
     if (_token) return _token;
     _token = await SecureStore.getItemAsync(TOKEN_KEY);
     return _token;

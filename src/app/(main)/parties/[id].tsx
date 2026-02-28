@@ -4,8 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { partyApi, invoiceApi } from '../../../api/endpoints';
-import { Colors, Spacing, Radius, Typography } from '../../../constants/theme';
-import { PaymentStatus } from '../../../constants/enums';
+import { Colors, Spacing, Radius } from '../../../constants/theme';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import type { Invoice } from '../../../types/domain';
@@ -38,8 +37,6 @@ export default function PartyDetailScreen() {
     const party = partyData?.data;
     if (isLoading) return <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>;
     if (!party) return <View style={s.centered}><Text style={{ color: colors.textSecondary }}>Party not found.</Text></View>;
-
-    const balanceColor = party.openingBalance > 0 ? colors.success : party.openingBalance < 0 ? colors.error : colors.textSecondary;
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>

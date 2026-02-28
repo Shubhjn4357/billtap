@@ -54,6 +54,15 @@ export default function MoreScreen() {
                 { icon: 'SUB', label: 'Subscription Plan', route: '/(main)/more/subscription' },
             ],
         },
+        {
+            title: 'Legal',
+            items: [
+                { icon: 'LGL', label: 'Legal Center', route: '/legal' },
+                { icon: 'TER', label: 'Terms of Service', route: '/legal/terms' },
+                { icon: 'PRV', label: 'Privacy Policy', route: '/legal/privacy' },
+                { icon: 'VER', label: 'Version & Changelog', route: '/legal/changelog' },
+            ],
+        },
     ];
 
     return (
