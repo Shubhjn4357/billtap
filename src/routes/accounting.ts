@@ -12,7 +12,13 @@ import {
     vouchers,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    ensurePrimaryBusiness,
+    getAccessibleBusiness,
+    getActiveSubscription,
+    getRequestedBusinessId,
+    requireOrganizationCapability,
+} from './helpers';
 import {
     GST_RATE_SLABS,
     assertFeatureFlag,
@@ -67,6 +73,8 @@ accountingRoute.get('/accounts', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'accounts.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -99,11 +107,134 @@ accountingRoute.get('/accounts', async (c) => {
     });
 });
 
+accountingRoute.get('/ledgers', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'accounts.read');
+    if (denied) return denied;
+
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertModuleEnabled(business, 'accounting');
+
+    const includeInactive = c.req.query('includeInactive') === 'true';
+    const ledgerAccounts = includeInactive
+        ? await db.select().from(accounts).where(eq(accounts.businessId, business.id)).orderBy(asc(accounts.code))
+        : await db.select().from(accounts).where(and(eq(accounts.businessId, business.id), eq(accounts.isActive, true))).orderBy(asc(accounts.code));
+
+    const voucherRows = await db.select({ id: vouchers.id }).from(vouchers).where(eq(vouchers.businessId, business.id));
+    const voucherIds = voucherRows.map((entry) => entry.id);
+    const lines = voucherIds.length === 0
+        ? []
+        : await db.select().from(voucherLines).where(inArray(voucherLines.voucherId, voucherIds));
+
+    const totalsByAccount = new Map<string, { debit: number; credit: number }>();
+    for (const line of lines) {
+        const current = totalsByAccount.get(line.accountId) ?? { debit: 0, credit: 0 };
+        current.debit += Number(line.debit ?? 0);
+        current.credit += Number(line.credit ?? 0);
+        totalsByAccount.set(line.accountId, current);
+    }
+
+    const data = ledgerAccounts.map((entry) => {
+        const totals = totalsByAccount.get(entry.id) ?? { debit: 0, credit: 0 };
+        return {
+            id: entry.id,
+            code: entry.code,
+            name: entry.name,
+            type: entry.type,
+            isSystem: entry.isSystem,
+            isDefault: entry.isDefault,
+            isActive: entry.isActive,
+            debitTotal: totals.debit,
+            creditTotal: totals.credit,
+            balance: totals.debit - totals.credit,
+        };
+    });
+
+    return c.json({
+        ok: true,
+        data,
+        totals: {
+            debit: data.reduce((sum, row) => sum + row.debitTotal, 0),
+            credit: data.reduce((sum, row) => sum + row.creditTotal, 0),
+        },
+    });
+});
+
+accountingRoute.get('/ledgers/:accountId', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'accounts.read');
+    if (denied) return denied;
+
+    const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+    assertModuleEnabled(business, 'accounting');
+
+    const accountId = c.req.param('accountId');
+    const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
+    const offset = Math.max(Number(c.req.query('offset') ?? 0), 0);
+
+    const accountRows = await db.select().from(accounts)
+        .where(and(eq(accounts.id, accountId), eq(accounts.businessId, business.id)))
+        .limit(1);
+    const account = accountRows[0];
+    if (!account) return c.json({ ok: false, message: 'Account not found.' }, 404);
+
+    const allLines = await db
+        .select({
+            id: voucherLines.id,
+            voucherId: voucherLines.voucherId,
+            debit: voucherLines.debit,
+            credit: voucherLines.credit,
+            voucherType: vouchers.voucherType,
+            voucherNumber: vouchers.number,
+            date: vouchers.date,
+            narration: vouchers.narration,
+        })
+        .from(voucherLines)
+        .innerJoin(vouchers, eq(vouchers.id, voucherLines.voucherId))
+        .where(and(eq(voucherLines.accountId, accountId), eq(vouchers.businessId, business.id)))
+        .orderBy(desc(vouchers.date));
+
+    const currentBalance = allLines.reduce((sum, line) => sum + Number(line.debit) - Number(line.credit), 0);
+    const pagedLines = allLines.slice(offset, offset + limit);
+
+    let running = currentBalance;
+    const rows = pagedLines.map((line) => {
+        const row = {
+            ...line,
+            runningBalance: running,
+        };
+        running -= Number(line.debit) - Number(line.credit);
+        return row;
+    });
+
+    return c.json({
+        ok: true,
+        data: {
+            account: {
+                id: account.id,
+                code: account.code,
+                name: account.name,
+                type: account.type,
+            },
+            currentBalance,
+            entries: rows,
+        },
+    });
+});
+
 accountingRoute.post('/accounts', async (c) => {
     try {
         const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'accounts.write');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -137,6 +268,8 @@ accountingRoute.post('/accounts/seed-default', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'accounts.write');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -171,6 +304,8 @@ accountingRoute.post('/journals', async (c) => {
         const db = c.get('db');
         const authUser = c.get('authUser');
         if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        const denied = requireOrganizationCapability(c, 'accounts.write');
+        if (denied) return denied;
 
         const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
@@ -221,6 +356,8 @@ accountingRoute.get('/trial-balance', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'accounts.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -271,6 +408,8 @@ accountingRoute.get('/gst/summary', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'reports.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -332,6 +471,8 @@ accountingRoute.get('/profit-loss', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'reports.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -393,6 +534,8 @@ accountingRoute.get('/balance-sheet', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'reports.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -449,6 +592,8 @@ accountingRoute.get('/inventory/valuation', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -475,6 +620,8 @@ accountingRoute.get('/inventory/reorder-suggestions', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -499,6 +646,8 @@ accountingRoute.get('/inventory/stock-aging', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
@@ -537,6 +686,8 @@ accountingRoute.get('/stock-ledger/:itemId', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);

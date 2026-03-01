@@ -18,6 +18,12 @@ import adminRoute from './routes/admin';
 import organizationsRoute from './routes/organizations';
 import staffRoute from './routes/staff';
 import operationsRoute from './routes/operations';
+import expensesRoute from './routes/expenses';
+import posRoute from './routes/pos';
+import loansRoute from './routes/loans';
+import godownsRoute from './routes/godowns';
+import cashBankRoute from './routes/cashBank';
+import businessSettingsRoute from './routes/businessSettings';
 
 const app = new Hono<AppEnv>();
 const apiRoutes = new Hono<AppEnv>();
@@ -70,18 +76,40 @@ apiRoutes.use(async (c, next) => {
 });
 
 apiRoutes.get('/health', (c) => c.json({ ok: true, service: 'vahi-api', now: new Date().toISOString() }));
+
+// Core auth & user routes
 apiRoutes.route('/auth', authRoute);
 apiRoutes.route('/users', usersRoute);
 apiRoutes.route('/organizations', organizationsRoute);
+
+// Billing & transactions
 apiRoutes.route('/items', itemsRoute);
 apiRoutes.route('/parties', partiesRoute);
 apiRoutes.route('/transactions', transactionsRoute);
-apiRoutes.route('/subscription', subscriptionRoute);
-apiRoutes.route('/reporting', reportingRoute);
+apiRoutes.route('/pos', posRoute);
+
+// Accounting & finance
 apiRoutes.route('/accounting', accountingRoute);
+apiRoutes.route('/cash-bank', cashBankRoute);
+apiRoutes.route('/expenses', expensesRoute);
+apiRoutes.route('/loans', loansRoute);
+
+// Inventory & godowns
+apiRoutes.route('/godowns', godownsRoute);
+
+// Subscription & settings
+apiRoutes.route('/subscription', subscriptionRoute);
+apiRoutes.route('/settings', businessSettingsRoute);
+
+// Reporting & analytics
+apiRoutes.route('/reporting', reportingRoute);
 apiRoutes.route('/analytics', analyticsRoute);
+
+// Staff & operations
 apiRoutes.route('/staff', staffRoute);
 apiRoutes.route('/operations', operationsRoute);
+
+// Admin
 apiRoutes.route('/admin', adminRoute);
 
 app.route('/api', apiRoutes);

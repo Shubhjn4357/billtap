@@ -4,7 +4,13 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { businessMembers, staffInvites, users } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    ensurePrimaryBusiness,
+    getAccessibleBusiness,
+    getActiveSubscription,
+    getRequestedBusinessId,
+    requireOrganizationCapability,
+} from './helpers';
 import {
     assertModuleEnabled,
     assertStaffCreationAllowed,
@@ -32,6 +38,8 @@ staffRoute.get('/', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
+    const denied = requireOrganizationCapability(c, 'staff.read');
+    if (denied) return denied;
     assertModuleEnabled(business, 'staff');
 
     const [members, invites] = await Promise.all([
@@ -77,6 +85,8 @@ staffRoute.post('/', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
             ?? await ensurePrimaryBusiness(db, authUser);
+        const denied = requireOrganizationCapability(c, 'staff.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertModuleEnabled(business, 'staff');
         await assertStaffCreationAllowed(db, business.id, subscription);
@@ -112,6 +122,8 @@ staffRoute.get('/:uid', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
+    const denied = requireOrganizationCapability(c, 'staff.read');
+    if (denied) return denied;
     assertModuleEnabled(business, 'staff');
 
     const uid = c.req.param('uid');
@@ -136,12 +148,26 @@ staffRoute.patch('/:uid', async (c) => {
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
+    const denied = requireOrganizationCapability(c, 'staff.write');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertModuleEnabled(business, 'staff');
 
-    patchSchema.parse(await c.req.json());
-    return c.json({ ok: true });
+    const payload = patchSchema.parse(await c.req.json());
+    const uid = c.req.param('uid');
+    const [member] = await db.select().from(businessMembers).where(and(
+        eq(businessMembers.businessId, business.id),
+        eq(businessMembers.userId, uid),
+    )).limit(1);
+    if (!member) return c.json({ ok: false, message: 'Staff member not found.' }, 404);
+
+    await db.update(businessMembers).set({
+        ...(payload.role ? { role: payload.role === 'owner' ? 'OWNER' : 'STAFF' } : {}),
+        updatedAt: new Date(),
+    }).where(eq(businessMembers.id, member.id));
+
+    return c.json({ ok: true, id: member.id });
 });
 
 staffRoute.delete('/invite/:id', async (c) => {
@@ -150,6 +176,8 @@ staffRoute.delete('/invite/:id', async (c) => {
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
+    const denied = requireOrganizationCapability(c, 'staff.write');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertModuleEnabled(business, 'staff');
@@ -165,6 +193,8 @@ staffRoute.delete('/:uid', async (c) => {
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
+    const denied = requireOrganizationCapability(c, 'staff.write');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertModuleEnabled(business, 'staff');

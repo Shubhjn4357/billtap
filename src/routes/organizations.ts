@@ -5,19 +5,27 @@ import { nanoid } from 'nanoid';
 import {
     businesses,
     businessMembers,
+    businessSettings,
     signatures,
     staffInvites,
     templates,
     users,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    ensurePrimaryBusiness,
+    getAccessibleBusiness,
+    getActiveSubscription,
+    getRequestedBusinessId,
+    requireOrganizationCapability,
+} from './helpers';
 import {
     assertBusinessCreationAllowed,
     assertModuleEnabled,
     assertStaffCreationAllowed,
     assertSubscriptionWriteAllowed,
 } from '../services/subscriptionPolicy';
+import { normalizeSettingsData } from '../constants/settingsSchema';
 
 const organizationsRoute = new Hono<AppEnv>();
 
@@ -160,8 +168,8 @@ organizationsRoute.get('/current', async (c) => {
             email: business.email,
         },
         context: {
-            role: 'owner',
-            permissions: {},
+            role: c.get('organizationRole') ?? 'owner',
+            permissions: c.get('organizationPermissions') ?? {},
             ownerUserId: business.ownerUserId,
             settings: business.settings ?? {},
         },
@@ -551,11 +559,91 @@ organizationsRoute.post('/signatures/current/:id/default', async (c) => {
 });
 
 organizationsRoute.get('/print-profiles/current', async (c) => {
-    return c.json({ ok: true, profiles: [] });
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) {
+        return c.json({ ok: false, message: 'Organization not found.' }, 404);
+    }
+    const denied = requireOrganizationCapability(c, 'settings.read');
+    if (denied) return denied;
+
+    const [row] = await db
+        .select()
+        .from(businessSettings)
+        .where(and(
+            eq(businessSettings.businessId, business.id),
+            eq(businessSettings.section, 'INVOICE_PRINT'),
+        ))
+        .limit(1);
+
+    const data = normalizeSettingsData('INVOICE_PRINT', (row?.dataJson ?? {}) as Record<string, unknown>);
+
+    return c.json({
+        ok: true,
+        profiles: [
+            {
+                id: row?.id ?? null,
+                section: 'INVOICE_PRINT',
+                name: 'Current',
+                data,
+                updatedAt: row?.updatedAt ?? null,
+            },
+        ],
+    });
 });
 
 organizationsRoute.post('/print-profiles/current', async (c) => {
-    return c.json({ ok: true, id: `prf_${nanoid(12)}` });
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
+        const denied = requireOrganizationCapability(c, 'settings.write');
+        if (denied) return denied;
+
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'settings');
+
+        const payload = z.object({ data: z.record(z.string(), z.unknown()) }).parse(await c.req.json());
+        const normalized = normalizeSettingsData('INVOICE_PRINT', payload.data);
+
+        const [existing] = await db.select().from(businessSettings)
+            .where(and(
+                eq(businessSettings.businessId, business.id),
+                eq(businessSettings.section, 'INVOICE_PRINT'),
+            ))
+            .limit(1);
+
+        if (existing) {
+            const [updated] = await db.update(businessSettings).set({
+                dataJson: normalized,
+                updatedAt: new Date(),
+            }).where(eq(businessSettings.id, existing.id)).returning();
+
+            return c.json({ ok: true, id: updated?.id ?? existing.id, data: normalized });
+        }
+
+        const id = `prf_${nanoid(12)}`;
+        await db.insert(businessSettings).values({
+            id,
+            businessId: business.id,
+            section: 'INVOICE_PRINT',
+            dataJson: normalized,
+            updatedAt: new Date(),
+        });
+
+        return c.json({ ok: true, id, data: normalized });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update print profile.' }, 400);
+    }
 });
 
 organizationsRoute.get('/invites', async (c) => {

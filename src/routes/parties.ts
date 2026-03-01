@@ -4,7 +4,13 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { parties } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    ensurePrimaryBusiness,
+    getAccessibleBusiness,
+    getActiveSubscription,
+    getRequestedBusinessId,
+    requireOrganizationCapability,
+} from './helpers';
 import {
     assertFeatureFlag,
     assertModuleEnabled,
@@ -51,6 +57,8 @@ partiesRoute.get('/', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'parties.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
     assertModuleEnabled(business, 'parties');
@@ -91,6 +99,8 @@ partiesRoute.post('/', async (c) => {
         if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
         const business = await ensurePrimaryBusiness(db, authUser);
+        const denied = requireOrganizationCapability(c, 'parties.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
@@ -144,6 +154,8 @@ partiesRoute.patch('/:id', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'parties.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
@@ -176,6 +188,8 @@ partiesRoute.get('/:id', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'parties.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
     assertModuleEnabled(business, 'parties');

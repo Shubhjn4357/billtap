@@ -4,7 +4,13 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { inventoryMovements, items } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    ensurePrimaryBusiness,
+    getAccessibleBusiness,
+    getActiveSubscription,
+    getRequestedBusinessId,
+    requireOrganizationCapability,
+} from './helpers';
 import {
     assertAllowedGstRate,
     assertFeatureFlag,
@@ -84,6 +90,8 @@ itemsRoute.get('/', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
     assertModuleEnabled(business, 'stock');
@@ -124,6 +132,8 @@ itemsRoute.get('/:id', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
     assertModuleEnabled(business, 'stock');
@@ -148,6 +158,8 @@ itemsRoute.post('/', async (c) => {
         if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
         const business = await ensurePrimaryBusiness(db, authUser);
+        const denied = requireOrganizationCapability(c, 'inventory.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'STOCK_MODULE');
@@ -238,6 +250,8 @@ itemsRoute.patch('/:id', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'inventory.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'STOCK_MODULE');
@@ -285,6 +299,8 @@ itemsRoute.post('/:id/adjust', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'inventory.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'STOCK_MODULE');
@@ -345,6 +361,8 @@ itemsRoute.delete('/:id', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.write');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
@@ -364,6 +382,8 @@ itemsRoute.get('/:id/ledger', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
     assertModuleEnabled(business, 'stock');

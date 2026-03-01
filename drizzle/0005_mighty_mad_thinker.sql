@@ -1,1 +1,0 @@
-CREATE INDEX "transactions_org_bill_number_idx" ON "transactions" USING btree ("organizationId","billNumber");

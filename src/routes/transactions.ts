@@ -10,7 +10,13 @@ import {
     parties,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
+import {
+    ensurePrimaryBusiness,
+    getAccessibleBusiness,
+    getActiveSubscription,
+    getRequestedBusinessId,
+    requireOrganizationCapability,
+} from './helpers';
 import {
     assertAllowedGstRate,
     assertBillCreationAllowed,
@@ -40,7 +46,8 @@ const createTransactionSchema = z.object({
         'PROFORMA',
         'CREDIT_NOTE_DOC',
         'DEBIT_NOTE_DOC',
-        'DELIVERY_CHALLAN',
+        'DELIVERY_CHALLAN_DOC',
+        'POS_BILL',
     ]).optional(),
     partyId: z.string().optional(),
     partyName: z.string().trim().optional(),
@@ -109,7 +116,7 @@ const generateInvoiceNumber = () => {
 
 const toInvoiceType = (
     billMode: 'GST' | 'ESTIMATE' | undefined,
-    invoiceType?: 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'ESTIMATE' | 'PROFORMA' | 'CREDIT_NOTE_DOC' | 'DEBIT_NOTE_DOC' | 'DELIVERY_CHALLAN'
+    invoiceType?: 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'ESTIMATE' | 'PROFORMA' | 'CREDIT_NOTE_DOC' | 'DEBIT_NOTE_DOC' | 'DELIVERY_CHALLAN_DOC' | 'POS_BILL'
 ) => {
     if (invoiceType) return invoiceType;
     if (billMode === 'ESTIMATE') return 'ESTIMATE';
@@ -132,6 +139,8 @@ transactionsRoute.get('/bill-number/check', async (c) => {
     if (!business) {
         return c.json({ ok: false, message: 'Business not found.' }, 404);
     }
+    const denied = requireOrganizationCapability(c, 'billing.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'GST_INVOICES');
     assertModuleEnabled(business, 'billing');
@@ -152,6 +161,8 @@ transactionsRoute.post('/', async (c) => {
         if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
         const business = await ensurePrimaryBusiness(db, authUser);
+        const denied = requireOrganizationCapability(c, 'billing.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'GST_INVOICES');
@@ -197,7 +208,7 @@ transactionsRoute.post('/', async (c) => {
         await db.insert(invoices).values({
             id: invoiceId,
             businessId: business.id,
-            invoiceType: toInvoiceType(payload.billMode, payload.invoiceType),
+            invoiceType: toInvoiceType(payload.billMode, payload.invoiceType as 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'ESTIMATE' | 'PROFORMA' | 'CREDIT_NOTE_DOC' | 'DEBIT_NOTE_DOC' | 'DELIVERY_CHALLAN_DOC' | 'POS_BILL' | undefined),
             invoiceNumber,
             invoiceDate: billDate,
             partyId,
@@ -205,6 +216,9 @@ transactionsRoute.post('/', async (c) => {
             totalTaxableValue: payload.totalAmount - (payload.taxAmount ?? 0),
             totalTaxAmount: payload.taxAmount ?? 0,
             totalInvoiceValue: payload.totalAmount,
+            discountAmount: payload.discountAmount ?? 0,
+            roundOffAmount: 0,
+            additionalCharges: 0,
             reverseCharge: payload.reverseCharge ?? false,
             gstRateBreakupJson: {},
             eInvoiceIrn: payload.eInvoiceIrn ?? null,
@@ -214,6 +228,7 @@ transactionsRoute.post('/', async (c) => {
             paidAmount: payload.paidAmount ?? 0,
             dueDate: payload.dueDate ?? null,
             notes: payload.remark ?? null,
+            isDeleted: false,
             createdByUserId: authUser.id,
             createdAt: now,
             updatedAt: now,
@@ -302,6 +317,8 @@ transactionsRoute.get('/', async (c) => {
     if (!business) {
         return c.json({ ok: false, message: 'Business not found.' }, 404);
     }
+    const denied = requireOrganizationCapability(c, 'billing.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'GST_INVOICES');
     assertModuleEnabled(business, 'billing');
@@ -402,6 +419,8 @@ transactionsRoute.get('/pending-reminders', async (c) => {
     if (!business) {
         return c.json({ ok: false, message: 'Business not found.' }, 404);
     }
+    const denied = requireOrganizationCapability(c, 'billing.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'GST_INVOICES');
     assertModuleEnabled(business, 'billing');
@@ -441,6 +460,8 @@ transactionsRoute.get('/:id', async (c) => {
     if (!business) {
         return c.json({ ok: false, message: 'Business not found.' }, 404);
     }
+    const denied = requireOrganizationCapability(c, 'billing.read');
+    if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'GST_INVOICES');
     assertModuleEnabled(business, 'billing');
@@ -495,6 +516,8 @@ transactionsRoute.patch('/:id/payment', async (c) => {
         if (!business) {
             return c.json({ ok: false, message: 'Business not found.' }, 404);
         }
+        const denied = requireOrganizationCapability(c, 'billing.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'GST_INVOICES');
@@ -545,6 +568,8 @@ transactionsRoute.post('/:id/e-invoice/generate', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'billing.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'E_INVOICE');
@@ -576,6 +601,8 @@ transactionsRoute.post('/:id/e-invoice/cancel', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'billing.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'E_INVOICE');
@@ -602,6 +629,8 @@ transactionsRoute.post('/:id/e-way-bill/generate', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'billing.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'E_WAY_BILL');
@@ -632,6 +661,8 @@ transactionsRoute.post('/:id/e-way-bill/cancel', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'billing.write');
+        if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'E_WAY_BILL');

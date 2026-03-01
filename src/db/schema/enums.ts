@@ -42,6 +42,10 @@ export const featureFlagEnum = pgEnum('feature_flag', [
     'API_ACCESS',
     'BATCH_EXPIRY',
     'MULTI_GODOWN',
+    'POS_MODE',
+    'LOYALTY_POINTS',
+    'SMS_NOTIFICATIONS',
+    'WHATSAPP_NOTIFICATIONS',
 ]);
 
 export const accountTypeEnum = pgEnum('account_type', [
@@ -54,13 +58,22 @@ export const accountTypeEnum = pgEnum('account_type', [
 
 export const voucherTypeEnum = pgEnum('voucher_type', [
     'SALES_INVOICE',
-    'PURCHASE_INVOICE',
-    'PAYMENT',
-    'RECEIPT',
-    'CONTRA',
-    'JOURNAL',
+    'POS_SALE',
+    'PURCHASE_BILL',
+    'PAYMENT_IN',
+    'PAYMENT_OUT',
     'CREDIT_NOTE',
     'DEBIT_NOTE',
+    'ESTIMATE',
+    'PROFORMA_INVOICE',
+    'SALE_ORDER',
+    'PURCHASE_ORDER',
+    'DELIVERY_CHALLAN',
+    'GOODS_RETURN_DC',
+    'OTHER_INCOME_VOUCHER',
+    'FIXED_ASSET_VOUCHER',
+    'CONTRA',
+    'JOURNAL',
 ]);
 
 export const partyTypeEnum = pgEnum('party_type', ['CUSTOMER', 'SUPPLIER']);
@@ -72,7 +85,8 @@ export const invoiceTypeEnum = pgEnum('invoice_type', [
     'PROFORMA',
     'CREDIT_NOTE_DOC',
     'DEBIT_NOTE_DOC',
-    'DELIVERY_CHALLAN',
+    'DELIVERY_CHALLAN_DOC',
+    'POS_BILL',
 ]);
 
 export const paymentStatusEnum = pgEnum('payment_status', [
@@ -100,6 +114,7 @@ export const notificationChannelEnum = pgEnum('notification_channel', [
     'IN_APP',
     'PUSH',
     'EMAIL',
+    'SMS',
     'WHATSAPP',
 ]);
 
@@ -110,3 +125,33 @@ export const adminRoleEnum = pgEnum('admin_role', [
 ]);
 
 export const memberRoleEnum = pgEnum('member_role', ['OWNER', 'STAFF']);
+
+export const settingsSectionEnum = pgEnum('settings_section', [
+    'GENERAL',
+    'ITEM_SETTINGS',
+    'PARTY_SETTINGS',
+    'TAXES_AND_GST',
+    'PAYMENT_REMINDERS',
+    'TRANSACTION_SMS',
+    'TRANSACTION_HEADER',
+    'ITEM_TABLE',
+    'TAX_DISCOUNT_TOTAL',
+    'MORE_TRANSACTION_FEATURES',
+    'INVOICE_PRINT',
+    'BACKUP_SETTINGS',
+    'MULTI_FIRM',
+    'GODOWN_AND_STOCK_TRANSFER',
+    'SECURITY',
+]);
+
+export const expenseCategoryEnum = pgEnum('expense_category', [
+    'MANUFACTURING',
+    'PETROL',
+    'RENT',
+    'SALARY',
+    'TEA_AND_REFRESHMENTS',
+    'TRANSPORT',
+    'MISCELLANEOUS',
+]);
+
+export const loanTypeEnum = pgEnum('loan_type', ['BORROWED', 'GIVEN']);

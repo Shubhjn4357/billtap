@@ -34,7 +34,7 @@ const SUBSCRIPTION_TIERS = ['FREE', 'STARTER', 'GROWTH', 'ENTERPRISE'] as const;
 const BILLING_CYCLES = ['MONTHLY', 'YEARLY', 'THREE_YEAR'] as const;
 const DISCOUNT_TYPES = ['PERCENTAGE', 'FIXED_AMOUNT'] as const;
 const DISCOUNT_SCOPES = ['PLAN', 'TIER', 'GLOBAL'] as const;
-const NOTIFICATION_CHANNELS = ['IN_APP', 'PUSH', 'EMAIL', 'WHATSAPP'] as const;
+const NOTIFICATION_CHANNELS = ['IN_APP', 'PUSH', 'EMAIL', 'SMS', 'WHATSAPP'] as const;
 const FEATURE_FLAGS = [
     'OFFLINE_BILLING',
     'GST_INVOICES',
@@ -56,6 +56,10 @@ const FEATURE_FLAGS = [
     'API_ACCESS',
     'BATCH_EXPIRY',
     'MULTI_GODOWN',
+    'POS_MODE',
+    'LOYALTY_POINTS',
+    'SMS_NOTIFICATIONS',
+    'WHATSAPP_NOTIFICATIONS',
 ] as const;
 
 const adminSettingsSchema = z.object({

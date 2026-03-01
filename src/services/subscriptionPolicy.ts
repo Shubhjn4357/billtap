@@ -272,4 +272,3 @@ export const assertModuleEnabled = (business: BusinessRow | null, moduleKey: str
         throw new Error(`Module "${moduleKey}" is disabled in organization settings.`);
     }
 };
-

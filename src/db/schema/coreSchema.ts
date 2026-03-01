@@ -17,11 +17,14 @@ import {
     devicePlatformEnum,
     discountScopeEnum,
     discountTypeEnum,
+    expenseCategoryEnum,
     invoiceTypeEnum,
+    loanTypeEnum,
     memberRoleEnum,
     notificationChannelEnum,
     partyTypeEnum,
     paymentStatusEnum,
+    settingsSectionEnum,
     subscriptionStatusEnum,
     subscriptionTierEnum,
     voucherTypeEnum,
@@ -34,6 +37,8 @@ const createTimestamps = () => ({
     createdAt: timestamp('created_at', ts).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', ts).defaultNow().notNull(),
 });
+
+// ─── Core Users & Auth ────────────────────────────────────────────────────────
 
 export const users = pgTable('users', {
     id: text('id').primaryKey(),
@@ -49,6 +54,8 @@ export const users = pgTable('users', {
     googleSubIdx: index('users_google_sub_idx').on(table.googleSub),
     emailIdx: index('users_email_idx').on(table.email),
 }));
+
+// ─── Businesses ───────────────────────────────────────────────────────────────
 
 export const businesses = pgTable('businesses', {
     id: text('id').primaryKey(),
@@ -89,6 +96,8 @@ export const businessMembers = pgTable('business_members', {
     businessIdx: index('business_members_business_idx').on(table.businessId),
     userIdx: index('business_members_user_idx').on(table.userId),
 }));
+
+// ─── Subscriptions & Plans ────────────────────────────────────────────────────
 
 export const subscriptions = pgTable('subscriptions', {
     id: text('id').primaryKey(),
@@ -165,6 +174,8 @@ export const discounts = pgTable('discounts', {
     activeIdx: index('discounts_active_idx').on(table.isActive),
 }));
 
+// ─── Parties & Items ──────────────────────────────────────────────────────────
+
 export const parties = pgTable('parties', {
     id: text('id').primaryKey(),
     businessId: text('business_id').notNull(),
@@ -178,6 +189,7 @@ export const parties = pgTable('parties', {
     gstin: text('gstin'),
     openingBalance: doublePrecision('opening_balance').default(0).notNull(),
     creditLimit: doublePrecision('credit_limit').default(0).notNull(),
+    loyaltyPoints: integer('loyalty_points').default(0).notNull(),
     isActive: boolean('is_active').default(true).notNull(),
     ...createTimestamps(),
 }, (table) => ({
@@ -233,6 +245,8 @@ export const inventoryMovements = pgTable('inventory_movements', {
     createdIdx: index('inventory_movements_created_idx').on(table.createdAt),
 }));
 
+// ─── Accounting ───────────────────────────────────────────────────────────────
+
 export const accounts = pgTable('accounts', {
     id: text('id').primaryKey(),
     businessId: text('business_id').notNull(),
@@ -278,6 +292,8 @@ export const voucherLines = pgTable('voucher_lines', {
     accountIdx: index('voucher_lines_account_idx').on(table.accountId),
 }));
 
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
 export const invoices = pgTable('invoices', {
     id: text('id').primaryKey(),
     businessId: text('business_id').notNull(),
@@ -289,6 +305,9 @@ export const invoices = pgTable('invoices', {
     totalTaxableValue: doublePrecision('total_taxable_value').default(0).notNull(),
     totalTaxAmount: doublePrecision('total_tax_amount').default(0).notNull(),
     totalInvoiceValue: doublePrecision('total_invoice_value').default(0).notNull(),
+    discountAmount: doublePrecision('discount_amount').default(0).notNull(),
+    roundOffAmount: doublePrecision('round_off_amount').default(0).notNull(),
+    additionalCharges: doublePrecision('additional_charges').default(0).notNull(),
     reverseCharge: boolean('reverse_charge').default(false).notNull(),
     gstRateBreakupJson: jsonb('gst_rate_breakup_json').$type<Record<string, unknown>>().default({}).notNull(),
     eInvoiceIrn: text('e_invoice_irn'),
@@ -298,12 +317,20 @@ export const invoices = pgTable('invoices', {
     paidAmount: doublePrecision('paid_amount').default(0).notNull(),
     dueDate: timestamp('due_date', ts),
     notes: text('notes'),
+    termsAndConditions: text('terms_and_conditions'),
+    transportDetails: jsonb('transport_details').$type<Record<string, unknown>>().default({}).notNull(),
     createdByUserId: text('created_by_user_id'),
+    // Source reference (e.g., converted from estimate)
+    sourceVoucherType: text('source_voucher_type'),
+    sourceVoucherId: text('source_voucher_id'),
+    isDeleted: boolean('is_deleted').default(false).notNull(),
     ...createTimestamps(),
 }, (table) => ({
     businessIdx: index('invoices_business_idx').on(table.businessId),
     numberIdx: index('invoices_number_idx').on(table.invoiceNumber),
     dateIdx: index('invoices_date_idx').on(table.invoiceDate),
+    partyIdx: index('invoices_party_idx').on(table.partyId),
+    statusIdx: index('invoices_payment_status_idx').on(table.paymentStatus),
 }));
 
 export const invoiceItems = pgTable('invoice_items', {
@@ -315,6 +342,7 @@ export const invoiceItems = pgTable('invoice_items', {
     unit: text('unit'),
     rate: doublePrecision('rate').default(0).notNull(),
     discountPercent: doublePrecision('discount_percent').default(0).notNull(),
+    discountAmount: doublePrecision('discount_amount').default(0).notNull(),
     taxableValue: doublePrecision('taxable_value').default(0).notNull(),
     cgstRate: doublePrecision('cgst_rate').default(0).notNull(),
     cgstAmount: doublePrecision('cgst_amount').default(0).notNull(),
@@ -324,11 +352,150 @@ export const invoiceItems = pgTable('invoice_items', {
     igstAmount: doublePrecision('igst_amount').default(0).notNull(),
     cessRate: doublePrecision('cess_rate').default(0).notNull(),
     cessAmount: doublePrecision('cess_amount').default(0).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
     createdAt: timestamp('created_at', ts).defaultNow().notNull(),
 }, (table) => ({
     invoiceIdx: index('invoice_items_invoice_idx').on(table.invoiceId),
     itemIdx: index('invoice_items_item_idx').on(table.itemId),
 }));
+
+// ─── Payment Receipts (link payments to invoices) ─────────────────────────────
+
+export const paymentReceipts = pgTable('payment_receipts', {
+    id: text('id').primaryKey(),
+    businessId: text('business_id').notNull(),
+    invoiceId: text('invoice_id').notNull(),
+    voucherId: text('voucher_id').notNull(),
+    amount: doublePrecision('amount').notNull(),
+    paymentMode: text('payment_mode').default('CASH').notNull(),
+    paymentDate: timestamp('payment_date', ts).defaultNow().notNull(),
+    notes: text('notes'),
+    createdByUserId: text('created_by_user_id'),
+    createdAt: timestamp('created_at', ts).defaultNow().notNull(),
+}, (table) => ({
+    invoiceIdx: index('payment_receipts_invoice_idx').on(table.invoiceId),
+    voucherIdx: index('payment_receipts_voucher_idx').on(table.voucherId),
+    businessIdx: index('payment_receipts_business_idx').on(table.businessId),
+}));
+
+// ─── Expenses ─────────────────────────────────────────────────────────────────
+
+export const expenses = pgTable('expenses', {
+    id: text('id').primaryKey(),
+    businessId: text('business_id').notNull(),
+    category: expenseCategoryEnum('category').notNull(),
+    accountId: text('account_id'),
+    amount: doublePrecision('amount').notNull(),
+    date: timestamp('date', ts).defaultNow().notNull(),
+    description: text('description'),
+    paymentMode: text('payment_mode').default('CASH').notNull(),
+    partyId: text('party_id'),
+    voucherId: text('voucher_id'),
+    receiptUrl: text('receipt_url'),
+    createdByUserId: text('created_by_user_id'),
+    isDeleted: boolean('is_deleted').default(false).notNull(),
+    ...createTimestamps(),
+}, (table) => ({
+    businessIdx: index('expenses_business_idx').on(table.businessId),
+    dateIdx: index('expenses_date_idx').on(table.date),
+    categoryIdx: index('expenses_category_idx').on(table.category),
+}));
+
+// ─── Loans ────────────────────────────────────────────────────────────────────
+
+export const loans = pgTable('loans', {
+    id: text('id').primaryKey(),
+    businessId: text('business_id').notNull(),
+    lenderBorrowerName: text('lender_borrower_name').notNull(),
+    loanType: loanTypeEnum('loan_type').notNull(),
+    openingDate: date('opening_date', { mode: 'date' }).notNull(),
+    openingBalance: doublePrecision('opening_balance').default(0).notNull(),
+    currentBalance: doublePrecision('current_balance').default(0).notNull(),
+    interestRatePercent: doublePrecision('interest_rate_percent').default(0).notNull(),
+    emiAmount: doublePrecision('emi_amount'),
+    accountId: text('account_id'),
+    partyId: text('party_id'),
+    notes: text('notes'),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdByUserId: text('created_by_user_id'),
+    ...createTimestamps(),
+}, (table) => ({
+    businessIdx: index('loans_business_idx').on(table.businessId),
+}));
+
+export const loanTransactions = pgTable('loan_transactions', {
+    id: text('id').primaryKey(),
+    loanId: text('loan_id').notNull(),
+    businessId: text('business_id').notNull(),
+    transactionType: text('transaction_type').notNull(), // DISBURSEMENT | REPAYMENT | INTEREST
+    amount: doublePrecision('amount').notNull(),
+    balanceAfter: doublePrecision('balance_after').notNull(),
+    date: timestamp('date', ts).defaultNow().notNull(),
+    notes: text('notes'),
+    voucherId: text('voucher_id'),
+    createdByUserId: text('created_by_user_id'),
+    createdAt: timestamp('created_at', ts).defaultNow().notNull(),
+}, (table) => ({
+    loanIdx: index('loan_transactions_loan_idx').on(table.loanId),
+    businessIdx: index('loan_transactions_business_idx').on(table.businessId),
+}));
+
+// ─── Godowns ─────────────────────────────────────────────────────────────────
+
+export const godowns = pgTable('godowns', {
+    id: text('id').primaryKey(),
+    businessId: text('business_id').notNull(),
+    name: text('name').notNull(),
+    address: text('address'),
+    isDefault: boolean('is_default').default(false).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdByUserId: text('created_by_user_id'),
+    ...createTimestamps(),
+}, (table) => ({
+    businessIdx: index('godowns_business_idx').on(table.businessId),
+}));
+
+export const godownStock = pgTable('godown_stock', {
+    id: text('id').primaryKey(),
+    businessId: text('business_id').notNull(),
+    godownId: text('godown_id').notNull(),
+    itemId: text('item_id').notNull(),
+    quantity: doublePrecision('quantity').default(0).notNull(),
+    ...createTimestamps(),
+}, (table) => ({
+    godownItemIdx: index('godown_stock_godown_item_idx').on(table.godownId, table.itemId),
+    businessIdx: index('godown_stock_business_idx').on(table.businessId),
+}));
+
+export const stockTransfers = pgTable('stock_transfers', {
+    id: text('id').primaryKey(),
+    businessId: text('business_id').notNull(),
+    fromGodownId: text('from_godown_id').notNull(),
+    toGodownId: text('to_godown_id').notNull(),
+    itemId: text('item_id').notNull(),
+    quantity: doublePrecision('quantity').notNull(),
+    date: timestamp('date', ts).defaultNow().notNull(),
+    notes: text('notes'),
+    createdByUserId: text('created_by_user_id'),
+    createdAt: timestamp('created_at', ts).defaultNow().notNull(),
+}, (table) => ({
+    businessIdx: index('stock_transfers_business_idx').on(table.businessId),
+    itemIdx: index('stock_transfers_item_idx').on(table.itemId),
+}));
+
+// ─── Business Settings ────────────────────────────────────────────────────────
+
+export const businessSettings = pgTable('business_settings', {
+    id: text('id').primaryKey(),
+    businessId: text('business_id').notNull(),
+    section: settingsSectionEnum('section').notNull(),
+    dataJson: jsonb('data_json').$type<Record<string, unknown>>().default({}).notNull(),
+    updatedAt: timestamp('updated_at', ts).defaultNow().notNull(),
+}, (table) => ({
+    businessSectionIdx: index('business_settings_business_section_idx').on(table.businessId, table.section),
+}));
+
+// ─── Devices & Plan Usage ─────────────────────────────────────────────────────
 
 export const devices = pgTable('devices', {
     id: text('id').primaryKey(),
@@ -359,6 +526,8 @@ export const planUsage = pgTable('plan_usage', {
     monthYearIdx: index('plan_usage_month_year_idx').on(table.year, table.month),
 }));
 
+// ─── Admin ────────────────────────────────────────────────────────────────────
+
 export const adminAuditLogs = pgTable('admin_audit_logs', {
     id: text('id').primaryKey(),
     adminEmail: text('admin_email').notNull(),
@@ -372,6 +541,14 @@ export const adminAuditLogs = pgTable('admin_audit_logs', {
     adminIdx: index('admin_audit_logs_admin_idx').on(table.adminEmail),
     createdIdx: index('admin_audit_logs_created_idx').on(table.createdAt),
 }));
+
+export const adminSettings = pgTable('admin_settings', {
+    id: text('id').primaryKey(),
+    settings: jsonb('settings').$type<Record<string, unknown>>().default({}).notNull(),
+    updatedAt: timestamp('updated_at', ts).defaultNow().notNull(),
+});
+
+// ─── Staff & Invites ──────────────────────────────────────────────────────────
 
 export const staffInvites = pgTable('staff_invites', {
     id: text('id').primaryKey(),
@@ -387,6 +564,8 @@ export const staffInvites = pgTable('staff_invites', {
     businessIdx: index('staff_invites_business_idx').on(table.businessId),
     phoneIdx: index('staff_invites_phone_idx').on(table.phoneNumber),
 }));
+
+// ─── Templates & Signatures ───────────────────────────────────────────────────
 
 export const templates = pgTable('templates', {
     id: text('id').primaryKey(),
@@ -415,6 +594,8 @@ export const signatures = pgTable('signatures', {
 }, (table) => ({
     businessIdx: index('signatures_business_idx').on(table.businessId),
 }));
+
+// ─── Analytics & Events ───────────────────────────────────────────────────────
 
 export const analyticsEvents = pgTable('analytics_events', {
     id: text('id').primaryKey(),
@@ -450,6 +631,8 @@ export const paymentIntents = pgTable('payment_intents', {
     businessIdx: index('payment_intents_business_idx').on(table.businessId),
     statusIdx: index('payment_intents_status_idx').on(table.status),
 }));
+
+// ─── Offers & Notifications ───────────────────────────────────────────────────
 
 export const offers = pgTable('offers', {
     id: text('id').primaryKey(),
@@ -523,9 +706,3 @@ export const notificationDeliveries = pgTable('notification_deliveries', {
     statusIdx: index('notification_deliveries_status_idx').on(table.status),
     userIdx: index('notification_deliveries_user_idx').on(table.userId),
 }));
-
-export const adminSettings = pgTable('admin_settings', {
-    id: text('id').primaryKey(),
-    settings: jsonb('settings').$type<Record<string, unknown>>().default({}).notNull(),
-    updatedAt: timestamp('updated_at', ts).defaultNow().notNull(),
-});

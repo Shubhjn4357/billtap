@@ -1,5 +1,5 @@
 import { and, asc, desc, eq } from 'drizzle-orm';
-import type { AppContext } from '../middleware/auth';
+import type { AppContext, AppVariables } from '../middleware/auth';
 import { businesses, businessMembers, subscriptions, users } from '../db/schema';
 import type { BusinessRow, SubscriptionRow, UserRow } from '../db/schema';
 import type { DrizzleClient } from '../db/client';
@@ -149,4 +149,88 @@ export const updateUserBasics = async (
     await db.update(users).set(next).where(eq(users.id, userId));
     const rows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     return rows[0] ?? null;
+};
+
+type OrganizationRole = NonNullable<AppVariables['organizationRole']>;
+
+const DEFAULT_ROLE_CAPABILITIES: Record<OrganizationRole, readonly string[]> = {
+    owner: ['*'],
+    manager: [
+        'billing.*',
+        'inventory.*',
+        'parties.*',
+        'reports.read',
+        'accounts.*',
+        'expenses.*',
+        'cashbank.*',
+        'loans.*',
+        'pos.*',
+        'staff.read',
+        'settings.read',
+        'operations.read',
+    ],
+    salesman: [
+        'billing.*',
+        'pos.*',
+        'parties.read',
+        'parties.write',
+        'inventory.read',
+        'reports.read',
+        'expenses.read',
+        'cashbank.read',
+        'loans.read',
+    ],
+};
+
+const capabilityMatches = (granted: string, requested: string) => {
+    if (granted === '*') return true;
+    if (granted === requested) return true;
+    if (!granted.endsWith('.*')) return false;
+    const prefix = granted.slice(0, -2);
+    return requested === prefix || requested.startsWith(`${prefix}.`);
+};
+
+const resolvePermissionOverride = (permissions: Record<string, boolean>, capability: string): boolean | null => {
+    const tokens = capability.split('.');
+    const candidates: string[] = [capability];
+
+    for (let idx = tokens.length; idx >= 1; idx -= 1) {
+        const segment = tokens.slice(0, idx).join('.');
+        candidates.push(segment);
+        candidates.push(`${segment}.*`);
+    }
+    candidates.push('*');
+
+    for (const key of candidates) {
+        const value = permissions[key];
+        if (typeof value === 'boolean') return value;
+    }
+    return null;
+};
+
+export const isOrganizationCapabilityAllowed = (c: AppContext, capability: string) => {
+    const authRole = c.get('authRole');
+    if (authRole === 'SUPER_ADMIN') return true;
+
+    const activeBusinessId = c.get('activeBusinessId');
+    if (!activeBusinessId) return true;
+
+    const role = c.get('organizationRole');
+    if (!role) return false;
+    if (role === 'owner') return true;
+
+    const permissions = c.get('organizationPermissions') ?? {};
+    const override = resolvePermissionOverride(permissions, capability);
+    if (override !== null) return override;
+
+    const defaults = DEFAULT_ROLE_CAPABILITIES[role];
+    return defaults.some((granted) => capabilityMatches(granted, capability));
+};
+
+export const requireOrganizationCapability = (c: AppContext, capability: string) => {
+    if (isOrganizationCapabilityAllowed(c, capability)) return null;
+    return c.json({
+        ok: false,
+        message: `Permission denied for capability "${capability}".`,
+    }, 403);
 };

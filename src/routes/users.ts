@@ -48,8 +48,9 @@ usersRoute.get('/me', requireAuth, async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     const subscription = business ? await getActiveSubscription(db, business.id) : null;
+    const role = c.get('organizationRole') === 'owner' ? 'owner' : 'staff';
 
-    return c.json({ ok: true, user: toUserProfile(authUser, business, subscription, 'owner') });
+    return c.json({ ok: true, user: toUserProfile(authUser, business, subscription, role) });
 });
 
 usersRoute.patch('/me', requireAuth, async (c) => {
@@ -92,10 +93,11 @@ usersRoute.patch('/me', requireAuth, async (c) => {
 
         const refreshedBusiness = await db.select().from(businesses).where(eq(businesses.id, business.id)).limit(1);
         const subscription = await getActiveSubscription(db, business.id);
+        const role = c.get('organizationRole') === 'owner' ? 'owner' : 'staff';
 
         return c.json({
             ok: true,
-            user: toUserProfile(updatedUser ?? authUser, refreshedBusiness[0] ?? business, subscription, 'owner'),
+            user: toUserProfile(updatedUser ?? authUser, refreshedBusiness[0] ?? business, subscription, role),
         });
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Profile update failed.';
@@ -120,10 +122,11 @@ usersRoute.post('/me/phone/link', requireAuth, async (c) => {
 
         const business = await ensurePrimaryBusiness(db, updatedUser ?? authUser);
         const subscription = await getActiveSubscription(db, business.id);
+        const role = c.get('organizationRole') === 'owner' ? 'owner' : 'staff';
 
         return c.json({
             ok: true,
-            user: toUserProfile(updatedUser ?? authUser, business, subscription, 'owner'),
+            user: toUserProfile(updatedUser ?? authUser, business, subscription, role),
             message: nextPhone ? 'Phone linked successfully.' : 'Phone link accepted.',
         });
     } catch (error) {
