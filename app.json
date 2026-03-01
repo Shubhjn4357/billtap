@@ -56,7 +56,13 @@
         }
       ],
       "@react-native-google-signin/google-signin",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-dev-client",
+        {
+          "launchMode": "most-recent"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
