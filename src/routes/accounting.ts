@@ -35,6 +35,13 @@ const accountSchema = z.object({
     parentId: z.string().optional().nullable(),
 });
 
+const accountPatchSchema = z.object({
+    code: z.string().trim().min(1).optional(),
+    name: z.string().trim().min(1).optional(),
+    parentId: z.string().optional().nullable(),
+    isActive: z.boolean().optional(),
+});
+
 const journalLineSchema = z.object({
     accountId: z.string().min(1),
     debit: z.number().nonnegative().optional().default(0),
@@ -261,6 +268,80 @@ accountingRoute.post('/accounts', async (c) => {
         return c.json({ ok: true, id });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create account.' }, 400);
+    }
+});
+
+accountingRoute.patch('/accounts/:id', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        const denied = requireOrganizationCapability(c, 'accounts.write');
+        if (denied) return denied;
+
+        const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'accounting');
+
+        const accountId = c.req.param('id');
+        const payload = accountPatchSchema.parse(await c.req.json());
+
+        const existingRows = await db.select().from(accounts)
+            .where(and(eq(accounts.id, accountId), eq(accounts.businessId, business.id)))
+            .limit(1);
+        const existing = existingRows[0];
+        if (!existing) return c.json({ ok: false, message: 'Account not found.' }, 404);
+
+        if (existing.isSystem && payload.name === undefined && payload.code === undefined && payload.parentId === undefined && payload.isActive !== undefined && payload.isActive !== existing.isActive) {
+            return c.json({ ok: false, message: 'System account status cannot be changed directly.' }, 400);
+        }
+
+        await db.update(accounts).set({
+            ...(payload.code !== undefined ? { code: payload.code } : {}),
+            ...(payload.name !== undefined ? { name: payload.name } : {}),
+            ...(payload.parentId !== undefined ? { parentAccountId: payload.parentId } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            updatedAt: new Date(),
+        }).where(and(eq(accounts.id, accountId), eq(accounts.businessId, business.id)));
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update account.' }, 400);
+    }
+});
+
+accountingRoute.post('/accounts/:id/deactivate', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        const denied = requireOrganizationCapability(c, 'accounts.write');
+        if (denied) return denied;
+
+        const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'accounting');
+
+        const accountId = c.req.param('id');
+        const rows = await db.select().from(accounts)
+            .where(and(eq(accounts.id, accountId), eq(accounts.businessId, business.id)))
+            .limit(1);
+        const account = rows[0];
+        if (!account) return c.json({ ok: false, message: 'Account not found.' }, 404);
+        if (account.isSystem || account.isDefault) {
+            return c.json({ ok: false, message: 'System/default accounts cannot be deactivated.' }, 400);
+        }
+
+        await db.update(accounts).set({
+            isActive: false,
+            updatedAt: new Date(),
+        }).where(and(eq(accounts.id, accountId), eq(accounts.businessId, business.id)));
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to deactivate account.' }, 400);
     }
 });
 
