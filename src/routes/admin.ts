@@ -648,20 +648,77 @@ adminRoute.patch('/settings', async (c) => {
 
 adminRoute.get('/audit-logs', async (c) => {
     const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
-    const rows = await db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(limit);
+    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 5000);
+    const actor = c.req.query('actor')?.trim();
+    const action = c.req.query('action')?.trim();
+    const entityType = c.req.query('entityType')?.trim();
+    const role = c.req.query('role')?.trim();
+    const status = c.req.query('status')?.trim().toUpperCase();
+    const fromRaw = c.req.query('from');
+    const toRaw = c.req.query('to');
+    const q = c.req.query('q')?.trim().toLowerCase();
 
-    return c.json({
-        ok: true,
-        logs: rows.map((entry) => ({
+    const whereFilters: any[] = [];
+    if (actor) whereFilters.push(ilike(adminAuditLogs.adminEmail, `%${actor}%`));
+    if (action) whereFilters.push(ilike(adminAuditLogs.action, `%${action}%`));
+    if (entityType) whereFilters.push(ilike(adminAuditLogs.entityType, `%${entityType}%`));
+    const normalizedRole = (role ?? '').toUpperCase();
+    if (normalizedRole === 'SUPER_ADMIN' || normalizedRole === 'SUPPORT_ADMIN' || normalizedRole === 'READ_ONLY_ADMIN') {
+        whereFilters.push(eq(adminAuditLogs.adminRole, normalizedRole));
+    }
+
+    if (fromRaw) {
+        const fromDate = new Date(fromRaw);
+        if (!Number.isNaN(fromDate.getTime())) whereFilters.push(gte(adminAuditLogs.createdAt, fromDate));
+    }
+    if (toRaw) {
+        const toDate = new Date(toRaw);
+        if (!Number.isNaN(toDate.getTime())) whereFilters.push(lte(adminAuditLogs.createdAt, toDate));
+    }
+
+    const rows = whereFilters.length > 0
+        ? await db.select().from(adminAuditLogs).where(and(...whereFilters)).orderBy(desc(adminAuditLogs.createdAt)).limit(limit)
+        : await db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(limit);
+
+    let logs = rows.map((entry) => {
+        const metadata = asRecord(entry.metadataJson);
+        const derivedStatus = String(metadata.status ?? 'SUCCESS').toUpperCase();
+        return {
             id: entry.id,
             time: entry.createdAt.toISOString(),
             actor: entry.adminEmail,
+            actorRole: entry.adminRole,
             action: entry.action,
+            entityType: entry.entityType,
+            entityId: entry.entityId,
             entity: entry.entityType ? `${entry.entityType}${entry.entityId ? `:${entry.entityId}` : ''}` : 'system',
-            status: String((asRecord(entry.metadataJson).status ?? 'SUCCESS')).toUpperCase(),
-            metadata: entry.metadataJson,
-        })),
+            status: derivedStatus,
+            metadata,
+        };
+    });
+
+    if (status) {
+        logs = logs.filter((entry) => entry.status === status);
+    }
+    if (q) {
+        logs = logs.filter((entry) => {
+            const haystack = [
+                entry.actor,
+                entry.actorRole,
+                entry.action,
+                entry.entityType ?? '',
+                entry.entityId ?? '',
+                entry.entity,
+                entry.status,
+                JSON.stringify(entry.metadata),
+            ].join(' ').toLowerCase();
+            return haystack.includes(q);
+        });
+    }
+
+    return c.json({
+        ok: true,
+        logs,
     });
 });
 
@@ -1966,6 +2023,85 @@ adminRoute.post('/notifications/campaigns/:id/trigger', async (c) => {
     }
 });
 
+adminRoute.post('/notifications/campaigns/:id/cancel', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const updated = await db.update(notificationCampaigns).set({
+            status: 'CANCELLED',
+            updatedAt: new Date(),
+        }).where(eq(notificationCampaigns.id, id)).returning({ id: notificationCampaigns.id });
+        if (!updated[0]) return c.json({ ok: false, message: 'Campaign not found.' }, 404);
+        await appendAuditLog(c, 'NOTIFICATION_CAMPAIGN_CANCELLED', 'notification_campaign', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to cancel campaign.' }, 400);
+    }
+});
+
+adminRoute.post('/notifications/campaigns/run-scheduled', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const now = new Date();
+        const dueCampaigns = await db.select().from(notificationCampaigns).where(and(
+            inArray(notificationCampaigns.status, ['SCHEDULED', 'DRAFT']),
+            lte(notificationCampaigns.scheduledAt, now),
+        )).orderBy(asc(notificationCampaigns.scheduledAt)).limit(50);
+
+        if (dueCampaigns.length === 0) {
+            return c.json({ ok: true, processed: 0, deliveriesQueued: 0 });
+        }
+
+        const activeBusinesses = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.isActive, true));
+        let deliveriesQueued = 0;
+
+        for (const campaign of dueCampaigns) {
+            await db.update(notificationCampaigns).set({
+                status: 'RUNNING',
+                startedAt: now,
+                updatedAt: now,
+            }).where(eq(notificationCampaigns.id, campaign.id));
+
+            if (activeBusinesses.length > 0) {
+                const rows = activeBusinesses.map((business) => ({
+                    id: `ntf_del_${nanoid(16)}`,
+                    campaignId: campaign.id,
+                    templateId: campaign.templateId ?? null,
+                    businessId: business.id,
+                    userId: null,
+                    channel: campaign.channel,
+                    status: 'QUEUED',
+                    errorMessage: null,
+                    metadata: {
+                        source: 'SCHEDULED_EXECUTOR',
+                        campaignTitle: campaign.title,
+                    },
+                    sentAt: null,
+                    createdAt: now,
+                }));
+                await db.insert(notificationDeliveries).values(rows);
+                deliveriesQueued += rows.length;
+            }
+
+            await db.update(notificationCampaigns).set({
+                status: 'COMPLETED',
+                completedAt: new Date(),
+                updatedAt: new Date(),
+            }).where(eq(notificationCampaigns.id, campaign.id));
+        }
+
+        await appendAuditLog(c, 'NOTIFICATION_CAMPAIGN_SCHEDULE_EXECUTOR_RUN', 'notification_campaign', null, {
+            processed: dueCampaigns.length,
+            deliveriesQueued,
+        });
+        return c.json({ ok: true, processed: dueCampaigns.length, deliveriesQueued });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to run scheduled campaigns.' }, 400);
+    }
+});
+
 adminRoute.get('/notifications/deliveries', async (c) => {
     const db = c.get('db');
     const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
@@ -2047,12 +2183,11 @@ adminRoute.patch('/businesses/:id/feature-flags', async (c) => {
     }
 });
 
-adminRoute.get('/live/events', async (c) => {
-    const db = c.get('db');
+const getLiveSnapshot = async (db: AppEnv['Variables']['db']) => {
     const now = new Date();
     const dayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
 
-    const [signupsRows, billingRows, failedRows] = await Promise.all([
+    const [signupsRows, billingRows, failedRows, upgradeRows, downgradeRows, queuedDeliveryRows] = await Promise.all([
         db.select({ count: sql<number>`count(*)` }).from(users).where(gte(users.createdAt, dayAgo)),
         db.select({ count: sql<number>`count(*)` }).from(paymentIntents).where(and(
             eq(paymentIntents.status, 'succeeded'),
@@ -2062,14 +2197,37 @@ adminRoute.get('/live/events', async (c) => {
             eq(paymentIntents.status, 'failed'),
             gte(paymentIntents.createdAt, dayAgo),
         )),
+        db.select({ count: sql<number>`count(*)` }).from(subscriptions).where(and(
+            gte(subscriptions.createdAt, dayAgo),
+            inArray(subscriptions.tier, ['STARTER', 'GROWTH', 'ENTERPRISE']),
+        )),
+        db.select({ count: sql<number>`count(*)` }).from(subscriptions).where(and(
+            gte(subscriptions.createdAt, dayAgo),
+            or(eq(subscriptions.tier, 'FREE'), eq(subscriptions.status, 'CANCELLED')),
+        )),
+        db.select({ count: sql<number>`count(*)` }).from(notificationDeliveries).where(inArray(notificationDeliveries.status, ['QUEUED', 'FAILED'])),
     ]);
 
-    const payload = {
+    return {
         ts: now.toISOString(),
         signupsLast24h: Number(signupsRows[0]?.count ?? 0),
         billingEventsLast24h: Number(billingRows[0]?.count ?? 0),
         errorSpikesLast24h: Number(failedRows[0]?.count ?? 0),
+        upgradesLast24h: Number(upgradeRows[0]?.count ?? 0),
+        downgradesLast24h: Number(downgradeRows[0]?.count ?? 0),
+        queueSpikes: Number(queuedDeliveryRows[0]?.count ?? 0),
     };
+};
+
+adminRoute.get('/live/snapshot', async (c) => {
+    const db = c.get('db');
+    const snapshot = await getLiveSnapshot(db);
+    return c.json({ ok: true, snapshot });
+});
+
+adminRoute.get('/live/events', async (c) => {
+    const db = c.get('db');
+    const payload = await getLiveSnapshot(db);
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({

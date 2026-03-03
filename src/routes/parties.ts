@@ -65,8 +65,12 @@ partiesRoute.get('/', async (c) => {
 
     const q = c.req.query('q')?.trim();
     const type = c.req.query('type')?.trim().toLowerCase();
+    const includeInactive = (c.req.query('includeInactive') ?? '').toLowerCase() === 'true';
 
     const whereFilters = [eq(parties.businessId, business.id)];
+    if (!includeInactive) {
+        whereFilters.push(eq(parties.isActive, true));
+    }
     if (type === 'customer') whereFilters.push(eq(parties.type, 'CUSTOMER'));
     if (type === 'supplier') whereFilters.push(eq(parties.type, 'SUPPLIER'));
 
@@ -88,6 +92,30 @@ partiesRoute.get('/', async (c) => {
             .from(parties)
             .where(and(...whereFilters))
             .orderBy(asc(parties.nameLowercase));
+
+    return c.json({ ok: true, parties: rows.map((entry) => toClientParty(entry, authUser.id)) });
+});
+
+partiesRoute.get('/recycle-bin', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'parties.read');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
+    assertModuleEnabled(business, 'parties');
+
+    const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
+    const rows = await db
+        .select()
+        .from(parties)
+        .where(and(eq(parties.businessId, business.id), eq(parties.isActive, false)))
+        .orderBy(asc(parties.nameLowercase))
+        .limit(limit);
 
     return c.json({ ok: true, parties: rows.map((entry) => toClientParty(entry, authUser.id)) });
 });
@@ -144,6 +172,51 @@ partiesRoute.post('/', async (c) => {
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to save party.' }, 400);
     }
+});
+
+partiesRoute.post('/:id/restore', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'parties.write');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
+    assertModuleEnabled(business, 'parties');
+
+    const id = c.req.param('id');
+    await db.update(parties).set({ isActive: true, updatedAt: new Date() })
+        .where(and(eq(parties.id, id), eq(parties.businessId, business.id)));
+
+    return c.json({ ok: true });
+});
+
+partiesRoute.delete('/:id/permanent', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'parties.write');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
+    assertModuleEnabled(business, 'parties');
+
+    const id = c.req.param('id');
+    await db.delete(parties).where(and(
+        eq(parties.id, id),
+        eq(parties.businessId, business.id),
+        eq(parties.isActive, false),
+    ));
+
+    return c.json({ ok: true });
 });
 
 partiesRoute.patch('/:id', async (c) => {

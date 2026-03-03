@@ -3,10 +3,12 @@ import { and, asc, desc, eq, gte, inArray, lte, ne } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import {
+    businessSettings,
     invoiceItems,
     invoices,
     inventoryMovements,
     items,
+    notificationDeliveries,
     parties,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
@@ -39,6 +41,7 @@ const transactionItemSchema = z.object({
 
 const createTransactionSchema = z.object({
     type: z.enum(['SALE', 'PURCHASE', 'RETURN_INWARD', 'RETURN_OUTWARD']).default('SALE'),
+    documentKind: z.string().trim().optional(),
     invoiceType: z.enum([
         'TAX_INVOICE',
         'BILL_OF_SUPPLY',
@@ -68,6 +71,9 @@ const createTransactionSchema = z.object({
     affectsGst: z.boolean().optional(),
     placeOfSupply: z.string().trim().optional(),
     reverseCharge: z.boolean().optional(),
+    tcsAmount: z.number().nonnegative().optional(),
+    tdsAmount: z.number().nonnegative().optional(),
+    compositeScheme: z.boolean().optional(),
     eInvoiceIrn: z.string().trim().optional(),
     eInvoiceStatus: z.string().trim().optional(),
     eWayBillNumber: z.string().trim().optional(),
@@ -91,6 +97,11 @@ const complianceActionSchema = z.object({
     reason: z.string().trim().optional(),
 });
 
+const reminderRunSchema = z.object({
+    limit: z.number().int().positive().max(500).optional(),
+    dryRun: z.boolean().optional(),
+});
+
 const toCanonicalPaymentStatus = (status: 'PAID' | 'PARTIAL' | 'PENDING' | undefined) => {
     if (status === 'PAID') return 'PAID';
     if (status === 'PARTIAL') return 'PARTIALLY_PAID';
@@ -101,6 +112,32 @@ const toLegacyPaymentStatus = (status: typeof invoices.$inferSelect['paymentStat
     if (status === 'PAID') return 'PAID';
     if (status === 'PARTIALLY_PAID') return 'PARTIAL';
     return 'PENDING';
+};
+
+const asMetadataRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+const deriveTransactionType = (entry: typeof invoices.$inferSelect) => {
+    const metadata = asMetadataRecord(entry.gstRateBreakupJson);
+    const rawType = typeof metadata.transactionType === 'string'
+        ? metadata.transactionType.toUpperCase()
+        : '';
+    if (rawType === 'SALE' || rawType === 'PURCHASE' || rawType === 'RETURN_INWARD' || rawType === 'RETURN_OUTWARD') {
+        return rawType;
+    }
+    if (entry.invoiceType === 'CREDIT_NOTE_DOC') return 'RETURN_OUTWARD';
+    if (entry.invoiceType === 'DEBIT_NOTE_DOC') return 'RETURN_INWARD';
+    return 'SALE';
+};
+
+const deriveDocumentKind = (entry: typeof invoices.$inferSelect) => {
+    const metadata = asMetadataRecord(entry.gstRateBreakupJson);
+    const documentKind = typeof metadata.documentKind === 'string'
+        ? metadata.documentKind.trim().toUpperCase()
+        : '';
+    return documentKind || entry.invoiceType;
 };
 
 const resolveTypeDelta = (type: 'SALE' | 'PURCHASE' | 'RETURN_INWARD' | 'RETURN_OUTWARD') => {
@@ -121,6 +158,30 @@ const toInvoiceType = (
     if (invoiceType) return invoiceType;
     if (billMode === 'ESTIMATE') return 'ESTIMATE';
     return 'TAX_INVOICE';
+};
+
+const asSettingsRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+const asSettingBool = (value: unknown, fallback = false) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === 'true') return true;
+        if (normalized === 'false') return false;
+    }
+    return fallback;
+};
+
+const asSettingNumber = (value: unknown, fallback = 0) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return fallback;
 };
 
 transactionsRoute.use('/*', requireAuth);
@@ -205,6 +266,39 @@ transactionsRoute.post('/', async (c) => {
         const supplyState = placeOfSupply?.trim().toLowerCase() ?? null;
         const isInterStateSupply = Boolean(businessState && supplyState && businessState !== supplyState);
 
+        const settingsRows = await db
+            .select()
+            .from(businessSettings)
+            .where(and(
+                eq(businessSettings.businessId, business.id),
+                inArray(businessSettings.section, ['TAXES_AND_GST', 'PAYMENT_REMINDERS', 'TRANSACTION_SMS']),
+            ));
+        const settingsBySection = new Map(settingsRows.map((entry) => [entry.section, asSettingsRecord(entry.dataJson)]));
+        const taxSettings = settingsBySection.get('TAXES_AND_GST') ?? {};
+
+        const tcsEnabled = asSettingBool(taxSettings.tcs_enabled, false);
+        const tdsEnabled = asSettingBool(taxSettings.tds_enabled, false);
+        const compositeEnabled = asSettingBool(taxSettings.composite_scheme_enabled, false);
+
+        const tcsAmount = tcsEnabled ? asSettingNumber(payload.tcsAmount, 0) : 0;
+        const tdsAmount = tdsEnabled ? asSettingNumber(payload.tdsAmount, 0) : 0;
+        const totalTaxAmount = Number(payload.taxAmount ?? 0);
+        const totalInvoiceValue = Number(payload.totalAmount ?? 0) + tcsAmount - tdsAmount;
+        const isNonPostingDoc = payload.billMode === 'ESTIMATE'
+            || payload.invoiceType === 'ESTIMATE'
+            || payload.invoiceType === 'PROFORMA';
+        const complianceMeta: Record<string, unknown> = {
+            transactionType: payload.type,
+            documentKind: payload.documentKind ?? payload.invoiceType ?? payload.type,
+            tcsEnabled,
+            tcsAmount,
+            tdsEnabled,
+            tdsAmount,
+            paymentMode: payload.paymentMode ?? 'CASH',
+            reverseCharge: Boolean(payload.reverseCharge ?? false),
+            compositeSchemeEnabled: compositeEnabled || Boolean(payload.compositeScheme ?? false),
+        };
+
         await db.insert(invoices).values({
             id: invoiceId,
             businessId: business.id,
@@ -213,14 +307,14 @@ transactionsRoute.post('/', async (c) => {
             invoiceDate: billDate,
             partyId,
             placeOfSupply,
-            totalTaxableValue: payload.totalAmount - (payload.taxAmount ?? 0),
-            totalTaxAmount: payload.taxAmount ?? 0,
-            totalInvoiceValue: payload.totalAmount,
+            totalTaxableValue: Number(payload.totalAmount ?? 0) - totalTaxAmount,
+            totalTaxAmount,
+            totalInvoiceValue,
             discountAmount: payload.discountAmount ?? 0,
             roundOffAmount: 0,
             additionalCharges: 0,
             reverseCharge: payload.reverseCharge ?? false,
-            gstRateBreakupJson: {},
+            gstRateBreakupJson: complianceMeta,
             eInvoiceIrn: payload.eInvoiceIrn ?? null,
             eInvoiceStatus: payload.eInvoiceStatus ?? null,
             eWayBillNumber: payload.eWayBillNumber ?? null,
@@ -267,7 +361,7 @@ transactionsRoute.post('/', async (c) => {
                 cessAmount: 0,
             });
 
-            if (entry.id) {
+            if (entry.id && !isNonPostingDoc) {
                 const itemRows = await db
                     .select()
                     .from(items)
@@ -324,8 +418,10 @@ transactionsRoute.get('/', async (c) => {
     assertModuleEnabled(business, 'billing');
 
     const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
-    const start = c.req.query('start');
-    const end = c.req.query('end');
+    const start = c.req.query('start') ?? c.req.query('from');
+    const end = c.req.query('end') ?? c.req.query('to');
+    const typeQuery = (c.req.query('type') ?? '').trim().toUpperCase();
+    const statusQuery = (c.req.query('status') ?? '').trim().toUpperCase();
 
     const whereFilters = [eq(invoices.businessId, business.id)];
     if (start) whereFilters.push(gte(invoices.invoiceDate, new Date(start)));
@@ -364,6 +460,9 @@ transactionsRoute.get('/', async (c) => {
 
     const transactions = invoiceRows.map((entry) => {
         const party = entry.partyId ? partyById.get(entry.partyId) : null;
+        const metadata = asMetadataRecord(entry.gstRateBreakupJson);
+        const transactionType = deriveTransactionType(entry);
+        const documentKind = deriveDocumentKind(entry);
         const mappedLines = (linesByInvoiceId.get(entry.id) ?? []).map((line) => ({
             id: line.itemId ?? `line_${line.id}`,
             name: line.description,
@@ -376,7 +475,9 @@ transactionsRoute.get('/', async (c) => {
         return {
             id: entry.id,
             userId: authUser.id,
-            type: 'SALE',
+            type: transactionType,
+            invoiceType: entry.invoiceType,
+            documentKind,
             partyId: entry.partyId,
             partyName: party?.name,
             partyPhone: party?.phone,
@@ -387,7 +488,6 @@ transactionsRoute.get('/', async (c) => {
             discountAmount: 0,
             taxAmount: Number(entry.totalTaxAmount ?? 0),
             paidAmount: Number(entry.paidAmount ?? 0),
-            paymentMode: 'CASH',
             paymentStatus: toLegacyPaymentStatus(entry.paymentStatus),
             billMode: entry.invoiceType === 'ESTIMATE' ? 'ESTIMATE' : 'GST',
             affectsGst: entry.invoiceType !== 'ESTIMATE',
@@ -404,10 +504,36 @@ transactionsRoute.get('/', async (c) => {
             businessName: business.name,
             businessAddress: business.address,
             gstNumber: business.gstin,
+            placeOfSupply: entry.placeOfSupply,
+            reverseCharge: Boolean(entry.reverseCharge),
+            tcsAmount: Number(metadata.tcsAmount ?? 0),
+            tdsAmount: Number(metadata.tdsAmount ?? 0),
+            compositeScheme: Boolean(metadata.compositeSchemeEnabled ?? false),
+            paymentMode: typeof metadata.paymentMode === 'string' ? metadata.paymentMode : 'CASH',
         };
     });
+    const filtered = transactions.filter((entry) => {
+        if (typeQuery) {
+            if (typeQuery === 'PURCHASE_BILL' && entry.type !== 'PURCHASE') return false;
+            else if (typeQuery !== 'PURCHASE_BILL') {
+                const normalizedInvoiceType = String(entry.invoiceType ?? '').toUpperCase();
+                const normalizedDocKind = String(entry.documentKind ?? '').toUpperCase();
+                const normalizedTxnType = String(entry.type ?? '').toUpperCase();
+                if (typeQuery !== normalizedInvoiceType && typeQuery !== normalizedDocKind && typeQuery !== normalizedTxnType) {
+                    return false;
+                }
+            }
+        }
 
-return c.json({ ok: true, transactions });
+        if (statusQuery) {
+            const normalizedStatus = String(entry.paymentStatus ?? '').toUpperCase();
+            if (statusQuery !== normalizedStatus) return false;
+        }
+
+        return true;
+    });
+
+    return c.json({ ok: true, transactions: filtered });
 });
 
 transactionsRoute.get('/pending-reminders', async (c) => {
@@ -451,6 +577,149 @@ transactionsRoute.get('/pending-reminders', async (c) => {
     });
 });
 
+transactionsRoute.get('/reminders/config', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'billing.read');
+    if (denied) return denied;
+
+    const settingsRows = await db
+        .select()
+        .from(businessSettings)
+        .where(and(
+            eq(businessSettings.businessId, business.id),
+            inArray(businessSettings.section, ['PAYMENT_REMINDERS', 'TRANSACTION_SMS']),
+        ));
+    const settingsBySection = new Map(settingsRows.map((entry) => [entry.section, asSettingsRecord(entry.dataJson)]));
+    const reminderSettings = settingsBySection.get('PAYMENT_REMINDERS') ?? {};
+    const transactionSmsSettings = settingsBySection.get('TRANSACTION_SMS') ?? {};
+
+    const autoSchedulerEnabled = asSettingBool(reminderSettings.reminder_auto_schedule_enabled, false);
+    const scheduleHour = Math.trunc(asSettingNumber(reminderSettings.reminder_schedule_hour, 10));
+    const deliveryChannel = String(reminderSettings.reminder_delivery_channel ?? 'SMS');
+
+    return c.json({
+        ok: true,
+        config: {
+            autoSchedulerEnabled,
+            scheduleHour,
+            deliveryChannel,
+            smsEnabled: asSettingBool(transactionSmsSettings.send_sms_to_party, false),
+            whatsappEnabled: asSettingBool(transactionSmsSettings.send_whatsapp_to_party, false),
+            smsTemplate: String(reminderSettings.party_payment_sms_template ?? reminderSettings.party_payment_reminder_message_template ?? ''),
+            whatsappTemplate: String(reminderSettings.party_payment_whatsapp_template ?? ''),
+        },
+    });
+});
+
+transactionsRoute.post('/reminders/run', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'billing.write');
+        if (denied) return denied;
+
+        const payload = reminderRunSchema.parse(await c.req.json().catch(() => ({})));
+        const limit = payload.limit ?? 100;
+        const now = new Date();
+
+        const settingsRows = await db
+            .select()
+            .from(businessSettings)
+            .where(and(
+                eq(businessSettings.businessId, business.id),
+                inArray(businessSettings.section, ['PAYMENT_REMINDERS', 'TRANSACTION_SMS']),
+            ));
+        const settingsBySection = new Map(settingsRows.map((entry) => [entry.section, asSettingsRecord(entry.dataJson)]));
+        const reminderSettings = settingsBySection.get('PAYMENT_REMINDERS') ?? {};
+        const transactionSmsSettings = settingsBySection.get('TRANSACTION_SMS') ?? {};
+
+        const autoSchedulerEnabled = asSettingBool(reminderSettings.reminder_auto_schedule_enabled, false);
+        if (!autoSchedulerEnabled) {
+            return c.json({ ok: true, processed: 0, queued: 0, skipped: 0, reason: 'AUTO_SCHEDULER_DISABLED' });
+        }
+
+        const scheduleHour = Math.trunc(asSettingNumber(reminderSettings.reminder_schedule_hour, 10));
+        if (now.getHours() !== scheduleHour) {
+            return c.json({
+                ok: true,
+                processed: 0,
+                queued: 0,
+                skipped: 0,
+                reason: 'OUTSIDE_SCHEDULE_WINDOW',
+                scheduleHour,
+                currentHour: now.getHours(),
+            });
+        }
+
+        const smsEnabled = asSettingBool(transactionSmsSettings.send_sms_to_party, false);
+        const whatsappEnabled = asSettingBool(transactionSmsSettings.send_whatsapp_to_party, false);
+        const deliveryChannel = String(reminderSettings.reminder_delivery_channel ?? 'SMS');
+        const channels: Array<'SMS' | 'WHATSAPP'> = [];
+        if ((deliveryChannel === 'SMS' || deliveryChannel === 'SMS_AND_WHATSAPP') && smsEnabled) channels.push('SMS');
+        if ((deliveryChannel === 'WHATSAPP' || deliveryChannel === 'SMS_AND_WHATSAPP') && whatsappEnabled) channels.push('WHATSAPP');
+        if (channels.length === 0) {
+            return c.json({ ok: true, processed: 0, queued: 0, skipped: 0, reason: 'NO_DELIVERY_CHANNEL_ENABLED' });
+        }
+
+        const overdueInvoices = await db
+            .select()
+            .from(invoices)
+            .where(and(
+                eq(invoices.businessId, business.id),
+                ne(invoices.paymentStatus, 'PAID'),
+                lte(invoices.dueDate, now),
+            ))
+            .orderBy(asc(invoices.dueDate))
+            .limit(limit);
+
+        let queued = 0;
+        const deliveries = overdueInvoices.flatMap((invoice) => channels.map((channel) => ({
+            id: `ntf_del_${nanoid(16)}`,
+            campaignId: null,
+            templateId: null,
+            businessId: business.id,
+            userId: null,
+            channel,
+            status: payload.dryRun ? 'QUEUED' : 'SENT',
+            errorMessage: null,
+            metadata: {
+                source: 'PAYMENT_REMINDER_SCHEDULER',
+                invoiceId: invoice.id,
+                invoiceNumber: invoice.invoiceNumber,
+                dueDate: invoice.dueDate?.toISOString?.() ?? invoice.dueDate,
+                totalAmount: invoice.totalInvoiceValue,
+                paidAmount: invoice.paidAmount,
+            },
+            sentAt: payload.dryRun ? null : now,
+            createdAt: now,
+        })));
+
+        if (!payload.dryRun && deliveries.length > 0) {
+            await db.insert(notificationDeliveries).values(deliveries);
+            queued = deliveries.length;
+        }
+
+        return c.json({
+            ok: true,
+            processed: overdueInvoices.length,
+            queued: payload.dryRun ? deliveries.length : queued,
+            skipped: 0,
+            dryRun: Boolean(payload.dryRun),
+        });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to run reminder scheduler.' }, 400);
+    }
+});
+
 transactionsRoute.get('/:id', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
@@ -487,13 +756,17 @@ transactionsRoute.get('/:id', async (c) => {
         transaction: {
             id: rows[0].id,
             userId: authUser.id,
-            type: 'SALE',
+            type: deriveTransactionType(rows[0]),
+            invoiceType: rows[0].invoiceType,
+            documentKind: deriveDocumentKind(rows[0]),
             billNumber: rows[0].invoiceNumber,
             billDate: rows[0].invoiceDate,
             totalAmount: Number(rows[0].totalInvoiceValue ?? 0),
             taxAmount: Number(rows[0].totalTaxAmount ?? 0),
             paidAmount: Number(rows[0].paidAmount ?? 0),
             paymentStatus: toLegacyPaymentStatus(rows[0].paymentStatus),
+            placeOfSupply: rows[0].placeOfSupply,
+            reverseCharge: Boolean(rows[0].reverseCharge),
             items: lines.map((line) => ({
                 id: line.itemId ?? `line_${line.id}`,
                 name: line.description,
@@ -587,7 +860,14 @@ transactionsRoute.post('/:id/e-invoice/generate', async (c) => {
             updatedAt: new Date(),
         }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
 
-        return c.json({ ok: true, eInvoiceIrn: irn, eInvoiceStatus: 'GENERATED' });
+        return c.json({
+            ok: true,
+            eInvoiceIrn: irn,
+            eInvoiceStatus: 'GENERATED',
+            provider: 'SIMULATED_GSP',
+            ackNo: `ACK-${nanoid(10).toUpperCase()}`,
+            validatedAt: new Date().toISOString(),
+        });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to generate e-invoice.' }, 400);
     }
@@ -615,10 +895,45 @@ transactionsRoute.post('/:id/e-invoice/cancel', async (c) => {
             updatedAt: new Date(),
         }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
 
-        return c.json({ ok: true, eInvoiceStatus: 'CANCELLED' });
+        return c.json({
+            ok: true,
+            eInvoiceStatus: 'CANCELLED',
+            provider: 'SIMULATED_GSP',
+            cancelledAt: new Date().toISOString(),
+        });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to cancel e-invoice.' }, 400);
     }
+});
+
+transactionsRoute.get('/:id/e-invoice/status', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'billing.read');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'E_INVOICE');
+    assertModuleEnabled(business, 'billing');
+
+    const id = c.req.param('id');
+    const rows = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id))).limit(1);
+    const invoice = rows[0];
+    if (!invoice) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
+
+    return c.json({
+        ok: true,
+        status: {
+            invoiceId: invoice.id,
+            eInvoiceIrn: invoice.eInvoiceIrn,
+            eInvoiceStatus: invoice.eInvoiceStatus ?? 'NOT_GENERATED',
+            provider: 'SIMULATED_GSP',
+            lastCheckedAt: new Date().toISOString(),
+        },
+    });
 });
 
 transactionsRoute.post('/:id/e-way-bill/generate', async (c) => {
@@ -647,7 +962,12 @@ transactionsRoute.post('/:id/e-way-bill/generate', async (c) => {
             updatedAt: new Date(),
         }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
 
-        return c.json({ ok: true, eWayBillNumber });
+        return c.json({
+            ok: true,
+            eWayBillNumber,
+            provider: 'SIMULATED_GSP',
+            generatedAt: new Date().toISOString(),
+        });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to generate e-way bill.' }, 400);
     }
@@ -675,10 +995,40 @@ transactionsRoute.post('/:id/e-way-bill/cancel', async (c) => {
             updatedAt: new Date(),
         }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
 
-        return c.json({ ok: true });
+        return c.json({ ok: true, cancelledAt: new Date().toISOString() });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to cancel e-way bill.' }, 400);
     }
+});
+
+transactionsRoute.get('/:id/e-way-bill/status', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'billing.read');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'E_WAY_BILL');
+    assertModuleEnabled(business, 'billing');
+
+    const id = c.req.param('id');
+    const rows = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id))).limit(1);
+    const invoice = rows[0];
+    if (!invoice) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
+
+    return c.json({
+        ok: true,
+        status: {
+            invoiceId: invoice.id,
+            eWayBillNumber: invoice.eWayBillNumber,
+            eWayBillStatus: invoice.eWayBillNumber ? 'GENERATED' : 'NOT_GENERATED',
+            provider: 'SIMULATED_GSP',
+            lastCheckedAt: new Date().toISOString(),
+        },
+    });
 });
 
 export default transactionsRoute;

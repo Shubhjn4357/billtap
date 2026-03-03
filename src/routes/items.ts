@@ -125,6 +125,30 @@ itemsRoute.get('/', async (c) => {
     return c.json({ ok: true, items: rows.map((row) => toClientItem(row, authUser.id)) });
 });
 
+itemsRoute.get('/recycle-bin', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertModuleEnabled(business, 'stock');
+
+    const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
+    const rows = await db
+        .select()
+        .from(items)
+        .where(and(eq(items.businessId, business.id), eq(items.isActive, false)))
+        .orderBy(desc(items.updatedAt))
+        .limit(limit);
+
+    return c.json({ ok: true, items: rows.map((row) => toClientItem(row, authUser.id)) });
+});
+
 itemsRoute.get('/:id', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
@@ -149,6 +173,51 @@ itemsRoute.get('/:id', async (c) => {
     if (!item) return c.json({ ok: false, message: 'Item not found.' }, 404);
 
     return c.json({ ok: true, item: toClientItem(item, authUser.id) });
+});
+
+itemsRoute.post('/:id/restore', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.write');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertModuleEnabled(business, 'stock');
+
+    const id = c.req.param('id');
+    await db.update(items).set({ isActive: true, updatedAt: new Date() })
+        .where(and(eq(items.id, id), eq(items.businessId, business.id)));
+
+    return c.json({ ok: true });
+});
+
+itemsRoute.delete('/:id/permanent', async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.write');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertModuleEnabled(business, 'stock');
+
+    const id = c.req.param('id');
+    await db.delete(items).where(and(
+        eq(items.id, id),
+        eq(items.businessId, business.id),
+        eq(items.isActive, false),
+    ));
+
+    return c.json({ ok: true });
 });
 
 itemsRoute.post('/', async (c) => {

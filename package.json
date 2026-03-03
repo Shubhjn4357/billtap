@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:repair": "node ./scripts/normalizeSubscriptionStatus.cjs",
     "db:push": "npm run db:repair && node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs push",
-    "db:studio": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs studio"
+    "db:studio": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs studio",
+    "test:accounting-invariants": "node ./scripts/accounting-invariants.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
