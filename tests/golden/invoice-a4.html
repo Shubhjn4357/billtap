@@ -1,0 +1,66 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice</title>
+<style>
+@page{size:A4 portrait; margin:18px;}
+body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:0;color:#222;font-size:13px;}
+h1{color:#007B83;margin:0 0 10px 0}
+h2{color:#111}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}
+.right{text-align:right}
+.total{font-weight:700;font-size:14px}
+.footer{margin-top:12px;font-size:11px;color:#666;}
+</style>
+</head><body>
+<div style="margin-bottom:12px;">
+            
+            <h2 style="margin:0 0 4px 0;">Vahi Demo Store</h2>
+            <p style="margin:0;color:#666">Ajmer Road, Jaipur</p>
+            <p style="margin:0;color:#666">9123456789 | billing@vahi.app</p>
+            <p style="margin:0;color:#666">GSTIN: 08ABCDE1234F1Z5</p>
+          </div>
+<h1>TAX_INVOICE</h1>
+<p style="margin:0;">Invoice No: VH-2026-0001</p>
+<p style="margin:0;">Date: 2026-03-01</p>
+<p style="margin:6px 0 0 0;"><strong>Party:</strong> Acme Traders</p>
+<table style="margin-top:12px;">
+<thead>
+<tr><th>Description</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">Amount</th></tr>
+</thead>
+<tbody>
+        <tr>
+          <td>Premium Tea Pack</td>
+          <td style="text-align:right">10</td>
+          <td style="text-align:right">₹120.00</td>
+          <td style="text-align:right">₹1,416.00</td>
+        </tr>
+    
+        <tr>
+          <td>Thermal Paper Roll</td>
+          <td style="text-align:right">5</td>
+          <td style="text-align:right">₹50.00</td>
+          <td style="text-align:right">₹295.00</td>
+        </tr>
+    </tbody>
+</table>
+<p style="margin:8px 0 0 0;">Total Qty: 15</p>
+<p class="total">Invoice Total: ₹1,711.00</p>
+<div style="margin-top:10px;">
+            <p style="margin:0;">CGST: ₹130.50</p>
+            <p style="margin:0;">SGST: ₹130.50</p>
+            
+          </div>
+
+        <p style="margin:0;">Received: ₹500.00</p>
+        <p style="margin:0;">Balance: ₹1,211.00</p>
+        <p style="margin:0;">Status: PARTIALLY_PAID</p>
+    
+<div style="margin-top:20px;text-align:center;">
+             <img src="https://example.com/qr.png" style="width:180px;height:180px;object-fit:contain;" />
+             <p style="font-size:11px;color:#666;">UPI: merchant@upi</p>
+             <p style="font-size:11px;color:#666;">Due: ₹1,211.00</p>
+           </div>
+<p style="margin-top:12px;"><strong>Notes:</strong> Delivered in good condition.</p>
+<div style="margin-top:12px;"><strong>Terms & Conditions:</strong><p style="margin:4px 0 0 0;">Goods once sold will not be taken back.</p></div>
+<div style="margin-top:18px;text-align:right;"><img src="https://example.com/signature.png" style="max-width:160px;max-height:72px;object-fit:contain;margin-left:auto;display:block;" /><p style="margin:0;color:#666;">Authorized Signatory</p></div>
+<div class="footer">Page 1</div>
+</body></html>

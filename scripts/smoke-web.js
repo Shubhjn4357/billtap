@@ -6,12 +6,17 @@ const { spawnSync } = require('node:child_process');
 
 const isWin = process.platform === 'win32';
 const pnpmCmd = isWin ? 'pnpm.cmd' : 'pnpm';
+const smokeTimeoutMs = Number(process.env.SMOKE_WEB_TIMEOUT_MS ?? 15 * 60 * 1000);
 
 function run(command, args) {
   const result = spawnSync(command, args, {
     stdio: 'inherit',
     shell: isWin,
-    env: process.env,
+    timeout: smokeTimeoutMs,
+    env: {
+      ...process.env,
+      CI: process.env.CI ?? '1',
+    },
   });
 
   if (result.error) {
@@ -58,4 +63,3 @@ function runSmokeWeb() {
 }
 
 runSmokeWeb();
-

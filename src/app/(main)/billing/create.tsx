@@ -1,11 +1,10 @@
-// @ts-nocheck
 import { View, Text, ScrollView, TextInput, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useInvoiceBuilderStore, useInvoiceTotals } from '../../../store/invoiceBuilderStore';
 import { invoiceApi } from '../../../api/endpoints';
-import { Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
 import { InvoiceType } from '../../../constants/enums';
 import { useEffect } from 'react';
 import type { InvoiceLineItem } from '../../../types/domain';
@@ -22,8 +21,8 @@ const INVOICE_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function InvoiceCreateScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     const { type } = useLocalSearchParams<{ type?: string }>();
     const queryClient = useQueryClient();
 
@@ -130,7 +129,7 @@ function LineItemRow({ line, index, onUpdate, onRemove, colors }: {
     index: number;
     onUpdate: (key: string, updates: Partial<InvoiceLineItem>) => void;
     onRemove: (key: string) => void;
-    colors: typeof Colors.light;
+    colors: ColorPalette;
 }) {
     return (
         <View style={[lineStyles.card, { backgroundColor: colors.surfaceVariant }]}>
@@ -183,7 +182,7 @@ function LineItemRow({ line, index, onUpdate, onRemove, colors }: {
     );
 }
 
-function TotalRow({ label, value, bold, isNeg, colors }: { label: string; value: number; bold?: boolean; isNeg?: boolean; colors: typeof Colors.light }) {
+function TotalRow({ label, value, bold, isNeg, colors }: { label: string; value: number; bold?: boolean; isNeg?: boolean; colors: ColorPalette }) {
     return (
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
             <Text style={{ color: colors.textSecondary, fontWeight: bold ? '700' : '400' }}>{label}</Text>
@@ -224,5 +223,6 @@ const lineStyles = StyleSheet.create({
     input: { borderWidth: 1, borderRadius: 4, paddingHorizontal: Spacing.xs, paddingVertical: 4, fontSize: 13 },
     total: { fontWeight: '700', fontSize: 14, paddingTop: 4 },
 });
+
 
 

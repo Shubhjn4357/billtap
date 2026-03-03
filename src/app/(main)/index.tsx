@@ -1,20 +1,19 @@
-// @ts-nocheck
 import { View, Text, ScrollView, StyleSheet, Pressable, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/authStore';
-import { Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 import { reportApi } from '../../api/endpoints';
-import { format } from 'date-fns';
+import { endOfMonth, format, startOfMonth } from 'date-fns';
 
 const TODAY = new Date();
 const MONTH_START = format(startOfMonth(TODAY), 'yyyy-MM-dd');
 const MONTH_END = format(endOfMonth(TODAY), 'yyyy-MM-dd');
 
 export default function HomeScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     const user = useAuthStore((s) => s.user);
     const business = useAuthStore((s) => s.business);
     const tier = useAuthStore((s) => s.subscription?.tier ?? 'FREE');
@@ -86,8 +85,8 @@ export default function HomeScreen() {
 }
 
 function StatCard({ label, value, prefix = '', loading, color }: { label: string; value?: number; prefix?: string; loading: boolean; color: string }) {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     return (
         <View style={[statCardStyles.card, { backgroundColor: colors.card }]}>
             <Text style={[statCardStyles.label, { color: colors.textSecondary }]}>{label}</Text>
@@ -103,8 +102,8 @@ function StatCard({ label, value, prefix = '', loading, color }: { label: string
 }
 
 function OutstandingCard({ label, value, loading, color, onPress }: { label: string; value?: number; loading: boolean; color: string; onPress: () => void }) {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     return (
         <Pressable style={({ pressed }) => [outStyles.card, { backgroundColor: colors.card, opacity: pressed ? 0.8 : 1 }]} onPress={onPress}>
             <Text style={[outStyles.label, { color: colors.textSecondary }]}>{label}</Text>
@@ -125,7 +124,7 @@ const QUICK_ACTIONS = [
     { icon: '🏪', label: 'POS', route: '/(main)/billing/pos' },
     { icon: '📥', label: 'Purchase', route: '/(main)/billing?type=PURCHASE_BILL' },
     { icon: '📝', label: 'Estimate', route: '/(main)/billing?type=ESTIMATE' },
-    { icon: '💸', label: 'Expense', route: '/(main)/accounts/expense-add' },
+    { icon: '💸', label: 'Expense', route: '/(main)/accounts/expenses/add' },
 ];
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
@@ -159,5 +158,6 @@ const outStyles = StyleSheet.create({
     value: { fontSize: 20, fontWeight: '700' },
     skeleton: { height: 24, borderRadius: 4, marginTop: 4 },
 });
+
 
 

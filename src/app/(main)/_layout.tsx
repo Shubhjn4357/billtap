@@ -1,11 +1,11 @@
 import { Tabs } from 'expo-router';
 import { useColorScheme } from 'react-native';
-import { Colors } from '../../constants/theme';
+import { getColors } from '../../constants/theme';
 import { VahiTabBar } from '../../components/VahiTabBar';
 
 export default function MainLayout() {
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = Colors[scheme ?? 'light'];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
 
     return (
         <Tabs
@@ -29,16 +29,20 @@ export default function MainLayout() {
                 options={{ title: 'Inventory', headerTitle: 'Inventory' }}
             />
             <Tabs.Screen
-                name="parties"
-                options={{ title: 'Parties', headerTitle: 'Parties' }}
-            />
-            <Tabs.Screen
                 name="accounts"
                 options={{ title: 'Accounts', headerTitle: 'Accounts' }}
             />
             <Tabs.Screen
+                name="reports"
+                options={{ title: 'Reports', headerTitle: 'Reports' }}
+            />
+            <Tabs.Screen
                 name="more"
                 options={{ title: 'More', headerShown: false }}
+            />
+            <Tabs.Screen
+                name="parties"
+                options={{ href: null }}
             />
         </Tabs>
     );

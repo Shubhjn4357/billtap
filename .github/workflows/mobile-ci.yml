@@ -42,14 +42,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
-      - name: Doctor
-        run: pnpm run doctor
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Typecheck
-        run: pnpm run typecheck
+      - name: Run verification suite
+        run: pnpm run verify:ci
 
       - name: Final web smoke test
         run: pnpm run smoke:web

@@ -1,12 +1,12 @@
+import { useState } from 'react';
 import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { format, parseISO } from 'date-fns';
 import { expenseApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import { ExpenseCategory } from '../../../constants/enums';
-import { format, parseISO } from 'date-fns';
 import type { Expense } from '../../../types/domain';
 
 const CATEGORIES = ['ALL', ...Object.values(ExpenseCategory)] as const;
@@ -19,7 +19,7 @@ export default function ExpensesScreen() {
 
     const { data, isLoading } = useQuery({
         queryKey: ['expenses', cat],
-        queryFn: () => expenseApi.list({ category: cat === 'ALL' ? undefined : cat as ExpenseCategory, limit: 50 }),
+        queryFn: () => expenseApi.list({ category: cat === 'ALL' ? undefined : (cat as ExpenseCategory), limit: 50 }),
         staleTime: 60_000,
     });
 
@@ -29,20 +29,25 @@ export default function ExpensesScreen() {
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
             <View style={s.header}>
-                <Pressable onPress={() => router.back()}><Text style={[s.back, { color: colors.primary }]}>← Back</Text></Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Expenses</Text>
-                <Pressable style={s.addBtn} onPress={() => router.push('/(main)/accounts/expenses/add' as Parameters<typeof router.push>[0])}>
-                    <Text style={s.addBtnText}>+ Add</Text>
+                <Pressable onPress={() => router.back()}>
+                    <Text style={[s.back, { color: colors.primary }]}>{'< Back'}</Text>
                 </Pressable>
+                <Text style={[s.title, { color: colors.text }]}>Expenses</Text>
+                <View style={s.headerActions}>
+                    <Pressable style={[s.iconBtn, { borderColor: colors.border }]} onPress={() => router.push('/(main)/accounts/expenses/recycle-bin' as Parameters<typeof router.push>[0])}>
+                        <Text style={[s.iconBtnText, { color: colors.textSecondary }]}>Bin</Text>
+                    </Pressable>
+                    <Pressable style={s.addBtn} onPress={() => router.push('/(main)/accounts/expenses/add' as Parameters<typeof router.push>[0])}>
+                        <Text style={s.addBtnText}>+ Add</Text>
+                    </Pressable>
+                </View>
             </View>
 
-            {/* Total card */}
-            <View style={[s.totalCard, { backgroundColor: colors.error + '18' }]}>
+            <View style={[s.totalCard, { backgroundColor: `${colors.error}18` }]}>
                 <Text style={[s.totalLabel, { color: colors.textSecondary }]}>Total Expenses (filtered)</Text>
-                <Text style={[s.totalVal, { color: colors.error }]}>₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                <Text style={[s.totalVal, { color: colors.error }]}>{`INR ${total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}</Text>
             </View>
 
-            {/* Category filter */}
             <View style={s.catRow}>
                 <FlatList
                     horizontal
@@ -67,7 +72,7 @@ export default function ExpensesScreen() {
                     data={expenses}
                     keyExtractor={(e) => e.id}
                     renderItem={({ item: exp }) => <ExpenseRow expense={exp} colors={colors} />}
-                    ListEmptyComponent={<View style={s.centered}><Text style={{ color: colors.textSecondary }}>No expenses. Add one!</Text></View>}
+                    ListEmptyComponent={<View style={s.centered}><Text style={{ color: colors.textSecondary }}>No expenses. Add one.</Text></View>}
                     contentContainerStyle={{ paddingBottom: 100 }}
                 />
             )}
@@ -83,13 +88,21 @@ function ExpenseRow({ expense, colors }: { expense: Expense; colors: ColorPalett
                 <Text style={[rowS.desc, { color: colors.textSecondary }]}>{expense.description ?? expense.paymentMode}</Text>
                 <Text style={[rowS.date, { color: colors.textSecondary }]}>{format(parseISO(expense.expenseDate), 'dd MMM yyyy')}</Text>
             </View>
-            <Text style={[rowS.amt, { color: colors.error }]}>-₹{expense.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+            <Text style={[rowS.amt, { color: colors.error }]}>{`-INR ${expense.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}</Text>
         </View>
     );
 }
 
 const rowS = StyleSheet.create({
-    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', padding: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderRadius: Radius.card },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        padding: Spacing.md,
+        marginHorizontal: Spacing.lg,
+        marginBottom: Spacing.sm,
+        borderRadius: Radius.card,
+    },
     left: { flex: 1 },
     cat: { fontWeight: '600', fontSize: 14 },
     desc: { fontSize: 12, marginTop: 2 },
@@ -97,17 +110,28 @@ const rowS = StyleSheet.create({
     amt: { fontWeight: '700', fontSize: 15 },
 });
 
-const styles = (colors: ColorPalette) => StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-    back: { fontWeight: '600', fontSize: 14 },
-    title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 17 },
-    addBtn: { backgroundColor: colors.primary, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 4 },
-    addBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-    totalCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.md },
-    totalLabel: { fontSize: 12 },
-    totalVal: { fontSize: 28, fontWeight: '800', marginTop: 4 },
-    catRow: { marginBottom: Spacing.sm },
-    catChip: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
-    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
-});
+const styles = (colors: ColorPalette) =>
+    StyleSheet.create({
+        safe: { flex: 1, backgroundColor: colors.background },
+        header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+        back: { fontWeight: '600', fontSize: 14, width: 52 },
+        title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 17 },
+        headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+        iconBtn: {
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 4,
+            minWidth: 42,
+            alignItems: 'center',
+        },
+        iconBtnText: { fontWeight: '700', fontSize: 12 },
+        addBtn: { backgroundColor: colors.primary, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 4 },
+        addBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+        totalCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.md },
+        totalLabel: { fontSize: 12 },
+        totalVal: { fontSize: 24, fontWeight: '800', marginTop: 4 },
+        catRow: { marginBottom: Spacing.sm },
+        catChip: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
+        centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
+    });

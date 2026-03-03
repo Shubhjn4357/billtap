@@ -1,17 +1,15 @@
-// @ts-nocheck
 import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { loanApi } from '../../../../api/endpoints';
-import { Colors, Spacing, Radius } from '../../../../constants/theme';
-import format from 'date-fns/format';
-import parseISO from 'date-fns/parseISO';
+import { getColors, Spacing, Radius, type ColorPalette } from '../../../../constants/theme';
+import { format, parseISO } from 'date-fns';
 import type { LoanTransaction } from '../../../../types/domain';
 
 export default function LoanDetailScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme as 'light' | 'dark'] ?? Colors.light;
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     const { id } = useLocalSearchParams<{ id: string }>();
     const s = styles(colors);
 
@@ -33,7 +31,7 @@ export default function LoanDetailScreen() {
     if (isLoading) return <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>;
     if (!loan) return <View style={s.centered}><Text style={{ color: colors.textSecondary }}>Loan not found.</Text></View>;
 
-    const isLent = loan.loanType === 'LENT';
+    const isLent = loan.loanType === 'GIVEN';
     const color = isLent ? colors.success : colors.error;
 
     return (
@@ -47,7 +45,7 @@ export default function LoanDetailScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
                 {/* Summary */}
                 <View style={[s.summaryCard, { backgroundColor: color }]}>
-                    <Text style={s.sumType}>{isLent ? '💸 Lent Out' : '🏛 Borrowed'}</Text>
+                    <Text style={s.sumType}>{isLent ? '💸 Given' : '🏛 Borrowed'}</Text>
                     <Text style={s.sumName}>{loan.lenderBorrowerName}</Text>
                     <View style={s.sumRow}>
                         <View style={s.sumCell}>
@@ -106,7 +104,7 @@ export default function LoanDetailScreen() {
     );
 }
 
-const styles = (colors: typeof Colors.light) => StyleSheet.create({
+const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
     back: { fontWeight: '600', fontSize: 14 },
@@ -132,5 +130,7 @@ const styles = (colors: typeof Colors.light) => StyleSheet.create({
     txnBal: { fontSize: 11, marginTop: 2 },
     centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
+
+
 
 

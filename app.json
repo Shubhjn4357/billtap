@@ -8,14 +8,25 @@
     "scheme": "vahi",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/adaptive-icon.png"
+      "supportsTablet": true,
+      "bundleIdentifier": "com.blockbucket.vahi",
+      "icon": "./assets/images/adaptive-icon.png",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.blockbucket.vahi"
     },
     "web": {
       "output": "static",
@@ -29,7 +40,17 @@
           "backgroundColor": "#208AEF",
           "android": {
             "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
+            "resizeMode": "contain",
+            "backgroundColor": "#ffffff",
+            "radius": 8,
+            "borderless": true
+          },
+          "ios": {
+            "image": "./assets/images/splash-icon.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#ffffff",
+            "radius": 8,
+            "borderless": true
           }
         }
       ],
@@ -53,7 +74,12 @@
           "enableFTS": true
         }
       ],
-      "@react-native-google-signin/google-signin",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.762596815663-nhqic0h9egjmn0isugid7acuddpv1afu"
+        }
+      ],
       "expo-sharing",
       [
         "expo-dev-client",
@@ -65,6 +91,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8d9f7993-9f06-4416-99c7-a6c67854721c"
+      }
+    },
+    "owner": "blockbucket"
   }
 }

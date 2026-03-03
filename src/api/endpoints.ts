@@ -10,7 +10,33 @@ import type {
     DateRangeParams,
     SettingsFieldDefinition,
 } from '../types/api';
-import type { User, Business, Subscription, Party, Item, Invoice, InvoiceBuilderState, Expense, Loan, LoanTransaction, Godown, GodownStockEntry, StockTransfer, Account, BusinessSettingsMap, Plan, Offer } from '../types/domain';
+import type {
+    User,
+    Business,
+    Subscription,
+    Party,
+    Item,
+    Invoice,
+    InvoiceBuilderState,
+    Expense,
+    Loan,
+    LoanTransaction,
+    Godown,
+    GodownStockEntry,
+    StockTransfer,
+    Account,
+    BusinessSettingsMap,
+    Plan,
+    Offer,
+    StaffMember,
+    StaffInvite,
+    OperationsControls,
+    FinancialPeriod,
+    OperationApproval,
+    OperationApprovalActionType,
+    OperationApprovalStatus,
+    OperationsAuditLog,
+} from '../types/domain';
 import { isOfflineLikeError, offlineSyncService } from '../services/offlineSyncService';
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -267,7 +293,21 @@ export const loanApi = {
         api.get<ApiListResponse<Loan>>('/api/loans'),
     get: (id: string) =>
         api.get<ApiResponse<Loan>>(`/api/loans/${id}`),
-    create: (data: Omit<Loan, 'id' | 'businessId' | 'currentBalance' | 'createdAt' | 'updatedAt' | 'transactions'>) =>
+    create: (data: {
+        lenderBorrowerName: string;
+        loanType: 'BORROWED' | 'GIVEN';
+        openingDate?: string;
+        startDate?: string;
+        openingBalance?: number;
+        principalAmount?: number;
+        interestRatePercent?: number;
+        interestType?: 'SIMPLE' | 'COMPOUND';
+        emiAmount?: number | null;
+        dueDate?: string | null;
+        partyId?: string | null;
+        accountId?: string | null;
+        notes?: string | null;
+    }) =>
         api.post<ApiResponse<Loan>>('/api/loans', data),
     update: (id: string, data: Partial<Loan>) =>
         api.put<ApiResponse<Loan>>(`/api/loans/${id}`, data),
@@ -345,6 +385,130 @@ export const cashBankApi = {
         api.get<ApiResponse<unknown[]>>(`/api/cash-bank/ledger/${accountId}`, { params }),
 };
 
+export const staffApi = {
+    list: async () => {
+        const res = await api.get<{ ok: boolean; staff: StaffMember[]; invites: StaffInvite[] }>('/api/staff');
+        return { ...res, data: { staff: res.staff ?? [], invites: res.invites ?? [] } } as ApiResponse<{ staff: StaffMember[]; invites: StaffInvite[] }>;
+    },
+    get: async (uid: string) => {
+        const res = await api.get<{ ok: boolean; staff: StaffMember }>(`/api/staff/${uid}`);
+        return { ...res, data: { staff: res.staff } } as ApiResponse<{ staff: StaffMember }>;
+    },
+    invite: async (data: { phoneNumber: string; role?: string }) => {
+        const res = await api.post<{ ok: boolean; inviteId: string; code: string }>('/api/staff', data);
+        return { ...res, data: { inviteId: res.inviteId, code: res.code } } as ApiResponse<{ inviteId: string; code: string }>;
+    },
+    update: async (uid: string, data: { role?: 'owner' | 'staff'; ownerId?: string | null }) => {
+        const res = await api.patch<{ ok: boolean; id: string }>(`/api/staff/${uid}`, data);
+        return { ...res, data: { id: res.id } } as ApiResponse<{ id: string }>;
+    },
+    delete: (uid: string) =>
+        api.delete<ApiOkResponse>(`/api/staff/${uid}`),
+    deleteInvite: (id: string) =>
+        api.delete<ApiOkResponse>(`/api/staff/invite/${id}`),
+};
+
+export const operationsApi = {
+    getAccessMatrix: async () => {
+        const res = await api.get<{ ok: boolean; matrix: Record<string, unknown> }>('/api/operations/access-matrix');
+        return { ...res, data: res.matrix ?? {} } as ApiResponse<Record<string, unknown>>;
+    },
+    getControls: async () => {
+        const res = await api.get<{ ok: boolean; controls: OperationsControls }>('/api/operations/controls');
+        return { ...res, data: { controls: res.controls } } as ApiResponse<{ controls: OperationsControls }>;
+    },
+    updateControls: async (data: Partial<OperationsControls>) => {
+        const res = await api.put<{
+            ok: boolean;
+            controls?: OperationsControls;
+            approvalId?: string;
+            status?: 'PENDING_APPROVAL';
+        }>('/api/operations/controls', data);
+        return {
+            ...res,
+            data: {
+                controls: res.controls ?? null,
+                approvalId: res.approvalId ?? null,
+                status: res.status ?? null,
+            },
+        } as ApiResponse<{ controls: OperationsControls | null; approvalId: string | null; status: 'PENDING_APPROVAL' | null }>;
+    },
+    getPeriods: async () => {
+        const res = await api.get<{ ok: boolean; periods: FinancialPeriod[] }>('/api/operations/periods');
+        return { ...res, data: { periods: res.periods ?? [] } } as ApiResponse<{ periods: FinancialPeriod[] }>;
+    },
+    lockPeriod: async (data: { periodStart?: string; periodEnd?: string; notes?: string }) => {
+        const res = await api.post<{
+            ok: boolean;
+            id?: string;
+            period?: FinancialPeriod;
+            approvalId?: string;
+            status?: 'PENDING_APPROVAL';
+        }>('/api/operations/periods/lock', data);
+        return {
+            ...res,
+            data: {
+                id: res.id ?? null,
+                period: res.period ?? null,
+                approvalId: res.approvalId ?? null,
+                status: res.status ?? null,
+            },
+        } as ApiResponse<{ id: string | null; period: FinancialPeriod | null; approvalId: string | null; status: 'PENDING_APPROVAL' | null }>;
+    },
+    closePeriod: async (id: string) => {
+        const res = await api.post<{
+            ok: boolean;
+            period?: FinancialPeriod;
+            approvalId?: string;
+            status?: 'PENDING_APPROVAL';
+        }>(`/api/operations/periods/${id}/close`, {});
+        return {
+            ...res,
+            data: {
+                period: res.period ?? null,
+                approvalId: res.approvalId ?? null,
+                status: res.status ?? null,
+            },
+        } as ApiResponse<{ period: FinancialPeriod | null; approvalId: string | null; status: 'PENDING_APPROVAL' | null }>;
+    },
+    reopenPeriod: async (id: string) => {
+        const res = await api.post<{
+            ok: boolean;
+            period?: FinancialPeriod;
+            approvalId?: string;
+            status?: 'PENDING_APPROVAL';
+        }>(`/api/operations/periods/${id}/reopen`, {});
+        return {
+            ...res,
+            data: {
+                period: res.period ?? null,
+                approvalId: res.approvalId ?? null,
+                status: res.status ?? null,
+            },
+        } as ApiResponse<{ period: FinancialPeriod | null; approvalId: string | null; status: 'PENDING_APPROVAL' | null }>;
+    },
+    getAuditLogs: async (limit = 50) => {
+        const res = await api.get<{ ok: boolean; logs: OperationsAuditLog[] }>('/api/operations/audit-logs', { params: { limit } });
+        return { ...res, data: { logs: res.logs ?? [] } } as ApiResponse<{ logs: OperationsAuditLog[] }>;
+    },
+    getApprovals: async (params?: { status?: OperationApprovalStatus }) => {
+        const res = await api.get<{ ok: boolean; approvals: OperationApproval[] }>('/api/operations/approvals', { params });
+        return { ...res, data: { approvals: res.approvals ?? [] } } as ApiResponse<{ approvals: OperationApproval[] }>;
+    },
+    createApproval: async (payload: { actionType: OperationApprovalActionType; module?: string; payload?: Record<string, unknown> }) => {
+        const res = await api.post<{ ok: boolean; approvalId: string }>('/api/operations/approvals', payload);
+        return { ...res, data: { approvalId: res.approvalId } } as ApiResponse<{ approvalId: string }>;
+    },
+    approveApproval: async (id: string) => {
+        const res = await api.post<{ ok: boolean; approval: OperationApproval }>(`/api/operations/approvals/${id}/approve`, {});
+        return { ...res, data: { approval: res.approval } } as ApiResponse<{ approval: OperationApproval }>;
+    },
+    rejectApproval: async (id: string, note?: string) => {
+        const res = await api.post<{ ok: boolean; approval: OperationApproval }>(`/api/operations/approvals/${id}/reject`, { note });
+        return { ...res, data: { approval: res.approval } } as ApiResponse<{ approval: OperationApproval }>;
+    },
+};
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 export const settingsApi = {
@@ -398,6 +562,85 @@ export const reportApi = {
         api.get<ApiResponse<unknown>>('/api/accounting/gst/summary', { params }),
     getGstr3b: (params: { month: number; year: number }) =>
         api.get<ApiResponse<unknown>>('/api/accounting/gst/summary', { params }),
+    getGstSummary: (params: { month: number; year: number }) =>
+        api.get<ApiResponse<{
+            rows: {
+                gstRate: number;
+                taxableTurnover: number;
+                cgstAmount: number;
+                sgstAmount: number;
+                igstAmount: number;
+                totalTax: number;
+            }[];
+        }>>('/api/accounting/gst/summary', { params }),
+};
+
+export const accountingApi = {
+    getAccounts: (params?: { type?: string }) =>
+        api.get<ApiResponse<{
+            accounts: {
+                id: string;
+                code: string;
+                name: string;
+                type: string;
+                parentId: string | null;
+                isDefault: boolean;
+                isActive: boolean;
+                isSystem: boolean;
+                createdAt: string;
+                updatedAt: string;
+                balance: number;
+            }[];
+        }>>('/api/accounting/accounts', { params }),
+    createAccount: (data: { code: string; name: string; type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE'; parentId?: string | null }) =>
+        api.post<ApiResponse<{ id: string }>>('/api/accounting/accounts', data),
+    updateAccount: (accountId: string, data: { code?: string; name?: string; parentId?: string | null; isActive?: boolean }) =>
+        api.patch<ApiOkResponse>(`/api/accounting/accounts/${accountId}`, data),
+    deactivateAccount: (accountId: string) =>
+        api.post<ApiOkResponse>(`/api/accounting/accounts/${accountId}/deactivate`, {}),
+    getTrialBalance: () =>
+        api.get<ApiResponse<{
+            rows: {
+                accountId: string;
+                accountName: string;
+                accountType: string;
+                debitTotal: number;
+                creditTotal: number;
+            }[];
+            totals: { debit: number; credit: number; isBalanced: boolean };
+        }>>('/api/accounting/trial-balance'),
+    getLedgers: (params?: { includeInactive?: boolean }) =>
+        api.get<ApiResponse<{
+            data: {
+                id: string;
+                code: string;
+                name: string;
+                type: string;
+                isSystem: boolean;
+                isDefault: boolean;
+                isActive: boolean;
+                debitTotal: number;
+                creditTotal: number;
+                balance: number;
+            }[];
+            totals: { debit: number; credit: number };
+        }>>('/api/accounting/ledgers', { params }),
+    getLedger: (accountId: string, params?: PaginationParams) =>
+        api.get<ApiResponse<{
+            account: { id: string; code: string; name: string; type: string };
+            currentBalance: number;
+            entries: {
+                id: string;
+                voucherId: string;
+                debit: number;
+                credit: number;
+                voucherType: string;
+                voucherNumber: string;
+                date: string;
+                narration: string | null;
+                runningBalance: number;
+            }[];
+        }>>(`/api/accounting/ledgers/${accountId}`, { params }),
 };
 
 // ─── Subscription ─────────────────────────────────────────────────────────────
@@ -673,7 +916,7 @@ const buildLocalExpense = (
 };
 
 const buildLocalLoan = (
-    payload: Omit<Loan, 'id' | 'businessId' | 'currentBalance' | 'createdAt' | 'updatedAt' | 'transactions'>
+    payload: Parameters<typeof loanApi.create>[0]
 ): Loan => {
     const now = nowIso();
     const id = offlineSyncService.createLocalId('loan');
@@ -695,7 +938,7 @@ const buildLocalLoan = (
         dueDate: payload.dueDate ?? null,
         accountId: payload.accountId ?? null,
         partyId: payload.partyId ?? null,
-        description: payload.description ?? null,
+        description: payload.notes ?? null,
         notes: payload.notes ?? null,
         isActive: true,
         createdAt: now,

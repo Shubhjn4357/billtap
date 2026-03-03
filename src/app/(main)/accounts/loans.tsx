@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -20,7 +19,7 @@ export default function LoansScreen() {
 
     const loans = (data?.data ?? []) as Loan[];
     const totalBorrowed = loans.filter((l) => l.loanType === 'BORROWED').reduce((s, l) => s + l.currentBalance, 0);
-    const totalLent = loans.filter((l) => l.loanType === 'LENT').reduce((s, l) => s + l.currentBalance, 0);
+    const totalLent = loans.filter((l) => l.loanType === 'GIVEN').reduce((s, l) => s + l.currentBalance, 0);
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -39,7 +38,7 @@ export default function LoansScreen() {
                     <Text style={[s.sumVal, { color: colors.error }]}>₹{totalBorrowed.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
                 </View>
                 <View style={[s.summaryCard, { backgroundColor: colors.success + '18' }]}>
-                    <Text style={[s.sumLabel, { color: colors.textSecondary }]}>Lent Out</Text>
+                    <Text style={[s.sumLabel, { color: colors.textSecondary }]}>Given</Text>
                     <Text style={[s.sumVal, { color: colors.success }]}>₹{totalLent.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
                 </View>
             </View>
@@ -60,7 +59,7 @@ export default function LoansScreen() {
 }
 
 function LoanRow({ loan, colors }: { loan: Loan; colors: ColorPalette }) {
-    const isOut = loan.loanType === 'LENT';
+    const isOut = loan.loanType === 'GIVEN';
     const color = isOut ? colors.success : colors.error;
     return (
         <Pressable
@@ -68,7 +67,7 @@ function LoanRow({ loan, colors }: { loan: Loan; colors: ColorPalette }) {
             onPress={() => router.push(`/(main)/accounts/loans/${loan.id}` as Parameters<typeof router.push>[0])}
         >
             <View style={[rowS.badge, { backgroundColor: color + '22' }]}>
-                <Text style={{ color, fontWeight: '700', fontSize: 11 }}>{isOut ? 'LENT' : 'BORROWED'}</Text>
+                <Text style={{ color, fontWeight: '700', fontSize: 11 }}>{isOut ? 'GIVEN' : 'BORROWED'}</Text>
             </View>
             <View style={{ flex: 1 }}>
                 <Text style={[rowS.name, { color: colors.text }]}>{loan.lenderBorrowerName}</Text>
@@ -104,5 +103,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     sumVal: { fontSize: 20, fontWeight: '700' },
     centered: { paddingTop: 80, alignItems: 'center' },
 });
+
+
 
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -11,7 +10,7 @@ import { getColors, Spacing, Radius, type ColorPalette } from '../../../../const
 import { format } from 'date-fns';
 
 const loanSchema = z.object({
-    loanType: z.enum(['BORROWED', 'LENT']),
+    loanType: z.enum(['BORROWED', 'GIVEN']),
     lenderBorrowerName: z.string().min(1, 'Name is required'),
     principalAmount: z.coerce.number().positive('Amount must be positive'),
     interestRatePercent: z.coerce.number().nonnegative().default(0),
@@ -20,7 +19,8 @@ const loanSchema = z.object({
     dueDate: z.string().optional(),
     description: z.string().optional(),
 });
-type LoanForm = z.infer<typeof loanSchema>;
+type LoanFormInput = z.input<typeof loanSchema>;
+type LoanForm = z.output<typeof loanSchema>;
 
 export default function AddLoanScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -28,7 +28,7 @@ export default function AddLoanScreen() {
     const qc = useQueryClient();
     const s = styles(colors);
 
-    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<LoanForm>({
+    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<LoanFormInput, unknown, LoanForm>({
         resolver: zodResolver(loanSchema),
         defaultValues: { loanType: 'BORROWED', interestRatePercent: 0, interestType: 'SIMPLE', startDate: format(new Date(), 'yyyy-MM-dd') },
     });
@@ -37,12 +37,14 @@ export default function AddLoanScreen() {
         mutationFn: (data: LoanForm) => loanApi.create({
             loanType: data.loanType,
             lenderBorrowerName: data.lenderBorrowerName,
-            principalAmount: data.principalAmount,
+            openingDate: data.startDate,
+            openingBalance: data.principalAmount,
             interestRatePercent: data.interestRatePercent,
-            interestType: data.interestType,
-            startDate: data.startDate,
+            emiAmount: null,
+            accountId: null,
+            partyId: null,
             dueDate: data.dueDate ?? null,
-            description: data.description,
+            notes: data.description ?? null,
         }),
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['loans'] }); router.back(); },
         onError: (e) => Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create loan'),
@@ -70,9 +72,9 @@ export default function AddLoanScreen() {
                             <Text style={{ color: loanType === 'BORROWED' ? '#fff' : colors.text, fontWeight: '700' }}>🏛 Borrowed</Text>
                             <Text style={{ color: loanType === 'BORROWED' ? '#ffffffbb' : colors.textSecondary, fontSize: 11 }}>Money you owe</Text>
                         </Pressable>
-                        <Pressable style={[s.typeChip, { backgroundColor: loanType === 'LENT' ? colors.success : colors.surfaceVariant }]} onPress={() => setValue('loanType', 'LENT')}>
-                            <Text style={{ color: loanType === 'LENT' ? '#fff' : colors.text, fontWeight: '700' }}>💸 Lent Out</Text>
-                            <Text style={{ color: loanType === 'LENT' ? '#ffffffbb' : colors.textSecondary, fontSize: 11 }}>Money owed to you</Text>
+                        <Pressable style={[s.typeChip, { backgroundColor: loanType === 'GIVEN' ? colors.success : colors.surfaceVariant }]} onPress={() => setValue('loanType', 'GIVEN')}>
+                            <Text style={{ color: loanType === 'GIVEN' ? '#fff' : colors.text, fontWeight: '700' }}>💸 Given</Text>
+                            <Text style={{ color: loanType === 'GIVEN' ? '#ffffffbb' : colors.textSecondary, fontSize: 11 }}>Money owed to you</Text>
                         </Pressable>
                     </View>
                 </View>
@@ -163,5 +165,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     typeChip: { flex: 1, borderRadius: Radius.card, padding: Spacing.md, alignItems: 'center', gap: 4 },
     smallChip: { borderRadius: Radius.pill, paddingVertical: 6, alignItems: 'center' },
 });
+
+
 
 

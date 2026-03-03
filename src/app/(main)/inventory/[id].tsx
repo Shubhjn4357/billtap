@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -201,3 +200,4 @@ const rowStyles = StyleSheet.create({
     label: { fontSize: 12, width: 130, fontWeight: '600' },
     value: { flex: 1, fontSize: 13, textAlign: 'right' },
 });
+

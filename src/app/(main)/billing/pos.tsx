@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, useColorScheme, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,12 +6,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { usePosStore } from '../../../store/posStore';
 import { posApi, itemApi } from '../../../api/endpoints';
-import { Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
 import type { Item } from '../../../types/domain';
 
 export default function PosScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     const store = usePosStore();
     const params = useLocalSearchParams<{ search?: string | string[]; scanAt?: string | string[] }>();
     const subtotal = store.getSubtotal();
@@ -251,3 +250,4 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     checkoutBtn: { borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.sm },
     checkoutBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });
+

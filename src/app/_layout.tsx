@@ -1,8 +1,7 @@
-// @ts-nocheck
 import { Stack } from 'expo-router';
 import { Platform, useColorScheme } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Colors } from '../constants/theme';
+import { getColors } from '../constants/theme';
 import AnimatedSplashOverlay from '../components/AnimatedSplashOverlay';
 import { useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
@@ -30,8 +29,8 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
-  const scheme = useColorScheme() ?? 'light';
-  const colors = Colors[scheme];
+  const scheme = useColorScheme();
+  const colors = getColors(scheme);
   const { refreshUser } = useAuthStore();
 
   useEffect(() => {
@@ -90,5 +89,6 @@ export default function RootLayout() {
       </QueryClientProvider>
     );
 }
+
 
 

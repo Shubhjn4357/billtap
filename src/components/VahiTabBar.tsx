@@ -1,30 +1,43 @@
-// @ts-nocheck
-import { View, Text, Pressable, StyleSheet, useColorScheme, Platform } from 'react-native';
+import { Alert, View, Text, Pressable, StyleSheet, useColorScheme, Platform } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Colors, Spacing } from '../constants/theme';
+import { getColors, Spacing } from '../constants/theme';
+import { useAuthStore } from '../store/authStore';
+import { canAccessModule } from '../utils/accessControl';
 
-const TABS = [
-    { name: 'index', icon: '🏠', label: 'Home' },
-    { name: 'billing', icon: '🧾', label: 'Billing' },
-    { name: 'inventory', icon: '📦', label: 'Items' },
-    { name: 'parties', icon: '👥', label: 'Parties' },
-    { name: 'accounts', icon: '💰', label: 'Accounts' },
-    { name: 'more', icon: '⋯', label: 'More' },
-] as const;
+const TAB_META = {
+    index: { icon: 'HM', label: 'Home', module: 'home' as const },
+    billing: { icon: 'BL', label: 'Billing', module: 'billing' as const },
+    inventory: { icon: 'IN', label: 'Inventory', module: 'inventory' as const },
+    accounts: { icon: 'AC', label: 'Accounts', module: 'accounts' as const },
+    reports: { icon: 'RP', label: 'Reports', module: 'reports' as const },
+    more: { icon: 'MO', label: 'More', module: 'home' as const },
+    parties: { icon: 'PT', label: 'Parties', module: 'parties' as const },
+} as const;
 
 export function VahiTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
+    const role = useAuthStore((s) => s.organizationRole);
+    const subscription = useAuthStore((s) => s.subscription);
 
     return (
-        <View style={[styles.bar, { backgroundColor: colors.tabBar, borderTopColor: colors.tabBarBorder }]}>
+        <View style={[styles.bar, { backgroundColor: colors.tabBar, borderTopColor: colors.tabBarBorder }]}> 
             {state.routes.map((route, index) => {
-                const tab = TABS[index];
+                const tab = TAB_META[route.name as keyof typeof TAB_META];
                 if (!tab) return null;
+
                 const isFocused = state.index === index;
                 const { options } = descriptors[route.key];
+                const expoRouterOptions = options as typeof options & { href?: string | null };
+                if (expoRouterOptions.href === null) return null;
+                const hasAccess = canAccessModule(role, tab.module, subscription);
 
                 const onPress = () => {
+                    if (!hasAccess) {
+                        Alert.alert('Access limited', 'This section is not enabled for your role or plan.');
+                        return;
+                    }
+
                     const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
                     if (!isFocused && !event.defaultPrevented) {
                         navigation.navigate(route.name);
@@ -43,11 +56,13 @@ export function VahiTabBar({ state, descriptors, navigation }: BottomTabBarProps
                         <Text style={[styles.icon, isFocused && { transform: [{ scale: 1.1 }] }]}>
                             {tab.icon}
                         </Text>
-                        <Text style={[
-                            styles.label,
-                            { color: isFocused ? colors.primary : colors.textSecondary },
-                            isFocused && styles.labelActive,
-                        ]}>
+                        <Text
+                            style={[
+                                styles.label,
+                                { color: isFocused ? colors.primary : (hasAccess ? colors.textSecondary : colors.border) },
+                                isFocused && styles.labelActive,
+                            ]}
+                        >
                             {tab.label}
                         </Text>
                         {isFocused && (
@@ -80,7 +95,7 @@ const styles = StyleSheet.create({
         paddingTop: Spacing.xs,
     },
     tabPressed: { opacity: 0.7 },
-    icon: { fontSize: 22 },
+    icon: { fontSize: 12, fontWeight: '700' },
     label: {
         fontSize: 10,
         fontWeight: '500',
@@ -96,5 +111,4 @@ const styles = StyleSheet.create({
         borderRadius: 2,
     },
 });
-
 

@@ -279,6 +279,8 @@ export interface Expense {
     category: ExpenseCategory;
     accountId: string | null;
     amount: number;
+    gstRate?: number;
+    isGstIncluded?: boolean;
     date: string;
     expenseDate: string;    // alias: same as date, used by API
     description: string | null;
@@ -432,6 +434,85 @@ export interface BusinessMember {
     isActive: boolean;
     phoneSnapshot: string | null;
     joinedAt: string;
+}
+
+export interface StaffMember {
+    uid: string;
+    displayName: string | null;
+    email: string | null;
+    phoneNumber: string | null;
+    role: 'owner' | 'staff';
+    ownerId: string | null;
+}
+
+export interface StaffInvite {
+    id: string;
+    ownerId: string;
+    organizationId: string;
+    phoneNumber: string;
+    role: 'owner' | 'staff';
+    status: string;
+    code: string;
+    expiresAt: string | null;
+    createdAt: string;
+}
+
+export interface OperationsControls {
+    makerCheckerEnabled: boolean;
+    journalApprovalRequired: boolean;
+    stockAdjustmentApprovalRequired: boolean;
+    periodLockEnabled: boolean;
+}
+
+export interface FinancialPeriod {
+    id: string;
+    periodStart: string;
+    periodEnd: string;
+    status: 'OPEN' | 'LOCKED' | 'CLOSED';
+    notes: string | null;
+    lockedAt: string | null;
+    closedAt: string | null;
+    reopenedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export type OperationApprovalActionType =
+    | 'UPDATE_CONTROLS'
+    | 'LOCK_PERIOD'
+    | 'CLOSE_PERIOD'
+    | 'REOPEN_PERIOD'
+    | 'CUSTOM';
+
+export type OperationApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface OperationApproval {
+    id: string;
+    actionType: OperationApprovalActionType;
+    module: string;
+    status: OperationApprovalStatus;
+    payload: Record<string, unknown>;
+    requestedByUserId: string | null;
+    requestedByRole: string | null;
+    requestedAt: string;
+    reviewedByUserId: string | null;
+    reviewedByRole: string | null;
+    reviewedAt: string | null;
+    reviewNote: string | null;
+}
+
+export interface OperationsAuditLog {
+    id: string;
+    module: string;
+    action: string;
+    entityType: string | null;
+    entityId: string | null;
+    actorUid: string | null;
+    actorRole: string | null;
+    before: Record<string, unknown> | null;
+    after: Record<string, unknown> | null;
+    metadata: Record<string, unknown>;
+    createdAt: string;
 }
 
 // ─── Plan ─────────────────────────────────────────────────────────────────────

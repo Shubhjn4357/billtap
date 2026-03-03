@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -21,7 +20,8 @@ const expenseSchema = z.object({
     gstRate: z.coerce.number().default(0),
     isGstIncluded: z.boolean().default(false),
 });
-type ExpenseForm = z.infer<typeof expenseSchema>;
+type ExpenseFormInput = z.input<typeof expenseSchema>;
+type ExpenseForm = z.output<typeof expenseSchema>;
 
 const CATS = Object.values(ExpenseCategory);
 const PAYMENT_MODES = ['CASH', 'BANK', 'UPI', 'CARD'];
@@ -32,19 +32,23 @@ export default function AddExpenseScreen() {
     const qc = useQueryClient();
     const s = styles(colors);
 
-    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<ExpenseForm>({
+    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<ExpenseFormInput, unknown, ExpenseForm>({
         resolver: zodResolver(expenseSchema),
-        defaultValues: { category: ExpenseCategory.OTHER, expenseDate: format(new Date(), 'yyyy-MM-dd'), paymentMode: 'CASH', amount: 0, gstRate: 0, isGstIncluded: false },
+        defaultValues: { category: ExpenseCategory.MISCELLANEOUS, expenseDate: format(new Date(), 'yyyy-MM-dd'), paymentMode: 'CASH', amount: 0, gstRate: 0, isGstIncluded: false },
     });
 
     const { mutate, isPending } = useMutation({
         mutationFn: (data: ExpenseForm) => expenseApi.create({
             category: data.category as ExpenseCategory,
             amount: data.amount,
-            description: data.description,
+            description: data.description ?? null,
+            date: data.expenseDate,
             expenseDate: data.expenseDate,
             paymentMode: data.paymentMode as PaymentMode,
-            partyName: data.partyName,
+            accountId: null,
+            partyId: null,
+            partyName: data.partyName ?? null,
+            receiptUrl: null,
             gstRate: data.gstRate,
             isGstIncluded: data.isGstIncluded,
         }),
@@ -152,5 +156,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     input: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, fontSize: 14 },
     multiline: { minHeight: 60 },
 });
+
 
 

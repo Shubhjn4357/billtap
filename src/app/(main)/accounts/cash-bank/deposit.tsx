@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -18,7 +17,8 @@ const depositSchema = z.object({
     date: z.string().default(() => format(new Date(), 'yyyy-MM-dd')),
     paymentMode: z.string().default('CASH'),
 });
-type DepositForm = z.infer<typeof depositSchema>;
+type DepositFormInput = z.input<typeof depositSchema>;
+type DepositForm = z.output<typeof depositSchema>;
 
 export default function DepositScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -29,7 +29,7 @@ export default function DepositScreen() {
     const { data: accountsData } = useQuery({ queryKey: ['cash-bank-balances'], queryFn: () => cashBankApi.getBalances() });
     const accounts = (accountsData?.data ?? []) as Account[];
 
-    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<DepositForm>({
+    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<DepositFormInput, unknown, DepositForm>({
         resolver: zodResolver(depositSchema),
         defaultValues: { date: format(new Date(), 'yyyy-MM-dd'), paymentMode: 'CASH' },
     });
@@ -67,7 +67,7 @@ export default function DepositScreen() {
                         {accounts.map((acc) => (
                             <Pressable key={acc.id} style={[s.accChip, { backgroundColor: accountId === acc.id ? colors.primary : colors.surfaceVariant }]} onPress={() => setValue('accountId', acc.id)}>
                                 <Text style={{ color: accountId === acc.id ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>
-                                    {acc.type === 'CASH' ? '💵' : '🏦'} {acc.name}
+                                    {acc.name.toLowerCase().includes('cash') ? 'Cash' : 'Bank'} {acc.name}
                                 </Text>
                             </Pressable>
                         ))}
@@ -125,5 +125,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     modeChip: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
     input: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, fontSize: 14 },
 });
+
 
 

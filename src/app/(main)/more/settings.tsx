@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -117,5 +116,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     cardMeta: { fontSize: 12, marginTop: 2 },
     chevron: { fontSize: 18, fontWeight: '700' },
 });
+
 
 

@@ -8,6 +8,7 @@ interface AuthState {
     user: User | null;
     business: Business | null;
     subscription: Subscription | null;
+    organizationRole: 'owner' | 'manager' | 'salesman' | 'staff';
     isAuthenticated: boolean;
     isLoading: boolean;
     error: string | null;
@@ -36,6 +37,14 @@ const toStringOrDefault = (value: unknown, fallback: string): string =>
 
 const toBoolean = (value: unknown, fallback = false): boolean =>
     typeof value === 'boolean' ? value : fallback;
+
+const normalizeOrganizationRole = (value: unknown): AuthState['organizationRole'] => {
+    const role = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (role === 'owner' || role === 'manager' || role === 'salesman' || role === 'staff') {
+        return role;
+    }
+    return 'owner';
+};
 
 const mapLegacyProfileToUser = (profile: LegacyProfilePayload): User => {
     const timestamp = isoNow();
@@ -133,6 +142,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         user: null,
         business: null,
         subscription: null,
+        organizationRole: 'owner',
         isAuthenticated: false,
         isLoading: false,
         error: null,
@@ -160,6 +170,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                         status: (res.subscription.status as Subscription['status']) ?? 'TRIAL',
                     };
                 }
+                state.organizationRole = normalizeOrganizationRole((res.user as Record<string, unknown> | undefined)?.role);
             });
             await get().refreshUser();
         },
@@ -188,11 +199,13 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                 }
 
                 const subscription = mapLegacyProfileToSubscription(profileRes.user, business?.id ?? null);
+                const role = normalizeOrganizationRole(profileRes.user.role);
 
                 set((state) => {
                     state.user = user;
                     state.business = business;
                     state.subscription = subscription;
+                    state.organizationRole = role;
                     state.isAuthenticated = true;
                     state.error = null;
                 });
@@ -202,6 +215,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                     state.user = null;
                     state.business = null;
                     state.subscription = null;
+                    state.organizationRole = 'owner';
                     state.isAuthenticated = false;
                 });
             }
@@ -213,6 +227,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                 state.user = null;
                 state.business = null;
                 state.subscription = null;
+                state.organizationRole = 'owner';
                 state.isAuthenticated = false;
                 state.error = null;
             });
@@ -228,3 +243,4 @@ export const useBusiness = () => useAuthStore((s) => s.business);
 export const useSubscription = () => useAuthStore((s) => s.subscription);
 export const useIsAuthenticated = () => useAuthStore((s) => s.isAuthenticated);
 export const useFeatureFlags = () => useAuthStore((s) => s.subscription?.featureFlagsEnabled ?? []);
+export const useOrganizationRole = () => useAuthStore((s) => s.organizationRole);

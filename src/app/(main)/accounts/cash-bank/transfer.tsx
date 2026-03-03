@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -18,7 +17,8 @@ const transferSchema = z.object({
     description: z.string().optional(),
     date: z.string().default(() => format(new Date(), 'yyyy-MM-dd')),
 });
-type TransferForm = z.infer<typeof transferSchema>;
+type TransferFormInput = z.input<typeof transferSchema>;
+type TransferForm = z.output<typeof transferSchema>;
 
 export default function TransferScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -29,7 +29,7 @@ export default function TransferScreen() {
     const { data: accountsData } = useQuery({ queryKey: ['cash-bank-balances'], queryFn: () => cashBankApi.getBalances() });
     const accounts = (accountsData?.data ?? []) as Account[];
 
-    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<TransferForm>({
+    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<TransferFormInput, unknown, TransferForm>({
         resolver: zodResolver(transferSchema),
         defaultValues: { date: format(new Date(), 'yyyy-MM-dd') },
     });
@@ -67,7 +67,7 @@ export default function TransferScreen() {
                     {accounts.map((acc) => (
                         <Pressable key={acc.id} style={[s.accChip, { backgroundColor: fromId === acc.id ? colors.primary : colors.surfaceVariant }]} onPress={() => setValue('fromAccountId', acc.id)}>
                             <Text style={{ color: fromId === acc.id ? '#fff' : colors.text, fontWeight: '600' }}>
-                                {acc.type === 'CASH' ? '💵' : '🏦'} {acc.name} — ₹{(acc.balance ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                {acc.name.toLowerCase().includes('cash') ? 'Cash' : 'Bank'} {acc.name}
                             </Text>
                         </Pressable>
                     ))}
@@ -81,7 +81,7 @@ export default function TransferScreen() {
                     {accounts.map((acc) => (
                         <Pressable key={acc.id} style={[s.accChip, { backgroundColor: toId === acc.id ? colors.success : colors.surfaceVariant }]} onPress={() => setValue('toAccountId', acc.id)}>
                             <Text style={{ color: toId === acc.id ? '#fff' : colors.text, fontWeight: '600' }}>
-                                {acc.type === 'CASH' ? '💵' : '🏦'} {acc.name}
+                                {acc.name.toLowerCase().includes('cash') ? 'Cash' : 'Bank'} {acc.name}
                             </Text>
                         </Pressable>
                     ))}
@@ -123,5 +123,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     arrow: { fontWeight: '700', fontSize: 18 },
     input: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, fontSize: 14 },
 });
+
 
 

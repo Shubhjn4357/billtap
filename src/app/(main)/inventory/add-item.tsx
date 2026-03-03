@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect } from 'react';
 import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,7 +29,8 @@ const itemSchema = z.object({
     description: z.string().optional(),
     location: z.string().optional(),
 });
-type ItemForm = z.infer<typeof itemSchema>;
+type ItemFormInput = z.input<typeof itemSchema>;
+type ItemForm = z.output<typeof itemSchema>;
 
 export default function AddItemScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -46,7 +46,7 @@ export default function AddItemScreen() {
     const qc = useQueryClient();
     const s = styles(colors);
 
-    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<ItemForm>({
+    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<ItemFormInput, unknown, ItemForm>({
         resolver: zodResolver(itemSchema),
         defaultValues: { unit: 'pcs', gstRate: 18, stock: 0, reorderLevel: 5, salePrice: 0, purchasePrice: 0, mrp: 0, isSalesPriceInclusiveGst: false },
     });
@@ -70,8 +70,13 @@ export default function AddItemScreen() {
                 purchasePrice: data.purchasePrice,
                 mrp: data.mrp || data.salePrice,
                 gstRate: data.gstRate,
+                openingStock: data.stock,
                 stock: data.stock,
                 reorderLevel: data.reorderLevel,
+                imageUrl: null,
+                expiresAt: null,
+                autoDeleteAt: null,
+                autoDeleteEnabled: false,
                 isSalesPriceInclusiveGst: data.isSalesPriceInclusiveGst,
                 description: data.description ?? null,
                 location: data.location ?? null,
@@ -307,7 +312,7 @@ export default function AddItemScreen() {
     );
 }
 
-function Field({ label, children, error, colors }: { label: string; children: React.ReactNode; error?: string; colors: typeof Colors.light }) {
+function Field({ label, children, error, colors }: { label: string; children: React.ReactNode; error?: string; colors: ColorPalette }) {
     return (
         <View style={{ marginBottom: Spacing.md }}>
             <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>{label}</Text>
@@ -335,5 +340,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     scanInlineAction: { marginTop: 6 },
     scanInlineText: { fontSize: 12, fontWeight: '700' },
 });
+
 
 

@@ -1,17 +1,15 @@
-// @ts-nocheck
 import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { partyApi, invoiceApi } from '../../../api/endpoints';
-import { Colors, Spacing, Radius } from '../../../constants/theme';
-import format from 'date-fns/format';
-import parseISO from 'date-fns/parseISO';
+import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { format, parseISO } from 'date-fns';
 import type { Invoice } from '../../../types/domain';
 
 export default function PartyDetailScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme as 'light' | 'dark'] ?? Colors.light;
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     const { id } = useLocalSearchParams<{ id: string }>();
     const qc = useQueryClient();
     const s = styles(colors);
@@ -122,7 +120,7 @@ export default function PartyDetailScreen() {
     );
 }
 
-function InfoRow({ icon, label, value, colors }: { icon: string; label: string; value: string; colors: typeof Colors.light }) {
+function InfoRow({ icon, label, value, colors }: { icon: string; label: string; value: string; colors: ColorPalette }) {
     return (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, paddingVertical: Spacing.sm, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
             <Text style={{ fontSize: 16 }}>{icon}</Text>
@@ -132,7 +130,7 @@ function InfoRow({ icon, label, value, colors }: { icon: string; label: string; 
     );
 }
 
-const styles = (colors: typeof Colors.light) => StyleSheet.create({
+const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
     back: { fontWeight: '600', fontSize: 14 },
@@ -160,5 +158,6 @@ const styles = (colors: typeof Colors.light) => StyleSheet.create({
     deleteBtnText: { fontWeight: '700', fontSize: 14 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
+
 
 

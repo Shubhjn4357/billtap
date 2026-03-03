@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, type ColorSchemeName } from 'react-native';
 
 export const Colors = {
     light: {
@@ -78,8 +78,9 @@ export type ColorPalette = {
     skeleton: string;
     skeletonHighlight: string;
 };
-export function getColors(scheme: 'light' | 'dark' | null | undefined): ColorPalette {
-    return Colors[scheme as 'light' | 'dark'] ?? Colors.light;
+export function getColors(scheme: ColorSchemeName | null | undefined): ColorPalette {
+    const mode: ThemeMode = scheme === 'dark' ? 'dark' : 'light';
+    return Colors[mode];
 }
 
 export const Spacing = {

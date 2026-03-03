@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useMemo } from 'react';
 import {
     View,
@@ -21,9 +20,9 @@ import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import { format, parseISO } from 'date-fns';
 import { invoiceApi, settingsApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
-import type { Invoice } from '../../../types/domain';
 import { buildUpiPaymentUri, buildUpiQrImageUrl, isValidUpiId, sanitizeUpiId } from '../../../utils/upi';
 import { useAuthStore } from '../../../store/authStore';
+import { generateInvoiceHtml, type InvoicePrintConfig } from '../../../utils/invoiceHtml';
 
 export default function InvoiceDetailScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -71,7 +70,7 @@ export default function InvoiceDetailScreen() {
                 maximumFractionDigits: decimals,
             }).format(amount);
         } catch {
-            const symbol = currencyCode === 'INR' ? '₹' : `${currencyCode} `;
+            const symbol = currencyCode === 'INR' ? 'Rs ' : `${currencyCode} `;
             return `${symbol}${amount.toLocaleString('en-IN', {
                 minimumFractionDigits: decimals,
                 maximumFractionDigits: decimals,
@@ -83,18 +82,26 @@ export default function InvoiceDetailScreen() {
         const raw = (generalSettings?.data ?? {}) as Record<string, unknown>;
         const upiIdRaw = typeof raw.payment_upi_id === 'string' ? sanitizeUpiId(raw.payment_upi_id) : '';
         const receiverName = typeof raw.payment_receiver_name === 'string' ? raw.payment_receiver_name.trim() : '';
+        const signatureUrl = typeof raw.signature_url === 'string'
+            ? raw.signature_url.trim()
+            : typeof raw.signatureUrl === 'string'
+                ? raw.signatureUrl.trim()
+                : '';
         return {
             upiId: isValidUpiId(upiIdRaw) ? upiIdRaw : '',
             receiverName,
+            signatureUrl,
         };
     }, [generalSettings?.data]);
 
     const dueAmount = Math.max((invoice?.totalInvoiceValue ?? 0) - (invoice?.paidAmount ?? 0), 0);
-    const printConfig = useMemo(() => {
+    const printConfig = useMemo<InvoicePrintConfig>(() => {
         const raw = (invoicePrintSettings?.data ?? {}) as Record<string, unknown>;
         return {
             printLayoutType: raw.print_layout_type === 'THERMAL' ? 'THERMAL' : 'REGULAR',
-            printTextSize: raw.print_text_size === 'SMALL' || raw.print_text_size === 'LARGE' ? raw.print_text_size : 'MEDIUM',
+            printTextSize: raw.print_text_size === 'SMALL' || raw.print_text_size === 'LARGE'
+                ? (raw.print_text_size as 'SMALL' | 'LARGE')
+                : 'MEDIUM',
             pageSize: typeof raw.page_size === 'string' && raw.page_size.trim() ? raw.page_size : 'A4',
             orientation: raw.orientation === 'LANDSCAPE' ? 'LANDSCAPE' : 'PORTRAIT',
             printCompanyInfo: Boolean(raw.print_company_info ?? true),
@@ -106,6 +113,7 @@ export default function InvoiceDetailScreen() {
             printDescription: Boolean(raw.print_description ?? true),
             printTermsAndConditions: Boolean(raw.print_terms_and_conditions ?? false),
             printSignatureText: Boolean(raw.print_signature_text ?? false),
+            printSignatureImage: Boolean(raw.print_signature_image ?? true),
             customSignatureText: typeof raw.custom_signature_text === 'string' ? raw.custom_signature_text.trim() : '',
             printPaymentMode: Boolean(raw.print_payment_mode ?? false),
             printReceivedAmount: Boolean(raw.print_received_amount ?? false),
@@ -153,6 +161,7 @@ export default function InvoiceDetailScreen() {
             businessEmail: business?.email ?? '',
             businessGstin: business?.gstin ?? '',
             businessLogoUrl: business?.logoUrl ?? '',
+            signatureImageUrl: paymentSettings.signatureUrl || undefined,
             printConfig,
         });
         try {
@@ -325,159 +334,6 @@ function TRow({ label, val, bold, neg, color, colors, formatAmount }: {
     );
 }
 
-function generateInvoiceHtml(invoice: Invoice, extras?: {
-    qrImageUrl?: string;
-    upiId?: string;
-    dueAmount?: number;
-    currencyCode?: string;
-    businessName?: string;
-    businessAddress?: string;
-    businessPhone?: string;
-    businessEmail?: string;
-    businessGstin?: string;
-    businessLogoUrl?: string;
-    printConfig?: {
-        printLayoutType: 'REGULAR' | 'THERMAL';
-        printTextSize: 'SMALL' | 'MEDIUM' | 'LARGE';
-        pageSize: string;
-        orientation: 'PORTRAIT' | 'LANDSCAPE';
-        printCompanyInfo: boolean;
-        printCompanyName: boolean;
-        printCompanyLogo: boolean;
-        printAddressEmailPhone: boolean;
-        printGstinOnSale: boolean;
-        printTaxDetailsBreakup: boolean;
-        printDescription: boolean;
-        printTermsAndConditions: boolean;
-        printSignatureText: boolean;
-        customSignatureText: string;
-        printPaymentMode: boolean;
-        printReceivedAmount: boolean;
-        printBalanceAmount: boolean;
-        printTotalItemQuantity: boolean;
-        printPageNumbers: boolean;
-        printAmountWithDecimal: boolean;
-    };
-}): string {
-    const config = extras?.printConfig;
-    const currency = (extras?.currencyCode ?? 'INR').toUpperCase();
-    const decimals = config?.printAmountWithDecimal ? 2 : 0;
-    const textSize = config?.printTextSize === 'SMALL' ? 11 : config?.printTextSize === 'LARGE' ? 15 : 13;
-    const rawPageSize = String(config?.pageSize ?? 'A4').toUpperCase();
-    const normalizedPageSize = rawPageSize.includes('80') ? '80mm'
-        : rawPageSize.includes('58') ? '58mm'
-            : rawPageSize.includes('A6') ? 'A6'
-                : rawPageSize.includes('A5') ? 'A5'
-                    : 'A4';
-    const pageSize = config?.printLayoutType === 'THERMAL'
-        ? `${normalizedPageSize === '80mm' || normalizedPageSize === '58mm' ? normalizedPageSize : '80mm'} auto`
-        : `${normalizedPageSize} ${String(config?.orientation ?? 'PORTRAIT').toLowerCase()}`;
-    const safe = (value: unknown) => String(value ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const money = (value: number) => {
-        try {
-            return new Intl.NumberFormat('en-IN', {
-                style: 'currency',
-                currency,
-                minimumFractionDigits: decimals,
-                maximumFractionDigits: decimals,
-            }).format(value);
-        } catch {
-            const symbol = currency === 'INR' ? '₹' : `${currency} `;
-            return `${symbol}${Number(value ?? 0).toLocaleString('en-IN', {
-                minimumFractionDigits: decimals,
-                maximumFractionDigits: decimals,
-            })}`;
-        }
-    };
-
-    const itemRows = (invoice.items ?? []).map((item) => `
-        <tr>
-          <td>${safe(item.description)}</td>
-          <td style="text-align:right">${safe(item.quantity)}</td>
-          <td style="text-align:right">${money(Number(item.rate ?? 0))}</td>
-          <td style="text-align:right">${money(Number(item.total ?? 0))}</td>
-        </tr>
-    `).join('');
-    const totalQuantity = (invoice.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
-
-    const qrSection = extras?.qrImageUrl
-        ? `<div style="margin-top:20px;text-align:center;">
-             <img src="${extras.qrImageUrl}" style="width:180px;height:180px;object-fit:contain;" />
-             <p style="font-size:${Math.max(textSize - 2, 10)}px;color:#666;">UPI: ${safe(extras.upiId || '')}</p>
-             <p style="font-size:${Math.max(textSize - 2, 10)}px;color:#666;">Due: ${money(Number(extras.dueAmount ?? 0))}</p>
-           </div>`
-        : '';
-
-    const companyInfoSection = config?.printCompanyInfo
-        ? `<div style="margin-bottom:12px;">
-            ${config.printCompanyLogo && extras?.businessLogoUrl ? `<img src="${safe(extras.businessLogoUrl)}" style="width:88px;height:88px;object-fit:contain;margin-bottom:6px;" />` : ''}
-            ${config.printCompanyName ? `<h2 style="margin:0 0 4px 0;">${safe(extras?.businessName || 'Business')}</h2>` : ''}
-            ${config.printAddressEmailPhone ? `<p style="margin:0;color:#666">${safe(extras?.businessAddress)}</p>
-            <p style="margin:0;color:#666">${safe(extras?.businessPhone)} ${extras?.businessEmail ? `| ${safe(extras.businessEmail)}` : ''}</p>` : ''}
-            ${config.printGstinOnSale && extras?.businessGstin ? `<p style="margin:0;color:#666">GSTIN: ${safe(extras.businessGstin)}</p>` : ''}
-          </div>`
-        : '';
-
-    const taxBreakupSection = config?.printTaxDetailsBreakup
-        ? `<div style="margin-top:10px;">
-            ${Number(invoice.totalCgstAmount ?? 0) > 0 ? `<p style="margin:0;">CGST: ${money(Number(invoice.totalCgstAmount ?? 0))}</p>` : ''}
-            ${Number(invoice.totalSgstAmount ?? 0) > 0 ? `<p style="margin:0;">SGST: ${money(Number(invoice.totalSgstAmount ?? 0))}</p>` : ''}
-            ${Number(invoice.totalIgstAmount ?? 0) > 0 ? `<p style="margin:0;">IGST: ${money(Number(invoice.totalIgstAmount ?? 0))}</p>` : ''}
-          </div>`
-        : '';
-
-    const paymentMetaSection = `
-        ${config?.printReceivedAmount ? `<p style="margin:0;">Received: ${money(Number(invoice.paidAmount ?? 0))}</p>` : ''}
-        ${config?.printBalanceAmount ? `<p style="margin:0;">Balance: ${money(Math.max(Number(invoice.totalInvoiceValue ?? 0) - Number(invoice.paidAmount ?? 0), 0))}</p>` : ''}
-        ${config?.printPaymentMode ? `<p style="margin:0;">Status: ${safe(invoice.paymentStatus)}</p>` : ''}
-    `;
-
-    const signatureSection = config?.printSignatureText
-        ? `<div style="margin-top:18px;text-align:right;">
-            <p style="margin:0;color:#666;">${safe(config.customSignatureText || 'Authorized Signatory')}</p>
-          </div>`
-        : '';
-
-    const termsSection = config?.printTermsAndConditions && invoice.termsAndConditions
-        ? `<div style="margin-top:12px;"><strong>Terms & Conditions:</strong><p style="margin:4px 0 0 0;">${safe(invoice.termsAndConditions)}</p></div>`
-        : '';
-
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice</title>
-<style>
-@page{size:${pageSize}; margin:18px;}
-body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:0;color:#222;font-size:${textSize}px;}
-h1{color:#007B83;margin:0 0 10px 0}
-h2{color:#111}
-table{width:100%;border-collapse:collapse}
-th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}
-.right{text-align:right}
-.total{font-weight:700;font-size:${textSize + 1}px}
-.footer{margin-top:12px;font-size:${Math.max(textSize - 2, 10)}px;color:#666;}
-</style>
-</head><body>
-${companyInfoSection}
-<h1>${safe(invoice.invoiceType ?? 'TAX_INVOICE')}</h1>
-<p style="margin:0;">Invoice No: ${safe(invoice.invoiceNumber)}</p>
-<p style="margin:0;">Date: ${safe(invoice.invoiceDate)}</p>
-${invoice.partySnapshot ? `<p style="margin:6px 0 0 0;"><strong>Party:</strong> ${safe(invoice.partySnapshot.name)}</p>` : ''}
-<table style="margin-top:12px;">
-<thead>
-<tr><th>Description</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">Amount</th></tr>
-</thead>
-<tbody>${itemRows}</tbody>
-</table>
-${config?.printTotalItemQuantity ? `<p style="margin:8px 0 0 0;">Total Qty: ${safe(totalQuantity)}</p>` : ''}
-<p class="total">Invoice Total: ${money(Number(invoice.totalInvoiceValue ?? 0))}</p>
-${taxBreakupSection}
-${paymentMetaSection}
-${qrSection}
-${config?.printDescription && invoice.notes ? `<p style="margin-top:12px;"><strong>Notes:</strong> ${safe(invoice.notes)}</p>` : ''}
-${termsSection}
-${signatureSection}
-${config?.printPageNumbers ? '<div class="footer">Page 1</div>' : ''}
-</body></html>`;
-}
-
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
@@ -510,3 +366,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     upiBtn: { borderRadius: Radius.pill, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg, marginTop: 4 },
     upiBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });
+
+
+

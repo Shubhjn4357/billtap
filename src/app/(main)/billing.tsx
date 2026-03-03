@@ -1,94 +1,144 @@
-// @ts-nocheck
-import { View, Text, StyleSheet, FlatList, Pressable, useColorScheme, ActivityIndicator } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+    ActivityIndicator,
+    FlatList,
+    Pressable,
+    StyleSheet,
+    Text,
+    useColorScheme,
+    View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { invoiceApi } from '../../api/endpoints';
-import { Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
-import { PaymentStatus } from '../../constants/enums';
-import { useState } from 'react';
 import { format, parseISO } from 'date-fns';
+import { invoiceApi } from '../../api/endpoints';
+import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { PaymentStatus } from '../../constants/enums';
 import type { Invoice } from '../../types/domain';
+import { canUsePos } from '../../utils/accessControl';
+import { useAuthStore } from '../../store/authStore';
+
+type BillingTab = 'sales' | 'purchases' | 'orders';
+
+const TAB_OPTIONS: { key: BillingTab; label: string; queryType: string }[] = [
+    { key: 'sales', label: 'Sales', queryType: 'TAX_INVOICE' },
+    { key: 'purchases', label: 'Purchases', queryType: 'PURCHASE_BILL' },
+    { key: 'orders', label: 'Orders', queryType: 'ESTIMATE' },
+];
+
+const CREATE_OPTIONS: { label: string; route: string }[] = [
+    { label: 'Sale Invoice', route: '/(main)/billing/create?type=TAX_INVOICE' },
+    { label: 'Purchase Bill', route: '/(main)/billing/purchase-bill' },
+    { label: 'Sale Return', route: '/(main)/billing/sale-return' },
+    { label: 'Purchase Return', route: '/(main)/billing/purchase-return' },
+    { label: 'Estimate', route: '/(main)/billing/estimate' },
+    { label: 'Sale Order', route: '/(main)/billing/sale-order' },
+    { label: 'Purchase Order', route: '/(main)/billing/purchase-order' },
+    { label: 'Delivery Challan', route: '/(main)/billing/delivery-challan' },
+    { label: 'Payment In', route: '/(main)/billing/payment-in' },
+    { label: 'Payment Out', route: '/(main)/billing/payment-out' },
+];
+
+const formatInvoiceDate = (value: string) => {
+    try {
+        return format(parseISO(value), 'dd MMM yyyy');
+    } catch {
+        return value.slice(0, 10);
+    }
+};
 
 export default function BillingScreen() {
     const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
-    const [activeTab, setActiveTab] = useState<'sales' | 'purchases' | 'orders'>('sales');
+    const colors = getColors(scheme);
     const s = styles(colors);
+
+    const [activeTab, setActiveTab] = useState<BillingTab>('sales');
+    const subscription = useAuthStore((state) => state.subscription);
+    const showPos = canUsePos(subscription);
+
+    const queryType = useMemo(
+        () => TAB_OPTIONS.find((entry) => entry.key === activeTab)?.queryType ?? 'TAX_INVOICE',
+        [activeTab]
+    );
 
     const { data, isLoading } = useQuery({
         queryKey: ['invoices', activeTab],
-        queryFn: () => invoiceApi.list({ type: activeTab === 'sales' ? 'TAX_INVOICE' : activeTab === 'purchases' ? 'PURCHASE_BILL' : 'ESTIMATE', limit: 50 }),
+        queryFn: () => invoiceApi.list({ type: queryType, limit: 50 }),
         staleTime: 60_000,
     });
 
-    const TAB_OPTIONS = [
-        { key: 'sales', label: 'Sales' },
-        { key: 'purchases', label: 'Purchase' },
-        { key: 'orders', label: 'Orders' },
-    ] as const;
-
-    const CREATE_OPTIONS = [
-        { label: '+ Sale Invoice', type: 'TAX_INVOICE', icon: '🧾' },
-        { label: '+ Estimate', type: 'ESTIMATE', icon: '📝' },
-        { label: '+ Purchase', type: 'PURCHASE_BILL', icon: '📥' },
-        { label: '+ Credit Note', type: 'CREDIT_NOTE_DOC', icon: '↩️' },
-    ];
+    const invoices = data?.data ?? [];
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            {/* Header */}
             <View style={s.header}>
                 <Text style={s.title}>Billing</Text>
-                <Pressable style={s.posBtn} onPress={() => router.push('/(main)/billing/pos')}>
-                    <Text style={s.posBtnText}>POS 🛒</Text>
-                </Pressable>
-            </View>
-
-            {/* Create options */}
-            <View style={s.createRow}>
-                {CREATE_OPTIONS.map((opt) => (
-                    <Pressable
-                        key={opt.type}
-                        style={({ pressed }) => [s.createBtn, pressed && { opacity: 0.7 }]}
-                        onPress={() => router.push(`/(main)/billing/create?type=${opt.type}` as Parameters<typeof router.push>[0])}
-                    >
-                        <Text style={s.createBtnText}>{opt.label}</Text>
+                {showPos ? (
+                    <Pressable style={s.posBtn} onPress={() => router.push('/(main)/billing/pos')}>
+                        <Text style={s.posBtnText}>POS</Text>
                     </Pressable>
-                ))}
+                ) : null}
             </View>
 
-            {/* Tabs */}
-            <View style={s.tabs}>
-                {TAB_OPTIONS.map((tab) => (
-                    <Pressable key={tab.key} style={[s.tab, activeTab === tab.key && s.activeTab]} onPress={() => setActiveTab(tab.key)}>
-                        <Text style={[s.tabText, activeTab === tab.key && s.activeTabText]}>{tab.label}</Text>
-                    </Pressable>
-                ))}
-            </View>
+            <FlatList
+                data={invoices}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => <InvoiceRow invoice={item} colors={colors} />}
+                ListHeaderComponent={
+                    <>
+                        <View style={s.createRow}>
+                            {CREATE_OPTIONS.map((option) => (
+                                <Pressable
+                                    key={option.label}
+                                    style={({ pressed }) => [s.createBtn, pressed && { opacity: 0.75 }]}
+                                    onPress={() => router.push(option.route as Parameters<typeof router.push>[0])}
+                                >
+                                    <Text style={s.createBtnText}>{option.label}</Text>
+                                </Pressable>
+                            ))}
+                        </View>
 
-            {/* Invoice list */}
-            {isLoading ? (
-                <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
-            ) : (
-                <FlatList
-                    data={data?.data ?? []}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => <InvoiceRow invoice={item} colors={colors} />}
-                    contentContainerStyle={{ paddingBottom: 100 }}
-                    ListEmptyComponent={<View style={s.centered}><Text style={{ color: colors.textSecondary }}>No transactions yet. Create your first!</Text></View>}
-                />
-            )}
+                        <View style={s.tabs}>
+                            {TAB_OPTIONS.map((tab) => {
+                                const selected = activeTab === tab.key;
+                                return (
+                                    <Pressable
+                                        key={tab.key}
+                                        style={[s.tab, selected && s.activeTab]}
+                                        onPress={() => setActiveTab(tab.key)}
+                                    >
+                                        <Text style={[s.tabText, selected && s.activeTabText]}>{tab.label}</Text>
+                                    </Pressable>
+                                );
+                            })}
+                        </View>
+                    </>
+                }
+                contentContainerStyle={{ paddingBottom: 100 }}
+                ListEmptyComponent={
+                    isLoading ? (
+                        <View style={s.centered}>
+                            <ActivityIndicator color={colors.primary} />
+                        </View>
+                    ) : (
+                        <View style={s.centered}>
+                            <Text style={{ color: colors.textSecondary }}>No transactions yet.</Text>
+                        </View>
+                    )
+                }
+            />
         </SafeAreaView>
     );
 }
 
 function InvoiceRow({ invoice, colors }: { invoice: Invoice; colors: ColorPalette }) {
-    const statusColor = invoice.paymentStatus === PaymentStatus.PAID
-        ? colors.success
-        : invoice.paymentStatus === PaymentStatus.OVERDUE
-            ? colors.error
-            : colors.warning;
+    const statusColor =
+        invoice.paymentStatus === PaymentStatus.PAID
+            ? colors.success
+            : invoice.paymentStatus === PaymentStatus.OVERDUE
+                ? colors.error
+                : colors.warning;
 
     return (
         <Pressable
@@ -97,15 +147,11 @@ function InvoiceRow({ invoice, colors }: { invoice: Invoice; colors: ColorPalett
         >
             <View style={rowStyles.left}>
                 <Text style={[rowStyles.number, { color: colors.text }]}>{invoice.invoiceNumber}</Text>
-                <Text style={[rowStyles.date, { color: colors.textSecondary }]}>
-                    {format(parseISO(invoice.invoiceDate), 'dd MMM yyyy')}
-                </Text>
+                <Text style={[rowStyles.date, { color: colors.textSecondary }]}>{formatInvoiceDate(invoice.invoiceDate)}</Text>
             </View>
             <View style={rowStyles.right}>
-                <Text style={[rowStyles.amount, { color: colors.text }]}>
-                    ₹{invoice.totalInvoiceValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </Text>
-                <View style={[rowStyles.statusBadge, { backgroundColor: statusColor + '22' }]}>
+                <Text style={[rowStyles.amount, { color: colors.text }]}>Rs {invoice.totalInvoiceValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
+                <View style={[rowStyles.statusBadge, { backgroundColor: `${statusColor}22` }]}>
                     <Text style={[rowStyles.statusText, { color: statusColor }]}>{invoice.paymentStatus}</Text>
                 </View>
             </View>
@@ -113,32 +159,72 @@ function InvoiceRow({ invoice, colors }: { invoice: Invoice; colors: ColorPalett
     );
 }
 
-const styles = (colors: ColorPalette) => StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-    title: { fontSize: Typography.headline.size, fontWeight: '700', color: colors.text },
-    posBtn: { backgroundColor: colors.primary, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.pill },
-    posBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-    createRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md, flexWrap: 'wrap' },
-    createBtn: { backgroundColor: colors.primaryVariant, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
-    createBtnText: { color: '#fff', fontWeight: '600', fontSize: 12 },
-    tabs: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.sm },
-    tab: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg, borderRadius: Radius.pill, backgroundColor: colors.surfaceVariant },
-    activeTab: { backgroundColor: colors.primary },
-    tabText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
-    activeTabText: { color: '#fff' },
-    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
-});
+const styles = (colors: ColorPalette) =>
+    StyleSheet.create({
+        safe: { flex: 1, backgroundColor: colors.background },
+        header: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingHorizontal: Spacing.lg,
+            paddingVertical: Spacing.md,
+        },
+        title: { fontSize: Typography.headline.size, fontWeight: '700', color: colors.text },
+        posBtn: {
+            backgroundColor: colors.primary,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.sm,
+            borderRadius: Radius.pill,
+        },
+        posBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+        createRow: {
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            gap: Spacing.sm,
+            paddingHorizontal: Spacing.lg,
+            marginBottom: Spacing.md,
+        },
+        createBtn: {
+            backgroundColor: colors.primaryVariant,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.xs,
+        },
+        createBtnText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+        tabs: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.sm },
+        tab: {
+            paddingVertical: Spacing.sm,
+            paddingHorizontal: Spacing.lg,
+            borderRadius: Radius.pill,
+            backgroundColor: colors.surfaceVariant,
+        },
+        activeTab: { backgroundColor: colors.primary },
+        tabText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
+        activeTabText: { color: '#fff', fontWeight: '700' },
+        centered: { paddingTop: 80, alignItems: 'center' },
+    });
 
 const rowStyles = StyleSheet.create({
-    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderRadius: Radius.card },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.lg,
+        paddingVertical: Spacing.md,
+        marginHorizontal: Spacing.lg,
+        marginBottom: Spacing.sm,
+        borderRadius: Radius.card,
+    },
     left: { flex: 1 },
     right: { alignItems: 'flex-end' },
     number: { fontWeight: '600', fontSize: 14 },
     date: { fontSize: 12, marginTop: 2 },
-    amount: { fontWeight: '700', fontSize: 16 },
-    statusBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: Radius.pill, marginTop: 4 },
-    statusText: { fontSize: 10, fontWeight: '600' },
+    amount: { fontWeight: '700', fontSize: 15 },
+    statusBadge: {
+        paddingHorizontal: Spacing.sm,
+        paddingVertical: 2,
+        borderRadius: Radius.pill,
+        marginTop: 4,
+    },
+    statusText: { fontSize: 10, fontWeight: '700' },
 });
-
-

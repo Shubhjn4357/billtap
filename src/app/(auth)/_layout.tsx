@@ -1,11 +1,10 @@
-// @ts-nocheck
 import { Stack } from 'expo-router';
 import { useColorScheme } from 'react-native';
-import { Colors } from '../../constants/theme';
+import { getColors } from '../../constants/theme';
 
 export default function AuthLayout() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     return (
         <Stack
             screenOptions={{
@@ -17,8 +16,10 @@ export default function AuthLayout() {
             }}
         >
             <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="business-select" options={{ headerShown: false }} />
         </Stack>
     );
 }
+
 
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -304,5 +303,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     },
     inlineActionText: { fontSize: 12, fontWeight: '700' },
 });
+
 
 

@@ -110,7 +110,7 @@ jobs:
             exit 1
           fi
 
-      - name: Run fast verification (doctor + lint + typecheck)
+      - name: Run verification suite
         run: pnpm run verify:ci
 
       - name: Prebuild Android
@@ -186,3 +186,4 @@ jobs:
           releaseFiles: android/app/build/outputs/apk/release/*.apk
           track: ${{ env.TARGET_TRACK }}
           status: ${{ env.TARGET_STATUS }}
+

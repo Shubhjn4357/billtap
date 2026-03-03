@@ -43,7 +43,7 @@ export default function LoginScreen() {
 
     useEffect(() => {
         if (isAuthenticated) {
-            router.replace('/(main)');
+            router.replace('/(auth)/business-select');
         }
     }, [isAuthenticated]);
 

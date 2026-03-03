@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "762596815663-t7qed0jmgjnvcvak06h1qple7lgeg3h4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.blockbucket.vahi",
+            "certificate_hash": "e3ae9b50ac1e4920e01c816278cb7c0c300390ac"
+          }
+        },
+        {
           "client_id": "762596815663-l3t5icili06c3gbssvjn27116fsd43tm.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -29,6 +37,13 @@
             {
               "client_id": "762596815663-l3t5icili06c3gbssvjn27116fsd43tm.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "762596815663-nhqic0h9egjmn0isugid7acuddpv1afu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.blockbucket.vahi"
+              }
             }
           ]
         }

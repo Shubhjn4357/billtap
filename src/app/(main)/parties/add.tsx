@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useMemo, useState } from 'react';
 import {
     ActivityIndicator,
@@ -43,7 +42,8 @@ const partySchema = z.object({
     creditLimit: z.coerce.number().nonnegative().default(0),
     openingBalance: z.coerce.number().default(0),
 });
-type PartyForm = z.infer<typeof partySchema>;
+type PartyFormInput = z.input<typeof partySchema>;
+type PartyForm = z.output<typeof partySchema>;
 
 export default function AddPartyScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -61,7 +61,7 @@ export default function AddPartyScreen() {
         formState: { errors },
         watch,
         setValue,
-    } = useForm<PartyForm>({
+    } = useForm<PartyFormInput, unknown, PartyForm>({
         resolver: zodResolver(partySchema),
         defaultValues: {
             type: (defaultType as 'CUSTOMER' | 'SUPPLIER') ?? 'CUSTOMER',
@@ -406,3 +406,4 @@ const styles = (colors: ColorPalette) =>
         countryDial: { fontSize: 14, fontWeight: '700' },
         countryCheck: { fontSize: 12, fontWeight: '600' },
     });
+

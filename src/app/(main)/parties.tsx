@@ -1,16 +1,15 @@
-// @ts-nocheck
 import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { partyApi } from '../../api/endpoints';
-import { Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 import type { Party } from '../../types/domain';
 
 export default function PartiesScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = Colors[scheme];
+    const scheme = useColorScheme();
+    const colors = getColors(scheme);
     const [tab, setTab] = useState<'CUSTOMER' | 'SUPPLIER'>('CUSTOMER');
     const [search, setSearch] = useState('');
     const s = styles(colors);
@@ -119,5 +118,6 @@ const rowStyles = StyleSheet.create({
     phone: { fontSize: 12, marginTop: 2 },
     balance: { fontWeight: '700', fontSize: 14 },
 });
+
 
 

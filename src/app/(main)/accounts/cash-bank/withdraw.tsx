@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -18,7 +17,8 @@ const withdrawSchema = z.object({
     date: z.string().default(() => format(new Date(), 'yyyy-MM-dd')),
     paymentMode: z.string().default('CASH'),
 });
-type WithdrawForm = z.infer<typeof withdrawSchema>;
+type WithdrawFormInput = z.input<typeof withdrawSchema>;
+type WithdrawForm = z.output<typeof withdrawSchema>;
 
 export default function WithdrawScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -29,7 +29,7 @@ export default function WithdrawScreen() {
     const { data: accountsData } = useQuery({ queryKey: ['cash-bank-balances'], queryFn: () => cashBankApi.getBalances() });
     const accounts = (accountsData?.data ?? []) as Account[];
 
-    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<WithdrawForm>({
+    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<WithdrawFormInput, unknown, WithdrawForm>({
         resolver: zodResolver(withdrawSchema),
         defaultValues: { date: format(new Date(), 'yyyy-MM-dd'), paymentMode: 'CASH' },
     });
@@ -67,7 +67,7 @@ export default function WithdrawScreen() {
                     {accounts.map((acc) => (
                         <Pressable key={acc.id} style={[s.accChip, { backgroundColor: accountId === acc.id ? colors.error : colors.surfaceVariant }]} onPress={() => setValue('accountId', acc.id)}>
                             <Text style={{ color: accountId === acc.id ? '#fff' : colors.text, fontWeight: '600' }}>
-                                {acc.type === 'CASH' ? '💵' : '🏦'} {acc.name} — ₹{(acc.balance ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                {acc.name.toLowerCase().includes('cash') ? 'Cash' : 'Bank'} {acc.name} - Rs {(acc.balance ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                             </Text>
                         </Pressable>
                     ))}
@@ -112,5 +112,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     modeChip: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
     input: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, fontSize: 14 },
 });
+
 
 

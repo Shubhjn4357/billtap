@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -291,3 +290,4 @@ const rowStyles = StyleSheet.create({
     statValue: { fontSize: 16, fontWeight: '800' },
     statLabel: { fontSize: 10, marginTop: 2, color: '#6b7280', fontWeight: '600' },
 });
+

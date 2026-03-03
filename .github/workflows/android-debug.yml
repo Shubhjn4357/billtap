@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
-      - name: Run fast verification (doctor + lint + typecheck)
+      - name: Run verification suite
         run: pnpm run verify:ci
 
       - name: Prebuild Android
@@ -69,3 +69,4 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
