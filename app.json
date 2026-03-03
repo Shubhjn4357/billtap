@@ -8,14 +8,12 @@
     "scheme": "vahi",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon/icon.json"
+      "icon": "./assets/images/adaptive-icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
       },
       "predictiveBackGestureEnabled": false
     },

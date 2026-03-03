@@ -8,7 +8,7 @@ import { ThemedView } from './themed-view';
 
 import { Spacing } from '@/constants/theme';
 
-const BADGE_IMAGE = require('../../assets/images/expo-logo.png');
+const BADGE_IMAGE = require('../../assets/images/icon.png');
 
 export function WebBadge() {
   return (

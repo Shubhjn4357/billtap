@@ -4,8 +4,8 @@ import { useColorScheme } from 'react-native';
 
 import { Colors } from '@/constants/theme';
 
-const HOME_TAB_ICON = require('../../assets/images/tabIcons/home.png');
-const EXPLORE_TAB_ICON = require('../../assets/images/tabIcons/explore.png');
+const HOME_TAB_ICON = require('../../assets/images/icon.png');
+const EXPLORE_TAB_ICON = require('../../assets/images/icon.png');
 
 export default function AppTabs() {
   const scheme = useColorScheme();

@@ -7,7 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
 const GLOW_IMAGE = require('../../assets/images/logo-glow.png');
-const LOGO_IMAGE = require('../../assets/images/expo-logo.png');
+const LOGO_IMAGE = require('../../assets/images/icon.png');
 
 export function AnimatedSplashOverlay() {
   const [visible, setVisible] = useState(true);

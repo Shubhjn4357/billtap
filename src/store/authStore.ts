@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { storeToken, clearToken, storeBusinessId } from '../api/client';
-import { authApi } from '../api/endpoints';
+import { api, storeToken, clearToken, storeBusinessId } from '../api/client';
 import type { User, Business, Subscription } from '../types/domain';
 import type { AuthResponse } from '../types/api';
 
@@ -24,6 +23,111 @@ interface AuthActions {
     clearError: () => void;
 }
 
+type LegacyProfilePayload = Record<string, unknown>;
+type OrganizationPayload = Record<string, unknown>;
+
+const isoNow = () => new Date().toISOString();
+
+const toStringOrNull = (value: unknown): string | null =>
+    typeof value === 'string' && value.trim() !== '' ? value : null;
+
+const toStringOrDefault = (value: unknown, fallback: string): string =>
+    typeof value === 'string' && value.trim() !== '' ? value : fallback;
+
+const toBoolean = (value: unknown, fallback = false): boolean =>
+    typeof value === 'boolean' ? value : fallback;
+
+const mapLegacyProfileToUser = (profile: LegacyProfilePayload): User => {
+    const timestamp = isoNow();
+    const id = toStringOrDefault(profile.uid ?? profile.id, `usr_local_${Date.now()}`);
+    const email = toStringOrDefault(profile.email, 'unknown@vahi.app');
+    const displayName = toStringOrDefault(profile.displayName ?? profile.name, email.split('@')[0] ?? 'Vahi User');
+
+    return {
+        id,
+        googleSub: toStringOrDefault(profile.googleSub, id),
+        name: displayName,
+        email,
+        phone: toStringOrNull(profile.phoneNumber ?? profile.phone),
+        photoUrl: toStringOrNull(profile.photoURL ?? profile.photoUrl),
+        isDisabled: toBoolean(profile.isDisabled, false),
+        createdAt: toStringOrDefault(profile.createdAt, timestamp),
+        updatedAt: toStringOrDefault(profile.updatedAt, timestamp),
+    };
+};
+
+const mapOrganizationToBusiness = (org: OrganizationPayload, fallbackOwnerId: string): Business => {
+    const timestamp = isoNow();
+    const id = toStringOrDefault(org.id, `biz_local_${Date.now()}`);
+
+    return {
+        id,
+        ownerUserId: toStringOrDefault(org.userId, fallbackOwnerId),
+        name: toStringOrDefault(org.name, 'My Business'),
+        legalName: toStringOrNull(org.legalName),
+        address: toStringOrNull(org.address),
+        state: toStringOrNull(org.state),
+        gstin: toStringOrNull(org.gstNumber ?? org.gstin),
+        pan: toStringOrNull(org.pan),
+        booksStartDate: toStringOrNull(org.booksStartDate),
+        logoUrl: toStringOrNull(org.logoUrl),
+        phone: toStringOrNull(org.phoneNumber ?? org.phone),
+        email: toStringOrNull(org.email),
+        currency: toStringOrDefault(org.currency, 'INR'),
+        category: toStringOrNull(org.category),
+        code: toStringOrNull(org.code),
+        isActive: true,
+        settings: {},
+        createdAt: toStringOrDefault(org.createdAt, timestamp),
+        updatedAt: toStringOrDefault(org.updatedAt, timestamp),
+    };
+};
+
+const mapLegacyProfileToSubscription = (profile: LegacyProfilePayload, businessId?: string | null): Subscription | null => {
+    const tier = toStringOrNull(profile.subscriptionPlanId ?? profile.subscriptionPlanName);
+    if (!tier) return null;
+
+    const legacyStatus = toStringOrDefault(profile.subscriptionStatus, 'inactive');
+    const status =
+        legacyStatus === 'active'
+            ? 'ACTIVE'
+            : legacyStatus === 'expired'
+                ? 'EXPIRED'
+                : legacyStatus === 'canceled'
+                    ? 'CANCELLED'
+                    : legacyStatus === 'past_due'
+                        ? 'GRACE'
+                        : 'TRIAL';
+
+    const timestamp = isoNow();
+
+    return {
+        id: `sub_${businessId ?? 'local'}`,
+        businessId: businessId ?? 'local',
+        tier: tier as Subscription['tier'],
+        billingCycle: null,
+        status: status as Subscription['status'],
+        startDate: toStringOrNull(profile.subscriptionStartsAt),
+        endDate: toStringOrNull(profile.subscriptionEndsAt),
+        nextRenewalDate: null,
+        renewsAt: null,
+        graceEndDate: null,
+        maxBillsTotal: null,
+        maxBillsPerMonth: null,
+        maxStaffUsers: null,
+        maxBusinesses: null,
+        maxDevices: null,
+        maxStorageMb: null,
+        monthlyInvoiceCount: 0,
+        offlineOnly: false,
+        cloudSyncAllowed: true,
+        webDashboardAllowed: true,
+        featureFlagsEnabled: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    };
+};
+
 export const useAuthStore = create<AuthState & AuthActions>()(
     immer((set, get) => ({
         user: null,
@@ -39,10 +143,25 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             set((state) => {
                 state.isAuthenticated = true;
                 state.error = null;
-                if (res.user) {
-                    state.user = res.user as unknown as User;
+                if (res.user) state.user = mapLegacyProfileToUser(res.user as unknown as LegacyProfilePayload);
+                if (res.business) {
+                    state.business = {
+                        ...mapOrganizationToBusiness(res.business as unknown as OrganizationPayload, res.user?.id ?? 'owner'),
+                        name: res.business.name,
+                    };
+                }
+                if (res.subscription?.tier) {
+                    state.subscription = {
+                        ...(state.subscription ?? mapLegacyProfileToSubscription({
+                            subscriptionPlanId: res.subscription.tier,
+                            subscriptionStatus: res.subscription.status,
+                        })!),
+                        tier: res.subscription.tier as Subscription['tier'],
+                        status: (res.subscription.status as Subscription['status']) ?? 'TRIAL',
+                    };
                 }
             });
+            await get().refreshUser();
         },
 
         setUser: (user) => set((state) => { state.user = user; }),
@@ -51,12 +170,40 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
         refreshUser: async () => {
             try {
-                const res = await authApi.me();
-                if (res.ok && res.data) {
-                    set((state) => { state.user = res.data; state.isAuthenticated = true; });
+                const profileRes = await api.get<{ ok: boolean; user?: LegacyProfilePayload; message?: string }>('/api/users/me');
+                if (!profileRes.ok || !profileRes.user) {
+                    throw new Error(profileRes.message ?? 'Failed to fetch user profile.');
                 }
+
+                const user = mapLegacyProfileToUser(profileRes.user);
+                let business: Business | null = null;
+                try {
+                    const orgRes = await api.get<{ ok: boolean; organization?: OrganizationPayload }>('/api/organizations/current');
+                    if (orgRes.ok && orgRes.organization) {
+                        business = mapOrganizationToBusiness(orgRes.organization, user.id);
+                        await storeBusinessId(business.id);
+                    }
+                } catch {
+                    business = null;
+                }
+
+                const subscription = mapLegacyProfileToSubscription(profileRes.user, business?.id ?? null);
+
+                set((state) => {
+                    state.user = user;
+                    state.business = business;
+                    state.subscription = subscription;
+                    state.isAuthenticated = true;
+                    state.error = null;
+                });
             } catch {
-                // Silently fail - handled by TanStack Query
+                await clearToken();
+                set((state) => {
+                    state.user = null;
+                    state.business = null;
+                    state.subscription = null;
+                    state.isAuthenticated = false;
+                });
             }
         },
 

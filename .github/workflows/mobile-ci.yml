@@ -51,5 +51,5 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Build web smoke bundle
-        run: pnpm run build:web
+      - name: Final web smoke test
+        run: pnpm run smoke:web

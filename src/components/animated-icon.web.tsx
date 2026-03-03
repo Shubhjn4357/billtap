@@ -6,7 +6,7 @@ import Animated, { Keyframe, Easing } from 'react-native-reanimated';
 import classes from './animated-icon.module.css';
 const DURATION = 300;
 const GLOW_IMAGE = require('../../assets/images/logo-glow.png');
-const LOGO_IMAGE = require('../../assets/images/expo-logo.png');
+const LOGO_IMAGE = require('../../assets/images/icon.png');
 
 export function AnimatedSplashOverlay() {
   return null;

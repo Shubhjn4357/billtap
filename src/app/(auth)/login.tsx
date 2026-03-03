@@ -1,20 +1,45 @@
-// @ts-nocheck
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-    View, Text, StyleSheet, Pressable, Image,
-    useColorScheme, SafeAreaView, ActivityIndicator, Alert,
+    View,
+    Text,
+    StyleSheet,
+    Pressable,
+    Image,
+    useColorScheme,
+    SafeAreaView,
+    ActivityIndicator,
+    Alert,
+    Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
+import { authApi } from '../../api/endpoints';
+import {
+    configureNativeGoogleSignIn,
+    getNativeGoogleErrorMessage,
+    signInWithNativeGoogle,
+} from '../../utils/googleNativeSignIn';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 
 const APP_LOGO = require('../../../assets/images/icon.png');
 
 export default function LoginScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
-    const { isAuthenticated } = useAuthStore();
+    const scheme = useColorScheme();
+    const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
+    const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+    const setAuth = useAuthStore((state) => state.setAuth);
+
     const [loading, setLoading] = useState(false);
+    const [nativeConfigured, setNativeConfigured] = useState(false);
+
+    const googleConfig = useMemo(
+        () => ({
+            webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+            androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+            iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+        }),
+        []
+    );
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -22,19 +47,64 @@ export default function LoginScreen() {
         }
     }, [isAuthenticated]);
 
+    useEffect(() => {
+        if (Platform.OS === 'web') {
+            setNativeConfigured(false);
+            return;
+        }
+
+        let active = true;
+        (async () => {
+            try {
+                await configureNativeGoogleSignIn(googleConfig);
+                if (active) setNativeConfigured(true);
+            } catch {
+                if (active) setNativeConfigured(false);
+            }
+        })();
+
+        return () => {
+            active = false;
+        };
+    }, [googleConfig]);
+
+    const exchangeIdToken = async (idToken: string) => {
+        const platform: 'ANDROID' | 'IOS' | 'WEB' =
+            Platform.OS === 'android' ? 'ANDROID' : Platform.OS === 'ios' ? 'IOS' : 'WEB';
+
+        const response = await authApi.googleSignIn({ idToken, platform });
+        if (!response.ok || !response.token) {
+            throw new Error('Google sign-in failed on server.');
+        }
+
+        await setAuth(response);
+    };
+
     const handleGoogleSignIn = async () => {
+        if (Platform.OS === 'web') {
+            Alert.alert(
+                'Google Login in Native Build',
+                'This login uses react-native-google-signin. Run Android/iOS build (dev client or release) to use it.'
+            );
+            return;
+        }
+
+        if (!nativeConfigured) {
+            Alert.alert(
+                'Google Sign-In Not Configured',
+                'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (required) and platform client IDs in your environment.'
+            );
+            return;
+        }
+
+        if (loading) return;
+
         setLoading(true);
         try {
-            // For now we handle the flow through expo-auth-session
-            // The actual token exchange with Google SDK will be wired on device
-            // Development: navigate directly if token available
-            Alert.alert(
-                'Connect your Google Account',
-                'You will be redirected to sign in with Google.',
-                [{ text: 'OK' }]
-            );
-        } catch (err) {
-            Alert.alert('Sign in failed', err instanceof Error ? err.message : 'Please try again.');
+            const result = await signInWithNativeGoogle();
+            await exchangeIdToken(result.idToken);
+        } catch (error) {
+            Alert.alert('Sign in failed', getNativeGoogleErrorMessage(error));
         } finally {
             setLoading(false);
         }
@@ -48,7 +118,7 @@ export default function LoginScreen() {
                 <View style={s.hero}>
                     <Image source={APP_LOGO} style={s.logo} resizeMode="contain" />
                     <Text style={s.appName}>Vahi</Text>
-                    <Text style={s.tagline}>Minimal. Fast. GST-Ready billing for India.</Text>
+                    <Text style={s.tagline}>Minimal. Fast. GST-ready billing for India.</Text>
                 </View>
 
                 <View style={s.features}>
@@ -73,7 +143,7 @@ export default function LoginScreen() {
                         ) : (
                             <>
                                 <Text style={s.googleIcon}>G</Text>
-                            <Text style={s.googleBtnText}>Continue with Google</Text>
+                                <Text style={s.googleBtnText}>Continue with Google</Text>
                             </>
                         )}
                     </Pressable>
@@ -95,40 +165,45 @@ export default function LoginScreen() {
 }
 
 const FEATURES = [
-    { icon: '🧾', text: 'GST compliant invoices in seconds' },
-    { icon: '📦', text: 'Inventory tracking with low-stock alerts' },
-    { icon: '📊', text: 'Profit & GSTR reports on the go' },
-    { icon: '🔄', text: 'Sync across devices & the web' },
+    { icon: '*', text: 'GST compliant invoices in seconds' },
+    { icon: '*', text: 'Inventory tracking with low-stock alerts' },
+    { icon: '*', text: 'Profit and GST reports on the go' },
+    { icon: '*', text: 'Sync across devices and web' },
 ];
 
-const styles = (colors: ColorPalette) => StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    container: { flex: 1, paddingHorizontal: Spacing.xl, paddingTop: Spacing.xxl, paddingBottom: Spacing.xl, justifyContent: 'space-between' },
-    hero: { alignItems: 'center', marginTop: Spacing.xxl },
-    logo: { width: 80, height: 80, borderRadius: Radius.lg, marginBottom: Spacing.md },
-    appName: { fontSize: 36, fontWeight: '800', color: colors.primary, letterSpacing: -1 },
-    tagline: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm, lineHeight: 22 },
-    features: { gap: Spacing.md, marginVertical: Spacing.xl },
-    featureRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-    featureIcon: { fontSize: 22, width: 32 },
-    featureText: { fontSize: Typography.body.size, color: colors.text, flex: 1 },
-    actions: { gap: Spacing.md },
-    googleBtn: {
-        backgroundColor: colors.primary,
-        borderRadius: Radius.pill,
-        height: 52,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: Spacing.sm,
-    },
-    googleBtnPressed: { opacity: 0.85 },
-    googleIcon: { color: '#fff', fontWeight: '700', fontSize: 20 },
-    googleBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-    terms: { textAlign: 'center', fontSize: 11, color: colors.textSecondary, lineHeight: 16 },
-    termsLinksRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.xs },
-    termsLink: { fontSize: 12, fontWeight: '700', color: colors.primary },
-    termsAnd: { fontSize: 11, color: colors.textSecondary },
-});
-
-
+const styles = (colors: ColorPalette) =>
+    StyleSheet.create({
+        safe: { flex: 1, backgroundColor: colors.background },
+        container: {
+            flex: 1,
+            paddingHorizontal: Spacing.xl,
+            paddingTop: Spacing.xxl,
+            paddingBottom: Spacing.xl,
+            justifyContent: 'space-between',
+        },
+        hero: { alignItems: 'center', marginTop: Spacing.xxl },
+        logo: { width: 80, height: 80, borderRadius: Radius.lg, marginBottom: Spacing.md },
+        appName: { fontSize: 36, fontWeight: '800', color: colors.primary, letterSpacing: -1 },
+        tagline: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm, lineHeight: 22 },
+        features: { gap: Spacing.md, marginVertical: Spacing.xl },
+        featureRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+        featureIcon: { fontSize: 22, width: 24, color: colors.primary },
+        featureText: { fontSize: Typography.body.size, color: colors.text, flex: 1 },
+        actions: { gap: Spacing.md },
+        googleBtn: {
+            backgroundColor: colors.primary,
+            borderRadius: Radius.pill,
+            height: 52,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: Spacing.sm,
+        },
+        googleBtnPressed: { opacity: 0.85 },
+        googleIcon: { color: '#fff', fontWeight: '700', fontSize: 20 },
+        googleBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+        terms: { textAlign: 'center', fontSize: 11, color: colors.textSecondary, lineHeight: 16 },
+        termsLinksRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.xs },
+        termsLink: { fontSize: 12, fontWeight: '700', color: colors.primary },
+        termsAnd: { fontSize: 11, color: colors.textSecondary },
+    });

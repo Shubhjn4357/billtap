@@ -102,7 +102,7 @@ jobs:
             exit 1
           fi
 
-      - name: Run unified verification (includes web smoke gate)
+      - name: Run fast verification (doctor + lint + typecheck)
         run: pnpm run verify:ci
 
       - name: Prebuild Android
@@ -123,6 +123,9 @@ jobs:
             -Pandroid.injected.signing.store.password="${ANDROID_KEYSTORE_PASSWORD}" \
             -Pandroid.injected.signing.key.alias="${ANDROID_KEY_ALIAS}" \
             -Pandroid.injected.signing.key.password="${ANDROID_KEY_PASSWORD}"
+
+      - name: Final web smoke test
+        run: pnpm run smoke:web
 
       - name: Export signing details
         run: |
