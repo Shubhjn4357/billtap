@@ -1,6 +1,16 @@
-import { Redirect } from 'expo-router';
+import { DocumentCreateScreen } from '../../../components/billing/DocumentCreateScreen';
 
-// Sale Order is treated as a non-posting order flow and routed through estimate creation.
 export default function SaleOrderScreen() {
-    return <Redirect href="/(main)/billing/create?type=ESTIMATE" />;
+    return (
+        <DocumentCreateScreen
+            config={{
+                title: 'Sale Order',
+                invoiceType: 'ESTIMATE',
+                transactionType: 'SALE',
+                documentKind: 'SALE_ORDER',
+                billMode: 'ESTIMATE',
+                helperText: 'Non-posting sale order. Convert to invoice when fulfilled.',
+            }}
+        />
+    );
 }

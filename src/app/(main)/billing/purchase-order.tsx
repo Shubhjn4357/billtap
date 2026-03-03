@@ -1,6 +1,17 @@
-import { Redirect } from 'expo-router';
+import { DocumentCreateScreen } from '../../../components/billing/DocumentCreateScreen';
 
-// Purchase Order is routed through estimate/proforma flow until a dedicated PO form is introduced.
 export default function PurchaseOrderScreen() {
-    return <Redirect href="/(main)/billing/create?type=PROFORMA" />;
+    return (
+        <DocumentCreateScreen
+            config={{
+                title: 'Purchase Order',
+                invoiceType: 'PROFORMA',
+                transactionType: 'PURCHASE',
+                documentKind: 'PURCHASE_ORDER',
+                billMode: 'ESTIMATE',
+                partyPlaceholder: '+ Select Supplier (optional)',
+                helperText: 'Non-posting purchase order. Convert to purchase bill on receipt.',
+            }}
+        />
+    );
 }

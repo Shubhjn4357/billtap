@@ -1,5 +1,16 @@
-import { Redirect } from 'expo-router';
+import { DocumentCreateScreen } from '../../../components/billing/DocumentCreateScreen';
 
 export default function PurchaseReturnScreen() {
-    return <Redirect href="/(main)/billing/create?type=DEBIT_NOTE_DOC" />;
+    return (
+        <DocumentCreateScreen
+            config={{
+                title: 'Purchase Return (Debit Note)',
+                invoiceType: 'DEBIT_NOTE_DOC',
+                transactionType: 'RETURN_INWARD',
+                documentKind: 'DEBIT_NOTE_DOC',
+                partyPlaceholder: '+ Select Supplier (optional)',
+                helperText: 'Debit note for supplier return. Purchase impact with stock outward.',
+            }}
+        />
+    );
 }
