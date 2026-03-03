@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSession } from "next-auth/react";
 import {
     Users,
     CreditCard,
@@ -19,14 +20,20 @@ import {
     Settings,
     UserCircle,
     Flag,
+    BellRing,
+    Activity,
+    Wallet,
+    ReceiptText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/providers/SidebarProvider";
+import { type AdminRole, normalizeAdminRole } from "@/lib/rbac";
 
 interface NavItem {
     href: string;
     label: string;
     icon: React.ElementType;
+    roles?: AdminRole[];
 }
 
 interface NavCategory {
@@ -38,35 +45,43 @@ const navCategories: NavCategory[] = [
     {
         label: "Core",
         items: [
-            { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-            { href: "/organizations", label: "Organizations", icon: Store },
-            { href: "/users", label: "Users", icon: Users },
-            { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
+            { href: "/dashboard", label: "Overview", icon: LayoutDashboard, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/organizations", label: "Organizations", icon: Store, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/users", label: "Users", icon: Users, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/subscriptions", label: "Subscriptions", icon: CreditCard, roles: ["SUPER_ADMIN"] },
         ]
     },
     {
         label: "Operations",
         items: [
-            { href: "/transactions", label: "Transactions", icon: FileSpreadsheet },
-            { href: "/inventory", label: "Inventory", icon: Box },
-            { href: "/banners", label: "Offers", icon: Megaphone },
-            { href: "/discounts", label: "Discounts", icon: CreditCard },
+            { href: "/transactions", label: "Transactions", icon: FileSpreadsheet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/inventory", label: "Inventory", icon: Box, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/banners", label: "Offers", icon: Megaphone, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/discounts", label: "Discounts", icon: CreditCard, roles: ["SUPER_ADMIN"] },
+            { href: "/notifications/templates", label: "Notif Templates", icon: BellRing, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/notifications/campaigns", label: "Notif Campaigns", icon: BellRing, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/notifications/deliveries", label: "Notif Deliveries", icon: BellRing, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
         ]
     },
     {
         label: "System",
         items: [
-            { href: "/analytics", label: "Analytics", icon: BarChart3 },
-            { href: "/audit-logs", label: "Audit Logs", icon: History },
-            { href: "/templates", label: "Templates", icon: FileSpreadsheet },
-            { href: "/feature-flags", label: "Feature Flags", icon: Flag },
-            { href: "/settings", label: "Settings", icon: Settings },
+            { href: "/analytics", label: "Analytics", icon: BarChart3, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/live", label: "Live", icon: Activity, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/audit-logs", label: "Audit Logs", icon: History, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/templates", label: "Templates", icon: FileSpreadsheet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/feature-flags", label: "Feature Flags", icon: Flag, roles: ["SUPER_ADMIN"] },
+            { href: "/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/treasury", label: "Treasury", icon: Wallet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/payroll", label: "Payroll", icon: ReceiptText, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
         ]
     }
 ];
 
 export function Sidebar() {
     const pathname = usePathname();
+    const { data: session } = useSession();
+    const role = normalizeAdminRole(session as { adminRole?: string | null } | null);
     const { isCollapsed, toggleCollapsed, isMobileOpen, setMobileOpen } = useSidebar();
 
     const SidebarContent = (
@@ -109,7 +124,9 @@ export function Sidebar() {
                             </h3>
                         )}
                         <div className="space-y-1">
-                            {category.items.map((item) => {
+                            {category.items
+                                .filter((item) => !item.roles || item.roles.includes(role))
+                                .map((item) => {
                                 const Icon = item.icon;
                                 const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
                                 return (
@@ -134,7 +151,7 @@ export function Sidebar() {
                                         )}
                                     </Link>
                                 );
-                            })}
+                                })}
                         </div>
                     </div>
                 ))}
@@ -155,7 +172,7 @@ export function Sidebar() {
                     {!isCollapsed && (
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold truncate leading-none">Admin User</p>
-                            <p className="text-[11px] text-muted-foreground truncate uppercase mt-1">Super Admin</p>
+                            <p className="text-[11px] text-muted-foreground truncate uppercase mt-1">{role.replace(/_/g, ' ')}</p>
                         </div>
                     )}
                 </div>

@@ -3,6 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
+import { isRouteAllowedForRole, normalizeAdminRole } from '@/lib/rbac';
 
 export default function RequireAuth({ children }: { children: React.ReactNode }) {
     const { data: session, status } = useSession();
@@ -10,6 +11,7 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     const pathname = usePathname();
 
     const isAdmin = Boolean((session as { isAdmin?: boolean } | null)?.isAdmin);
+    const role = normalizeAdminRole(session as { adminRole?: string | null } | null);
 
     useEffect(() => {
         if (status === 'loading') return;
@@ -21,8 +23,13 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
 
         if (!isAdmin) {
             router.replace('/auth/signin?error=not_admin');
+            return;
         }
-    }, [session, status, isAdmin, router, pathname]);
+
+        if (!isRouteAllowedForRole(role, pathname)) {
+            router.replace('/dashboard?error=forbidden');
+        }
+    }, [session, status, isAdmin, role, router, pathname]);
 
     if (status === 'loading') {
         return <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Validating session...</div>;
