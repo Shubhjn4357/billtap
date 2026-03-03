@@ -20,7 +20,8 @@ export default function TransactionsPage() {
         try {
             const data = await transactionService.getAll();
             setTransactions(data);
-        } catch {
+        } catch(error) {
+            console.log({error})
             toast({
                 title: "Error",
                 description: "Failed to fetch transactions",

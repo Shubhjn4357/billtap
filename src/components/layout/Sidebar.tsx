@@ -17,7 +17,8 @@ import {
     BarChart3,
     History,
     Settings,
-    UserCircle
+    UserCircle,
+    Flag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/providers/SidebarProvider";
@@ -49,6 +50,7 @@ const navCategories: NavCategory[] = [
             { href: "/transactions", label: "Transactions", icon: FileSpreadsheet },
             { href: "/inventory", label: "Inventory", icon: Box },
             { href: "/banners", label: "Offers", icon: Megaphone },
+            { href: "/discounts", label: "Discounts", icon: CreditCard },
         ]
     },
     {
@@ -57,6 +59,7 @@ const navCategories: NavCategory[] = [
             { href: "/analytics", label: "Analytics", icon: BarChart3 },
             { href: "/audit-logs", label: "Audit Logs", icon: History },
             { href: "/templates", label: "Templates", icon: FileSpreadsheet },
+            { href: "/feature-flags", label: "Feature Flags", icon: Flag },
             { href: "/settings", label: "Settings", icon: Settings },
         ]
     }

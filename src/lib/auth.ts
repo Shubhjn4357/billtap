@@ -45,6 +45,7 @@ export const authOptions: NextAuthOptions = {
         async jwt({ token, user, account, profile }) {
             const emailFromProvider = (profile?.email || user?.email || token.email || '').toString().toLowerCase();
             const adminRole = resolveAdminRole(emailFromProvider);
+           
             const isSuperAdmin = adminRole === 'SUPER_ADMIN';
             const isAdmin = Boolean(adminRole);
 
