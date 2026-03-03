@@ -75,16 +75,113 @@ export const businessApi = {
 // ─── Parties ─────────────────────────────────────────────────────────────────
 
 export const partyApi = {
-    list: (params?: { q?: string; type?: string } & PaginationParams) =>
-        api.get<ApiListResponse<Party>>('/api/parties', { params }),
-    get: (id: string) =>
-        api.get<ApiResponse<Party>>(`/api/parties/${id}`),
+    list: async (params?: { q?: string; type?: string } & PaginationParams & { includeInactive?: boolean }) => {
+        const mappedType = params?.type?.toLowerCase() === 'customer'
+            ? 'customer'
+            : params?.type?.toLowerCase() === 'supplier'
+                ? 'supplier'
+                : params?.type;
+        const res = await api.get<{ ok: boolean; parties: Record<string, unknown>[] }>(
+            '/api/parties',
+            { params: { ...params, type: mappedType } }
+        );
+        const mapped = (res.parties ?? []).map((raw) => ({
+            id: String(raw.id),
+            businessId: 'unknown',
+            type: String(raw.type).toUpperCase() === 'SUPPLIER' || String(raw.type).toLowerCase() === 'supplier'
+                ? 'SUPPLIER'
+                : 'CUSTOMER',
+            name: String(raw.name ?? ''),
+            phone: raw.phone ? String(raw.phone) : null,
+            email: raw.email ? String(raw.email) : null,
+            billingAddress: raw.address ? String(raw.address) : null,
+            shippingAddress: null,
+            gstin: raw.gstNumber ? String(raw.gstNumber) : null,
+            openingBalance: Number(raw.openingBalance ?? 0),
+            creditLimit: Number(raw.creditLimit ?? 0),
+            loyaltyPoints: Number(raw.loyaltyPoints ?? 0),
+            isActive: Boolean(raw.isActive ?? true),
+            createdAt: String(raw.createdAt ?? new Date().toISOString()),
+            updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
+        })) as Party[];
+        return { ok: true, data: mapped };
+    },
+    recycleBin: async (params?: PaginationParams) => {
+        const res = await api.get<{ ok: boolean; parties: Record<string, unknown>[] }>(
+            '/api/parties/recycle-bin',
+            { params }
+        );
+        const mapped = (res.parties ?? []).map((raw) => ({
+            id: String(raw.id),
+            businessId: 'unknown',
+            type: String(raw.type).toUpperCase() === 'SUPPLIER' || String(raw.type).toLowerCase() === 'supplier'
+                ? 'SUPPLIER'
+                : 'CUSTOMER',
+            name: String(raw.name ?? ''),
+            phone: raw.phone ? String(raw.phone) : null,
+            email: raw.email ? String(raw.email) : null,
+            billingAddress: raw.address ? String(raw.address) : null,
+            shippingAddress: null,
+            gstin: raw.gstNumber ? String(raw.gstNumber) : null,
+            openingBalance: Number(raw.openingBalance ?? 0),
+            creditLimit: Number(raw.creditLimit ?? 0),
+            loyaltyPoints: Number(raw.loyaltyPoints ?? 0),
+            isActive: false,
+            createdAt: String(raw.createdAt ?? new Date().toISOString()),
+            updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
+        })) as Party[];
+        return { ok: true, data: mapped };
+    },
+    get: async (id: string) => {
+        const res = await api.get<{ ok: boolean; party: Record<string, unknown> }>(`/api/parties/${id}`);
+        const raw = res.party ?? {};
+        const mapped = {
+            id: String(raw.id ?? id),
+            businessId: 'unknown',
+            type: String(raw.type).toUpperCase() === 'SUPPLIER' || String(raw.type).toLowerCase() === 'supplier'
+                ? 'SUPPLIER'
+                : 'CUSTOMER',
+            name: String(raw.name ?? ''),
+            phone: raw.phone ? String(raw.phone) : null,
+            email: raw.email ? String(raw.email) : null,
+            billingAddress: raw.address ? String(raw.address) : null,
+            shippingAddress: null,
+            gstin: raw.gstNumber ? String(raw.gstNumber) : null,
+            openingBalance: Number(raw.openingBalance ?? 0),
+            creditLimit: Number(raw.creditLimit ?? 0),
+            loyaltyPoints: Number(raw.loyaltyPoints ?? 0),
+            isActive: Boolean(raw.isActive ?? true),
+            createdAt: String(raw.createdAt ?? new Date().toISOString()),
+            updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
+        } as Party;
+        return { ok: true, data: mapped };
+    },
     create: (data: Omit<Party, 'id' | 'businessId' | 'createdAt' | 'updatedAt' | 'loyaltyPoints'>) =>
-        api.post<ApiResponse<Party>>('/api/parties', data),
+        api.post<ApiResponse<Party>>('/api/parties', {
+            name: data.name,
+            type: data.type === 'SUPPLIER' ? 'supplier' : 'customer',
+            phone: data.phone ?? undefined,
+            email: data.email ?? undefined,
+            address: data.billingAddress ?? undefined,
+            gstNumber: data.gstin ?? undefined,
+            isActive: data.isActive,
+        }),
     update: (id: string, data: Partial<Party>) =>
-        api.patch<ApiResponse<Party>>(`/api/parties/${id}`, data),
+        api.patch<ApiResponse<Party>>(`/api/parties/${id}`, {
+            ...(data.name !== undefined ? { name: data.name } : {}),
+            ...(data.type !== undefined ? { type: data.type === 'SUPPLIER' ? 'supplier' : 'customer' } : {}),
+            ...(data.phone !== undefined ? { phone: data.phone } : {}),
+            ...(data.email !== undefined ? { email: data.email } : {}),
+            ...(data.billingAddress !== undefined ? { address: data.billingAddress } : {}),
+            ...(data.gstin !== undefined ? { gstNumber: data.gstin } : {}),
+            ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+        }),
     delete: (id: string) =>
         api.patch<ApiOkResponse>(`/api/parties/${id}`, { isActive: false }),
+    restore: (id: string) =>
+        api.post<ApiOkResponse>(`/api/parties/${id}/restore`, {}),
+    permanentDelete: (id: string) =>
+        api.delete<ApiOkResponse>(`/api/parties/${id}/permanent`),
 };
 
 // ─── Items ────────────────────────────────────────────────────────────────────
@@ -119,6 +216,40 @@ export const itemApi = {
                 isSalesPriceInclusiveGst: Boolean(raw.isSalesPriceInclusiveGst ?? false),
                 trackStock: true,
                 isActive: Boolean(raw.isActive ?? true),
+                createdAt: String(raw.createdAt ?? new Date().toISOString()),
+                updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
+            })),
+        };
+    },
+    recycleBin: async (params?: { limit?: number }) => {
+        const res = await api.get<{ ok: boolean; items: Record<string, unknown>[] }>('/api/items/recycle-bin', { params });
+        return {
+            ok: res.ok,
+            items: (res.items ?? []).map((raw) => ({
+                id: String(raw.id),
+                businessId: String(raw.businessId ?? ''),
+                name: String(raw.name ?? ''),
+                sku: raw.sku ? String(raw.sku) : null,
+                barcode: raw.barcode ? String(raw.barcode) : null,
+                hsnCode: raw.hsn ? String(raw.hsn) : raw.hsnCode ? String(raw.hsnCode) : null,
+                unit: raw.unit ? String(raw.unit) : null,
+                category: raw.category ? String(raw.category) : null,
+                mrp: Number(raw.mrp ?? 0),
+                purchasePrice: Number(raw.purchasePrice ?? 0),
+                salePrice: Number(raw.price ?? raw.salePrice ?? 0),
+                gstRate: Number(raw.gstPercentage ?? raw.gstRate ?? 0),
+                openingStock: Number(raw.openingStock ?? raw.stock ?? 0),
+                stock: Number(raw.stock ?? 0),
+                reorderLevel: Number(raw.minimumStock ?? raw.reorderLevel ?? 0),
+                description: raw.description ? String(raw.description) : null,
+                location: raw.location ? String(raw.location) : null,
+                imageUrl: raw.imageUrl ? String(raw.imageUrl) : null,
+                expiresAt: raw.expiresAt ? String(raw.expiresAt) : null,
+                autoDeleteAt: raw.autoDeleteAt ? String(raw.autoDeleteAt) : null,
+                autoDeleteEnabled: Boolean(raw.autoDeleteEnabled ?? false),
+                isSalesPriceInclusiveGst: Boolean(raw.isSalesPriceInclusiveGst ?? false),
+                trackStock: true,
+                isActive: false,
                 createdAt: String(raw.createdAt ?? new Date().toISOString()),
                 updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
             })),
@@ -225,6 +356,10 @@ export const itemApi = {
         }),
     delete: (id: string) =>
         api.delete<ApiOkResponse>(`/api/items/${id}`),
+    restore: (id: string) =>
+        api.post<ApiOkResponse>(`/api/items/${id}/restore`, {}),
+    permanentDelete: (id: string) =>
+        api.delete<ApiOkResponse>(`/api/items/${id}/permanent`),
     adjustStock: (id: string, data: { type: 'IN' | 'OUT' | 'ADJUST'; quantity: number; reason?: string }) =>
         api.post<ApiOkResponse>(`/api/items/${id}/adjust`, data),
     getLedger: (id: string, params?: PaginationParams) =>
@@ -233,13 +368,381 @@ export const itemApi = {
 
 // ─── Invoices / Transactions ──────────────────────────────────────────────────
 
+type TransactionType = 'SALE' | 'PURCHASE' | 'RETURN_INWARD' | 'RETURN_OUTWARD';
+
+export type InvoiceCreateInput = Partial<InvoiceBuilderState> & {
+    invoiceType: string;
+    transactionType?: TransactionType;
+    documentKind?: string;
+    billMode?: 'GST' | 'ESTIMATE';
+    compositeScheme?: boolean;
+    tcsAmount?: number;
+    tdsAmount?: number;
+    eInvoiceIrn?: string | null;
+    eInvoiceStatus?: string | null;
+    eWayBillNumber?: string | null;
+};
+
+type ServerTransactionItem = {
+    id?: string | null;
+    name?: string | null;
+    quantity?: number | string | null;
+    price?: number | string | null;
+    tax?: number | string | null;
+    total?: number | string | null;
+};
+
+type ServerTransaction = {
+    id: string;
+    type?: string;
+    invoiceType?: string;
+    documentKind?: string;
+    partyId?: string | null;
+    partyName?: string | null;
+    partyPhone?: string | null;
+    billNumber?: string | null;
+    billDate?: string | null;
+    items?: ServerTransactionItem[];
+    totalAmount?: number | string | null;
+    discountAmount?: number | string | null;
+    taxAmount?: number | string | null;
+    paidAmount?: number | string | null;
+    paymentMode?: string | null;
+    paymentStatus?: string | null;
+    billMode?: string | null;
+    dueDate?: string | null;
+    remark?: string | null;
+    notes?: string | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+    placeOfSupply?: string | null;
+    reverseCharge?: boolean | null;
+    tcsAmount?: number | string | null;
+    tdsAmount?: number | string | null;
+    compositeScheme?: boolean | null;
+};
+
+type ServerTransactionListResponse = {
+    ok: boolean;
+    transactions?: ServerTransaction[];
+};
+
+type ServerTransactionGetResponse = {
+    ok: boolean;
+    transaction?: ServerTransaction;
+};
+
+type ServerTransactionCreateResponse = {
+    ok: boolean;
+    id?: string;
+    transaction?: ServerTransaction;
+    message?: string;
+};
+
+const KNOWN_SERVER_INVOICE_TYPES = new Set([
+    'TAX_INVOICE',
+    'BILL_OF_SUPPLY',
+    'ESTIMATE',
+    'PROFORMA',
+    'CREDIT_NOTE_DOC',
+    'DEBIT_NOTE_DOC',
+    'DELIVERY_CHALLAN_DOC',
+    'POS_BILL',
+]);
+
+const NON_POSTING_DOC_KINDS = new Set([
+    'ESTIMATE',
+    'PROFORMA',
+    'SALE_ORDER',
+    'PURCHASE_ORDER',
+    'DELIVERY_CHALLAN_DOC',
+]);
+
+const toNumber = (value: unknown, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeTransactionType = (payload: InvoiceCreateInput): TransactionType => {
+    const explicit = String(payload.transactionType ?? '').toUpperCase();
+    if (explicit === 'SALE' || explicit === 'PURCHASE' || explicit === 'RETURN_INWARD' || explicit === 'RETURN_OUTWARD') {
+        return explicit;
+    }
+
+    const rawKind = String(payload.documentKind ?? payload.invoiceType ?? '').toUpperCase();
+    if (rawKind === 'PURCHASE_BILL' || rawKind === 'PURCHASE_ORDER') return 'PURCHASE';
+    if (rawKind === 'DEBIT_NOTE_DOC') return 'RETURN_INWARD';
+    if (rawKind === 'CREDIT_NOTE_DOC') return 'RETURN_OUTWARD';
+    return 'SALE';
+};
+
+const toServerInvoiceType = (payload: InvoiceCreateInput) => {
+    const requestedType = String(payload.invoiceType ?? '').toUpperCase();
+    if (KNOWN_SERVER_INVOICE_TYPES.has(requestedType)) return requestedType;
+    if (requestedType === 'PURCHASE_BILL') return 'TAX_INVOICE';
+    if (requestedType === 'SALE_ORDER') return 'ESTIMATE';
+    if (requestedType === 'PURCHASE_ORDER') return 'PROFORMA';
+    return 'TAX_INVOICE';
+};
+
+const toDocumentKind = (payload: InvoiceCreateInput) => {
+    const requestedKind = String(payload.documentKind ?? payload.invoiceType ?? '').trim().toUpperCase();
+    return requestedKind || toServerInvoiceType(payload);
+};
+
+const toLegacyPaymentStatus = (total: number, paid: number): 'PAID' | 'PARTIAL' | 'PENDING' => {
+    if (paid >= total && total > 0) return 'PAID';
+    if (paid > 0) return 'PARTIAL';
+    return 'PENDING';
+};
+
+const toInvoicePaymentStatus = (
+    rawStatus: unknown,
+    totalAmount: number,
+    paidAmount: number
+): Invoice['paymentStatus'] => {
+    const status = String(rawStatus ?? '').toUpperCase();
+    if (status === 'PAID') return 'PAID';
+    if (status === 'PARTIAL' || status === 'PARTIALLY_PAID') return 'PARTIALLY_PAID';
+    if (status === 'OVERDUE') return 'OVERDUE';
+    if (paidAmount >= totalAmount && totalAmount > 0) return 'PAID';
+    if (paidAmount > 0) return 'PARTIALLY_PAID';
+    return 'UNPAID';
+};
+
+const mapBuilderToServerCreatePayload = (payload: InvoiceCreateInput) => {
+    const serverInvoiceType = toServerInvoiceType(payload);
+    const documentKind = toDocumentKind(payload);
+    const transactionType = normalizeTransactionType(payload);
+    const normalizedItems = (payload.items ?? [])
+        .map((entry) => ({
+            id: entry.itemId ?? undefined,
+            name: (entry.description ?? '').trim(),
+            quantity: toNumber(entry.quantity, 0),
+            price: toNumber(entry.rate, 0),
+            tax: toNumber(entry.gstRate, 0),
+            total: toNumber(entry.total, toNumber(entry.quantity, 0) * toNumber(entry.rate, 0)),
+        }))
+        .filter((entry) => entry.name.length > 0 && entry.quantity > 0);
+
+    if (normalizedItems.length === 0) {
+        throw new Error('Add at least one item before saving.');
+    }
+
+    const taxAmount = (payload.items ?? []).reduce(
+        (sum, entry) => sum + toNumber(entry.cgstAmount) + toNumber(entry.sgstAmount) + toNumber(entry.igstAmount),
+        0
+    );
+    const itemsTotal = (payload.items ?? []).reduce(
+        (sum, entry) => sum + toNumber(entry.total, toNumber(entry.quantity, 0) * toNumber(entry.rate, 0)),
+        0
+    );
+    const totalAmount = itemsTotal + toNumber(payload.additionalCharges) - toNumber(payload.discountAmount) + toNumber(payload.roundOffAmount);
+    const paidAmount = toNumber(payload.paidAmount);
+
+    return {
+        type: transactionType,
+        documentKind,
+        invoiceType: serverInvoiceType,
+        partyId: payload.partyId ?? undefined,
+        partyName: payload.partySnapshot?.name?.trim() || undefined,
+        partyPhone: payload.partySnapshot?.phone?.trim() || undefined,
+        billNumber: payload.invoiceNumber?.trim() || undefined,
+        billDate: payload.invoiceDate || undefined,
+        totalAmount,
+        discountAmount: toNumber(payload.discountAmount),
+        taxAmount,
+        paidAmount,
+        paymentMode: String(payload.paymentMode ?? 'CASH').toUpperCase(),
+        paymentStatus: toLegacyPaymentStatus(totalAmount, paidAmount),
+        billMode: payload.billMode ?? (NON_POSTING_DOC_KINDS.has(documentKind) ? 'ESTIMATE' : 'GST'),
+        placeOfSupply: payload.placeOfSupply?.trim() || undefined,
+        reverseCharge: Boolean(payload.reverseCharge ?? false),
+        tcsAmount: toNumber(payload.tcsAmount),
+        tdsAmount: toNumber(payload.tdsAmount),
+        compositeScheme: Boolean(payload.compositeScheme ?? false),
+        eInvoiceIrn: payload.eInvoiceIrn ?? undefined,
+        eInvoiceStatus: payload.eInvoiceStatus ?? undefined,
+        eWayBillNumber: payload.eWayBillNumber ?? undefined,
+        dueDate: payload.dueDate ?? undefined,
+        reminderEnabled: Boolean(payload.dueDate),
+        remark: payload.notes?.trim() || undefined,
+        items: normalizedItems,
+    };
+};
+
+const mapServerTransactionToInvoice = (
+    raw: ServerTransaction,
+    fallback: Partial<Invoice> = {}
+): Invoice => {
+    const now = new Date().toISOString();
+    const invoiceId = raw.id || fallback.id || offlineSyncService.createLocalId('inv');
+    const documentKind = String(raw.documentKind ?? '').toUpperCase();
+    const rawInvoiceType = String(raw.invoiceType ?? '').toUpperCase();
+    const invoiceType = (KNOWN_SERVER_INVOICE_TYPES.has(rawInvoiceType)
+        ? rawInvoiceType
+        : KNOWN_SERVER_INVOICE_TYPES.has(documentKind)
+            ? documentKind
+            : 'TAX_INVOICE') as Invoice['invoiceType'];
+
+    const mappedItems = (raw.items ?? []).map((entry, index) => {
+        const quantity = toNumber(entry.quantity, 0);
+        const rate = toNumber(entry.price, 0);
+        const gstRate = toNumber(entry.tax, 0);
+        const taxableValue = quantity * rate;
+        const taxAmount = taxableValue * (gstRate / 100);
+        const cgstRate = gstRate > 0 ? gstRate / 2 : 0;
+        const sgstRate = gstRate > 0 ? gstRate / 2 : 0;
+        const cgstAmount = taxAmount / 2;
+        const sgstAmount = taxAmount / 2;
+        const igstRate = 0;
+        const igstAmount = 0;
+        const total = toNumber(entry.total, taxableValue + taxAmount);
+
+        return {
+            id: String(entry.id ?? `${invoiceId}-${index + 1}`),
+            invoiceId,
+            itemId: entry.id ? String(entry.id) : null,
+            description: String(entry.name ?? ''),
+            quantity,
+            unit: 'pcs',
+            rate,
+            discountPercent: 0,
+            discountAmount: 0,
+            taxableValue,
+            gstRate,
+            cgstRate,
+            cgstAmount,
+            sgstRate,
+            sgstAmount,
+            igstRate,
+            igstAmount,
+            cessRate: 0,
+            cessAmount: 0,
+            total,
+            sortOrder: index,
+        };
+    });
+
+    const totalTaxAmount = toNumber(
+        raw.taxAmount,
+        mappedItems.reduce((sum, item) => sum + item.cgstAmount + item.sgstAmount + item.igstAmount + item.cessAmount, 0)
+    );
+    const totalInvoiceValue = toNumber(raw.totalAmount, mappedItems.reduce((sum, item) => sum + item.total, 0));
+    const paidAmount = toNumber(raw.paidAmount, 0);
+    const totalTaxableValue = Math.max(totalInvoiceValue - totalTaxAmount, 0);
+    const totalCgstAmount = mappedItems.reduce((sum, item) => sum + item.cgstAmount, 0);
+    const totalSgstAmount = mappedItems.reduce((sum, item) => sum + item.sgstAmount, 0);
+    const totalIgstAmount = mappedItems.reduce((sum, item) => sum + item.igstAmount, 0);
+
+    return {
+        id: invoiceId,
+        businessId: fallback.businessId ?? 'unknown',
+        invoiceType,
+        invoiceNumber: String(raw.billNumber ?? fallback.invoiceNumber ?? ''),
+        invoiceDate: String(raw.billDate ?? fallback.invoiceDate ?? now),
+        partyId: raw.partyId ? String(raw.partyId) : (fallback.partyId ?? null),
+        placeOfSupply: raw.placeOfSupply ? String(raw.placeOfSupply) : (fallback.placeOfSupply ?? null),
+        totalTaxableValue,
+        totalTaxAmount,
+        totalInvoiceValue,
+        discountAmount: toNumber(raw.discountAmount, fallback.discountAmount ?? 0),
+        roundOffAmount: toNumber(fallback.roundOffAmount, 0),
+        additionalCharges: toNumber(fallback.additionalCharges, 0),
+        reverseCharge: Boolean(raw.reverseCharge ?? false),
+        gstRateBreakupJson: {
+            transactionType: String(raw.type ?? '').toUpperCase() || undefined,
+            documentKind: documentKind || rawInvoiceType || undefined,
+            tcsAmount: toNumber(raw.tcsAmount),
+            tdsAmount: toNumber(raw.tdsAmount),
+            compositeScheme: Boolean(raw.compositeScheme ?? false),
+        },
+        eInvoiceIrn: null,
+        eInvoiceStatus: null,
+        eWayBillNumber: null,
+        paymentStatus: toInvoicePaymentStatus(raw.paymentStatus, totalInvoiceValue, paidAmount),
+        paidAmount,
+        dueDate: raw.dueDate ? String(raw.dueDate) : null,
+        notes: raw.remark ? String(raw.remark) : raw.notes ? String(raw.notes) : null,
+        termsAndConditions: null,
+        sourceVoucherType: null,
+        sourceVoucherId: null,
+        isDeleted: false,
+        createdByUserId: null,
+        createdAt: String(raw.createdAt ?? fallback.createdAt ?? now),
+        updatedAt: String(raw.updatedAt ?? fallback.updatedAt ?? now),
+        items: mappedItems,
+        partySnapshot: raw.partyName
+            ? {
+                name: String(raw.partyName),
+                phone: raw.partyPhone ? String(raw.partyPhone) : null,
+            }
+            : undefined,
+        totalCgstAmount,
+        totalSgstAmount,
+        totalIgstAmount,
+    };
+};
+
+const fetchInvoiceByTransactionId = async (id: string): Promise<Invoice> => {
+    const response = await api.get<ServerTransactionGetResponse>(`/api/transactions/${id}`);
+    if (!response.ok || !response.transaction) {
+        throw new Error('Transaction created but could not be fetched.');
+    }
+    return mapServerTransactionToInvoice(response.transaction, { id });
+};
+
 export const invoiceApi = {
-    list: (params?: { type?: string; status?: string; from?: string; to?: string } & PaginationParams) =>
-        api.get<ApiListResponse<Invoice>>('/api/transactions', { params }),
-    get: (id: string) =>
-        api.get<ApiResponse<Invoice>>(`/api/transactions/${id}`),
-    create: (data: Partial<InvoiceBuilderState> & { invoiceType: string }) =>
-        api.post<ApiResponse<Invoice>>('/api/transactions', data),
+    list: async (params?: { type?: string; status?: string; from?: string; to?: string } & PaginationParams) => {
+        const response = await api.get<ServerTransactionListResponse>('/api/transactions', { params });
+        return {
+            ok: response.ok,
+            data: (response.transactions ?? []).map((entry) => mapServerTransactionToInvoice(entry)),
+        } as ApiListResponse<Invoice>;
+    },
+    get: async (id: string) => {
+        const response = await api.get<ServerTransactionGetResponse>(`/api/transactions/${id}`);
+        if (!response.ok || !response.transaction) {
+            throw new Error('Transaction not found.');
+        }
+        return {
+            ok: true,
+            data: mapServerTransactionToInvoice(response.transaction, { id }),
+        } as ApiResponse<Invoice>;
+    },
+    create: async (data: InvoiceCreateInput) => {
+        const payload = mapBuilderToServerCreatePayload(data);
+        const response = await api.post<ServerTransactionCreateResponse>('/api/transactions', payload);
+
+        if (response.transaction) {
+            return {
+                ok: true,
+                data: mapServerTransactionToInvoice(response.transaction),
+                message: response.message,
+            } as ApiResponse<Invoice>;
+        }
+
+        if (response.id) {
+            try {
+                const hydrated = await fetchInvoiceByTransactionId(response.id);
+                return {
+                    ok: true,
+                    data: hydrated,
+                    message: response.message,
+                } as ApiResponse<Invoice>;
+            } catch {
+                const fallback = buildLocalInvoiceFromBuilder(data);
+                fallback.id = response.id;
+                return {
+                    ok: true,
+                    data: fallback,
+                    message: response.message ?? 'Created successfully.',
+                } as ApiResponse<Invoice>;
+            }
+        }
+
+        throw new Error(response.message ?? 'Failed to create transaction.');
+    },
     recordPayment: (id: string, data: { paidAmount: number; paymentMode: string; date?: string }) =>
         api.patch<ApiOkResponse>(`/api/transactions/${id}/payment`, data),
 };
@@ -795,11 +1298,15 @@ const resolveInvoicePaymentStatus = (
 };
 
 const buildLocalInvoiceFromBuilder = (
-    payload: Partial<InvoiceBuilderState> & { invoiceType: string }
+    payload: InvoiceCreateInput
 ): Invoice => {
     const now = nowIso();
     const id = offlineSyncService.createLocalId('inv');
     const items = payload.items ?? [];
+    const transactionType = normalizeTransactionType(payload);
+    const documentKind = toDocumentKind(payload);
+    const tcsAmount = toNumber(payload.tcsAmount, 0);
+    const tdsAmount = toNumber(payload.tdsAmount, 0);
     const totalTaxableValue = items.reduce(
         (sum, line) => sum + Number(line.taxableValue),
         0
@@ -817,7 +1324,9 @@ const buildLocalInvoiceFromBuilder = (
         + totalTaxableValue
         + totalTaxAmount
         - Number(payload.discountAmount ?? 0)
-        + Number(payload.roundOffAmount ?? 0);
+        + Number(payload.roundOffAmount ?? 0)
+        + tcsAmount
+        - tdsAmount;
     const paidAmount = Number(payload.paidAmount ?? 0);
 
     return {
@@ -837,10 +1346,16 @@ const buildLocalInvoiceFromBuilder = (
         roundOffAmount: Number(payload.roundOffAmount ?? 0),
         additionalCharges: Number(payload.additionalCharges ?? 0),
         reverseCharge: Boolean(payload.reverseCharge ?? false),
-        gstRateBreakupJson: {},
-        eInvoiceIrn: null,
-        eInvoiceStatus: null,
-        eWayBillNumber: null,
+        gstRateBreakupJson: {
+            transactionType,
+            documentKind,
+            tcsAmount,
+            tdsAmount,
+            compositeScheme: Boolean(payload.compositeScheme ?? false),
+        },
+        eInvoiceIrn: payload.eInvoiceIrn ?? null,
+        eInvoiceStatus: payload.eInvoiceStatus ?? null,
+        eWayBillNumber: payload.eWayBillNumber ?? null,
         paymentStatus: resolveInvoicePaymentStatus(totalInvoiceValue, paidAmount),
         paidAmount,
         dueDate: payload.dueDate ?? null,
@@ -1271,6 +1786,7 @@ invoiceApi.get = async (id) => {
 
 invoiceApi.create = async (data) => {
     const localInvoice = buildLocalInvoiceFromBuilder(data);
+    const syncPayload = mapBuilderToServerCreatePayload(data);
     await offlineSyncService.upsertCachedInvoice(localInvoice);
     try {
         const response = await originalInvoiceApi.create(data);
@@ -1285,7 +1801,7 @@ invoiceApi.create = async (data) => {
         if (!isOfflineLikeError(error)) throw error;
         await offlineSyncService.enqueueMutation({
             type: 'create_invoice',
-            payload: { ...data, localId: localInvoice.id },
+            payload: { ...syncPayload, localId: localInvoice.id },
         });
         return {
             ok: true,

@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { itemApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import { GST_SLABS } from '../../../constants/gstRates';
+import { useScannerMode } from '../../../hooks/useScannerMode';
 
 const GST_RATES = [...GST_SLABS];
 
@@ -45,6 +46,7 @@ export default function AddItemScreen() {
     const editId = params.id;
     const qc = useQueryClient();
     const s = styles(colors);
+    const scanner = useScannerMode();
 
     const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<ItemFormInput, unknown, ItemForm>({
         resolver: zodResolver(itemSchema),
@@ -129,6 +131,27 @@ export default function AddItemScreen() {
         }
     }, [params.barcode, params.scanned, params.scanAt, params.scanField, setValue]);
 
+    const handleScanField = (field: 'barcode' | 'hsn') => {
+        if (scanner.canUseCameraScanner) {
+            router.push({
+                pathname: '/scan',
+                params: {
+                    target: 'item_detail',
+                    returnPath: editId ? `/(main)/inventory/add-item?id=${editId}` : '/(main)/inventory/add-item',
+                    scanField: field,
+                },
+            });
+            return;
+        }
+
+        if (!scanner.barcodeEnabled) {
+            Alert.alert('Scanner disabled', 'Enable barcode scanning in Settings > Item Settings.');
+            return;
+        }
+
+        Alert.alert('USB scanner mode', `Use a connected USB scanner and scan directly into the ${field === 'barcode' ? 'Barcode' : 'HSN'} field.`);
+    };
+
     if (editId && editItemLoading) {
         return (
             <SafeAreaView style={s.safe} edges={['top']}>
@@ -150,6 +173,13 @@ export default function AddItemScreen() {
             </View>
 
             <ScrollView keyboardShouldPersistTaps="handled">
+                {scanner.isUsbScannerMode ? (
+                    <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm }}>
+                        <Text style={{ color: colors.textSecondary, fontSize: 11 }}>
+                            USB scanner mode active. Place cursor in Barcode/HSN fields and scan from hardware scanner.
+                        </Text>
+                    </View>
+                ) : null}
                 <View style={s.section}>
                     <Text style={s.sectionTitle}>BASIC INFO</Text>
 
@@ -174,16 +204,11 @@ export default function AddItemScreen() {
                                 )} />
                                 <Pressable
                                     style={s.scanInlineAction}
-                                    onPress={() => router.push({
-                                        pathname: '/scan',
-                                        params: {
-                                            target: 'item_detail',
-                                            returnPath: editId ? `/(main)/inventory/add-item?id=${editId}` : '/(main)/inventory/add-item',
-                                            scanField: 'barcode',
-                                        },
-                                    })}
+                                    onPress={() => handleScanField('barcode')}
                                 >
-                                    <Text style={[s.scanInlineText, { color: colors.primary }]}>Scan Barcode</Text>
+                                    <Text style={[s.scanInlineText, { color: colors.primary }]}>
+                                        {scanner.canUseCameraScanner ? 'Scan Barcode' : scanner.isUsbScannerMode ? 'Use USB Scanner' : 'Scanner Off'}
+                                    </Text>
                                 </Pressable>
                             </Field>
                         </View>
@@ -197,16 +222,11 @@ export default function AddItemScreen() {
                                 )} />
                                 <Pressable
                                     style={s.scanInlineAction}
-                                    onPress={() => router.push({
-                                        pathname: '/scan',
-                                        params: {
-                                            target: 'item_detail',
-                                            returnPath: editId ? `/(main)/inventory/add-item?id=${editId}` : '/(main)/inventory/add-item',
-                                            scanField: 'hsn',
-                                        },
-                                    })}
+                                    onPress={() => handleScanField('hsn')}
                                 >
-                                    <Text style={[s.scanInlineText, { color: colors.primary }]}>Scan HSN</Text>
+                                    <Text style={[s.scanInlineText, { color: colors.primary }]}>
+                                        {scanner.canUseCameraScanner ? 'Scan HSN' : scanner.isUsbScannerMode ? 'Use USB Scanner' : 'Scanner Off'}
+                                    </Text>
                                 </Pressable>
                             </Field>
                         </View>

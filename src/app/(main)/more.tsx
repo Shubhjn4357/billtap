@@ -31,6 +31,8 @@ export default function MoreScreen() {
             title: 'Main',
             items: [
                 { label: 'Parties', route: '/(main)/parties', visible: canAccessModule(role, 'parties', subscription) },
+                { label: 'Party Recycle Bin', route: '/(main)/parties/recycle-bin', visible: canAccessModule(role, 'parties', subscription) },
+                { label: 'Item Recycle Bin', route: '/(main)/inventory/recycle-bin', visible: canAccessModule(role, 'inventory', subscription) },
                 { label: 'Reports', route: '/(main)/reports', visible: canAccessModule(role, 'reports', subscription) },
                 { label: 'POS Mode', route: '/(main)/billing/pos', visible: featureFlags.includes(FeatureFlag.POS_MODE) },
             ],
@@ -58,6 +60,7 @@ export default function MoreScreen() {
             title: 'Business',
             items: [
                 { label: 'Settings', route: '/(main)/more/settings', visible: canAccessModule(role, 'settings', subscription) },
+                { label: 'Thermal Printer Profiles', route: '/(main)/more/thermal-printers', visible: canAccessModule(role, 'settings', subscription) },
                 { label: 'Subscription', route: '/(main)/more/subscription', visible: true },
             ],
         },

@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePosStore } from '../../../store/posStore';
 import { posApi, itemApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
+import { useScannerMode } from '../../../hooks/useScannerMode';
 import type { Item } from '../../../types/domain';
 
 export default function PosScreen() {
@@ -20,6 +21,7 @@ export default function PosScreen() {
     const queryClient = useQueryClient();
     const s = styles(colors);
     const [search, setSearch] = useState('');
+    const scanner = useScannerMode();
 
     const { data: itemsData } = useQuery({
         queryKey: ['items'],
@@ -105,6 +107,20 @@ export default function PosScreen() {
         });
     };
 
+    const handleScanPress = () => {
+        if (scanner.canUseCameraScanner) {
+            router.push('/scan?target=billing' as Parameters<typeof router.push>[0]);
+            return;
+        }
+
+        if (!scanner.barcodeEnabled) {
+            Alert.alert('Scanner disabled', 'Enable barcode scanning in Settings > Item Settings.');
+            return;
+        }
+
+        Alert.alert('USB scanner mode', 'Use a connected USB scanner and scan directly into the search field.');
+    };
+
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
             <View style={s.header}>
@@ -126,18 +142,25 @@ export default function PosScreen() {
                     <View style={s.searchRow}>
                         <TextInput
                             style={[s.searchInput, { color: colors.text }]}
-                            placeholder="Search item / barcode..."
+                            placeholder={scanner.isUsbScannerMode ? 'Scan via USB or type search...' : 'Search item / barcode...'}
                             placeholderTextColor={colors.textSecondary}
                             value={search}
                             onChangeText={setSearch}
                         />
                         <Pressable
                             style={[s.scanBtn, { backgroundColor: colors.surfaceVariant }]}
-                            onPress={() => router.push('/scan?target=billing' as Parameters<typeof router.push>[0])}
+                            onPress={handleScanPress}
                         >
-                            <Text style={{ color: colors.primary, fontWeight: '700' }}>Scan</Text>
+                            <Text style={{ color: colors.primary, fontWeight: '700' }}>
+                                {scanner.canUseCameraScanner ? 'Scan' : scanner.isUsbScannerMode ? 'USB' : 'Off'}
+                            </Text>
                         </Pressable>
                     </View>
+                    {scanner.isUsbScannerMode ? (
+                        <Text style={{ color: colors.textSecondary, fontSize: 11, paddingBottom: Spacing.sm }}>
+                            USB scanner mode active. Keep cursor in search and scan from scanner device.
+                        </Text>
+                    ) : null}
 
                     <FlatList
                         data={filteredItems}

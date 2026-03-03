@@ -13,11 +13,12 @@ import {
     useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, storeBusinessId } from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { extractUpiIdFromPayload, isValidUpiId, sanitizeUpiId } from '../../utils/upi';
 
 type OrganizationLite = {
     id: string;
@@ -69,6 +70,7 @@ export default function BusinessSelectScreen() {
     const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
     const s = styles(colors);
     const queryClient = useQueryClient();
+    const params = useLocalSearchParams<{ upiPayload?: string | string[]; scanAt?: string | string[] }>();
 
     const refreshUser = useAuthStore((state) => state.refreshUser);
     const signOut = useAuthStore((state) => state.signOut);
@@ -78,6 +80,8 @@ export default function BusinessSelectScreen() {
     const [businessCode, setBusinessCode] = useState('');
     const [currency, setCurrency] = useState('INR');
     const [switchingBusinessId, setSwitchingBusinessId] = useState<string | null>(null);
+    const [paymentUpiId, setPaymentUpiId] = useState('');
+    const [signatureUrl, setSignatureUrl] = useState('');
 
     const {
         data: organizations = [],
@@ -99,12 +103,43 @@ export default function BusinessSelectScreen() {
         mutationFn: createOrganization,
     });
 
+    useEffect(() => {
+        const payload = Array.isArray(params.upiPayload) ? params.upiPayload[0] : params.upiPayload;
+        if (!payload) return;
+        const extracted = extractUpiIdFromPayload(payload);
+        if (!extracted) {
+            Alert.alert('UPI', 'Scanned QR does not contain a valid UPI ID.');
+            return;
+        }
+        setPaymentUpiId(extracted);
+        Alert.alert('UPI', 'UPI ID captured. It will be saved in General settings after continue.');
+    }, [params.scanAt, params.upiPayload]);
+
     const helperText = useMemo(() => {
         if (!businessName.trim()) return 'Business code auto-generates from business name.';
         return `Suggested code: ${deriveBusinessCode(businessName)}`;
     }, [businessName]);
 
-    const handleContinue = async (businessId?: string) => {
+    const persistBusinessSetup = async (receiverName?: string) => {
+        const normalizedUpi = sanitizeUpiId(paymentUpiId);
+        const normalizedSignature = signatureUrl.trim();
+        const hasSetup = Boolean(normalizedUpi || normalizedSignature);
+        if (!hasSetup) return;
+
+        if (normalizedUpi && !isValidUpiId(normalizedUpi)) {
+            throw new Error('Invalid UPI ID format. Use format like merchant@upi.');
+        }
+
+        await api.put('/api/settings/GENERAL', {
+            data: {
+                payment_upi_id: normalizedUpi || null,
+                payment_receiver_name: receiverName?.trim() || null,
+                signature_url: normalizedSignature || null,
+            },
+        });
+    };
+
+    const handleContinue = async (businessId?: string, receiverName?: string) => {
         const nextBusinessId = businessId ?? selectedId;
         if (!nextBusinessId) {
             Alert.alert('Select Business', 'Choose a business or create one to continue.');
@@ -114,6 +149,11 @@ export default function BusinessSelectScreen() {
         setSwitchingBusinessId(nextBusinessId);
         try {
             await storeBusinessId(nextBusinessId);
+            try {
+                await persistBusinessSetup(receiverName);
+            } catch (error) {
+                Alert.alert('Setup not saved', error instanceof Error ? error.message : 'Unable to save UPI/signature setup.');
+            }
             await refreshUser();
             router.replace('/(main)');
         } catch (error) {
@@ -144,7 +184,7 @@ export default function BusinessSelectScreen() {
             await refetch();
             await queryClient.invalidateQueries({ queryKey: ['organizations-mine'] });
             setSelectedId(id);
-            await handleContinue(id);
+            await handleContinue(id, name);
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to create business.';
             Alert.alert('Create Business Failed', message);
@@ -261,6 +301,39 @@ export default function BusinessSelectScreen() {
                                     </Pressable>
                                 ))}
                             </View>
+
+                            <Text style={s.inputLabel}>Payment UPI ID (optional)</Text>
+                            <TextInput
+                                value={paymentUpiId}
+                                onChangeText={setPaymentUpiId}
+                                placeholder="merchant@upi"
+                                placeholderTextColor={colors.textSecondary}
+                                style={s.input}
+                                autoCapitalize="none"
+                            />
+                            <Pressable
+                                style={s.scanAction}
+                                onPress={() => router.push({
+                                    pathname: '/scan',
+                                    params: {
+                                        target: 'upi_profile',
+                                        returnPath: '/(auth)/business-select',
+                                    },
+                                })}
+                            >
+                                <Text style={[s.scanActionText, { color: colors.primary }]}>Scan UPI QR</Text>
+                            </Pressable>
+
+                            <Text style={s.inputLabel}>Signature Image URL (optional)</Text>
+                            <TextInput
+                                value={signatureUrl}
+                                onChangeText={setSignatureUrl}
+                                placeholder="https://.../signature.png"
+                                placeholderTextColor={colors.textSecondary}
+                                style={s.input}
+                                autoCapitalize="none"
+                            />
+                            <Text style={s.helperText}>UPI and signature setup will be saved into General settings of selected business.</Text>
 
                             <Pressable
                                 style={[s.primaryButton, createMutation.isPending && s.buttonDisabled]}
@@ -399,6 +472,15 @@ const styles = (colors: ColorPalette) =>
         helperText: {
             color: colors.textSecondary,
             fontSize: Typography.caption.size,
+        },
+        scanAction: {
+            alignSelf: 'flex-start',
+            marginTop: 2,
+            marginBottom: 2,
+        },
+        scanActionText: {
+            fontSize: Typography.caption.size,
+            fontWeight: '700',
         },
         currencyRow: {
             flexDirection: 'row',
