@@ -145,7 +145,25 @@ organizationsRoute.post('/', async (c) => {
 
         return c.json({ ok: true, id });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create organization.' }, 400);
+        const message = error instanceof Error ? error.message : 'Failed to create organization.';
+        if (message.toLowerCase().includes('failed query')) {
+            return c.json({ ok: false, message: 'Database error while creating business. Please try again.' }, 500);
+        }
+        if (
+            message.includes('multiple businesses')
+            || message.includes('max businesses')
+            || message.includes('Plan limit exceeded')
+        ) {
+            return c.json({ ok: false, message }, 409);
+        }
+        if (
+            message.includes('offline mode only')
+            || message.includes('Subscription is required')
+            || message.includes('read-only')
+        ) {
+            return c.json({ ok: false, message }, 403);
+        }
+        return c.json({ ok: false, message }, 400);
     }
 });
 

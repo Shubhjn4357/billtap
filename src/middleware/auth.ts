@@ -154,8 +154,13 @@ const getAuthUserFromRequest = async (
     const payload = verifySessionToken(token, jwtSecret);
     if (!payload) return null;
 
-    const entry = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
-    return entry[0] ?? null;
+    try {
+        const entry = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
+        return entry[0] ?? null;
+    } catch (error) {
+        console.error('[auth] unable to fetch auth user', error);
+        throw new Error('AUTH_DB_UNAVAILABLE');
+    }
 };
 
 const resolveAdminRole = (authUser: UserRow | null, bindings: Bindings): AdminAccessRole => {
@@ -365,7 +370,12 @@ const setAuthenticatedContext = async (
 export const optionalAuth = async (c: AppContext, next: Next) => {
     const db = c.get('db');
     const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
-    const authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
+    let authUser: UserRow | null = null;
+    try {
+        authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
+    } catch (error) {
+        console.error('[auth] optional auth lookup failed', error);
+    }
 
     if (!authUser) {
         setAnonymousContext(c);
@@ -387,7 +397,13 @@ export const optionalAuth = async (c: AppContext, next: Next) => {
 export const requireAuth = async (c: AppContext, next: Next) => {
     const db = c.get('db');
     const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
-    const authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
+    let authUser: UserRow | null = null;
+    try {
+        authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
+    } catch (error) {
+        console.error('[auth] required auth lookup failed', error);
+        return c.json({ ok: false, message: 'Authentication service unavailable. Please try again.' }, 503);
+    }
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
@@ -411,7 +427,13 @@ export const requireAuth = async (c: AppContext, next: Next) => {
 export const requireAdmin = async (c: AppContext, next: Next) => {
     const db = c.get('db');
     const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
-    const authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
+    let authUser: UserRow | null = null;
+    try {
+        authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
+    } catch (error) {
+        console.error('[auth] admin auth lookup failed', error);
+        return c.json({ ok: false, message: 'Authentication service unavailable. Please try again.' }, 503);
+    }
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
@@ -435,7 +457,13 @@ export const requireAdmin = async (c: AppContext, next: Next) => {
 export const requireSuperAdmin = async (c: AppContext, next: Next) => {
     const db = c.get('db');
     const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
-    const authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
+    let authUser: UserRow | null = null;
+    try {
+        authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
+    } catch (error) {
+        console.error('[auth] super-admin auth lookup failed', error);
+        return c.json({ ok: false, message: 'Authentication service unavailable. Please try again.' }, 503);
+    }
 
     if (!authUser) {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
