@@ -11,6 +11,7 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     const pathname = usePathname();
 
     const isAdmin = Boolean((session as { isAdmin?: boolean } | null)?.isAdmin);
+    const backendJwt = (session as { backendJwt?: string } | null)?.backendJwt;
     const role = normalizeAdminRole(session as { adminRole?: string | null } | null);
 
     useEffect(() => {
@@ -26,16 +27,21 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
             return;
         }
 
+        if (!backendJwt) {
+            router.replace('/auth/signin?error=backend_auth');
+            return;
+        }
+
         if (!isRouteAllowedForRole(role, pathname)) {
             router.replace('/dashboard?error=forbidden');
         }
-    }, [session, status, isAdmin, role, router, pathname]);
+    }, [session, status, isAdmin, backendJwt, role, router, pathname]);
 
     if (status === 'loading') {
         return <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Validating session...</div>;
     }
 
-    if (!session || !isAdmin) {
+    if (!session || !isAdmin || !backendJwt) {
         return null;
     }
 

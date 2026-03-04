@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Organization, organizationService } from "@/services/organizationService";
 import { useToast } from "@/components/ui/Toast";
 import { Switch } from "@/components/ui/Switch";
+import { getErrorMessage } from "@/lib/api-error";
 
 interface OrganizationDrawerProps {
     isOpen: boolean;
@@ -68,10 +69,10 @@ export function OrganizationDrawer({ isOpen, onClose, organization, onSuccess }:
             }
             onSuccess();
             onClose();
-        } catch {
+        } catch (error) {
             toast({
                 title: "Error",
-                description: "Failed to save organization",
+                description: getErrorMessage(error, "Failed to save organization."),
                 type: "error"
             });
         } finally {

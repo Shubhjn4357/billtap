@@ -8,6 +8,8 @@ import { Offer, offerService } from "@/services/offerService";
 import { useToast } from "@/components/ui/Toast";
 import { Switch } from "@/components/ui/Switch";
 import { Megaphone, Target, Image as ImageIcon, Link as LinkIcon } from "lucide-react";
+import { getErrorMessage } from "@/lib/api-error";
+import { Select } from "@/components/ui/Select";
 
 interface OfferDrawerProps {
     isOpen: boolean;
@@ -71,11 +73,11 @@ export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerPr
             }
             onSuccess();
             onClose();
-        } catch (err) {
-            console.error("Offer update failed:", err);
+        } catch (error) {
+            console.error("Offer update failed:", error);
             toast({
                 title: "Error",
-                description: "Failed to save banner",
+                description: getErrorMessage(error, "Failed to save banner."),
                 type: "error"
             });
         } finally {
@@ -133,15 +135,14 @@ export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerPr
                     </h3>
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Audience</label>
-                        <select
-                            className="w-full h-10 px-3 rounded-xl border border-input bg-background focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm"
+                        <Select
                             value={formData.audience}
                             onChange={(e) => setFormData({ ...formData, audience: e.target.value as "all" | "owners" | "staff" })}
                         >
                             <option value="all">All Users</option>
                             <option value="owners">Owners Only</option>
                             <option value="staff">Staff Only</option>
-                        </select>
+                        </Select>
                     </div>
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Priority (Higher = Top)</label>

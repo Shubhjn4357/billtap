@@ -8,6 +8,7 @@ import { Plan, planService } from "@/services/planService";
 import { useToast } from "@/components/ui/Toast";
 import { Switch } from "@/components/ui/Switch";
 import { ShieldCheck, Box, Receipt, Wallet, Megaphone, BarChart3 } from "lucide-react";
+import { getErrorMessage } from "@/lib/api-error";
 
 interface PlanDrawerProps {
     isOpen: boolean;
@@ -86,10 +87,10 @@ export function PlanDrawer({ isOpen, onClose, plan, onSuccess }: PlanDrawerProps
             }
             onSuccess();
             onClose();
-        } catch {
+        } catch (error) {
             toast({
                 title: "Error",
-                description: "Failed to save plan",
+                description: getErrorMessage(error, "Failed to save plan."),
                 type: "error"
             });
         } finally {

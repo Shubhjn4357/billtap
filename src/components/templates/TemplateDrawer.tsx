@@ -4,8 +4,10 @@ import React, { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
 import { Template, TemplateType } from "@/types";
+import { getErrorMessage } from "@/lib/api-error";
 
 interface TemplateDrawerProps {
     isOpen: boolean;
@@ -83,7 +85,7 @@ export function TemplateDrawer({
                 content,
             });
         } catch (error) {
-            setValidationError(error instanceof Error ? error.message : "Invalid template payload.");
+            setValidationError(getErrorMessage(error, "Invalid template payload."));
         }
     };
 
@@ -112,15 +114,14 @@ export function TemplateDrawer({
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Type</label>
-                        <select
-                            className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                        <Select
                             value={type}
                             onChange={(e) => setType(e.target.value as TemplateType)}
                         >
                             <option value="invoice">Invoice</option>
                             <option value="card">Card</option>
                             <option value="email">Email</option>
-                        </select>
+                        </Select>
                     </div>
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Thumbnail URL</label>

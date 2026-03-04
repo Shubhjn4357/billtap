@@ -4,10 +4,11 @@ import React, { useState, useEffect } from "react";
 import { DataTable } from "@/components/ui/DataTable";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Plus, Store, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Store, CheckCircle2, XCircle, Power } from "lucide-react";
 import { Organization, organizationService } from "@/services/organizationService";
 import { useToast } from "@/components/ui/Toast";
 import { OrganizationDrawer } from "@/components/organizations/OrganizationDrawer";
+import { getErrorMessage } from "@/lib/api-error";
 
 export default function OrganizationsPage() {
     const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -22,10 +23,10 @@ export default function OrganizationsPage() {
         try {
             const data = await organizationService.getAll();
             setOrganizations(data);
-        } catch {
+        } catch (error) {
             toast({
                 title: "Error",
-                description: "Failed to fetch organizations",
+                description: getErrorMessage(error, "Failed to fetch organizations."),
                 type: "error"
             });
         } finally {
@@ -51,6 +52,24 @@ export default function OrganizationsPage() {
     const handleCreate = () => {
         setSelectedOrg(undefined);
         setIsDrawerOpen(true);
+    };
+
+    const handleToggleStatus = async (organization: Organization) => {
+        try {
+            await organizationService.toggleStatus(organization.id);
+            toast({
+                title: "Success",
+                description: `Organization ${organization.isActive ? "deactivated" : "activated"} successfully.`,
+                type: "success",
+            });
+            await fetchOrganizations();
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: getErrorMessage(error, "Failed to update organization status."),
+                type: "error",
+            });
+        }
     };
 
     const columns = [
@@ -99,12 +118,20 @@ export default function OrganizationsPage() {
             accessorKey: "actions",
             className: "text-right",
             cell: (org: Organization) => (
-                <Button variant="ghost" size="sm" onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(org);
-                }}>
-                    Edit
-                </Button>
+                <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(org);
+                    }}>
+                        Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={(e) => {
+                        e.stopPropagation();
+                        void handleToggleStatus(org);
+                    }}>
+                        <Power className="h-4 w-4" />
+                    </Button>
+                </div>
             )
         }
     ];

@@ -5,7 +5,9 @@ import { Flag, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
+import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 import {
     type BusinessFeatureFlagRecord,
     type FeatureFlagDetails,
@@ -66,7 +68,7 @@ export default function FeatureFlagsPage() {
         } catch (error) {
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to load businesses.",
+                description: getErrorMessage(error, "Failed to load businesses."),
                 type: "error",
             });
         } finally {
@@ -84,7 +86,7 @@ export default function FeatureFlagsPage() {
             setDetails(null);
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to load feature flags.",
+                description: getErrorMessage(error, "Failed to load feature flags."),
                 type: "error",
             });
         } finally {
@@ -167,7 +169,7 @@ export default function FeatureFlagsPage() {
         } catch (error) {
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to save changes.",
+                description: getErrorMessage(error, "Failed to save changes."),
                 type: "error",
             });
         } finally {
@@ -203,8 +205,7 @@ export default function FeatureFlagsPage() {
                     <CardTitle>Select Business</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    <Select
                         value={selectedBusinessId}
                         onChange={(event) => setSelectedBusinessId(event.target.value)}
                         disabled={loadingBusinesses}
@@ -214,7 +215,7 @@ export default function FeatureFlagsPage() {
                                 {business.name} ({business.code || business.id.slice(0, 8)})
                             </option>
                         ))}
-                    </select>
+                    </Select>
                 </CardContent>
             </Card>
 

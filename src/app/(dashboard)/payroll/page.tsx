@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 
 type StaffEntry = {
     id: string;
@@ -39,7 +40,7 @@ export default function PayrollPage() {
         } catch (error) {
             toast({
                 title: "Load failed",
-                description: error instanceof Error ? error.message : "Unable to load payroll overview.",
+                description: getErrorMessage(error, "Unable to load payroll overview."),
                 type: "error",
             });
         } finally {

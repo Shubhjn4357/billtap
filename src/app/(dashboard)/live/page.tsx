@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { type LiveSnapshot } from "@/services/notificationService";
 import { api } from "@/lib/api";
+import { getErrorMessage } from "@/lib/api-error";
 
 export default function LiveUpdatesPage() {
     const { toast } = useToast();
@@ -28,7 +29,7 @@ export default function LiveUpdatesPage() {
             setConnected(false);
             toast({
                 title: "Live snapshot unavailable",
-                description: error instanceof Error ? error.message : "Unable to fetch live snapshot.",
+                description: getErrorMessage(error, "Unable to fetch live snapshot."),
                 type: "error",
             });
         } finally {

@@ -6,6 +6,7 @@ import { Clock, Filter, ShieldCheck, Users, XCircle } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 import { staffService, type StaffDirectoryRow, type StaffOverviewStats } from "@/services/staffService";
 
 const EMPTY_STATS: StaffOverviewStats = {
@@ -32,7 +33,7 @@ export default function StaffPage() {
             console.error("Failed to load staff overview", error);
             toast({
                 title: "Error",
-                description: "Failed to load staff data",
+                description: getErrorMessage(error, "Failed to load staff data."),
                 type: "error",
             });
         } finally {

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 
 type TransactionEntry = {
     id: string;
@@ -34,7 +35,7 @@ export default function TreasuryPage() {
         } catch (error) {
             toast({
                 title: "Load failed",
-                description: error instanceof Error ? error.message : "Unable to load treasury transactions.",
+                description: getErrorMessage(error, "Unable to load treasury transactions."),
                 type: "error",
             });
         } finally {

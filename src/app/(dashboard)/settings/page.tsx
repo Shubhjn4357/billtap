@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { adminService, AdminSettings } from "@/services/adminService";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 
 export default function SettingsPage() {
     const [isLoading, setIsLoading] = useState(true);
@@ -25,7 +26,7 @@ export default function SettingsPage() {
             console.error("Failed to load settings", error);
             toast({
                 title: "Error",
-                description: "Failed to load global settings",
+                description: getErrorMessage(error, "Failed to load global settings."),
                 type: "error"
             });
         } finally {
@@ -56,7 +57,7 @@ export default function SettingsPage() {
             console.error("Failed to save settings", error);
             toast({
                 title: "Error",
-                description: "Failed to persist changes",
+                description: getErrorMessage(error, "Failed to persist changes."),
                 type: "error"
             });
         } finally {
@@ -119,7 +120,7 @@ export default function SettingsPage() {
                 <Card className="border-none shadow-sm overflow-hidden">
                     <CardHeader className="bg-muted/30 pb-6 border-b">
                         <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-xl bg-orange-500/10 text-orange-600">
+                            <div className="p-2 rounded-xl bg-primary/10 text-primary">
                                 <Zap className="h-6 w-6" />
                             </div>
                             <div>

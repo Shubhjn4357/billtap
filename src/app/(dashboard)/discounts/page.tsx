@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Switch } from "@/components/ui/Switch";
+import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 import {
     type BillingCycle,
     type Discount,
@@ -55,7 +57,7 @@ export default function DiscountsPage() {
         } catch (error) {
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to load discounts.",
+                description: getErrorMessage(error, "Failed to load discounts."),
                 type: "error",
             });
         } finally {
@@ -120,7 +122,7 @@ export default function DiscountsPage() {
         } catch (error) {
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to save discount.",
+                description: getErrorMessage(error, "Failed to save discount."),
                 type: "error",
             });
         } finally {
@@ -136,7 +138,7 @@ export default function DiscountsPage() {
         } catch (error) {
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to deactivate discount.",
+                description: getErrorMessage(error, "Failed to deactivate discount."),
                 type: "error",
             });
         }
@@ -284,26 +286,24 @@ export default function DiscountsPage() {
                         </div>
                         <div className="space-y-1">
                             <label className="text-sm font-medium">Type</label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                            <Select
                                 value={form.type}
                                 onChange={(event) => setForm((prev) => ({ ...prev, type: event.target.value as DiscountType }))}
                             >
                                 <option value="PERCENTAGE">PERCENTAGE</option>
                                 <option value="FIXED_AMOUNT">FIXED_AMOUNT</option>
-                            </select>
+                            </Select>
                         </div>
                         <div className="space-y-1">
                             <label className="text-sm font-medium">Scope</label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                            <Select
                                 value={form.scope}
                                 onChange={(event) => setForm((prev) => ({ ...prev, scope: event.target.value as DiscountScope }))}
                             >
                                 <option value="GLOBAL">GLOBAL</option>
                                 <option value="TIER">TIER</option>
                                 <option value="PLAN">PLAN</option>
-                            </select>
+                            </Select>
                         </div>
                         <div className="space-y-1">
                             <label className="text-sm font-medium">Max Redemptions</label>

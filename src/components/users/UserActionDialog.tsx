@@ -4,11 +4,13 @@ import { useForm } from "react-hook-form";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { User } from "@/types";
 import { useUpdateUserRole, useManualSubscription } from "@/hooks/useUsers";
 import { usePlans } from "@/hooks/usePlans";
 import { useEffect } from "react";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 
 interface UserActionDialogProps {
     isOpen: boolean;
@@ -79,7 +81,7 @@ export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProp
             console.error(error);
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to update user.",
+                description: getErrorMessage(error, "Failed to update user."),
                 type: "error",
             });
         }
@@ -110,31 +112,25 @@ export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProp
 
                     <div>
                         <label className="text-xs font-medium">Assign Plan</label>
-                        <select
-                            {...register("planId")}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
+                        <Select {...register("planId")}>
                             <option value="">-- No Plan --</option>
                             {plans?.map((plan) => (
                                 <option key={plan.id} value={plan.id}>
                                     {plan.name} ({plan.currency} {plan.monthlyPrice})
                                 </option>
                             ))}
-                        </select>
+                        </Select>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-xs font-medium">Status</label>
-                            <select
-                                {...register("status")}
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                            >
+                            <Select {...register("status")}>
                                 <option value="active">Active</option>
                                 <option value="inactive">Inactive</option>
                                 <option value="canceled">Canceled</option>
                                 <option value="past_due">Past Due</option>
-                            </select>
+                            </Select>
                         </div>
                         <div>
                             <label className="text-xs font-medium">Duration (Days)</label>

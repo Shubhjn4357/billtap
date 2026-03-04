@@ -6,6 +6,7 @@ import { AlertTriangle, History, Package, TrendingUp } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 import { inventoryService, type InventoryOverviewItem, type InventoryOverviewStats } from "@/services/inventoryService";
 
 const EMPTY_STATS: InventoryOverviewStats = {
@@ -32,7 +33,7 @@ export default function InventoryPage() {
             console.error("Failed to load inventory overview", error);
             toast({
                 title: "Error",
-                description: "Failed to load inventory data",
+                description: getErrorMessage(error, "Failed to load inventory data."),
                 type: "error",
             });
         } finally {

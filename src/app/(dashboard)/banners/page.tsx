@@ -4,11 +4,12 @@ import React, { useState, useEffect } from "react";
 import { DataTable } from "@/components/ui/DataTable";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Plus, Megaphone, Users, Target } from "lucide-react";
+import { Plus, Megaphone, Users, Target, Trash2 } from "lucide-react";
 import { Offer, offerService } from "@/services/offerService";
 import { useToast } from "@/components/ui/Toast";
 import { OfferDrawer } from "@/components/banners/OfferDrawer";
 import { Switch } from "@/components/ui/Switch";
+import { getErrorMessage } from "@/lib/api-error";
 
 export default function BannersPage() {
     const [offers, setOffers] = useState<Offer[]>([]);
@@ -22,10 +23,10 @@ export default function BannersPage() {
         try {
             const data = await offerService.getAll();
             setOffers(data);
-        } catch {
+        } catch (error) {
             toast({
                 title: "Error",
-                description: "Failed to fetch offers",
+                description: getErrorMessage(error, "Failed to fetch offers."),
                 type: "error"
             });
         } finally {
@@ -57,11 +58,30 @@ export default function BannersPage() {
                 type: "success"
             });
             fetchOffers();
-        } catch {
+        } catch (error) {
             toast({
                 title: "Error",
-                description: "Failed to toggle offer status",
+                description: getErrorMessage(error, "Failed to toggle offer status."),
                 type: "error"
+            });
+        }
+    };
+
+    const handleDelete = async (offer: Offer) => {
+        if (!window.confirm(`Delete offer "${offer.title}"?`)) return;
+        try {
+            await offerService.delete(offer.id);
+            toast({
+                title: "Success",
+                description: "Offer deleted successfully.",
+                type: "success",
+            });
+            await fetchOffers();
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: getErrorMessage(error, "Failed to delete offer."),
+                type: "error",
             });
         }
     };
@@ -122,12 +142,20 @@ export default function BannersPage() {
             accessorKey: "actions",
             className: "text-right",
             cell: (offer: Offer) => (
-                <Button variant="ghost" size="sm" onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(offer);
-                }}>
-                    Edit
-                </Button>
+                <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(offer);
+                    }}>
+                        Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDelete(offer);
+                    }} className="text-destructive hover:text-destructive">
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                </div>
             )
         }
     ];

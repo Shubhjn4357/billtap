@@ -4,10 +4,11 @@ import React, { useState, useEffect } from "react";
 import { DataTable } from "@/components/ui/DataTable";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Plus, Zap, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Zap, CheckCircle2, XCircle, Trash2 } from "lucide-react";
 import { Plan, planService } from "@/services/planService";
 import { useToast } from "@/components/ui/Toast";
 import { PlanDrawer } from "@/components/subscriptions/PlanDrawer";
+import { getErrorMessage } from "@/lib/api-error";
 
 export default function SubscriptionsPage() {
     const [plans, setPlans] = useState<Plan[]>([]);
@@ -21,10 +22,10 @@ export default function SubscriptionsPage() {
         try {
             const data = await planService.getAll();
             setPlans(data);
-        } catch {
+        } catch (error) {
             toast({
                 title: "Error",
-                description: "Failed to fetch plans",
+                description: getErrorMessage(error, "Failed to fetch plans."),
                 type: "error"
             });
         } finally {
@@ -45,6 +46,25 @@ export default function SubscriptionsPage() {
     const handleCreate = () => {
         setSelectedPlan(undefined);
         setIsDrawerOpen(true);
+    };
+
+    const handleDelete = async (plan: Plan) => {
+        if (!window.confirm(`Delete plan "${plan.name}"?`)) return;
+        try {
+            await planService.delete(plan.id);
+            toast({
+                title: "Success",
+                description: "Plan deleted successfully.",
+                type: "success",
+            });
+            await fetchPlans();
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: getErrorMessage(error, "Failed to delete plan."),
+                type: "error",
+            });
+        }
     };
 
     const columns = [
@@ -106,12 +126,20 @@ export default function SubscriptionsPage() {
             accessorKey: "actions",
             className: "text-right",
             cell: (plan: Plan) => (
-                <Button variant="ghost" size="sm" onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(plan);
-                }}>
-                    Edit
-                </Button>
+                <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(plan);
+                    }}>
+                        Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDelete(plan);
+                    }} className="text-destructive hover:text-destructive">
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                </div>
             )
         }
     ];

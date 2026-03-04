@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { adminService, SystemMetrics } from "@/services/adminService";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 
 const EMPTY_METRICS: SystemMetrics = {
     totalUsers: 0,
@@ -30,7 +31,7 @@ export default function AnalyticsPage() {
         } catch (error) {
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to load analytics metrics.",
+                description: getErrorMessage(error, "Failed to load analytics metrics."),
                 type: "error",
             });
         } finally {

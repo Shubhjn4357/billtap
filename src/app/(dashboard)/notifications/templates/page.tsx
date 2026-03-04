@@ -6,7 +6,11 @@ import { BellRing, Save, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 import { canManagePricingForRole, normalizeAdminRole } from "@/lib/rbac";
 import { type NotificationChannel, type NotificationTemplate, notificationService } from "@/services/notificationService";
 
@@ -52,7 +56,7 @@ export default function NotificationTemplatesPage() {
         } catch (error) {
             toast({
                 title: "Load failed",
-                description: error instanceof Error ? error.message : "Unable to load templates.",
+                description: getErrorMessage(error, "Unable to load templates."),
                 type: "error",
             });
         } finally {
@@ -126,7 +130,7 @@ export default function NotificationTemplatesPage() {
         } catch (error) {
             toast({
                 title: "Save failed",
-                description: error instanceof Error ? error.message : "Unable to save template.",
+                description: getErrorMessage(error, "Unable to save template."),
                 type: "error",
             });
         } finally {
@@ -187,29 +191,25 @@ export default function NotificationTemplatesPage() {
                         <CardTitle>{form.id ? "Edit Template" : "New Template"}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                        <input
-                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                        <Input
                             placeholder="Template name"
                             value={form.name}
                             onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                         />
-                        <input
-                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                        <Input
                             placeholder="Event key (e.g. invoice.created)"
                             value={form.eventKey}
                             onChange={(e) => setForm((prev) => ({ ...prev, eventKey: e.target.value }))}
                         />
-                        <select
-                            className="w-full rounded-xl border px-3 py-2 text-sm bg-background"
+                        <Select
                             value={form.channel}
                             onChange={(e) => setForm((prev) => ({ ...prev, channel: e.target.value as NotificationChannel }))}
                         >
                             {["IN_APP", "PUSH", "EMAIL", "SMS", "WHATSAPP"].map((entry) => (
                                 <option key={entry} value={entry}>{entry}</option>
                             ))}
-                        </select>
-                        <input
-                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                        </Select>
+                        <Input
                             placeholder="Subject (optional)"
                             value={form.subject}
                             onChange={(e) => setForm((prev) => ({ ...prev, subject: e.target.value }))}
@@ -220,18 +220,13 @@ export default function NotificationTemplatesPage() {
                             value={form.body}
                             onChange={(e) => setForm((prev) => ({ ...prev, body: e.target.value }))}
                         />
-                        <input
-                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                        <Input
                             placeholder="Variables (comma separated)"
                             value={form.variables}
                             onChange={(e) => setForm((prev) => ({ ...prev, variables: e.target.value }))}
                         />
                         <label className="flex items-center gap-2 text-sm">
-                            <input
-                                type="checkbox"
-                                checked={form.isActive}
-                                onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.checked }))}
-                            />
+                            <Switch checked={form.isActive} onCheckedChange={(next) => setForm((prev) => ({ ...prev, isActive: next }))} />
                             Active
                         </label>
 
@@ -251,4 +246,3 @@ export default function NotificationTemplatesPage() {
         </div>
     );
 }
-

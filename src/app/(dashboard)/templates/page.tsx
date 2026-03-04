@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useTemplates } from "@/hooks/useTemplates";
 import { Template } from "@/types";
 import { TemplateDrawer } from "@/components/templates/TemplateDrawer";
+import { getErrorMessage } from "@/lib/api-error";
 
 export default function TemplatesPage() {
     const { data: templates, isLoading, createTemplate, updateTemplate, deleteTemplate, refetch } = useTemplates();
@@ -47,7 +48,7 @@ export default function TemplatesPage() {
         } catch (error) {
             toast({
                 title: "Error",
-                description: error instanceof Error ? error.message : "Failed to delete template.",
+                description: getErrorMessage(error, "Failed to delete template."),
                 type: "error",
             });
         }
@@ -99,7 +100,7 @@ export default function TemplatesPage() {
             setSelectedTemplate(undefined);
             await refetch();
         } catch (error) {
-            throw error instanceof Error ? error : new Error("Failed to save template.");
+            throw new Error(getErrorMessage(error, "Failed to save template."));
         }
     };
 

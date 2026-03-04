@@ -8,6 +8,7 @@ import { Store, Receipt, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { Transaction, transactionService } from "@/services/transactionService";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/api-error";
 
 export default function TransactionsPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -20,11 +21,10 @@ export default function TransactionsPage() {
         try {
             const data = await transactionService.getAll();
             setTransactions(data);
-        } catch(error) {
-            console.log({error})
+        } catch (error) {
             toast({
                 title: "Error",
-                description: "Failed to fetch transactions",
+                description: getErrorMessage(error, "Failed to fetch transactions."),
                 type: "error"
             });
         } finally {

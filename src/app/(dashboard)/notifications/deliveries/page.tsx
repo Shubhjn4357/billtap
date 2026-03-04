@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 import { type NotificationDelivery, notificationService } from "@/services/notificationService";
 import { Modal } from "@/components/ui/Modal";
 
@@ -24,7 +25,7 @@ export default function NotificationDeliveriesPage() {
         } catch (error) {
             toast({
                 title: "Load failed",
-                description: error instanceof Error ? error.message : "Unable to load deliveries.",
+                description: getErrorMessage(error, "Unable to load deliveries."),
                 type: "error",
             });
         } finally {
@@ -150,4 +151,3 @@ export default function NotificationDeliveriesPage() {
         </div>
     );
 }
-

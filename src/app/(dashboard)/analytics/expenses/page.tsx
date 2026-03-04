@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface ExpenseSummary {
     category: string;
@@ -25,7 +26,7 @@ const PERIODS = [
     { label: "This Year", key: "this_year" as const },
 ];
 
-const BAR_COLORS = ["#007B83", "#FFB300", "#ef4444", "#8b5cf6", "#06b6d4", "#f59e0b", "#10b981", "#6366f1"];
+const BAR_COLOR_CLASSES = ["bg-primary", "bg-amber-500", "bg-emerald-500", "bg-sky-500", "bg-violet-500", "bg-rose-500", "bg-cyan-500", "bg-lime-500"];
 
 export default function ExpensesAnalyticsPage() {
     const [period, setPeriod] = useState<"this_month" | "last_month" | "this_year">("this_month");
@@ -74,7 +75,12 @@ export default function ExpensesAnalyticsPage() {
                     <button
                         key={entry.key}
                         onClick={() => setPeriod(entry.key)}
-                        className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-all ${period === entry.key ? "bg-[#007B83] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                        className={cn(
+                            "rounded-full px-4 py-1.5 text-sm font-semibold transition-all",
+                            period === entry.key
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        )}
                     >
                         {entry.label}
                     </button>
@@ -110,7 +116,10 @@ export default function ExpensesAnalyticsPage() {
                                             </span>
                                         </div>
                                         <div className="h-2 overflow-hidden rounded-full bg-muted">
-                                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: BAR_COLORS[idx % BAR_COLORS.length] }} />
+                                            <div
+                                                className={cn("h-full rounded-full transition-all duration-700", BAR_COLOR_CLASSES[idx % BAR_COLOR_CLASSES.length])}
+                                                style={{ width: `${pct}%` }}
+                                            />
                                         </div>
                                     </div>
                                 );

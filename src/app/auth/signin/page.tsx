@@ -42,6 +42,11 @@ function SignInContent() {
                                 This Google account is not in the admin allowlist (`ADMINS` / `SUPPORT_ADMINS` / `READ_ONLY_ADMINS`).
                             </p>
                         ) : null}
+                        {error === "backend_auth" ? (
+                            <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                                Admin session was created, but backend token exchange failed. Verify `BACKEND_API_URL` (or `NEXT_PUBLIC_API_URL`) and server admin env (`ADMINS` + Google OAuth client IDs).
+                            </p>
+                        ) : null}
                         <Button
                             variant="outline"
                             className="h-12 text-base font-semibold"

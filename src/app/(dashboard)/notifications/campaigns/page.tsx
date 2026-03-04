@@ -6,7 +6,10 @@ import { Play, Square, CalendarClock, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
+import { getErrorMessage } from "@/lib/api-error";
 import { canManagePricingForRole, normalizeAdminRole } from "@/lib/rbac";
 import { type NotificationCampaign, type NotificationChannel, type NotificationTemplate, notificationService } from "@/services/notificationService";
 
@@ -56,7 +59,7 @@ export default function NotificationCampaignsPage() {
         } catch (error) {
             toast({
                 title: "Load failed",
-                description: error instanceof Error ? error.message : "Unable to load campaigns.",
+                description: getErrorMessage(error, "Unable to load campaigns."),
                 type: "error",
             });
         } finally {
@@ -130,7 +133,7 @@ export default function NotificationCampaignsPage() {
         } catch (error) {
             toast({
                 title: "Save failed",
-                description: error instanceof Error ? error.message : "Unable to save campaign.",
+                description: getErrorMessage(error, "Unable to save campaign."),
                 type: "error",
             });
         } finally {
@@ -145,7 +148,7 @@ export default function NotificationCampaignsPage() {
             toast({ title: "Triggered", description: `Queued ${res.deliveriesQueued} deliveries.`, type: "success" });
             await loadData();
         } catch (error) {
-            toast({ title: "Trigger failed", description: error instanceof Error ? error.message : "Unable to trigger.", type: "error" });
+            toast({ title: "Trigger failed", description: getErrorMessage(error, "Unable to trigger."), type: "error" });
         }
     };
 
@@ -156,7 +159,7 @@ export default function NotificationCampaignsPage() {
             toast({ title: "Cancelled", description: "Campaign cancelled.", type: "success" });
             await loadData();
         } catch (error) {
-            toast({ title: "Cancel failed", description: error instanceof Error ? error.message : "Unable to cancel.", type: "error" });
+            toast({ title: "Cancel failed", description: getErrorMessage(error, "Unable to cancel."), type: "error" });
         }
     };
 
@@ -174,7 +177,7 @@ export default function NotificationCampaignsPage() {
         } catch (error) {
             toast({
                 title: "Executor failed",
-                description: error instanceof Error ? error.message : "Unable to run scheduled campaigns.",
+                description: getErrorMessage(error, "Unable to run scheduled campaigns."),
                 type: "error",
             });
         } finally {
@@ -267,14 +270,12 @@ export default function NotificationCampaignsPage() {
                         <CardTitle>{form.id ? "Edit Campaign" : "New Campaign"}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                        <input
-                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                        <Input
                             placeholder="Campaign title"
                             value={form.title}
                             onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
                         />
-                        <select
-                            className="w-full rounded-xl border px-3 py-2 text-sm bg-background"
+                        <Select
                             value={form.templateId}
                             onChange={(e) => setForm((prev) => ({ ...prev, templateId: e.target.value }))}
                         >
@@ -284,35 +285,39 @@ export default function NotificationCampaignsPage() {
                                     {entry.name}
                                 </option>
                             ))}
-                        </select>
-                        <select
-                            className="w-full rounded-xl border px-3 py-2 text-sm bg-background"
+                        </Select>
+                        <Select
                             value={form.channel}
                             onChange={(e) => setForm((prev) => ({ ...prev, channel: e.target.value as NotificationChannel }))}
                         >
                             {["IN_APP", "PUSH", "EMAIL", "SMS", "WHATSAPP"].map((entry) => (
                                 <option key={entry} value={entry}>{entry}</option>
                             ))}
-                        </select>
-                        <input
-                            className="w-full rounded-xl border px-3 py-2 text-sm"
-                            placeholder="Audience (all / owners / staff)"
+                        </Select>
+                        <Select
                             value={form.audience}
                             onChange={(e) => setForm((prev) => ({ ...prev, audience: e.target.value }))}
-                        />
-                        <input
-                            className="w-full rounded-xl border px-3 py-2 text-sm"
-                            placeholder="Status (DRAFT/SCHEDULED/RUNNING/COMPLETED)"
+                        >
+                            <option value="all">All</option>
+                            <option value="owners">Owners</option>
+                            <option value="staff">Staff</option>
+                        </Select>
+                        <Select
                             value={form.status}
                             onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
-                        />
+                        >
+                            <option value="DRAFT">DRAFT</option>
+                            <option value="SCHEDULED">SCHEDULED</option>
+                            <option value="RUNNING">RUNNING</option>
+                            <option value="COMPLETED">COMPLETED</option>
+                            <option value="CANCELLED">CANCELLED</option>
+                        </Select>
                         <label className="text-xs text-muted-foreground flex items-center gap-2">
                             <CalendarClock className="h-4 w-4" />
                             Scheduled At
                         </label>
-                        <input
+                        <Input
                             type="datetime-local"
-                            className="w-full rounded-xl border px-3 py-2 text-sm"
                             value={form.scheduledAt}
                             onChange={(e) => setForm((prev) => ({ ...prev, scheduledAt: e.target.value }))}
                         />
@@ -332,4 +337,3 @@ export default function NotificationCampaignsPage() {
         </div>
     );
 }
-
