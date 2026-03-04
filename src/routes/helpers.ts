@@ -152,6 +152,145 @@ export const updateUserBasics = async (
 };
 
 type OrganizationRole = NonNullable<AppVariables['organizationRole']>;
+type AppModule =
+    | 'home'
+    | 'billing'
+    | 'inventory'
+    | 'accounts'
+    | 'reports'
+    | 'parties'
+    | 'settings'
+    | 'operations'
+    | 'staff';
+type AppAction =
+    | 'billing.create'
+    | 'billing.update'
+    | 'billing.delete'
+    | 'inventory.create'
+    | 'inventory.update'
+    | 'inventory.delete'
+    | 'party.create'
+    | 'party.update'
+    | 'party.delete'
+    | 'staff.invite'
+    | 'staff.remove'
+    | 'settings.update'
+    | 'subscription.checkout';
+
+const DEFAULT_ROLE_MODULE_ACCESS: Record<OrganizationRole, Record<AppModule, boolean>> = {
+    owner: {
+        home: true,
+        billing: true,
+        inventory: true,
+        accounts: true,
+        reports: true,
+        parties: true,
+        settings: true,
+        operations: true,
+        staff: true,
+    },
+    manager: {
+        home: true,
+        billing: true,
+        inventory: true,
+        accounts: true,
+        reports: true,
+        parties: true,
+        settings: true,
+        operations: true,
+        staff: false,
+    },
+    salesman: {
+        home: true,
+        billing: true,
+        inventory: true,
+        accounts: false,
+        reports: true,
+        parties: true,
+        settings: false,
+        operations: false,
+        staff: false,
+    },
+};
+
+const DEFAULT_ROLE_ACTION_ACCESS: Record<OrganizationRole, Record<AppAction, boolean>> = {
+    owner: {
+        'billing.create': true,
+        'billing.update': true,
+        'billing.delete': true,
+        'inventory.create': true,
+        'inventory.update': true,
+        'inventory.delete': true,
+        'party.create': true,
+        'party.update': true,
+        'party.delete': true,
+        'staff.invite': true,
+        'staff.remove': true,
+        'settings.update': true,
+        'subscription.checkout': true,
+    },
+    manager: {
+        'billing.create': true,
+        'billing.update': true,
+        'billing.delete': true,
+        'inventory.create': true,
+        'inventory.update': true,
+        'inventory.delete': true,
+        'party.create': true,
+        'party.update': true,
+        'party.delete': true,
+        'staff.invite': false,
+        'staff.remove': false,
+        'settings.update': true,
+        'subscription.checkout': false,
+    },
+    salesman: {
+        'billing.create': true,
+        'billing.update': true,
+        'billing.delete': false,
+        'inventory.create': true,
+        'inventory.update': true,
+        'inventory.delete': false,
+        'party.create': true,
+        'party.update': true,
+        'party.delete': false,
+        'staff.invite': false,
+        'staff.remove': false,
+        'settings.update': false,
+        'subscription.checkout': false,
+    },
+};
+
+const ACTION_MODULE_REQUIREMENT: Record<AppAction, AppModule | null> = {
+    'billing.create': 'billing',
+    'billing.update': 'billing',
+    'billing.delete': 'billing',
+    'inventory.create': 'inventory',
+    'inventory.update': 'inventory',
+    'inventory.delete': 'inventory',
+    'party.create': 'parties',
+    'party.update': 'parties',
+    'party.delete': 'parties',
+    'staff.invite': 'staff',
+    'staff.remove': 'staff',
+    'settings.update': 'settings',
+    'subscription.checkout': null,
+};
+
+const CAPABILITY_MODULE_MAP: Record<string, AppModule> = {
+    billing: 'billing',
+    pos: 'billing',
+    inventory: 'inventory',
+    parties: 'parties',
+    accounts: 'accounts',
+    cashbank: 'accounts',
+    expenses: 'accounts',
+    loans: 'accounts',
+    reports: 'reports',
+    settings: 'settings',
+    operations: 'operations',
+    staff: 'staff',
+};
 
 const DEFAULT_ROLE_CAPABILITIES: Record<OrganizationRole, readonly string[]> = {
     owner: ['*'],
@@ -208,6 +347,106 @@ const resolvePermissionOverride = (permissions: Record<string, boolean>, capabil
     return null;
 };
 
+const getRoleOverrideValue = (
+    overrides: Record<string, Record<string, boolean>> | null | undefined,
+    role: OrganizationRole,
+    key: string
+): boolean | null => {
+    const roleMap = overrides?.[role];
+    if (!roleMap) return null;
+    const value = roleMap[key];
+    return typeof value === 'boolean' ? value : null;
+};
+
+const resolveCapabilityModule = (capability: string): AppModule | null => {
+    const root = capability.split('.')[0] ?? '';
+    return CAPABILITY_MODULE_MAP[root] ?? null;
+};
+
+const resolveCapabilityAction = (capability: string, method: string): AppAction | null => {
+    const normalized = method.toUpperCase();
+    if (capability === 'billing.write') {
+        if (normalized === 'POST') return 'billing.create';
+        if (normalized === 'PUT' || normalized === 'PATCH') return 'billing.update';
+        if (normalized === 'DELETE') return 'billing.delete';
+    }
+    if (capability === 'inventory.write') {
+        if (normalized === 'POST') return 'inventory.create';
+        if (normalized === 'PUT' || normalized === 'PATCH') return 'inventory.update';
+        if (normalized === 'DELETE') return 'inventory.delete';
+    }
+    if (capability === 'parties.write') {
+        if (normalized === 'POST') return 'party.create';
+        if (normalized === 'PUT' || normalized === 'PATCH') return 'party.update';
+        if (normalized === 'DELETE') return 'party.delete';
+    }
+    if (capability === 'staff.write') {
+        if (normalized === 'POST') return 'staff.invite';
+        if (normalized === 'DELETE' || normalized === 'PUT' || normalized === 'PATCH') return 'staff.remove';
+    }
+    if (capability === 'settings.write') {
+        if (normalized === 'PUT' || normalized === 'PATCH' || normalized === 'POST' || normalized === 'DELETE') {
+            return 'settings.update';
+        }
+    }
+    return null;
+};
+
+export const isOrganizationModuleAllowed = (c: AppContext, module: AppModule) => {
+    const authRole = c.get('authRole');
+    if (authRole === 'SUPER_ADMIN') return true;
+
+    const activeBusinessId = c.get('activeBusinessId');
+    if (!activeBusinessId) return true;
+
+    const role = c.get('organizationRole');
+    if (!role) return false;
+
+    const moduleOverride = getRoleOverrideValue(c.get('organizationModuleOverrides'), role, module);
+    if (moduleOverride !== null) return moduleOverride;
+
+    return DEFAULT_ROLE_MODULE_ACCESS[role][module];
+};
+
+export const requireOrganizationModule = (c: AppContext, module: AppModule) => {
+    if (isOrganizationModuleAllowed(c, module)) return null;
+    return c.json({
+        ok: false,
+        message: `Permission denied for module "${module}".`,
+    }, 403);
+};
+
+export const isOrganizationActionAllowed = (c: AppContext, action: AppAction) => {
+    const authRole = c.get('authRole');
+    if (authRole === 'SUPER_ADMIN') return true;
+
+    const activeBusinessId = c.get('activeBusinessId');
+    if (!activeBusinessId) return true;
+
+    const role = c.get('organizationRole');
+    if (!role) return false;
+
+    const permissions = c.get('organizationPermissions') ?? {};
+    const permissionOverride = resolvePermissionOverride(permissions, action);
+    if (permissionOverride !== null) return permissionOverride;
+
+    const requiredModule = ACTION_MODULE_REQUIREMENT[action];
+    if (requiredModule && !isOrganizationModuleAllowed(c, requiredModule)) return false;
+
+    const actionOverride = getRoleOverrideValue(c.get('organizationActionOverrides'), role, action);
+    if (actionOverride !== null) return actionOverride;
+
+    return DEFAULT_ROLE_ACTION_ACCESS[role][action];
+};
+
+export const requireOrganizationAction = (c: AppContext, action: AppAction) => {
+    if (isOrganizationActionAllowed(c, action)) return null;
+    return c.json({
+        ok: false,
+        message: `Permission denied for action "${action}".`,
+    }, 403);
+};
+
 export const isOrganizationCapabilityAllowed = (c: AppContext, capability: string) => {
     const authRole = c.get('authRole');
     if (authRole === 'SUPER_ADMIN') return true;
@@ -217,14 +456,22 @@ export const isOrganizationCapabilityAllowed = (c: AppContext, capability: strin
 
     const role = c.get('organizationRole');
     if (!role) return false;
-    if (role === 'owner') return true;
 
     const permissions = c.get('organizationPermissions') ?? {};
     const override = resolvePermissionOverride(permissions, capability);
     if (override !== null) return override;
 
     const defaults = DEFAULT_ROLE_CAPABILITIES[role];
-    return defaults.some((granted) => capabilityMatches(granted, capability));
+    const roleAllowsCapability = defaults.some((granted) => capabilityMatches(granted, capability));
+    if (!roleAllowsCapability) return false;
+
+    const module = resolveCapabilityModule(capability);
+    if (module && !isOrganizationModuleAllowed(c, module)) return false;
+
+    const action = resolveCapabilityAction(capability, c.req.method);
+    if (action && !isOrganizationActionAllowed(c, action)) return false;
+
+    return true;
 };
 
 export const requireOrganizationCapability = (c: AppContext, capability: string) => {

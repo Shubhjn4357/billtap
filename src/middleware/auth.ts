@@ -1,7 +1,7 @@
 import type { Context, Next } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { verifySessionToken } from '../auth/tokens';
-import { businessMembers, businesses, users } from '../db/schema';
+import { businessMembers, businesses, businessSettings, users } from '../db/schema';
 import type { DrizzleClient } from '../db/client';
 import type { UserRow } from '../db/schema';
 
@@ -32,6 +32,8 @@ export type AppVariables = {
     effectiveOrganizationId: string | null;
     organizationRole: 'owner' | 'manager' | 'salesman' | null;
     organizationPermissions: Record<string, boolean>;
+    organizationActionOverrides: Record<string, Record<string, boolean>>;
+    organizationModuleOverrides: Record<string, Record<string, boolean>>;
     db: DrizzleClient;
 };
 
@@ -72,6 +74,63 @@ const getRequestedBusinessId = (c: AppContext): string | null => {
     const fromQuery = c.req.query('organizationId') ?? c.req.query('businessId');
     const value = (fromHeader ?? fromQuery ?? '').trim();
     return value || null;
+};
+
+const parseJsonLike = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return {};
+        try {
+            return JSON.parse(trimmed) as unknown;
+        } catch {
+            return {};
+        }
+    }
+    if (value && typeof value === 'object') return value;
+    return {};
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const parseRoleOverrides = (raw: unknown): Record<string, Record<string, boolean>> => {
+    const parsed = parseJsonLike(raw);
+    if (!isRecord(parsed)) return {};
+
+    const result: Record<string, Record<string, boolean>> = {};
+    for (const [role, roleValue] of Object.entries(parsed)) {
+        if (!isRecord(roleValue)) continue;
+        const mapped: Record<string, boolean> = {};
+        for (const [key, value] of Object.entries(roleValue)) {
+            if (typeof value === 'boolean') {
+                mapped[key] = value;
+            }
+        }
+        if (Object.keys(mapped).length > 0) {
+            result[role] = mapped;
+        }
+    }
+    return result;
+};
+
+const getRoleOverridesFromSecurity = async (
+    db: DrizzleClient,
+    businessId: string
+) => {
+    const rows = await db
+        .select({ dataJson: businessSettings.dataJson })
+        .from(businessSettings)
+        .where(and(
+            eq(businessSettings.businessId, businessId),
+            eq(businessSettings.section, 'SECURITY')
+        ))
+        .limit(1);
+
+    const security = (rows[0]?.dataJson ?? {}) as Record<string, unknown>;
+    return {
+        actionOverrides: parseRoleOverrides(security.role_action_overrides_json),
+        moduleOverrides: parseRoleOverrides(security.role_module_overrides_json),
+    };
 };
 
 const getAuthUserFromRequest = async (
@@ -165,6 +224,8 @@ const setAnonymousContext = (c: AppContext) => {
     c.set('effectiveOrganizationId', null);
     c.set('organizationRole', null);
     c.set('organizationPermissions', {});
+    c.set('organizationActionOverrides', {});
+    c.set('organizationModuleOverrides', {});
 };
 
 const resolveOrganizationContext = async (
@@ -176,6 +237,8 @@ const resolveOrganizationContext = async (
         return {
             organizationRole: null as AppVariables['organizationRole'],
             organizationPermissions: {} as Record<string, boolean>,
+            organizationActionOverrides: {} as Record<string, Record<string, boolean>>,
+            organizationModuleOverrides: {} as Record<string, Record<string, boolean>>,
             ownerUserId: user.id,
         };
     }
@@ -186,14 +249,20 @@ const resolveOrganizationContext = async (
         return {
             organizationRole: null as AppVariables['organizationRole'],
             organizationPermissions: {},
+            organizationActionOverrides: {} as Record<string, Record<string, boolean>>,
+            organizationModuleOverrides: {} as Record<string, Record<string, boolean>>,
             ownerUserId: user.id,
         };
     }
+
+    const roleOverrides = await getRoleOverridesFromSecurity(db, businessId);
 
     if (business.ownerUserId === user.id) {
         return {
             organizationRole: 'owner' as const,
             organizationPermissions: {} as Record<string, boolean>,
+            organizationActionOverrides: roleOverrides.actionOverrides,
+            organizationModuleOverrides: roleOverrides.moduleOverrides,
             ownerUserId: business.ownerUserId,
         };
     }
@@ -213,6 +282,8 @@ const resolveOrganizationContext = async (
         return {
             organizationRole: null as AppVariables['organizationRole'],
             organizationPermissions: {} as Record<string, boolean>,
+            organizationActionOverrides: roleOverrides.actionOverrides,
+            organizationModuleOverrides: roleOverrides.moduleOverrides,
             ownerUserId: business.ownerUserId,
         };
     }
@@ -220,6 +291,8 @@ const resolveOrganizationContext = async (
     return {
         organizationRole: membership.role === 'OWNER' ? 'manager' as const : 'salesman' as const,
         organizationPermissions: (membership.permissions ?? {}) as Record<string, boolean>,
+        organizationActionOverrides: roleOverrides.actionOverrides,
+        organizationModuleOverrides: roleOverrides.moduleOverrides,
         ownerUserId: business.ownerUserId,
     };
 };
@@ -241,6 +314,8 @@ const setAuthenticatedContext = async (
     c.set('effectiveOrganizationId', businessId);
     c.set('organizationRole', organizationContext.organizationRole);
     c.set('organizationPermissions', organizationContext.organizationPermissions);
+    c.set('organizationActionOverrides', organizationContext.organizationActionOverrides);
+    c.set('organizationModuleOverrides', organizationContext.organizationModuleOverrides);
 };
 
 export const optionalAuth = async (c: AppContext, next: Next) => {

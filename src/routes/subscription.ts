@@ -5,7 +5,12 @@ import { z } from 'zod';
 import { DEFAULT_PLAN_SEEDS } from '../constants/defaultPlans';
 import { discounts, offers, paymentIntents, plans, subscriptions } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { ensurePrimaryBusiness, getAccessibleBusiness, getRequestedBusinessId } from './helpers';
+import {
+    ensurePrimaryBusiness,
+    getAccessibleBusiness,
+    getRequestedBusinessId,
+    requireOrganizationAction,
+} from './helpers';
 
 const subscriptionRoute = new Hono<AppEnv>();
 
@@ -223,6 +228,8 @@ subscriptionRoute.post('/checkout', requireAuth, async (c) => {
         const db = c.get('db');
         const authUser = c.get('authUser');
         if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        const denied = requireOrganizationAction(c, 'subscription.checkout');
+        if (denied) return denied;
 
         await ensurePlansSeeded(db);
         const payload = checkoutSchema.parse(await c.req.json());

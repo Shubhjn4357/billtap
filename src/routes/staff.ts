@@ -9,6 +9,7 @@ import {
     getAccessibleBusiness,
     getActiveSubscription,
     getRequestedBusinessId,
+    requireOrganizationAction,
     requireOrganizationCapability,
 } from './helpers';
 import {
@@ -87,6 +88,8 @@ staffRoute.post('/', async (c) => {
             ?? await ensurePrimaryBusiness(db, authUser);
         const denied = requireOrganizationCapability(c, 'staff.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'staff.invite');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertModuleEnabled(business, 'staff');
         await assertStaffCreationAllowed(db, business.id, subscription);
@@ -150,6 +153,8 @@ staffRoute.patch('/:uid', async (c) => {
         ?? await ensurePrimaryBusiness(db, authUser);
     const denied = requireOrganizationCapability(c, 'staff.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'staff.remove');
+    if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertModuleEnabled(business, 'staff');
@@ -178,6 +183,8 @@ staffRoute.delete('/invite/:id', async (c) => {
         ?? await ensurePrimaryBusiness(db, authUser);
     const denied = requireOrganizationCapability(c, 'staff.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'staff.remove');
+    if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertModuleEnabled(business, 'staff');
@@ -195,6 +202,8 @@ staffRoute.delete('/:uid', async (c) => {
         ?? await ensurePrimaryBusiness(db, authUser);
     const denied = requireOrganizationCapability(c, 'staff.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'staff.remove');
+    if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertModuleEnabled(business, 'staff');

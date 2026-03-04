@@ -79,19 +79,19 @@ businessSettingsRoute.put('/:section', async (c) => {
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
-    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
-    const denied = requireOrganizationCapability(c, 'settings.write');
-    if (denied) return denied;
-
-    const subscription = await getActiveSubscription(db, business.id);
-    assertSubscriptionWriteAllowed(subscription);
-    assertModuleEnabled(business, 'settings');
-
     const section = c.req.param('section').toUpperCase();
     if (!isValidSettingsSection(section)) return c.json({ ok: false, message: 'Invalid settings section' }, 400);
 
     try {
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'settings.write');
+        if (denied) return denied;
+
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'settings');
+
         const body = z.object({ data: z.record(z.string(), z.unknown()) }).parse(await c.req.json());
         const now = new Date();
 
@@ -131,23 +131,27 @@ businessSettingsRoute.delete('/:section', async (c) => {
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
-    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
-    const denied = requireOrganizationCapability(c, 'settings.write');
-    if (denied) return denied;
-
-    const subscription = await getActiveSubscription(db, business.id);
-    assertSubscriptionWriteAllowed(subscription);
-    assertModuleEnabled(business, 'settings');
-
     const section = c.req.param('section').toUpperCase();
     if (!isValidSettingsSection(section)) return c.json({ ok: false, message: 'Invalid settings section' }, 400);
 
-    await db.update(businessSettings)
-        .set({ dataJson: {}, updatedAt: new Date() })
-        .where(and(eq(businessSettings.businessId, business.id), eq(businessSettings.section, section)));
+    try {
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'settings.write');
+        if (denied) return denied;
 
-    return c.json({ ok: true, message: 'Settings reset' });
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'settings');
+
+        await db.update(businessSettings)
+            .set({ dataJson: {}, updatedAt: new Date() })
+            .where(and(eq(businessSettings.businessId, business.id), eq(businessSettings.section, section)));
+
+        return c.json({ ok: true, message: 'Settings reset' });
+    } catch (err) {
+        return c.json({ ok: false, message: err instanceof Error ? err.message : 'Failed to reset settings.' }, 400);
+    }
 });
 
 export default businessSettingsRoute;

@@ -17,6 +17,7 @@ import {
     getAccessibleBusiness,
     getActiveSubscription,
     getRequestedBusinessId,
+    requireOrganizationAction,
     requireOrganizationCapability,
 } from './helpers';
 import {
@@ -224,6 +225,8 @@ transactionsRoute.post('/', async (c) => {
         const business = await ensurePrimaryBusiness(db, authUser);
         const denied = requireOrganizationCapability(c, 'billing.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'billing.create');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'GST_INVOICES');
@@ -420,10 +423,12 @@ transactionsRoute.get('/', async (c) => {
     const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
     const start = c.req.query('start') ?? c.req.query('from');
     const end = c.req.query('end') ?? c.req.query('to');
+    const includeDeleted = (c.req.query('includeDeleted') ?? '').trim().toLowerCase() === 'true';
     const typeQuery = (c.req.query('type') ?? '').trim().toUpperCase();
     const statusQuery = (c.req.query('status') ?? '').trim().toUpperCase();
 
     const whereFilters = [eq(invoices.businessId, business.id)];
+    if (!includeDeleted) whereFilters.push(eq(invoices.isDeleted, false));
     if (start) whereFilters.push(gte(invoices.invoiceDate, new Date(start)));
     if (end) whereFilters.push(lte(invoices.invoiceDate, new Date(end)));
 
@@ -626,6 +631,8 @@ transactionsRoute.post('/reminders/run', async (c) => {
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
         const denied = requireOrganizationCapability(c, 'billing.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'billing.update');
+        if (deniedAction) return deniedAction;
 
         const payload = reminderRunSchema.parse(await c.req.json().catch(() => ({})));
         const limit = payload.limit ?? 100;
@@ -675,6 +682,7 @@ transactionsRoute.post('/reminders/run', async (c) => {
             .from(invoices)
             .where(and(
                 eq(invoices.businessId, business.id),
+                eq(invoices.isDeleted, false),
                 ne(invoices.paymentStatus, 'PAID'),
                 lte(invoices.dueDate, now),
             ))
@@ -720,6 +728,89 @@ transactionsRoute.post('/reminders/run', async (c) => {
     }
 });
 
+transactionsRoute.delete('/:id', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        const denied = requireOrganizationCapability(c, 'billing.write');
+        if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'billing.delete');
+        if (deniedAction) return deniedAction;
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertFeatureFlag(subscription, 'GST_INVOICES');
+        assertModuleEnabled(business, 'billing');
+
+        const id = c.req.param('id');
+        const invoiceRows = await db
+            .select()
+            .from(invoices)
+            .where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)))
+            .limit(1);
+        const invoice = invoiceRows[0];
+        if (!invoice) return c.json({ ok: false, message: 'Transaction not found.' }, 404);
+        if (invoice.isDeleted) return c.json({ ok: false, message: 'Transaction already deleted.' }, 400);
+
+        const transactionType = deriveTransactionType(invoice);
+        const isNonPostingDoc = invoice.invoiceType === 'ESTIMATE' || invoice.invoiceType === 'PROFORMA';
+        const now = new Date();
+
+        await db.transaction(async (tx) => {
+            if (!isNonPostingDoc) {
+                const lines = await tx
+                    .select()
+                    .from(invoiceItems)
+                    .where(eq(invoiceItems.invoiceId, id));
+                const delta = resolveTypeDelta(transactionType);
+                for (const line of lines) {
+                    if (!line.itemId) continue;
+                    const itemRows = await tx
+                        .select()
+                        .from(items)
+                        .where(and(eq(items.id, line.itemId), eq(items.businessId, business.id)))
+                        .limit(1);
+                    const item = itemRows[0];
+                    if (!item) continue;
+                    const quantity = Number(line.quantity ?? 0);
+                    const currentStock = Number(item.stock ?? 0);
+                    const nextStock = currentStock - (delta * quantity);
+
+                    await tx
+                        .update(items)
+                        .set({ stock: nextStock, updatedAt: now })
+                        .where(and(eq(items.id, line.itemId), eq(items.businessId, business.id)));
+
+                    await tx.insert(inventoryMovements).values({
+                        id: `mov_${nanoid(16)}`,
+                        businessId: business.id,
+                        itemId: line.itemId,
+                        movementType: delta >= 0 ? 'OUT' : 'IN',
+                        quantity,
+                        balanceAfter: nextStock,
+                        reason: `DELETE_${transactionType}`,
+                        referenceId: id,
+                        createdByUserId: authUser.id,
+                        createdAt: now,
+                    });
+                }
+            }
+
+            await tx
+                .update(invoices)
+                .set({ isDeleted: true, updatedAt: now })
+                .where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
+        });
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete transaction.' }, 400);
+    }
+});
+
 transactionsRoute.get('/:id', async (c) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
@@ -739,7 +830,7 @@ transactionsRoute.get('/:id', async (c) => {
     const rows = await db
         .select()
         .from(invoices)
-        .where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)))
+        .where(and(eq(invoices.id, id), eq(invoices.businessId, business.id), eq(invoices.isDeleted, false)))
         .limit(1);
 
     if (!rows[0]) {
@@ -791,6 +882,8 @@ transactionsRoute.patch('/:id/payment', async (c) => {
         }
         const denied = requireOrganizationCapability(c, 'billing.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'billing.update');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'GST_INVOICES');
@@ -802,7 +895,7 @@ transactionsRoute.patch('/:id/payment', async (c) => {
         const currentRows = await db
             .select()
             .from(invoices)
-            .where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)))
+            .where(and(eq(invoices.id, id), eq(invoices.businessId, business.id), eq(invoices.isDeleted, false)))
             .limit(1);
 
         const current = currentRows[0];
@@ -843,13 +936,19 @@ transactionsRoute.post('/:id/e-invoice/generate', async (c) => {
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
         const denied = requireOrganizationCapability(c, 'billing.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'billing.update');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'E_INVOICE');
         assertModuleEnabled(business, 'billing');
 
         const id = c.req.param('id');
-        const rows = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id))).limit(1);
+        const rows = await db.select().from(invoices).where(and(
+            eq(invoices.id, id),
+            eq(invoices.businessId, business.id),
+            eq(invoices.isDeleted, false),
+        )).limit(1);
         const invoice = rows[0];
         if (!invoice) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
 
@@ -883,6 +982,8 @@ transactionsRoute.post('/:id/e-invoice/cancel', async (c) => {
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
         const denied = requireOrganizationCapability(c, 'billing.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'billing.update');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'E_INVOICE');
@@ -890,10 +991,20 @@ transactionsRoute.post('/:id/e-invoice/cancel', async (c) => {
 
         complianceActionSchema.parse(await c.req.json().catch(() => ({})));
         const id = c.req.param('id');
+        const rows = await db.select().from(invoices).where(and(
+            eq(invoices.id, id),
+            eq(invoices.businessId, business.id),
+            eq(invoices.isDeleted, false),
+        )).limit(1);
+        if (!rows[0]) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
         await db.update(invoices).set({
             eInvoiceStatus: 'CANCELLED',
             updatedAt: new Date(),
-        }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
+        }).where(and(
+            eq(invoices.id, id),
+            eq(invoices.businessId, business.id),
+            eq(invoices.isDeleted, false),
+        ));
 
         return c.json({
             ok: true,
@@ -920,7 +1031,11 @@ transactionsRoute.get('/:id/e-invoice/status', async (c) => {
     assertModuleEnabled(business, 'billing');
 
     const id = c.req.param('id');
-    const rows = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id))).limit(1);
+    const rows = await db.select().from(invoices).where(and(
+        eq(invoices.id, id),
+        eq(invoices.businessId, business.id),
+        eq(invoices.isDeleted, false),
+    )).limit(1);
     const invoice = rows[0];
     if (!invoice) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
 
@@ -946,13 +1061,19 @@ transactionsRoute.post('/:id/e-way-bill/generate', async (c) => {
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
         const denied = requireOrganizationCapability(c, 'billing.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'billing.update');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'E_WAY_BILL');
         assertModuleEnabled(business, 'billing');
 
         const id = c.req.param('id');
-        const rows = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id))).limit(1);
+        const rows = await db.select().from(invoices).where(and(
+            eq(invoices.id, id),
+            eq(invoices.businessId, business.id),
+            eq(invoices.isDeleted, false),
+        )).limit(1);
         const invoice = rows[0];
         if (!invoice) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
 
@@ -983,6 +1104,8 @@ transactionsRoute.post('/:id/e-way-bill/cancel', async (c) => {
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
         const denied = requireOrganizationCapability(c, 'billing.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'billing.update');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'E_WAY_BILL');
@@ -990,10 +1113,20 @@ transactionsRoute.post('/:id/e-way-bill/cancel', async (c) => {
 
         complianceActionSchema.parse(await c.req.json().catch(() => ({})));
         const id = c.req.param('id');
+        const rows = await db.select().from(invoices).where(and(
+            eq(invoices.id, id),
+            eq(invoices.businessId, business.id),
+            eq(invoices.isDeleted, false),
+        )).limit(1);
+        if (!rows[0]) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
         await db.update(invoices).set({
             eWayBillNumber: null,
             updatedAt: new Date(),
-        }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
+        }).where(and(
+            eq(invoices.id, id),
+            eq(invoices.businessId, business.id),
+            eq(invoices.isDeleted, false),
+        ));
 
         return c.json({ ok: true, cancelledAt: new Date().toISOString() });
     } catch (error) {
@@ -1015,7 +1148,11 @@ transactionsRoute.get('/:id/e-way-bill/status', async (c) => {
     assertModuleEnabled(business, 'billing');
 
     const id = c.req.param('id');
-    const rows = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id))).limit(1);
+    const rows = await db.select().from(invoices).where(and(
+        eq(invoices.id, id),
+        eq(invoices.businessId, business.id),
+        eq(invoices.isDeleted, false),
+    )).limit(1);
     const invoice = rows[0];
     if (!invoice) return c.json({ ok: false, message: 'Invoice not found.' }, 404);
 

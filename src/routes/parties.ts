@@ -9,6 +9,7 @@ import {
     getAccessibleBusiness,
     getActiveSubscription,
     getRequestedBusinessId,
+    requireOrganizationAction,
     requireOrganizationCapability,
 } from './helpers';
 import {
@@ -134,8 +135,21 @@ partiesRoute.post('/', async (c) => {
         assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
         assertModuleEnabled(business, 'parties');
         const payload = createPartySchema.parse(await c.req.json());
+        const normalizedId = payload.id?.trim() ?? null;
+        let action: 'party.create' | 'party.update' = 'party.create';
+        if (normalizedId) {
+            const existingRows = await db.select({ id: parties.id }).from(parties).where(and(
+                eq(parties.id, normalizedId),
+                eq(parties.businessId, business.id),
+            )).limit(1);
+            if (existingRows[0]) {
+                action = 'party.update';
+            }
+        }
+        const deniedAction = requireOrganizationAction(c, action);
+        if (deniedAction) return deniedAction;
         const now = new Date();
-        const id = payload.id?.trim() || `pty_${nanoid(18)}`;
+        const id = normalizedId || `pty_${nanoid(18)}`;
 
         await db.insert(parties).values({
             id,
@@ -183,6 +197,8 @@ partiesRoute.post('/:id/restore', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'parties.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'party.update');
+    if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
@@ -204,6 +220,8 @@ partiesRoute.delete('/:id/permanent', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'parties.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'party.delete');
+    if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');
@@ -229,6 +247,8 @@ partiesRoute.patch('/:id', async (c) => {
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
         const denied = requireOrganizationCapability(c, 'parties.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'party.update');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'PARTY_MANAGEMENT');

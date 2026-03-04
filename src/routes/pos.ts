@@ -2,7 +2,13 @@ import { Hono } from 'hono';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { invoices, invoiceItems, items, subscriptions, planUsage } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { getAccessibleBusiness, getRequestedBusinessId, getActiveSubscription, requireOrganizationCapability } from './helpers';
+import {
+    getAccessibleBusiness,
+    getRequestedBusinessId,
+    getActiveSubscription,
+    requireOrganizationAction,
+    requireOrganizationCapability,
+} from './helpers';
 import { assertAllowedGstRate, assertFeatureFlag, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
@@ -45,6 +51,8 @@ posRoute.post('/sale', async (c) => {
 
     const denied = requireOrganizationCapability(c, 'pos.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'billing.create');
+    if (deniedAction) return deniedAction;
 
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);

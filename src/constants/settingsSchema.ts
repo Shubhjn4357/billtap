@@ -72,6 +72,8 @@ export const SETTINGS_SCHEMA: Record<SettingsSection, SettingsFieldDefinition[]>
     SECURITY: [
         { key: 'enable_passcode', label: 'Enable Passcode', type: 'boolean', default: false },
         { key: 'enable_biometric', label: 'Enable Biometric', type: 'boolean', default: false },
+        { key: 'role_action_overrides_json', label: 'Role Action Overrides JSON', type: 'string', default: '{}' },
+        { key: 'role_module_overrides_json', label: 'Role Module Overrides JSON', type: 'string', default: '{}' },
     ],
     MULTI_FIRM: [
         { key: 'multi_firm_enabled', label: 'Enable Multi Firm', type: 'boolean', default: false },
@@ -105,6 +107,8 @@ export const SETTINGS_SCHEMA: Record<SettingsSection, SettingsFieldDefinition[]>
         { key: 'additional_item_fields_enabled', label: 'Additional Item Fields', type: 'boolean', default: false },
         { key: 'item_custom_fields_enabled', label: 'Item Custom Fields', type: 'boolean', default: false },
         { key: 'item_description_enabled', label: 'Item Description', type: 'boolean', default: true },
+        { key: 'custom_item_categories_json', label: 'Custom Item Categories JSON', type: 'string', default: '[]' },
+        { key: 'custom_item_units_json', label: 'Custom Item Units JSON', type: 'string', default: '[]' },
     ],
     PARTY_SETTINGS: [
         { key: 'show_gstin_field', label: 'Show GSTIN Field', type: 'boolean', default: true },

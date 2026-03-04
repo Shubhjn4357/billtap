@@ -9,6 +9,7 @@ import {
     getAccessibleBusiness,
     getActiveSubscription,
     getRequestedBusinessId,
+    requireOrganizationAction,
     requireOrganizationCapability,
 } from './helpers';
 import {
@@ -184,6 +185,8 @@ itemsRoute.post('/:id/restore', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'inventory.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'inventory.update');
+    if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
@@ -205,6 +208,8 @@ itemsRoute.delete('/:id/permanent', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'inventory.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'inventory.delete');
+    if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
@@ -234,10 +239,23 @@ itemsRoute.post('/', async (c) => {
         assertFeatureFlag(subscription, 'STOCK_MODULE');
         assertModuleEnabled(business, 'stock');
         const payload = upsertItemSchema.parse(await c.req.json());
+        const normalizedId = payload.id?.trim() ?? null;
+        let action: 'inventory.create' | 'inventory.update' = 'inventory.create';
+        if (normalizedId) {
+            const existingRows = await db.select({ id: items.id }).from(items).where(and(
+                eq(items.id, normalizedId),
+                eq(items.businessId, business.id),
+            )).limit(1);
+            if (existingRows[0]) {
+                action = 'inventory.update';
+            }
+        }
+        const deniedAction = requireOrganizationAction(c, action);
+        if (deniedAction) return deniedAction;
         if (payload.gstPercentage !== undefined) {
             assertAllowedGstRate(payload.gstPercentage);
         }
-        const id = payload.id?.trim() || `itm_${nanoid(18)}`;
+        const id = normalizedId || `itm_${nanoid(18)}`;
         const now = new Date();
 
         await db.insert(items).values({
@@ -321,6 +339,8 @@ itemsRoute.patch('/:id', async (c) => {
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
         const denied = requireOrganizationCapability(c, 'inventory.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'inventory.update');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'STOCK_MODULE');
@@ -370,6 +390,8 @@ itemsRoute.post('/:id/adjust', async (c) => {
         if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
         const denied = requireOrganizationCapability(c, 'inventory.write');
         if (denied) return denied;
+        const deniedAction = requireOrganizationAction(c, 'inventory.update');
+        if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
         assertFeatureFlag(subscription, 'STOCK_MODULE');
@@ -432,6 +454,8 @@ itemsRoute.delete('/:id', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'inventory.write');
     if (denied) return denied;
+    const deniedAction = requireOrganizationAction(c, 'inventory.delete');
+    if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
