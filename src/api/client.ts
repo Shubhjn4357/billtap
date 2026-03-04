@@ -2,12 +2,24 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosR
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.vahi.app';
+const normalizeApiBaseUrl = (value: string): string => {
+    const trimmed = value.trim().replace(/\/+$/, '');
+    return trimmed.toLowerCase().endsWith('/api') ? trimmed.slice(0, -4) : trimmed;
+};
+
+const rawApiBaseUrl =
+    process.env.EXPO_PUBLIC_API_BASE_URL ??
+    process.env.EXPO_PUBLIC_API_URL ??
+    'https://api.vahi.app';
+
+const API_BASE_URL = normalizeApiBaseUrl(rawApiBaseUrl);
 const TOKEN_KEY = 'vahi_auth_token';
 const BUSINESS_ID_KEY = 'vahi_business_id';
 
 let _token: string | null = null;
 let _businessId: string | null = null;
+
+export const getApiBaseUrl = (): string => API_BASE_URL;
 
 export async function getStoredToken(): Promise<string | null> {
     if (_token) return _token;

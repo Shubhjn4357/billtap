@@ -19,6 +19,7 @@ import {
     getNativeGoogleErrorMessage,
     signInWithNativeGoogle,
 } from '../../utils/googleNativeSignIn';
+import { getApiBaseUrl } from '../../api/client';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 
 const APP_LOGO = require('../../../assets/images/icon.png');
@@ -80,6 +81,14 @@ export default function LoginScreen() {
         await setAuth(response);
     };
 
+    const toReadableSignInError = (error: unknown): string => {
+        const message = getNativeGoogleErrorMessage(error);
+        if (message.toLowerCase().includes('network error')) {
+            return `Cannot reach API at ${getApiBaseUrl()}. Check EXPO_PUBLIC_API_BASE_URL and internet/VPN/firewall.`;
+        }
+        return message;
+    };
+
     const handleGoogleSignIn = async () => {
         if (Platform.OS === 'web') {
             Alert.alert(
@@ -104,7 +113,7 @@ export default function LoginScreen() {
             const result = await signInWithNativeGoogle();
             await exchangeIdToken(result.idToken);
         } catch (error) {
-            Alert.alert('Sign in failed', getNativeGoogleErrorMessage(error));
+            Alert.alert('Sign in failed', toReadableSignInError(error));
         } finally {
             setLoading(false);
         }
