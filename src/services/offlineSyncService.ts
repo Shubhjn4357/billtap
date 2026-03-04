@@ -35,6 +35,7 @@ type QueueMutation =
     | (QueueMutationBase & { type: 'archive_party'; payload: { id: string } })
     | (QueueMutationBase & { type: 'create_invoice'; payload: Record<string, unknown> & { localId?: string } })
     | (QueueMutationBase & { type: 'record_invoice_payment'; payload: { invoiceId: string; paidAmount?: number; paymentMode?: string; date?: string } })
+    | (QueueMutationBase & { type: 'delete_invoice'; payload: { id: string } })
     | (QueueMutationBase & { type: 'update_settings_section'; payload: { section: string; data: Record<string, unknown> } })
     | (QueueMutationBase & { type: 'create_expense'; payload: Record<string, unknown> & { localId?: string } })
     | (QueueMutationBase & { type: 'create_loan'; payload: Record<string, unknown> & { localId?: string } })
@@ -52,6 +53,7 @@ type EnqueueMutation =
     | { type: 'archive_party'; payload: { id: string } }
     | { type: 'create_invoice'; payload: Record<string, unknown> & { localId?: string } }
     | { type: 'record_invoice_payment'; payload: { invoiceId: string; paidAmount?: number; paymentMode?: string; date?: string } }
+    | { type: 'delete_invoice'; payload: { id: string } }
     | { type: 'update_settings_section'; payload: { section: string; data: Record<string, unknown> } }
     | { type: 'create_expense'; payload: Record<string, unknown> & { localId?: string } }
     | { type: 'create_loan'; payload: Record<string, unknown> & { localId?: string } }
@@ -266,6 +268,9 @@ const applyMutation = async (mutation: QueueMutation): Promise<void> => {
                     date: mutation.payload.date,
                 }
             );
+            return;
+        case 'delete_invoice':
+            await api.delete(`/api/transactions/${encodeURIComponent(mutation.payload.id)}`);
             return;
         case 'update_settings_section':
             await api.put(`/api/settings/${encodeURIComponent(mutation.payload.section)}`, {
@@ -503,6 +508,15 @@ class OfflineSyncService {
     async removeCachedInvoice(id: string): Promise<void> {
         const current = await this.getCachedInvoices();
         await this.setCachedInvoices(current.filter((entry) => entry.id !== id));
+    }
+
+    async archiveCachedInvoice(id: string): Promise<void> {
+        const current = await this.getCachedInvoices();
+        await this.setCachedInvoices(
+            current.map((entry) =>
+                entry.id === id ? { ...entry, isDeleted: true, updatedAt: new Date().toISOString() } : entry
+            )
+        );
     }
 
     async updateCachedInvoicePayment(

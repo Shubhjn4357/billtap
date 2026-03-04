@@ -1,8 +1,10 @@
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 
 const REPORT_CARDS = [
+    { title: 'Screen Directory', subtitle: 'Open all screens and flows', route: '/(main)/more/screen-directory' },
     { title: 'Profit and Loss', subtitle: 'Income, expense and net result', route: '/(main)/more/reports/pnl' },
     { title: 'GST Summary', subtitle: 'Slab-wise taxable turnover and tax', route: '/(main)/reports/gst-summary' },
     { title: 'Trial Balance', subtitle: 'Debit/Credit balance check', route: '/(main)/reports/trial-balance' },

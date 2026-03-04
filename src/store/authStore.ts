@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { api, storeToken, clearToken, storeBusinessId } from '../api/client';
+import * as SecureStore from 'expo-secure-store';
+import {
+    api,
+    storeToken,
+    clearToken,
+    storeBusinessId,
+    isUnauthorizedError,
+    toUserMessage,
+} from '../api/client';
 import type { User, Business, Subscription } from '../types/domain';
 import type { AuthResponse } from '../types/api';
 
@@ -10,6 +18,7 @@ interface AuthState {
     subscription: Subscription | null;
     organizationRole: 'owner' | 'manager' | 'salesman' | 'staff';
     isAuthenticated: boolean;
+    isBootstrapped: boolean;
     isLoading: boolean;
     error: string | null;
 }
@@ -20,12 +29,22 @@ interface AuthActions {
     setBusiness: (business: Business | null) => void;
     setSubscription: (subscription: Subscription | null) => void;
     refreshUser: () => Promise<void>;
+    restoreCachedSession: () => Promise<void>;
+    markBootstrapped: () => void;
     signOut: () => Promise<void>;
     clearError: () => void;
 }
 
 type LegacyProfilePayload = Record<string, unknown>;
 type OrganizationPayload = Record<string, unknown>;
+type AuthSnapshot = {
+    user: User | null;
+    business: Business | null;
+    subscription: Subscription | null;
+    organizationRole: AuthState['organizationRole'];
+};
+
+const AUTH_SNAPSHOT_KEY = 'vahi_auth_snapshot_v1';
 
 const isoNow = () => new Date().toISOString();
 
@@ -44,6 +63,26 @@ const normalizeOrganizationRole = (value: unknown): AuthState['organizationRole'
         return role;
     }
     return 'owner';
+};
+
+const persistSnapshot = async (snapshot: AuthSnapshot) => {
+    await SecureStore.setItemAsync(AUTH_SNAPSHOT_KEY, JSON.stringify(snapshot));
+};
+
+const readSnapshot = async (): Promise<AuthSnapshot | null> => {
+    const raw = await SecureStore.getItemAsync(AUTH_SNAPSHOT_KEY);
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw) as AuthSnapshot;
+        return parsed;
+    } catch {
+        await SecureStore.deleteItemAsync(AUTH_SNAPSHOT_KEY);
+        return null;
+    }
+};
+
+const clearSnapshot = async () => {
+    await SecureStore.deleteItemAsync(AUTH_SNAPSHOT_KEY);
 };
 
 const mapLegacyProfileToUser = (profile: LegacyProfilePayload): User => {
@@ -144,6 +183,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         subscription: null,
         organizationRole: 'owner',
         isAuthenticated: false,
+        isBootstrapped: false,
         isLoading: false,
         error: null,
 
@@ -171,6 +211,13 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                     };
                 }
                 state.organizationRole = normalizeOrganizationRole((res.user as Record<string, unknown> | undefined)?.role);
+                state.isBootstrapped = true;
+            });
+            await persistSnapshot({
+                user: get().user,
+                business: get().business,
+                subscription: get().subscription,
+                organizationRole: get().organizationRole,
             });
             await get().refreshUser();
         },
@@ -187,7 +234,8 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                 }
 
                 const user = mapLegacyProfileToUser(profileRes.user);
-                let business: Business | null = null;
+                const existingBusiness = get().business;
+                let business: Business | null = existingBusiness;
                 try {
                     const orgRes = await api.get<{ ok: boolean; organization?: OrganizationPayload }>('/api/organizations/current');
                     if (orgRes.ok && orgRes.organization) {
@@ -195,7 +243,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                         await storeBusinessId(business.id);
                     }
                 } catch {
-                    business = null;
+                    business = existingBusiness;
                 }
 
                 const subscription = mapLegacyProfileToSubscription(profileRes.user, business?.id ?? null);
@@ -207,28 +255,79 @@ export const useAuthStore = create<AuthState & AuthActions>()(
                     state.subscription = subscription;
                     state.organizationRole = role;
                     state.isAuthenticated = true;
+                    state.isBootstrapped = true;
                     state.error = null;
                 });
-            } catch {
-                await clearToken();
+                await persistSnapshot({
+                    user,
+                    business,
+                    subscription,
+                    organizationRole: role,
+                });
+            } catch (error) {
+                if (isUnauthorizedError(error)) {
+                    await clearToken();
+                    await clearSnapshot();
+                    set((state) => {
+                        state.user = null;
+                        state.business = null;
+                        state.subscription = null;
+                        state.organizationRole = 'owner';
+                        state.isAuthenticated = false;
+                        state.isBootstrapped = true;
+                        state.error = null;
+                    });
+                    return;
+                }
+
+                const snapshot = await readSnapshot();
                 set((state) => {
-                    state.user = null;
-                    state.business = null;
-                    state.subscription = null;
-                    state.organizationRole = 'owner';
-                    state.isAuthenticated = false;
+                    if (snapshot) {
+                        state.user = snapshot.user;
+                        state.business = snapshot.business;
+                        state.subscription = snapshot.subscription;
+                        state.organizationRole = snapshot.organizationRole;
+                    }
+                    state.isAuthenticated = Boolean(snapshot ?? state.user);
+                    state.isBootstrapped = true;
+                    state.error = toUserMessage(error, 'Unable to refresh profile right now. Working in offline mode.');
                 });
             }
         },
 
+        restoreCachedSession: async () => {
+            const snapshot = await readSnapshot();
+            if (snapshot) {
+                set((state) => {
+                    state.user = snapshot.user;
+                    state.business = snapshot.business;
+                    state.subscription = snapshot.subscription;
+                    state.organizationRole = snapshot.organizationRole;
+                    state.isAuthenticated = Boolean(snapshot.user);
+                    state.error = null;
+                    state.isBootstrapped = true;
+                });
+                return;
+            }
+            set((state) => {
+                state.isBootstrapped = true;
+            });
+        },
+
+        markBootstrapped: () => set((state) => {
+            state.isBootstrapped = true;
+        }),
+
         signOut: async () => {
             await clearToken();
+            await clearSnapshot();
             set((state) => {
                 state.user = null;
                 state.business = null;
                 state.subscription = null;
                 state.organizationRole = 'owner';
                 state.isAuthenticated = false;
+                state.isBootstrapped = true;
                 state.error = null;
             });
         },
@@ -242,5 +341,6 @@ export const useUser = () => useAuthStore((s) => s.user);
 export const useBusiness = () => useAuthStore((s) => s.business);
 export const useSubscription = () => useAuthStore((s) => s.subscription);
 export const useIsAuthenticated = () => useAuthStore((s) => s.isAuthenticated);
+export const useIsBootstrapped = () => useAuthStore((s) => s.isBootstrapped);
 export const useFeatureFlags = () => useAuthStore((s) => s.subscription?.featureFlagsEnabled ?? []);
 export const useOrganizationRole = () => useAuthStore((s) => s.organizationRole);

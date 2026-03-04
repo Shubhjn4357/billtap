@@ -30,6 +30,7 @@ export default function MoreScreen() {
         {
             title: 'Main',
             items: [
+                { label: 'Screen Directory', route: '/(main)/more/screen-directory', visible: true },
                 { label: 'Parties', route: '/(main)/parties', visible: canAccessModule(role, 'parties', subscription) },
                 { label: 'Party Recycle Bin', route: '/(main)/parties/recycle-bin', visible: canAccessModule(role, 'parties', subscription) },
                 { label: 'Item Recycle Bin', route: '/(main)/inventory/recycle-bin', visible: canAccessModule(role, 'inventory', subscription) },
@@ -50,6 +51,7 @@ export default function MoreScreen() {
             title: 'Control',
             items: [
                 { label: 'Staff and Roles', route: '/(main)/more/staff', visible: canAccessModule(role, 'staff', subscription) },
+                { label: 'Role Access Control', route: '/(main)/more/role-access', visible: role === 'owner' && canAccessModule(role, 'settings', subscription) },
                 { label: 'Operations', route: '/(main)/more/operations', visible: canAccessModule(role, 'operations', subscription) },
                 { label: 'Announcements', route: '/(main)/more/announcements', visible: canAccessModule(role, 'operations', subscription) },
                 { label: 'Godowns', route: '/(main)/more/godowns', visible: featureFlags.includes(FeatureFlag.MULTI_GODOWN) },
@@ -60,6 +62,7 @@ export default function MoreScreen() {
             title: 'Business',
             items: [
                 { label: 'Settings', route: '/(main)/more/settings', visible: canAccessModule(role, 'settings', subscription) },
+                { label: 'Item Masters', route: '/(main)/more/item-masters', visible: canAccessModule(role, 'inventory', subscription) },
                 { label: 'Thermal Printer Profiles', route: '/(main)/more/thermal-printers', visible: canAccessModule(role, 'settings', subscription) },
                 { label: 'Subscription', route: '/(main)/more/subscription', visible: true },
             ],

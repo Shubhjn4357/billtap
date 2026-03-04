@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
+    Modal,
     Pressable,
     StyleSheet,
     Text,
@@ -69,16 +70,15 @@ export default function BillingScreen() {
     });
 
     const invoices = data?.data ?? [];
+    const [createSheetOpen, setCreateSheetOpen] = useState(false);
 
     return (
-        <SafeAreaView style={s.safe} edges={['top']}>
+        <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
             <View style={s.header}>
                 <Text style={s.title}>Billing</Text>
-                {showPos ? (
-                    <Pressable style={s.posBtn} onPress={() => router.push('/(main)/billing/pos')}>
-                        <Text style={s.posBtnText}>POS</Text>
-                    </Pressable>
-                ) : null}
+                <Pressable onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
+                    <Text style={[s.headerAction, { color: colors.primary }]}>All Screens</Text>
+                </Pressable>
             </View>
 
             <FlatList
@@ -87,18 +87,6 @@ export default function BillingScreen() {
                 renderItem={({ item }) => <InvoiceRow invoice={item} colors={colors} />}
                 ListHeaderComponent={
                     <>
-                        <View style={s.createRow}>
-                            {CREATE_OPTIONS.map((option) => (
-                                <Pressable
-                                    key={option.label}
-                                    style={({ pressed }) => [s.createBtn, pressed && { opacity: 0.75 }]}
-                                    onPress={() => router.push(option.route as Parameters<typeof router.push>[0])}
-                                >
-                                    <Text style={s.createBtnText}>{option.label}</Text>
-                                </Pressable>
-                            ))}
-                        </View>
-
                         <View style={s.tabs}>
                             {TAB_OPTIONS.map((tab) => {
                                 const selected = activeTab === tab.key;
@@ -128,6 +116,46 @@ export default function BillingScreen() {
                     )
                 }
             />
+
+            <Pressable style={s.fab} onPress={() => setCreateSheetOpen(true)}>
+                <Text style={s.fabText}>+</Text>
+            </Pressable>
+
+            <Modal
+                visible={createSheetOpen}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setCreateSheetOpen(false)}
+            >
+                <View style={s.modalRoot}>
+                    <Pressable style={s.backdrop} onPress={() => setCreateSheetOpen(false)} />
+                    <View style={[s.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={s.sheetHeader}>
+                            <Text style={[s.sheetTitle, { color: colors.text }]}>Create Transaction</Text>
+                            <Pressable onPress={() => setCreateSheetOpen(false)}>
+                                <Text style={[s.sheetClose, { color: colors.primary }]}>Close</Text>
+                            </Pressable>
+                        </View>
+                        <View style={s.sheetGrid}>
+                            {CREATE_OPTIONS.map((option) => {
+                                if (!showPos && option.route.endsWith('/billing/pos')) return null;
+                                return (
+                                    <Pressable
+                                        key={option.label}
+                                        style={[s.sheetOption, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}
+                                        onPress={() => {
+                                            setCreateSheetOpen(false);
+                                            router.push(option.route as Parameters<typeof router.push>[0]);
+                                        }}
+                                    >
+                                        <Text style={[s.sheetOptionText, { color: colors.text }]}>{option.label}</Text>
+                                    </Pressable>
+                                );
+                            })}
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -170,27 +198,53 @@ const styles = (colors: ColorPalette) =>
             paddingVertical: Spacing.md,
         },
         title: { fontSize: Typography.headline.size, fontWeight: '700', color: colors.text },
-        posBtn: {
+        headerAction: { fontSize: Typography.body.size, fontWeight: '700' },
+        fab: {
+            position: 'absolute',
+            right: Spacing.lg,
+            bottom: Spacing.xl,
+            width: 56,
+            height: 56,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
             backgroundColor: colors.primary,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            borderRadius: Radius.pill,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.2,
+            shadowRadius: 8,
+            elevation: 8,
         },
-        posBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-        createRow: {
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            gap: Spacing.sm,
+        fabText: { color: '#fff', fontSize: 28, lineHeight: 30, fontWeight: '700' },
+        modalRoot: { flex: 1, justifyContent: 'flex-end' },
+        backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: '#00000088' },
+        sheet: {
+            borderTopLeftRadius: Radius.lg,
+            borderTopRightRadius: Radius.lg,
+            borderWidth: 1,
+            borderBottomWidth: 0,
             paddingHorizontal: Spacing.lg,
-            marginBottom: Spacing.md,
+            paddingVertical: Spacing.md,
+            gap: Spacing.sm,
         },
-        createBtn: {
-            backgroundColor: colors.primaryVariant,
-            borderRadius: Radius.pill,
+        sheetHeader: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+        },
+        sheetTitle: { fontSize: Typography.title.size, fontWeight: '700' },
+        sheetClose: { fontSize: Typography.body.size, fontWeight: '700' },
+        sheetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+        sheetOption: {
+            width: '48%',
+            borderWidth: 1,
+            borderRadius: Radius.md,
             paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.xs,
+            paddingVertical: Spacing.md,
+            minHeight: 50,
+            justifyContent: 'center',
         },
-        createBtnText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+        sheetOptionText: { fontSize: Typography.body.size, fontWeight: '600' },
         tabs: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.sm },
         tab: {
             paddingVertical: Spacing.sm,

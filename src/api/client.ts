@@ -1,4 +1,9 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
+import axios, {
+    AxiosError,
+    type AxiosInstance,
+    type AxiosRequestConfig,
+    type InternalAxiosRequestConfig,
+} from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
@@ -20,6 +25,72 @@ let _token: string | null = null;
 let _businessId: string | null = null;
 
 export const getApiBaseUrl = (): string => API_BASE_URL;
+
+export type ApiErrorNormalized = {
+    status: number;
+    message: string;
+    details?: unknown;
+    code?: string;
+};
+
+const extractServerMessage = (payload: unknown): string | null => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    const message = (payload as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim().length > 0) return message.trim();
+    return null;
+};
+
+export const toApiError = (error: unknown): ApiErrorNormalized => {
+    if (error && typeof error === 'object') {
+        const asKnown = error as Partial<ApiErrorNormalized>;
+        if (typeof asKnown.status === 'number' && typeof asKnown.message === 'string') {
+            return {
+                status: asKnown.status,
+                message: asKnown.message,
+                details: asKnown.details,
+                code: typeof asKnown.code === 'string' ? asKnown.code : undefined,
+            };
+        }
+    }
+
+    if (error instanceof AxiosError) {
+        const status = error.response?.status ?? 0;
+        const message =
+            extractServerMessage(error.response?.data) ??
+            error.message ??
+            'Network request failed.';
+        return {
+            status,
+            message,
+            details: error.response?.data ?? error.toJSON?.(),
+            code: error.code,
+        };
+    }
+
+    if (error instanceof Error) {
+        return {
+            status: 0,
+            message: error.message || 'Unexpected error.',
+            details: error.stack,
+        };
+    }
+
+    return {
+        status: 0,
+        message: 'Unexpected error.',
+    };
+};
+
+export const isUnauthorizedError = (error: unknown): boolean => {
+    const normalized = toApiError(error);
+    return normalized.status === 401 || normalized.status === 403;
+};
+
+export const toUserMessage = (error: unknown, fallback = 'Something went wrong. Please try again.'): string => {
+    const normalized = toApiError(error);
+    const message = normalized.message?.trim();
+    return message && message.length > 0 ? message : fallback;
+};
 
 export async function getStoredToken(): Promise<string | null> {
     if (_token) return _token;
@@ -78,10 +149,10 @@ client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
 client.interceptors.response.use(
     (res) => res,
     (error) => {
-        if (error.response?.status === 401) {
+        if (error instanceof AxiosError && (error.response?.status === 401 || error.response?.status === 403)) {
             clearToken().catch(() => null);
         }
-        return Promise.reject(error);
+        return Promise.reject(toApiError(error));
     }
 );
 

@@ -76,13 +76,16 @@ export default function PartiesScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Text style={s.title}>Parties</Text>
-                <View style={s.headerActions}>
-                    <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => {
-                        setSelectionMode((current) => !current);
-                        setSelectedIds([]);
-                    }}>
+                <View style={s.header}>
+                    <Text style={s.title}>Parties</Text>
+                    <View style={s.headerActions}>
+                        <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
+                            <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>All</Text>
+                        </Pressable>
+                        <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => {
+                            setSelectionMode((current) => !current);
+                            setSelectedIds([]);
+                        }}>
                         <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>
                             {selectionMode ? 'Cancel' : 'Select'}
                         </Text>

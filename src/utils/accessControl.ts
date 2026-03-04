@@ -15,6 +15,57 @@ export type AppModule =
     | 'operations'
     | 'staff';
 
+export type AppAction =
+    | 'billing.create'
+    | 'billing.update'
+    | 'billing.delete'
+    | 'inventory.create'
+    | 'inventory.update'
+    | 'inventory.delete'
+    | 'party.create'
+    | 'party.update'
+    | 'party.delete'
+    | 'staff.invite'
+    | 'staff.remove'
+    | 'settings.update'
+    | 'subscription.checkout';
+
+export type RoleActionOverrides = Partial<Record<OrganizationRole, Partial<Record<AppAction, boolean>>>>;
+export type RoleModuleOverrides = Partial<Record<OrganizationRole, Partial<Record<AppModule, boolean>>>>;
+
+export const ROLE_ACTION_OVERRIDES_KEY = 'role_action_overrides_json';
+export const ROLE_MODULE_OVERRIDES_KEY = 'role_module_overrides_json';
+
+export const APP_MODULES: AppModule[] = [
+    'home',
+    'billing',
+    'inventory',
+    'accounts',
+    'reports',
+    'parties',
+    'settings',
+    'operations',
+    'staff',
+];
+
+export const APP_ACTIONS: AppAction[] = [
+    'billing.create',
+    'billing.update',
+    'billing.delete',
+    'inventory.create',
+    'inventory.update',
+    'inventory.delete',
+    'party.create',
+    'party.update',
+    'party.delete',
+    'staff.invite',
+    'staff.remove',
+    'settings.update',
+    'subscription.checkout',
+];
+
+export const ORGANIZATION_ROLES: OrganizationRole[] = ['owner', 'manager', 'salesman', 'staff'];
+
 const ROLE_ACCESS: Record<OrganizationRole, Record<AppModule, boolean>> = {
     owner: {
         home: true,
@@ -62,6 +113,157 @@ const ROLE_ACCESS: Record<OrganizationRole, Record<AppModule, boolean>> = {
     },
 };
 
+let runtimeActionOverrides: RoleActionOverrides = {};
+let runtimeModuleOverrides: RoleModuleOverrides = {};
+
+const ACTION_MODULE_REQUIREMENT: Record<AppAction, AppModule | null> = {
+    'billing.create': 'billing',
+    'billing.update': 'billing',
+    'billing.delete': 'billing',
+    'inventory.create': 'inventory',
+    'inventory.update': 'inventory',
+    'inventory.delete': 'inventory',
+    'party.create': 'parties',
+    'party.update': 'parties',
+    'party.delete': 'parties',
+    'staff.invite': 'staff',
+    'staff.remove': 'staff',
+    'settings.update': 'settings',
+    'subscription.checkout': null,
+};
+
+const ROLE_ACTION_ACCESS: Record<OrganizationRole, Record<AppAction, boolean>> = {
+    owner: {
+        'billing.create': true,
+        'billing.update': true,
+        'billing.delete': true,
+        'inventory.create': true,
+        'inventory.update': true,
+        'inventory.delete': true,
+        'party.create': true,
+        'party.update': true,
+        'party.delete': true,
+        'staff.invite': true,
+        'staff.remove': true,
+        'settings.update': true,
+        'subscription.checkout': true,
+    },
+    manager: {
+        'billing.create': true,
+        'billing.update': true,
+        'billing.delete': true,
+        'inventory.create': true,
+        'inventory.update': true,
+        'inventory.delete': true,
+        'party.create': true,
+        'party.update': true,
+        'party.delete': true,
+        'staff.invite': false,
+        'staff.remove': false,
+        'settings.update': true,
+        'subscription.checkout': false,
+    },
+    salesman: {
+        'billing.create': true,
+        'billing.update': true,
+        'billing.delete': false,
+        'inventory.create': true,
+        'inventory.update': true,
+        'inventory.delete': false,
+        'party.create': true,
+        'party.update': true,
+        'party.delete': false,
+        'staff.invite': false,
+        'staff.remove': false,
+        'settings.update': false,
+        'subscription.checkout': false,
+    },
+    staff: {
+        'billing.create': true,
+        'billing.update': true,
+        'billing.delete': false,
+        'inventory.create': true,
+        'inventory.update': true,
+        'inventory.delete': false,
+        'party.create': true,
+        'party.update': true,
+        'party.delete': false,
+        'staff.invite': false,
+        'staff.remove': false,
+        'settings.update': false,
+        'subscription.checkout': false,
+    },
+};
+
+const parseJsonLike = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return {};
+        try {
+            return JSON.parse(trimmed) as unknown;
+        } catch {
+            return {};
+        }
+    }
+    if (value && typeof value === 'object') return value;
+    return {};
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const parseOverrides = <T extends string>(
+    raw: unknown,
+    allowedKeys: readonly T[]
+): Partial<Record<OrganizationRole, Partial<Record<T, boolean>>>> => {
+    const result: Partial<Record<OrganizationRole, Partial<Record<T, boolean>>>> = {};
+    const parsed = parseJsonLike(raw);
+    if (!isRecord(parsed)) return result;
+
+    for (const role of ORGANIZATION_ROLES) {
+        const rolePayload = parsed[role];
+        if (!isRecord(rolePayload)) continue;
+        const roleResult: Partial<Record<T, boolean>> = {};
+        for (const key of allowedKeys) {
+            const value = rolePayload[key];
+            if (typeof value === 'boolean') {
+                roleResult[key] = value;
+            }
+        }
+        if (Object.keys(roleResult).length > 0) {
+            result[role] = roleResult;
+        }
+    }
+
+    return result;
+};
+
+export const parseRoleActionOverrides = (raw: unknown): RoleActionOverrides =>
+    parseOverrides(raw, APP_ACTIONS);
+
+export const parseRoleModuleOverrides = (raw: unknown): RoleModuleOverrides =>
+    parseOverrides(raw, APP_MODULES);
+
+export const stringifyRoleActionOverrides = (overrides: RoleActionOverrides): string =>
+    JSON.stringify(overrides);
+
+export const stringifyRoleModuleOverrides = (overrides: RoleModuleOverrides): string =>
+    JSON.stringify(overrides);
+
+export const setRoleAccessOverrides = (payload: {
+    actionOverrides?: unknown;
+    moduleOverrides?: unknown;
+}) => {
+    runtimeActionOverrides = parseRoleActionOverrides(payload.actionOverrides);
+    runtimeModuleOverrides = parseRoleModuleOverrides(payload.moduleOverrides);
+};
+
+export const getDefaultModulePermission = (role: OrganizationRole, module: AppModule): boolean =>
+    ROLE_ACCESS[role][module];
+
+export const getDefaultActionPermission = (role: OrganizationRole, action: AppAction): boolean =>
+    ROLE_ACTION_ACCESS[role][action];
+
 const toTier = (subscription: Subscription | null): SubscriptionTier =>
     subscription?.tier ?? SubscriptionTier.FREE;
 
@@ -79,7 +281,11 @@ export const canAccessModule = (
     module: AppModule,
     subscription: Subscription | null
 ): boolean => {
-    if (!ROLE_ACCESS[role][module]) return false;
+    const moduleOverride = runtimeModuleOverrides[role]?.[module];
+    const roleModuleAllowed = typeof moduleOverride === 'boolean'
+        ? moduleOverride
+        : ROLE_ACCESS[role][module];
+    if (!roleModuleAllowed) return false;
 
     if (module === 'inventory' && !hasFeatureAccess(subscription, FeatureFlag.STOCK_MODULE)) return false;
     if (module === 'parties' && !hasFeatureAccess(subscription, FeatureFlag.PARTY_MANAGEMENT)) return false;
@@ -95,3 +301,14 @@ export const canAccessModule = (
 export const canUsePos = (subscription: Subscription | null): boolean =>
     hasFeatureAccess(subscription, FeatureFlag.POS_MODE);
 
+export const canPerformAction = (
+    role: OrganizationRole,
+    action: AppAction,
+    subscription: Subscription | null
+): boolean => {
+    const requiredModule = ACTION_MODULE_REQUIREMENT[action];
+    if (requiredModule && !canAccessModule(role, requiredModule, subscription)) return false;
+    const actionOverride = runtimeActionOverrides[role]?.[action];
+    if (typeof actionOverride === 'boolean') return actionOverride;
+    return ROLE_ACTION_ACCESS[role][action];
+};

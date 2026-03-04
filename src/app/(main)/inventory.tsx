@@ -6,7 +6,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { itemApi } from '../../api/endpoints';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 import { useScannerMode } from '../../hooks/useScannerMode';
+import { useAuthStore } from '../../store/authStore';
 import type { Item } from '../../types/domain';
+import { canPerformAction } from '../../utils/accessControl';
 
 type FilterType = 'all' | 'in' | 'low' | 'out';
 const EMPTY_ITEMS: Item[] = [];
@@ -27,6 +29,11 @@ export default function InventoryScreen() {
     const queryClient = useQueryClient();
     const params = useLocalSearchParams<{ search?: string | string[]; scanAt?: string | string[] }>();
     const scanner = useScannerMode();
+    const role = useAuthStore((state) => state.organizationRole);
+    const subscription = useAuthStore((state) => state.subscription);
+    const canCreateItem = canPerformAction(role, 'inventory.create', subscription);
+    const canUpdateItem = canPerformAction(role, 'inventory.update', subscription);
+    const canDeleteItem = canPerformAction(role, 'inventory.delete', subscription);
 
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<FilterType>('all');
@@ -131,6 +138,10 @@ export default function InventoryScreen() {
 
     const requestBulkDelete = () => {
         if (selectedCount === 0) return;
+        if (!canDeleteItem) {
+            Alert.alert('Access denied', 'Your role cannot delete inventory items.');
+            return;
+        }
         Alert.alert(
             'Delete selected items',
             `Move ${selectedCount} item(s) to recycle bin?`,
@@ -143,6 +154,10 @@ export default function InventoryScreen() {
 
     const requestBulkGst = (rate: number) => {
         if (selectedCount === 0) return;
+        if (!canUpdateItem) {
+            Alert.alert('Access denied', 'Your role cannot update inventory items.');
+            return;
+        }
         Alert.alert(
             'Bulk GST update',
             `Set GST rate to ${rate}% for ${selectedCount} item(s)?`,
@@ -155,13 +170,16 @@ export default function InventoryScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Text style={s.title}>Inventory</Text>
-                <View style={s.headerActions}>
-                    <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => {
-                        setSelectionMode((current) => !current);
-                        setSelectedIds([]);
-                    }}>
+                <View style={s.header}>
+                    <Text style={s.title}>Inventory</Text>
+                    <View style={s.headerActions}>
+                        <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
+                            <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>All</Text>
+                        </Pressable>
+                        <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => {
+                            setSelectionMode((current) => !current);
+                            setSelectedIds([]);
+                        }}>
                         <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>
                             {selectionMode ? 'Cancel' : 'Select'}
                         </Text>
@@ -169,7 +187,16 @@ export default function InventoryScreen() {
                     <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => router.push('/(main)/inventory/recycle-bin' as Parameters<typeof router.push>[0])}>
                         <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>Bin</Text>
                     </Pressable>
-                    <Pressable style={s.addBtn} onPress={() => router.push('/(main)/inventory/add-item' as Parameters<typeof router.push>[0])}>
+                    <Pressable
+                        style={[s.addBtn, { backgroundColor: canCreateItem ? colors.primary : colors.border }]}
+                        onPress={() => {
+                            if (!canCreateItem) {
+                                Alert.alert('Access denied', 'Your role cannot create inventory items.');
+                                return;
+                            }
+                            router.push('/(main)/inventory/add-item' as Parameters<typeof router.push>[0]);
+                        }}
+                    >
                         <Text style={s.addBtnText}>+ Add</Text>
                     </Pressable>
                 </View>
@@ -265,8 +292,20 @@ export default function InventoryScreen() {
                             selected={selectedIds.includes(item.id)}
                             onToggleSelect={() => setSelectedIds((current) => toggleId(current, item.id))}
                             onOpen={() => router.push(`/(main)/inventory/${item.id}` as Parameters<typeof router.push>[0])}
-                            onQuickIn={() => quickAdjustStock({ itemId: item.id, type: 'IN', quantity: 1 })}
-                            onQuickOut={() => quickAdjustStock({ itemId: item.id, type: 'OUT', quantity: 1 })}
+                            onQuickIn={() => {
+                                if (!canUpdateItem) {
+                                    Alert.alert('Access denied', 'Your role cannot update stock.');
+                                    return;
+                                }
+                                quickAdjustStock({ itemId: item.id, type: 'IN', quantity: 1 });
+                            }}
+                            onQuickOut={() => {
+                                if (!canUpdateItem) {
+                                    Alert.alert('Access denied', 'Your role cannot update stock.');
+                                    return;
+                                }
+                                quickAdjustStock({ itemId: item.id, type: 'OUT', quantity: 1 });
+                            }}
                         />
                     )}
                     contentContainerStyle={{ paddingBottom: 100 }}

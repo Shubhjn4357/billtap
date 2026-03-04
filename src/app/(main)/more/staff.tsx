@@ -14,8 +14,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { staffApi } from '../../../api/endpoints';
+import { toUserMessage } from '../../../api/client';
 import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
+import { useAuthStore } from '../../../store/authStore';
 import type { StaffInvite, StaffMember } from '../../../types/domain';
+import { canPerformAction } from '../../../utils/accessControl';
 
 export default function StaffScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -23,6 +26,10 @@ export default function StaffScreen() {
     const s = styles(colors);
     const qc = useQueryClient();
     const [phoneNumber, setPhoneNumber] = useState('');
+    const role = useAuthStore((state) => state.organizationRole);
+    const subscription = useAuthStore((state) => state.subscription);
+    const canInviteStaff = canPerformAction(role, 'staff.invite', subscription);
+    const canRemoveStaffMember = canPerformAction(role, 'staff.remove', subscription);
 
     const { data, isLoading } = useQuery({
         queryKey: ['staff'],
@@ -49,6 +56,10 @@ export default function StaffScreen() {
     const invites = (data?.data?.invites ?? []) as StaffInvite[];
 
     const onInvite = async () => {
+        if (!canInviteStaff) {
+            Alert.alert('Access denied', 'Your role cannot invite staff members.');
+            return;
+        }
         const trimmed = phoneNumber.trim();
         if (!trimmed) return;
 
@@ -57,11 +68,15 @@ export default function StaffScreen() {
             Alert.alert('Invite created', `Code: ${response.data?.code ?? ''}`);
             setPhoneNumber('');
         } catch (error) {
-            Alert.alert('Invite failed', error instanceof Error ? error.message : 'Unable to create invite.');
+            Alert.alert('Invite failed', toUserMessage(error, 'Unable to create invite.'));
         }
     };
 
     const confirmRemoveStaff = (uid: string, name: string | null) => {
+        if (!canRemoveStaffMember) {
+            Alert.alert('Access denied', 'Your role cannot remove staff members.');
+            return;
+        }
         Alert.alert('Remove staff', `Remove ${name ?? 'this member'} from staff list?`, [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -71,7 +86,7 @@ export default function StaffScreen() {
                     try {
                         await removeStaff(uid);
                     } catch (error) {
-                        Alert.alert('Remove failed', error instanceof Error ? error.message : 'Unable to remove staff.');
+                        Alert.alert('Remove failed', toUserMessage(error, 'Unable to remove staff.'));
                     }
                 },
             },
@@ -79,6 +94,10 @@ export default function StaffScreen() {
     };
 
     const confirmDeleteInvite = (id: string) => {
+        if (!canRemoveStaffMember) {
+            Alert.alert('Access denied', 'Your role cannot delete staff invites.');
+            return;
+        }
         Alert.alert('Delete invite', 'Delete this pending invite?', [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -88,7 +107,7 @@ export default function StaffScreen() {
                     try {
                         await removeInvite(id);
                     } catch (error) {
-                        Alert.alert('Delete failed', error instanceof Error ? error.message : 'Unable to delete invite.');
+                        Alert.alert('Delete failed', toUserMessage(error, 'Unable to delete invite.'));
                     }
                 },
             },
@@ -107,6 +126,11 @@ export default function StaffScreen() {
 
             <View style={[s.inviteCard, { backgroundColor: colors.card }]}> 
                 <Text style={[s.sectionTitle, { color: colors.text }]}>Invite Staff</Text>
+                {!canInviteStaff ? (
+                    <Text style={[s.accessHint, { color: colors.textSecondary }]}>
+                        Your role does not have permission to invite staff.
+                    </Text>
+                ) : null}
                 <View style={s.inviteRow}>
                     <TextInput
                         style={[s.input, { borderColor: colors.border, color: colors.text }]}
@@ -116,7 +140,11 @@ export default function StaffScreen() {
                         placeholderTextColor={colors.textSecondary}
                         keyboardType="phone-pad"
                     />
-                    <Pressable style={[s.inviteBtn, { backgroundColor: colors.primary }]} onPress={onInvite} disabled={inviting || phoneNumber.trim().length === 0}>
+                    <Pressable
+                        style={[s.inviteBtn, { backgroundColor: canInviteStaff ? colors.primary : colors.border }]}
+                        onPress={onInvite}
+                        disabled={inviting || phoneNumber.trim().length === 0 || !canInviteStaff}
+                    >
                         {inviting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.inviteBtnText}>Invite</Text>}
                     </Pressable>
                 </View>
@@ -146,7 +174,7 @@ export default function StaffScreen() {
                                                 <Pressable
                                                     style={[s.inlineBtn, { borderColor: colors.error }]}
                                                     onPress={() => confirmRemoveStaff(member.uid, member.displayName)}
-                                                    disabled={removing}
+                                                    disabled={removing || !canRemoveStaffMember}
                                                 >
                                                     <Text style={{ color: colors.error, fontWeight: '700', fontSize: 12 }}>Remove</Text>
                                                 </Pressable>
@@ -173,7 +201,7 @@ export default function StaffScreen() {
                                             <Pressable
                                                 style={[s.inlineBtn, { borderColor: colors.error }]}
                                                 onPress={() => confirmDeleteInvite(invite.id)}
-                                                disabled={removingInvite}
+                                                disabled={removingInvite || !canRemoveStaffMember}
                                             >
                                                 <Text style={{ color: colors.error, fontWeight: '700', fontSize: 12 }}>Delete</Text>
                                             </Pressable>
@@ -198,6 +226,7 @@ const styles = (colors: ColorPalette) =>
         title: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
         inviteCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
         sectionTitle: { fontWeight: '700', fontSize: 14, marginBottom: Spacing.sm },
+        accessHint: { fontSize: 12, marginBottom: Spacing.xs },
         inviteRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
         input: { flex: 1, borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, fontSize: 14 },
         inviteBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, minWidth: 74, alignItems: 'center' },

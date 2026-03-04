@@ -18,8 +18,11 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toUserMessage } from '../../../api/client';
 import { partyApi } from '../../../api/endpoints';
 import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { useAuthStore } from '../../../store/authStore';
+import { canPerformAction } from '../../../utils/accessControl';
 import {
     COUNTRY_DIAL_CODES,
     DEFAULT_COUNTRY_DIAL_CODE,
@@ -51,6 +54,9 @@ export default function AddPartyScreen() {
     const { type: defaultType, id: editId } = useLocalSearchParams<{ type?: string; id?: string }>();
     const qc = useQueryClient();
     const s = styles(colors);
+    const role = useAuthStore((state) => state.organizationRole);
+    const subscription = useAuthStore((state) => state.subscription);
+    const canSaveParty = canPerformAction(role, 'party.create', subscription);
 
     const [countryPickerVisible, setCountryPickerVisible] = useState(false);
     const [countrySearch, setCountrySearch] = useState('');
@@ -96,6 +102,9 @@ export default function AddPartyScreen() {
 
     const { mutate, isPending } = useMutation({
         mutationFn: (data: PartyForm) => {
+            if (!canSaveParty) {
+                throw new Error('Your role does not have permission to create parties.');
+            }
             const normalizedPhone = data.phone?.trim()
                 ? buildE164PhoneNumber(data.dialCode ?? DEFAULT_COUNTRY_DIAL_CODE, data.phone)
                 : null;
@@ -117,7 +126,7 @@ export default function AddPartyScreen() {
             qc.invalidateQueries({ queryKey: ['parties'] });
             router.back();
         },
-        onError: (e) => Alert.alert('Error', e instanceof Error ? e.message : 'Failed to save party'),
+        onError: (error) => Alert.alert('Error', toUserMessage(error, 'Failed to save party.')),
     });
 
     const onCountrySelect = (entry: CountryDialCode) => {
@@ -134,7 +143,16 @@ export default function AddPartyScreen() {
                     <Text style={[s.back, { color: colors.primary }]}>Back</Text>
                 </Pressable>
                 <Text style={[s.title, { color: colors.text }]}>{editId ? 'Edit Party' : 'Add Party'}</Text>
-                <Pressable onPress={handleSubmit((d) => mutate(d))} disabled={isPending}>
+                <Pressable
+                    onPress={handleSubmit((d) => {
+                        if (!canSaveParty) {
+                            Alert.alert('Access denied', 'Your role cannot create parties.');
+                            return;
+                        }
+                        mutate(d);
+                    })}
+                    disabled={isPending || !canSaveParty}
+                >
                     {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.save, { color: colors.primary }]}>Save</Text>}
                 </Pressable>
             </View>

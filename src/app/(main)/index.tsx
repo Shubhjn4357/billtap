@@ -2,21 +2,42 @@ import { View, Text, ScrollView, StyleSheet, Pressable, useColorScheme } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
+import { endOfMonth, format, startOfMonth } from 'date-fns';
 import { useAuthStore } from '../../store/authStore';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 import { reportApi } from '../../api/endpoints';
-import { endOfMonth, format, startOfMonth } from 'date-fns';
+import { canAccessModule, canUsePos, type AppModule } from '../../utils/accessControl';
 
 const TODAY = new Date();
 const MONTH_START = format(startOfMonth(TODAY), 'yyyy-MM-dd');
 const MONTH_END = format(endOfMonth(TODAY), 'yyyy-MM-dd');
 
+type QuickAction = {
+    icon: string;
+    label: string;
+    route: string;
+    module: AppModule;
+    requiresPos?: boolean;
+};
+
+const QUICK_ACTIONS: QuickAction[] = [
+    { icon: 'SI', label: 'Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', module: 'billing' },
+    { icon: 'PS', label: 'POS', route: '/(main)/billing/pos', module: 'billing', requiresPos: true },
+    { icon: 'PB', label: 'Purchase', route: '/(main)/billing/create?type=PURCHASE_BILL', module: 'billing' },
+    { icon: 'ES', label: 'Estimate', route: '/(main)/billing/create?type=ESTIMATE', module: 'billing' },
+    { icon: 'EX', label: 'Expense', route: '/(main)/accounts/expenses/add', module: 'accounts' },
+    { icon: 'IT', label: 'Add Item', route: '/(main)/inventory/add-item', module: 'inventory' },
+];
+
 export default function HomeScreen() {
-    const scheme = useColorScheme();
+    const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
-    const user = useAuthStore((s) => s.user);
-    const business = useAuthStore((s) => s.business);
-    const tier = useAuthStore((s) => s.subscription?.tier ?? 'FREE');
+    const s = styles(colors);
+    const user = useAuthStore((state) => state.user);
+    const business = useAuthStore((state) => state.business);
+    const tier = useAuthStore((state) => state.subscription?.tier ?? 'FREE');
+    const subscription = useAuthStore((state) => state.subscription);
+    const role = useAuthStore((state) => state.organizationRole);
 
     const { data: summary, isLoading } = useQuery({
         queryKey: ['report-summary', MONTH_START, MONTH_END],
@@ -24,16 +45,18 @@ export default function HomeScreen() {
         staleTime: 5 * 60 * 1000,
     });
 
-    const s = styles(colors);
     const stats = summary?.data as Record<string, number> | undefined;
+    const quickActions = QUICK_ACTIONS.filter((action) => {
+        if (action.requiresPos && !canUsePos(subscription)) return false;
+        return canAccessModule(role, action.module, subscription);
+    });
 
     return (
-        <SafeAreaView style={s.safe} edges={['top']}>
+        <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
             <ScrollView style={s.scroll} showsVerticalScrollIndicator={false}>
-                {/* Header */}
                 <View style={s.header}>
                     <View>
-                        <Text style={s.greeting}>Hey, {user?.name?.split(' ')[0] ?? 'there'} 👋</Text>
+                        <Text style={s.greeting}>Hello, {user?.name?.split(' ')[0] ?? 'there'}</Text>
                         <Text style={s.bizName}>{business?.name ?? 'My Business'}</Text>
                     </View>
                     <Pressable style={s.tierBadge} onPress={() => router.push('/(main)/more')}>
@@ -41,31 +64,40 @@ export default function HomeScreen() {
                     </Pressable>
                 </View>
 
-                {/* This month summary */}
                 <View style={s.section}>
                     <Text style={s.sectionTitle}>This Month</Text>
                     <View style={s.statsGrid}>
-                        <StatCard label="Sales" value={stats?.totalSales} prefix="₹" loading={isLoading} color={colors.success} />
-                        <StatCard label="Purchases" value={stats?.totalPurchases} prefix="₹" loading={isLoading} color={colors.warning} />
-                        <StatCard label="Expenses" value={stats?.totalExpenses} prefix="₹" loading={isLoading} color={colors.error} />
-                        <StatCard label="Net Profit" value={stats?.netProfit} prefix="₹" loading={isLoading} color={colors.primary} />
+                        <StatCard label="Sales" value={stats?.totalSales} prefix="Rs " loading={isLoading} color={colors.success} />
+                        <StatCard label="Purchases" value={stats?.totalPurchases} prefix="Rs " loading={isLoading} color={colors.warning} />
+                        <StatCard label="Expenses" value={stats?.totalExpenses} prefix="Rs " loading={isLoading} color={colors.error} />
+                        <StatCard label="Net Profit" value={stats?.netProfit} prefix="Rs " loading={isLoading} color={colors.primary} />
                     </View>
                 </View>
 
-                {/* Outstanding */}
                 <View style={s.section}>
                     <Text style={s.sectionTitle}>Outstanding</Text>
                     <View style={s.row}>
-                        <OutstandingCard label="Receivables" value={stats?.outstandingReceivables} loading={isLoading} color={colors.success} onPress={() => router.push('/(main)/parties?tab=customer')} />
-                        <OutstandingCard label="Payables" value={stats?.outstandingPayables} loading={isLoading} color={colors.error} onPress={() => router.push('/(main)/parties?tab=supplier')} />
+                        <OutstandingCard
+                            label="Receivables"
+                            value={stats?.outstandingReceivables}
+                            loading={isLoading}
+                            color={colors.success}
+                            onPress={() => router.push('/(main)/parties?tab=customer')}
+                        />
+                        <OutstandingCard
+                            label="Payables"
+                            value={stats?.outstandingPayables}
+                            loading={isLoading}
+                            color={colors.error}
+                            onPress={() => router.push('/(main)/parties?tab=supplier')}
+                        />
                     </View>
                 </View>
 
-                {/* Quick Actions */}
                 <View style={s.section}>
                     <Text style={s.sectionTitle}>Quick Create</Text>
                     <View style={s.quickGrid}>
-                        {QUICK_ACTIONS.map((qa) => (
+                        {quickActions.map((qa) => (
                             <Pressable
                                 key={qa.label}
                                 style={({ pressed }) => [s.quickCard, pressed && { opacity: 0.7 }]}
@@ -78,15 +110,41 @@ export default function HomeScreen() {
                             </Pressable>
                         ))}
                     </View>
+                    <Pressable
+                        style={({ pressed }) => [
+                            s.directoryButton,
+                            { backgroundColor: colors.card, borderColor: colors.border },
+                            pressed && { opacity: 0.85 },
+                        ]}
+                        onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}
+                    >
+                        <Text style={[s.directoryButtonTitle, { color: colors.text }]}>Open Screen Directory</Text>
+                        <Text style={[s.directoryButtonSub, { color: colors.textSecondary }]}>
+                            Jump to billing, inventory, reports, settings, legal, and utilities.
+                        </Text>
+                    </Pressable>
                 </View>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-function StatCard({ label, value, prefix = '', loading, color }: { label: string; value?: number; prefix?: string; loading: boolean; color: string }) {
-    const scheme = useColorScheme();
+function StatCard({
+    label,
+    value,
+    prefix = '',
+    loading,
+    color,
+}: {
+    label: string;
+    value?: number;
+    prefix?: string;
+    loading: boolean;
+    color: string;
+}) {
+    const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
+
     return (
         <View style={[statCardStyles.card, { backgroundColor: colors.card }]}>
             <Text style={[statCardStyles.label, { color: colors.textSecondary }]}>{label}</Text>
@@ -94,16 +152,30 @@ function StatCard({ label, value, prefix = '', loading, color }: { label: string
                 <View style={[statCardStyles.skeletonVal, { backgroundColor: colors.skeleton }]} />
             ) : (
                 <Text style={[statCardStyles.value, { color }]}>
-                    {prefix}{(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {prefix}
+                    {(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </Text>
             )}
         </View>
     );
 }
 
-function OutstandingCard({ label, value, loading, color, onPress }: { label: string; value?: number; loading: boolean; color: string; onPress: () => void }) {
-    const scheme = useColorScheme();
+function OutstandingCard({
+    label,
+    value,
+    loading,
+    color,
+    onPress,
+}: {
+    label: string;
+    value?: number;
+    loading: boolean;
+    color: string;
+    onPress: () => void;
+}) {
+    const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
+
     return (
         <Pressable style={({ pressed }) => [outStyles.card, { backgroundColor: colors.card, opacity: pressed ? 0.8 : 1 }]} onPress={onPress}>
             <Text style={[outStyles.label, { color: colors.textSecondary }]}>{label}</Text>
@@ -111,39 +183,66 @@ function OutstandingCard({ label, value, loading, color, onPress }: { label: str
                 <View style={[outStyles.skeleton, { backgroundColor: colors.skeleton }]} />
             ) : (
                 <Text style={[outStyles.value, { color }]}>
-                    ₹{(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    Rs {(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </Text>
             )}
         </Pressable>
     );
 }
 
-const QUICK_ACTIONS = [
-    { icon: '🧾', label: 'Invoice', route: '/(main)/billing?type=TAX_INVOICE' },
-    { icon: '🛒', label: 'Sale', route: '/(main)/billing?type=TAX_INVOICE' },
-    { icon: '🏪', label: 'POS', route: '/(main)/billing/pos' },
-    { icon: '📥', label: 'Purchase', route: '/(main)/billing?type=PURCHASE_BILL' },
-    { icon: '📝', label: 'Estimate', route: '/(main)/billing?type=ESTIMATE' },
-    { icon: '💸', label: 'Expense', route: '/(main)/accounts/expenses/add' },
-];
-
-const styles = (colors: ColorPalette) => StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    scroll: { flex: 1 },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.md },
-    greeting: { fontSize: 13, color: colors.textSecondary },
-    bizName: { fontSize: 20, fontWeight: '700', color: colors.text },
-    tierBadge: { backgroundColor: colors.primary, paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radius.pill },
-    tierText: { color: '#fff', fontWeight: '600', fontSize: 12 },
-    section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
-    sectionTitle: { fontSize: Typography.label.size, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: Spacing.sm },
-    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    row: { flexDirection: 'row', gap: Spacing.sm },
-    quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    quickCard: { backgroundColor: colors.card, borderRadius: Radius.card, padding: Spacing.md, alignItems: 'center', width: '30%', gap: Spacing.xs },
-    quickIcon: { fontSize: 26 },
-    quickLabel: { fontSize: 11, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
-});
+const styles = (colors: ColorPalette) =>
+    StyleSheet.create({
+        safe: { flex: 1, backgroundColor: colors.background },
+        scroll: { flex: 1 },
+        header: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingHorizontal: Spacing.lg,
+            paddingTop: Spacing.lg,
+            paddingBottom: Spacing.md,
+        },
+        greeting: { fontSize: 13, color: colors.textSecondary },
+        bizName: { fontSize: 20, fontWeight: '700', color: colors.text },
+        tierBadge: {
+            backgroundColor: colors.primary,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: 4,
+            borderRadius: Radius.pill,
+        },
+        tierText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+        section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
+        sectionTitle: {
+            fontSize: Typography.label.size,
+            fontWeight: '600',
+            color: colors.textSecondary,
+            letterSpacing: 0.5,
+            textTransform: 'uppercase',
+            marginBottom: Spacing.sm,
+        },
+        statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+        row: { flexDirection: 'row', gap: Spacing.sm },
+        quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+        quickCard: {
+            backgroundColor: colors.card,
+            borderRadius: Radius.card,
+            padding: Spacing.md,
+            alignItems: 'center',
+            width: '30%',
+            gap: Spacing.xs,
+        },
+        quickIcon: { fontSize: 14, fontWeight: '700', color: colors.primary },
+        quickLabel: { fontSize: 11, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
+        directoryButton: {
+            borderWidth: 1,
+            borderRadius: Radius.card,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.md,
+            marginTop: Spacing.sm,
+        },
+        directoryButtonTitle: { fontSize: Typography.body.size, fontWeight: '700' },
+        directoryButtonSub: { fontSize: Typography.caption.size, marginTop: 2 },
+    });
 
 const statCardStyles = StyleSheet.create({
     card: { borderRadius: Radius.card, padding: Spacing.md, width: '47%', minHeight: 72 },
@@ -158,6 +257,3 @@ const outStyles = StyleSheet.create({
     value: { fontSize: 20, fontWeight: '700' },
     skeleton: { height: 24, borderRadius: 4, marginTop: 4 },
 });
-
-
-

@@ -14,9 +14,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
+import { toUserMessage } from '../../../api/client';
 import { subscriptionApi } from '../../../api/endpoints';
 import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAuthStore } from '../../../store/authStore';
+import type { Subscription } from '../../../types/domain';
+import { canPerformAction } from '../../../utils/accessControl';
 
 type PlanLike = {
     id: string;
@@ -32,25 +35,45 @@ type PlanLike = {
     features?: string[];
 };
 
+type MockCheckoutOutcome = 'succeeded' | 'pending' | 'failed';
+
 const formatPlanPrice = (plan: PlanLike) => {
     const value = Number(plan.pricePerCycle ?? plan.monthlyPrice ?? 0);
     const cycle = plan.billingCycle ?? 'MONTHLY';
     const cycleLabel = cycle === 'YEARLY' ? 'year' : cycle === 'THREE_YEAR' ? '3 years' : 'month';
-
-    return `₹${value.toLocaleString('en-IN')} / ${cycleLabel}`;
+    return `Rs ${value.toLocaleString('en-IN')} / ${cycleLabel}`;
 };
 
 const getPlanName = (plan: PlanLike) => plan.displayName ?? plan.name ?? plan.tier ?? 'Plan';
+
+const computeRenewalDate = (billingCycle: PlanLike['billingCycle']) => {
+    const next = new Date();
+    if (billingCycle === 'YEARLY') {
+        next.setFullYear(next.getFullYear() + 1);
+    } else if (billingCycle === 'THREE_YEAR') {
+        next.setFullYear(next.getFullYear() + 3);
+    } else {
+        next.setMonth(next.getMonth() + 1);
+    }
+    return next.toISOString();
+};
 
 export default function SubscriptionScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme ?? 'light');
     const s = styles(colors);
     const subscription = useAuthStore((state) => state.subscription);
+    const business = useAuthStore((state) => state.business);
+    const setSubscription = useAuthStore((state) => state.setSubscription);
+    const role = useAuthStore((state) => state.organizationRole);
+    const canCheckout = canPerformAction(role, 'subscription.checkout', subscription);
 
     const [discountCode, setDiscountCode] = useState('');
     const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
     const [lastCheckoutIntentId, setLastCheckoutIntentId] = useState<string | null>(null);
+    const [mockOutcome, setMockOutcome] = useState<MockCheckoutOutcome>('succeeded');
+
+    const livePaymentsEnabled = process.env.EXPO_PUBLIC_ENABLE_LIVE_PAYMENTS === 'true';
 
     const { data: plansRes, isLoading: loadingPlans, refetch: refetchPlans } = useQuery({
         queryKey: ['subscription-plans'],
@@ -85,48 +108,101 @@ export default function SubscriptionScreen() {
             }
             const amountText = discount.type === 'PERCENTAGE'
                 ? `${discount.value}% OFF`
-                : `₹${Number(discount.value).toLocaleString('en-IN')} OFF`;
+                : `Rs ${Number(discount.value).toLocaleString('en-IN')} OFF`;
             Alert.alert('Discount Applied', `${discount.code} (${amountText})`);
         },
         onError: (error) => {
-            Alert.alert('Discount Error', error instanceof Error ? error.message : 'Invalid discount code.');
+            Alert.alert('Discount Error', toUserMessage(error, 'Invalid discount code.'));
         },
     });
 
+    const applyMockUpgrade = (plan: PlanLike) => {
+        const nowIso = new Date().toISOString();
+        const renewalIso = computeRenewalDate(plan.billingCycle);
+        const nextTier = plan.tier ?? subscription?.tier ?? 'FREE';
+        const nextCycle = plan.billingCycle ?? subscription?.billingCycle ?? 'MONTHLY';
+
+        const nextSubscription: Subscription = {
+            id: subscription?.id ?? `sub_mock_${Date.now()}`,
+            businessId: subscription?.businessId ?? business?.id ?? 'local',
+            tier: nextTier as Subscription['tier'],
+            billingCycle: nextCycle as Subscription['billingCycle'],
+            status: 'ACTIVE',
+            startDate: subscription?.startDate ?? nowIso,
+            endDate: renewalIso,
+            nextRenewalDate: renewalIso,
+            renewsAt: renewalIso,
+            graceEndDate: subscription?.graceEndDate ?? null,
+            maxBillsTotal: subscription?.maxBillsTotal ?? null,
+            maxBillsPerMonth: subscription?.maxBillsPerMonth ?? null,
+            maxStaffUsers: subscription?.maxStaffUsers ?? null,
+            maxBusinesses: subscription?.maxBusinesses ?? null,
+            maxDevices: subscription?.maxDevices ?? null,
+            maxStorageMb: subscription?.maxStorageMb ?? null,
+            monthlyInvoiceCount: subscription?.monthlyInvoiceCount ?? 0,
+            offlineOnly: subscription?.offlineOnly ?? false,
+            cloudSyncAllowed: subscription?.cloudSyncAllowed ?? true,
+            webDashboardAllowed: subscription?.webDashboardAllowed ?? true,
+            featureFlagsEnabled: subscription?.featureFlagsEnabled ?? [],
+            createdAt: subscription?.createdAt ?? nowIso,
+            updatedAt: nowIso,
+        };
+
+        setSubscription(nextSubscription);
+    };
+
     const { mutate: startCheckout, isPending: checkoutPending } = useMutation({
-        mutationFn: (plan: PlanLike) =>
-            subscriptionApi.createCheckoutSession({
+        mutationFn: async (plan: PlanLike) => {
+            if (!canCheckout) {
+                throw new Error('Your role cannot start subscription checkout.');
+            }
+
+            if (!livePaymentsEnabled) {
+                const intentId = `mock_${Date.now()}`;
+                await new Promise((resolve) => setTimeout(resolve, 400));
+                return { intentId, status: mockOutcome, plan };
+            }
+
+            const response = await subscriptionApi.createCheckoutSession({
                 planId: plan.id,
                 discountCode: discountCode.trim() || undefined,
-            }),
-        onSuccess: async (response) => {
+            });
             const data = response.data;
-            if (!data?.checkoutUrl) {
-                Alert.alert('Checkout', 'Checkout URL is unavailable for this plan.');
-                return;
+            if (!data?.checkoutUrl || !data.intentId) {
+                throw new Error('Checkout URL is unavailable for this plan.');
             }
 
-            setLastCheckoutIntentId(data.intentId);
             await WebBrowser.openBrowserAsync(data.checkoutUrl);
 
+            let status: MockCheckoutOutcome = 'pending';
             try {
                 const statusRes = await subscriptionApi.getIntentStatus(data.intentId);
-                const status = statusRes.data?.status ?? 'pending';
-                if (status === 'succeeded') {
-                    Alert.alert('Payment Successful', 'Plan activated successfully.');
-                } else if (status === 'failed' || status === 'canceled') {
-                    Alert.alert('Payment Failed', 'Payment was not completed.');
-                } else {
-                    Alert.alert('Payment Pending', 'Payment is still processing. Please check again shortly.');
-                }
+                const nextStatus = statusRes.data?.status ?? 'pending';
+                status = nextStatus === 'canceled' ? 'failed' : nextStatus;
             } catch {
-                Alert.alert('Checkout', 'Unable to confirm payment status yet.');
-            } finally {
-                refetchPlans().catch(() => null);
+                status = 'pending';
             }
+
+            return { intentId: data.intentId, status, plan };
+        },
+        onSuccess: async (result) => {
+            setLastCheckoutIntentId(result.intentId);
+
+            if (result.status === 'succeeded') {
+                if (!livePaymentsEnabled) {
+                    applyMockUpgrade(result.plan);
+                }
+                Alert.alert('Payment Successful', 'Plan activated successfully.');
+            } else if (result.status === 'failed') {
+                Alert.alert('Payment Failed', 'Payment was not completed.');
+            } else {
+                Alert.alert('Payment Pending', 'Payment is still processing. Please check again shortly.');
+            }
+
+            await refetchPlans();
         },
         onError: (error) => {
-            Alert.alert('Checkout Error', error instanceof Error ? error.message : 'Failed to start checkout.');
+            Alert.alert('Checkout Error', toUserMessage(error, 'Failed to start checkout.'));
         },
         onSettled: () => setSelectedPlanId(null),
     });
@@ -144,6 +220,41 @@ export default function SubscriptionScreen() {
             </View>
 
             <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+                <View style={[s.modeCard, { backgroundColor: colors.surfaceVariant }]}>
+                    <Text style={[s.modeTitle, { color: colors.text }]}>
+                        Payment mode: {livePaymentsEnabled ? 'Live checkout' : 'Mock checkout'}
+                    </Text>
+                    <Text style={[s.modeMeta, { color: colors.textSecondary }]}>
+                        {livePaymentsEnabled
+                            ? 'Real checkout flow through API.'
+                            : 'Deterministic mock flow for internal testing without payment gateway.'}
+                    </Text>
+                    {!livePaymentsEnabled ? (
+                        <View style={s.modeChips}>
+                            {(['succeeded', 'pending', 'failed'] as const).map((entry) => {
+                                const selected = mockOutcome === entry;
+                                return (
+                                    <Pressable
+                                        key={entry}
+                                        style={[
+                                            s.modeChip,
+                                            {
+                                                borderColor: selected ? colors.primary : colors.border,
+                                                backgroundColor: selected ? `${colors.primary}22` : 'transparent',
+                                            },
+                                        ]}
+                                        onPress={() => setMockOutcome(entry)}
+                                    >
+                                        <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontWeight: '700', fontSize: 12 }}>
+                                            {entry.toUpperCase()}
+                                        </Text>
+                                    </Pressable>
+                                );
+                            })}
+                        </View>
+                    ) : null}
+                </View>
+
                 {currentTier ? (
                     <View style={[s.currentCard, { backgroundColor: colors.surfaceVariant }]}>
                         <Text style={[s.currentTitle, { color: colors.text }]}>Current Tier: {currentTier}</Text>
@@ -156,7 +267,7 @@ export default function SubscriptionScreen() {
                 ) : null}
 
                 {(offersRes?.data ?? []).slice(0, 2).map((offer) => (
-                    <View key={offer.id} style={[s.offerCard, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '50' }]}>
+                    <View key={offer.id} style={[s.offerCard, { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}50` }]}>
                         <Text style={[s.offerTitle, { color: colors.primary }]}>{offer.title}</Text>
                         <Text style={[s.offerMessage, { color: colors.text }]}>{offer.message}</Text>
                     </View>
@@ -208,7 +319,7 @@ export default function SubscriptionScreen() {
                                             <Text style={[s.planDescription, { color: colors.textSecondary }]}>{plan.description}</Text>
                                         ) : null}
                                         <Text style={[s.planMeta, { color: colors.textSecondary }]}>
-                                            {plan.billingCycle ?? 'MONTHLY'} · {plan.id}
+                                            {(plan.billingCycle ?? 'MONTHLY')} - {plan.id}
                                         </Text>
                                     </View>
 
@@ -218,9 +329,13 @@ export default function SubscriptionScreen() {
                                         </View>
                                     ) : (
                                         <Pressable
-                                            style={[s.upgradeBtn, { backgroundColor: colors.primary }]}
-                                            disabled={isBusy || checkoutPending}
+                                            style={[s.upgradeBtn, { backgroundColor: canCheckout ? colors.primary : colors.border }]}
+                                            disabled={isBusy || checkoutPending || !canCheckout}
                                             onPress={() => {
+                                                if (!canCheckout) {
+                                                    Alert.alert('Access denied', 'Your role cannot purchase or upgrade plans.');
+                                                    return;
+                                                }
                                                 setSelectedPlanId(plan.id);
                                                 startCheckout(plan);
                                             }}
@@ -238,7 +353,7 @@ export default function SubscriptionScreen() {
                                     <View style={s.featuresWrap}>
                                         {featureList.map((feature) => (
                                             <Text key={feature} style={[s.featureText, { color: colors.textSecondary }]}>
-                                                • {feature}
+                                                - {feature}
                                             </Text>
                                         ))}
                                     </View>
@@ -269,6 +384,11 @@ const styles = (colors: ColorPalette) =>
         back: { fontSize: 14, fontWeight: '600' },
         title: { fontSize: 17, fontWeight: '700', color: colors.text },
         content: { paddingHorizontal: Spacing.lg, paddingBottom: 80, gap: Spacing.md },
+        modeCard: { borderRadius: Radius.card, padding: Spacing.md, marginTop: Spacing.sm },
+        modeTitle: { fontSize: 14, fontWeight: '700' },
+        modeMeta: { fontSize: 12, marginTop: 4 },
+        modeChips: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+        modeChip: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
         currentCard: { borderRadius: Radius.card, padding: Spacing.md, marginTop: Spacing.sm },
         currentTitle: { fontSize: 15, fontWeight: '700' },
         currentMeta: { fontSize: 12, marginTop: 4 },
@@ -276,7 +396,14 @@ const styles = (colors: ColorPalette) =>
         offerTitle: { fontSize: 14, fontWeight: '700' },
         offerMessage: { fontSize: 12, marginTop: 4 },
         discountRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
-        discountInput: { flex: 1, borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, fontSize: 14 },
+        discountInput: {
+            flex: 1,
+            borderWidth: 1,
+            borderRadius: Radius.md,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.sm,
+            fontSize: 14,
+        },
         validateBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, minWidth: 72, alignItems: 'center' },
         validateBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
         centered: { paddingVertical: 32, alignItems: 'center' },

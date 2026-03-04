@@ -53,13 +53,87 @@ export const authApi = {
 // ─── Businesses ───────────────────────────────────────────────────────────────
 
 export const businessApi = {
-    list: () =>
-        api.get<ApiListResponse<Business>>('/api/organizations/mine'),
-    get: (_id: string) =>
-        api.get<ApiResponse<Business>>('/api/organizations/current'),
-    create: (data: Partial<Business>) =>
-        api.post<ApiResponse<Business>>('/api/organizations', data),
-    update: (id: string, data: Partial<Business>) =>
+    list: async () => {
+        const res = await api.get<{
+            ok: boolean;
+            organizations?: Record<string, unknown>[];
+            message?: string;
+        }>('/api/organizations/mine');
+        if (!res.ok) {
+            throw new Error(res.message ?? 'Failed to load businesses.');
+        }
+        const data = (res.organizations ?? []).map((org) => ({
+            id: String(org.id ?? ''),
+            ownerUserId: 'unknown',
+            name: String(org.name ?? ''),
+            legalName: null,
+            address: null,
+            state: null,
+            gstin: null,
+            pan: null,
+            booksStartDate: null,
+            logoUrl: null,
+            phone: null,
+            email: null,
+            currency: typeof org.currency === 'string' ? org.currency : 'INR',
+            category: null,
+            code: typeof org.code === 'string' ? org.code : null,
+            isActive: true,
+            settings: {},
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        })) as Business[];
+        return { ok: true, data } as ApiListResponse<Business>;
+    },
+    get: async (_id: string) => {
+        const res = await api.get<{
+            ok: boolean;
+            organization?: Record<string, unknown>;
+            message?: string;
+        }>('/api/organizations/current');
+        if (!res.ok || !res.organization) {
+            throw new Error(res.message ?? 'Failed to load current business.');
+        }
+        const org = res.organization;
+        const data = {
+            id: String(org.id ?? ''),
+            ownerUserId: String(org.userId ?? ''),
+            name: String(org.name ?? ''),
+            legalName: null,
+            address: typeof org.address === 'string' ? org.address : null,
+            state: null,
+            gstin: typeof org.gstNumber === 'string' ? org.gstNumber : null,
+            pan: null,
+            booksStartDate: null,
+            logoUrl: null,
+            phone: typeof org.phoneNumber === 'string' ? org.phoneNumber : null,
+            email: typeof org.email === 'string' ? org.email : null,
+            currency: typeof org.currency === 'string' ? org.currency : 'INR',
+            category: null,
+            code: typeof org.code === 'string' ? org.code : null,
+            isActive: true,
+            settings: {},
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        } as Business;
+        return { ok: true, data } as ApiResponse<Business>;
+    },
+    create: async (data: Partial<Business>) => {
+        const res = await api.post<{ ok: boolean; id?: string; message?: string }>('/api/organizations', {
+            name: data.name,
+            code: data.code,
+            currency: data.currency,
+            phoneNumber: data.phone ?? undefined,
+            email: data.email ?? undefined,
+            gstNumber: data.gstin ?? undefined,
+            address: data.address ?? undefined,
+        });
+        if (!res.ok || !res.id) {
+            throw new Error(res.message ?? 'Failed to create business.');
+        }
+        return { ok: true, data: { id: res.id } } as ApiResponse<{ id: string }>;
+    },
+    update: async (id: string, data: Partial<Business>) =>
         api.patch<ApiResponse<Business>>(`/api/organizations/${id}`, data),
     getSubscription: async () => {
         const res = await api.get<ApiResponse<{ subscription?: Subscription | null }>>('/api/users/me');
@@ -745,6 +819,8 @@ export const invoiceApi = {
     },
     recordPayment: (id: string, data: { paidAmount: number; paymentMode: string; date?: string }) =>
         api.patch<ApiOkResponse>(`/api/transactions/${id}/payment`, data),
+    delete: (id: string) =>
+        api.delete<ApiOkResponse>(`/api/transactions/${id}`),
 };
 
 // ─── POS ─────────────────────────────────────────────────────────────────────
@@ -1500,6 +1576,7 @@ const originalInvoiceApi = {
     get: invoiceApi.get,
     create: invoiceApi.create,
     recordPayment: invoiceApi.recordPayment,
+    delete: invoiceApi.delete,
 };
 
 const originalSettingsApi = {
@@ -1756,12 +1833,14 @@ partyApi.delete = async (id) => {
 invoiceApi.list = async (params) => {
     try {
         const response = await originalInvoiceApi.list(params);
-        await offlineSyncService.setCachedInvoices(response.data ?? []);
-        return response;
+        const visible = (response.data ?? []).filter((entry) => !entry.isDeleted);
+        await offlineSyncService.setCachedInvoices(visible);
+        return { ...response, data: visible };
     } catch (error) {
         const cached = await offlineSyncService.getCachedInvoices();
-        if (cached.length > 0) {
-            return { ok: true, data: cached };
+        const visible = cached.filter((entry) => !entry.isDeleted);
+        if (visible.length > 0) {
+            return { ok: true, data: visible };
         }
         throw error;
     }
@@ -1776,7 +1855,7 @@ invoiceApi.get = async (id) => {
         return response;
     } catch (error) {
         const cached = await offlineSyncService.getCachedInvoices();
-        const invoice = cached.find((entry) => entry.id === id);
+        const invoice = cached.find((entry) => entry.id === id && !entry.isDeleted);
         if (invoice) {
             return { ok: true, data: invoice };
         }
@@ -1829,6 +1908,20 @@ invoiceApi.recordPayment = async (id, data) => {
             },
         });
         return { ok: true, message: 'Payment update queued for sync.' };
+    }
+};
+
+invoiceApi.delete = async (id) => {
+    await offlineSyncService.archiveCachedInvoice(id);
+    try {
+        return await originalInvoiceApi.delete(id);
+    } catch (error) {
+        if (!isOfflineLikeError(error)) throw error;
+        await offlineSyncService.enqueueMutation({
+            type: 'delete_invoice',
+            payload: { id },
+        });
+        return { ok: true, message: 'Invoice delete queued for sync.' };
     }
 };
 

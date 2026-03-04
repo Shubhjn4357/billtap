@@ -3,30 +3,38 @@ import {
     ActivityIndicator,
     FlatList,
     Pressable,
-    SafeAreaView,
     StyleSheet,
     Text,
     TextInput,
     useColorScheme,
     View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { partyApi } from '../../../api/endpoints';
 import { useInvoiceBuilderStore } from '../../../store/invoiceBuilderStore';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { useSmartBack } from '../../../hooks/useSmartBack';
 
 export default function PartySelectScreen() {
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
     const [search, setSearch] = useState('');
+    const params = useLocalSearchParams<{ partyType?: string }>();
+    const smartBack = useSmartBack('/(main)/billing');
+    const normalizedPartyType = params.partyType?.toLowerCase() === 'supplier' ? 'supplier' : 'customer';
 
     const setParty = useInvoiceBuilderStore((state) => state.setParty);
 
     const { data, isLoading } = useQuery({
-        queryKey: ['party-select', search],
-        queryFn: () => partyApi.list({ q: search.trim() || undefined, limit: 200 }),
+        queryKey: ['party-select', search, normalizedPartyType],
+        queryFn: () => partyApi.list({
+            q: search.trim() || undefined,
+            limit: 200,
+            type: normalizedPartyType,
+        }),
         staleTime: 30_000,
     });
 
@@ -43,23 +51,43 @@ export default function PartySelectScreen() {
             billingAddress: party.billingAddress ?? null,
             shippingAddress: party.shippingAddress ?? null,
         });
-        router.back();
+        smartBack();
     };
 
     const clearParty = () => {
         setParty(null, null);
-        router.back();
+        smartBack();
     };
 
     return (
-        <SafeAreaView style={s.safe}>
+        <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
             <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
+                <Pressable onPress={smartBack}>
                     <Text style={[s.headerAction, { color: colors.primary }]}>Back</Text>
                 </Pressable>
-                <Text style={s.title}>Select Party</Text>
+                <Text style={s.title}>{normalizedPartyType === 'supplier' ? 'Select Supplier' : 'Select Customer'}</Text>
                 <Pressable onPress={clearParty}>
                     <Text style={[s.headerAction, { color: colors.error }]}>Clear</Text>
+                </Pressable>
+            </View>
+
+            <View style={s.createPartyWrap}>
+                <Pressable
+                    style={[s.createPartyBtn, { borderColor: colors.border }]}
+                    onPress={() =>
+                        router.push({
+                            pathname: '/(main)/parties/add',
+                            params: {
+                                type: normalizedPartyType === 'supplier' ? 'SUPPLIER' : 'CUSTOMER',
+                                returnPath: '/(main)/billing/party-select',
+                                partyType: normalizedPartyType,
+                            },
+                        })
+                    }
+                >
+                    <Text style={[s.createPartyText, { color: colors.primary }]}>
+                        + Create {normalizedPartyType === 'supplier' ? 'Supplier' : 'Customer'}
+                    </Text>
                 </Pressable>
             </View>
 
@@ -126,6 +154,22 @@ const styles = (colors: ColorPalette) =>
         headerAction: { fontSize: 14, fontWeight: '700' },
         title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
         searchWrap: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md },
+        createPartyWrap: {
+            paddingHorizontal: Spacing.lg,
+            paddingBottom: Spacing.sm,
+        },
+        createPartyBtn: {
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            minHeight: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.card,
+        },
+        createPartyText: {
+            fontSize: Typography.body.size,
+            fontWeight: '700',
+        },
         searchInput: {
             borderWidth: 1,
             borderRadius: Radius.pill,

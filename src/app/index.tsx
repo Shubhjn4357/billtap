@@ -1,9 +1,14 @@
 import { Redirect } from 'expo-router';
-import { useBusiness, useIsAuthenticated } from '../store/authStore';
+import { useBusiness, useIsAuthenticated, useIsBootstrapped } from '../store/authStore';
 
 export default function Index() {
   const isAuthenticated = useIsAuthenticated();
+  const isBootstrapped = useIsBootstrapped();
   const business = useBusiness();
+
+  if (!isBootstrapped) {
+    return null;
+  }
 
   const nextRoute = !isAuthenticated
     ? '/(auth)/login'

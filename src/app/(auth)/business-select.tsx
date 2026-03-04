@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Image,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -15,10 +16,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, storeBusinessId } from '../../api/client';
+import * as SecureStore from 'expo-secure-store';
+import { storeBusinessId, toUserMessage } from '../../api/client';
+import { businessApi, settingsApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 import { extractUpiIdFromPayload, isValidUpiId, sanitizeUpiId } from '../../utils/upi';
+import { SignatureCaptureSheet } from '../../components/signature/SignatureCaptureSheet';
 
 type OrganizationLite = {
     id: string;
@@ -29,6 +33,7 @@ type OrganizationLite = {
 };
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'AED'];
+const PENDING_SETUP_KEY_PREFIX = 'vahi_pending_setup_';
 
 const sanitizeBusinessCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
 
@@ -50,19 +55,32 @@ const deriveBusinessCode = (name: string) => {
 };
 
 const fetchOrganizations = async (): Promise<OrganizationLite[]> => {
-    const response = await api.get<{ ok: boolean; organizations?: OrganizationLite[]; message?: string }>('/api/organizations/mine');
-    if (!response.ok) {
-        throw new Error(response.message ?? 'Failed to load businesses.');
-    }
-    return response.organizations ?? [];
+    const response = await businessApi.list();
+    return (response.data ?? []).map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        code: entry.code ?? null,
+        currency: entry.currency ?? 'INR',
+        role: 'owner',
+    }));
 };
 
 const createOrganization = async (input: { name: string; code: string; currency: string }): Promise<string> => {
-    const response = await api.post<{ ok: boolean; id?: string; message?: string }>('/api/organizations', input);
-    if (!response.ok || !response.id) {
-        throw new Error(response.message ?? 'Failed to create business.');
-    }
-    return response.id;
+    const response = await businessApi.create({
+        name: input.name,
+        code: input.code,
+        currency: input.currency,
+    });
+    return response.data.id;
+};
+
+const isCloudWriteRestriction = (error: unknown): boolean => {
+    const message = toUserMessage(error, '').toLowerCase();
+    return (
+        message.includes('offline mode only') ||
+        message.includes('cloud write actions are blocked') ||
+        message.includes('read-only')
+    );
 };
 
 export default function BusinessSelectScreen() {
@@ -82,6 +100,7 @@ export default function BusinessSelectScreen() {
     const [switchingBusinessId, setSwitchingBusinessId] = useState<string | null>(null);
     const [paymentUpiId, setPaymentUpiId] = useState('');
     const [signatureUrl, setSignatureUrl] = useState('');
+    const [signatureCaptureVisible, setSignatureCaptureVisible] = useState(false);
 
     const {
         data: organizations = [],
@@ -130,13 +149,23 @@ export default function BusinessSelectScreen() {
             throw new Error('Invalid UPI ID format. Use format like merchant@upi.');
         }
 
-        await api.put('/api/settings/GENERAL', {
+        await settingsApi.update('GENERAL', {
             data: {
                 payment_upi_id: normalizedUpi || null,
                 payment_receiver_name: receiverName?.trim() || null,
                 signature_url: normalizedSignature || null,
+                signature_data_url: normalizedSignature.startsWith('data:image/') ? normalizedSignature : null,
             },
         });
+    };
+
+    const persistSetupOfflineDraft = async (businessId: string, receiverName?: string) => {
+        const payload = {
+            payment_upi_id: sanitizeUpiId(paymentUpiId) || null,
+            payment_receiver_name: receiverName?.trim() || null,
+            signature_url: signatureUrl.trim() || null,
+        };
+        await SecureStore.setItemAsync(`${PENDING_SETUP_KEY_PREFIX}${businessId}`, JSON.stringify(payload));
     };
 
     const handleContinue = async (businessId?: string, receiverName?: string) => {
@@ -152,12 +181,16 @@ export default function BusinessSelectScreen() {
             try {
                 await persistBusinessSetup(receiverName);
             } catch (error) {
-                Alert.alert('Setup not saved', error instanceof Error ? error.message : 'Unable to save UPI/signature setup.');
+                if (isCloudWriteRestriction(error)) {
+                    await persistSetupOfflineDraft(nextBusinessId, receiverName);
+                } else {
+                    Alert.alert('Setup not saved', toUserMessage(error, 'Unable to save UPI/signature setup.'));
+                }
             }
             await refreshUser();
             router.replace('/(main)');
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unable to switch business.';
+            const message = toUserMessage(error, 'Unable to switch business.');
             Alert.alert('Could not continue', message);
         } finally {
             setSwitchingBusinessId(null);
@@ -186,7 +219,7 @@ export default function BusinessSelectScreen() {
             setSelectedId(id);
             await handleContinue(id, name);
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to create business.';
+            const message = toUserMessage(error, 'Failed to create business.');
             Alert.alert('Create Business Failed', message);
         }
     };
@@ -333,6 +366,27 @@ export default function BusinessSelectScreen() {
                                 style={s.input}
                                 autoCapitalize="none"
                             />
+                            <View style={s.signatureActions}>
+                                <Pressable
+                                    style={[s.secondaryInlineButton, { borderColor: colors.border }]}
+                                    onPress={() => setSignatureCaptureVisible(true)}
+                                >
+                                    <Text style={[s.secondaryInlineButtonText, { color: colors.primary }]}>Draw Signature</Text>
+                                </Pressable>
+                                {signatureUrl ? (
+                                    <Pressable
+                                        style={[s.secondaryInlineButton, { borderColor: colors.border }]}
+                                        onPress={() => setSignatureUrl('')}
+                                    >
+                                        <Text style={[s.secondaryInlineButtonText, { color: colors.error }]}>Clear</Text>
+                                    </Pressable>
+                                ) : null}
+                            </View>
+                            {signatureUrl ? (
+                                <View style={s.signaturePreviewWrap}>
+                                    <Image source={{ uri: signatureUrl }} style={s.signaturePreview} resizeMode="contain" />
+                                </View>
+                            ) : null}
                             <Text style={s.helperText}>UPI and signature setup will be saved into General settings of selected business.</Text>
 
                             <Pressable
@@ -354,6 +408,14 @@ export default function BusinessSelectScreen() {
                     </Pressable>
                 </ScrollView>
             </KeyboardAvoidingView>
+            <SignatureCaptureSheet
+                visible={signatureCaptureVisible}
+                onClose={() => setSignatureCaptureVisible(false)}
+                onSave={(dataUrl) => {
+                    setSignatureCaptureVisible(false);
+                    setSignatureUrl(dataUrl);
+                }}
+            />
         </SafeAreaView>
     );
 }
@@ -472,6 +534,34 @@ const styles = (colors: ColorPalette) =>
         helperText: {
             color: colors.textSecondary,
             fontSize: Typography.caption.size,
+        },
+        signatureActions: {
+            flexDirection: 'row',
+            gap: Spacing.sm,
+            marginTop: Spacing.xs,
+            alignItems: 'center',
+        },
+        secondaryInlineButton: {
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+        },
+        secondaryInlineButtonText: {
+            fontSize: Typography.caption.size,
+            fontWeight: '700',
+        },
+        signaturePreviewWrap: {
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: Radius.md,
+            overflow: 'hidden',
+            backgroundColor: '#fff',
+            marginTop: Spacing.xs,
+        },
+        signaturePreview: {
+            width: '100%',
+            height: 120,
         },
         scanAction: {
             alignSelf: 'flex-start',

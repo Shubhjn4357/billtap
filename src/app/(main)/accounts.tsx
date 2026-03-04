@@ -38,6 +38,9 @@ export default function AccountsScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={s.header}>
                     <Text style={s.title}>Accounts</Text>
+                    <Pressable onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
+                        <Text style={[s.headerAction, { color: colors.primary }]}>All Screens</Text>
+                    </Pressable>
                 </View>
 
                 <View style={[s.section, { marginBottom: Spacing.sm }]}> 
@@ -133,8 +136,15 @@ export default function AccountsScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+        header: {
+            paddingHorizontal: Spacing.lg,
+            paddingVertical: Spacing.md,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+        },
         title: { fontSize: Typography.headline.size, fontWeight: '700', color: colors.text },
+        headerAction: { fontSize: Typography.body.size, fontWeight: '700' },
         section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
         sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
         sectionTitle: { fontWeight: '700', fontSize: Typography.title.size, color: colors.text },

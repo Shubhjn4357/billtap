@@ -6,11 +6,11 @@ import {
     Pressable,
     Image,
     useColorScheme,
-    SafeAreaView,
     ActivityIndicator,
     Alert,
     Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
 import { authApi } from '../../api/endpoints';
@@ -19,7 +19,7 @@ import {
     getNativeGoogleErrorMessage,
     signInWithNativeGoogle,
 } from '../../utils/googleNativeSignIn';
-import { getApiBaseUrl } from '../../api/client';
+import { getApiBaseUrl, toUserMessage } from '../../api/client';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 
 const APP_LOGO = require('../../../assets/images/icon.png');
@@ -82,6 +82,10 @@ export default function LoginScreen() {
     };
 
     const toReadableSignInError = (error: unknown): string => {
+        const apiMessage = toUserMessage(error, '').trim();
+        if (apiMessage.length > 0 && !apiMessage.toLowerCase().includes('error')) {
+            return apiMessage;
+        }
         const message = getNativeGoogleErrorMessage(error);
         if (message.toLowerCase().includes('network error')) {
             return `Cannot reach API at ${getApiBaseUrl()}. Check EXPO_PUBLIC_API_BASE_URL and internet/VPN/firewall.`;

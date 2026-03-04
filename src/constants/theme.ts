@@ -53,6 +53,7 @@ export const Colors = {
 
 export type ThemeColor = keyof typeof Colors.light;
 export type ThemeMode = 'light' | 'dark';
+export type ThemePreference = ThemeMode | 'system';
 // Widened palette type: compatible with both light and dark, usable as component prop
 export type ColorPalette = {
     primary: string;
@@ -78,8 +79,28 @@ export type ColorPalette = {
     skeleton: string;
     skeletonHighlight: string;
 };
+
+let themePreference: ThemePreference = 'system';
+
+const normalizeThemePreference = (value: unknown): ThemePreference => {
+    const candidate = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (candidate === 'light' || candidate === 'dark' || candidate === 'system') {
+        return candidate;
+    }
+    return 'system';
+};
+
+export const setThemePreference = (value: unknown) => {
+    themePreference = normalizeThemePreference(value);
+};
+
+export const getThemePreference = (): ThemePreference => themePreference;
+
 export function getColors(scheme: ColorSchemeName | null | undefined): ColorPalette {
-    const mode: ThemeMode = scheme === 'dark' ? 'dark' : 'light';
+    const mode: ThemeMode =
+        themePreference === 'system'
+            ? (scheme === 'dark' ? 'dark' : 'light')
+            : themePreference;
     return Colors[mode];
 }
 

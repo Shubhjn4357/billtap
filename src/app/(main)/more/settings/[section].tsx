@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Image,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -16,9 +17,18 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../../../api/endpoints';
 import { getSettingsSectionLabel } from '../../../../constants/settingsSchema';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
+import { getColors, Radius, setThemePreference, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
 import type { SettingsFieldDefinition } from '../../../../types/api';
 import { extractUpiIdFromPayload } from '../../../../utils/upi';
+import { SignatureCaptureSheet } from '../../../../components/signature/SignatureCaptureSheet';
+import { useSmartBack } from '../../../../hooks/useSmartBack';
+import {
+    parseRoleActionOverrides,
+    parseRoleModuleOverrides,
+    ROLE_ACTION_OVERRIDES_KEY,
+    ROLE_MODULE_OVERRIDES_KEY,
+    setRoleAccessOverrides,
+} from '../../../../utils/accessControl';
 
 const coerceValue = (field: SettingsFieldDefinition, input: unknown) => {
     if ((input === null || input === undefined) && field.nullable) return null;
@@ -65,7 +75,9 @@ export default function SettingsSectionEditorScreen() {
     const colors = getColors(scheme);
     const s = styles(colors);
     const queryClient = useQueryClient();
+    const smartBack = useSmartBack('/(main)/more/settings');
     const [draft, setDraft] = useState<Record<string, unknown>>({});
+    const [signatureCaptureVisible, setSignatureCaptureVisible] = useState(false);
     const handledUpiPayloadRef = useRef<string>('');
 
     const { data: schemaResponse, isLoading: schemaLoading } = useQuery({
@@ -115,6 +127,20 @@ export default function SettingsSectionEditorScreen() {
         Alert.alert('UPI', 'UPI ID captured from QR. Save settings to apply.');
     }, [scanAt, section, upiPayload]);
 
+    useEffect(() => {
+        if (section !== 'GENERAL') return;
+        const mode = draft.theme_mode;
+        setThemePreference(typeof mode === 'string' ? mode : 'SYSTEM');
+    }, [draft.theme_mode, section]);
+
+    useEffect(() => {
+        if (section !== 'SECURITY') return;
+        setRoleAccessOverrides({
+            actionOverrides: parseRoleActionOverrides(draft[ROLE_ACTION_OVERRIDES_KEY]),
+            moduleOverrides: parseRoleModuleOverrides(draft[ROLE_MODULE_OVERRIDES_KEY]),
+        });
+    }, [draft, section]);
+
     const { mutate: saveSettings, isPending } = useMutation({
         mutationFn: () => settingsApi.update(section, { data: draft }),
         onSuccess: () => {
@@ -141,7 +167,7 @@ export default function SettingsSectionEditorScreen() {
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
             <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
+                <Pressable onPress={smartBack}>
                     <Text style={[s.back, { color: colors.primary }]}>Back</Text>
                 </Pressable>
                 <Text style={s.title}>{getSettingsSectionLabel(section)}</Text>
@@ -235,6 +261,33 @@ export default function SettingsSectionEditorScreen() {
                                                 <Text style={[s.inlineActionText, { color: colors.primary }]}>Scan UPI QR</Text>
                                             </Pressable>
                                         ) : null}
+                                        {section === 'GENERAL' && field.key === 'signature_url' ? (
+                                            <View style={s.signatureRow}>
+                                                <Pressable
+                                                    style={[s.inlineAction, { borderColor: colors.border }]}
+                                                    onPress={() => setSignatureCaptureVisible(true)}
+                                                >
+                                                    <Text style={[s.inlineActionText, { color: colors.primary }]}>Draw Signature</Text>
+                                                </Pressable>
+                                                {value ? (
+                                                    <Pressable
+                                                        style={[s.inlineAction, { borderColor: colors.border }]}
+                                                        onPress={() => setDraft((prev) => ({ ...prev, [field.key]: '' }))}
+                                                    >
+                                                        <Text style={[s.inlineActionText, { color: colors.error }]}>Clear</Text>
+                                                    </Pressable>
+                                                ) : null}
+                                                {value ? (
+                                                    <View style={[s.signaturePreviewWrap, { borderColor: colors.border }]}>
+                                                        <Image
+                                                            source={{ uri: String(value) }}
+                                                            style={s.signaturePreview}
+                                                            resizeMode="contain"
+                                                        />
+                                                    </View>
+                                                ) : null}
+                                            </View>
+                                        ) : null}
                                     </>
                                 )}
                             </View>
@@ -243,6 +296,14 @@ export default function SettingsSectionEditorScreen() {
                     <View style={{ height: 80 }} />
                 </ScrollView>
             )}
+            <SignatureCaptureSheet
+                visible={signatureCaptureVisible}
+                onClose={() => setSignatureCaptureVisible(false)}
+                onSave={(dataUrl) => {
+                    setSignatureCaptureVisible(false);
+                    setDraft((prev) => ({ ...prev, signature_url: dataUrl }));
+                }}
+            />
         </SafeAreaView>
     );
 }
@@ -302,6 +363,19 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         paddingVertical: 6,
     },
     inlineActionText: { fontSize: 12, fontWeight: '700' },
+    signatureRow: {
+        gap: Spacing.xs,
+    },
+    signaturePreviewWrap: {
+        borderWidth: 1,
+        borderRadius: Radius.md,
+        backgroundColor: '#fff',
+        overflow: 'hidden',
+    },
+    signaturePreview: {
+        width: '100%',
+        height: 110,
+    },
 });
 
 
