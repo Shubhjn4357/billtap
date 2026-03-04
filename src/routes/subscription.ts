@@ -315,7 +315,7 @@ subscriptionRoute.get('/intents/:intentId/status', requireAuth, async (c) => {
     const authUser = c.get('authUser');
     if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const intentId = c.req.param('intentId');
+    const intentId = z.string().min(1).parse(c.req.param('intentId'));
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
 
