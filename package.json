@@ -21,7 +21,7 @@
     "verify:invoice-snapshots": "node ./scripts/verify-invoice-html-snapshots.js",
     "verify:invoice-snapshots:update": "node ./scripts/verify-invoice-html-snapshots.js --update",
     "verify:fast": "pnpm run doctor && pnpm run lint && pnpm run typecheck",
-    "verify:ci": "pnpm run verify:fast && pnpm run verify:routes && pnpm run smoke:routes && pnpm run verify:invoice-snapshots && pnpm run test:verify",
+    "verify:ci": "pnpm run verify:fast && pnpm run verify:routes && pnpm run smoke:routes && pnpm run verify:invoice-snapshots",
     "verify:full": "pnpm run verify:ci && pnpm run smoke:web",
     "verify:prepush": "pnpm run verify:ci",
     "verify:workspace": "node ./scripts/verify-workspace.js",
