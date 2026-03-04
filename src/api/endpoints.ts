@@ -58,7 +58,9 @@ export const businessApi = {
             ok: boolean;
             organizations?: Record<string, unknown>[];
             message?: string;
-        }>('/api/organizations/mine');
+        }>('/api/organizations/mine', {
+            skipOrganizationHeader: true,
+        });
         if (!res.ok) {
             throw new Error(res.message ?? 'Failed to load businesses.');
         }
@@ -127,6 +129,8 @@ export const businessApi = {
             email: data.email ?? undefined,
             gstNumber: data.gstin ?? undefined,
             address: data.address ?? undefined,
+        }, {
+            skipOrganizationHeader: true,
         });
         if (!res.ok || !res.id) {
             throw new Error(res.message ?? 'Failed to create business.');

@@ -55,10 +55,16 @@ export const toApiError = (error: unknown): ApiErrorNormalized => {
 
     if (error instanceof AxiosError) {
         const status = error.response?.status ?? 0;
+        const rawAxiosMessage = error.message ?? '';
+        const statusFallbackMessage =
+            status >= 500
+                ? 'Server error. Please try again in a moment.'
+                : status > 0
+                    ? `Request failed (${status}).`
+                    : 'Network request failed.';
         const message =
             extractServerMessage(error.response?.data) ??
-            error.message ??
-            'Network request failed.';
+            ((rawAxiosMessage.startsWith('Request failed with status code') ? statusFallbackMessage : rawAxiosMessage) || statusFallbackMessage);
         return {
             status,
             message,
@@ -83,12 +89,15 @@ export const toApiError = (error: unknown): ApiErrorNormalized => {
 
 export const isUnauthorizedError = (error: unknown): boolean => {
     const normalized = toApiError(error);
-    return normalized.status === 401 || normalized.status === 403;
+    return normalized.status === 401;
 };
 
 export const toUserMessage = (error: unknown, fallback = 'Something went wrong. Please try again.'): string => {
     const normalized = toApiError(error);
     const message = normalized.message?.trim();
+    if (normalized.status >= 500 && message && /request failed with status code\s*5\d\d/i.test(message)) {
+        return 'Server error. Please try again in a moment.';
+    }
     return message && message.length > 0 ? message : fallback;
 };
 
@@ -105,8 +114,11 @@ export async function storeToken(token: string): Promise<void> {
 
 export async function clearToken(): Promise<void> {
     _token = null;
-    _businessId = null;
     await SecureStore.deleteItemAsync(TOKEN_KEY);
+}
+
+export async function clearStoredBusinessId(): Promise<void> {
+    _businessId = null;
     await SecureStore.deleteItemAsync(BUSINESS_ID_KEY);
 }
 
@@ -132,15 +144,21 @@ const client: AxiosInstance = axios.create({
     },
 });
 
+type RequestConfigWithFlags = InternalAxiosRequestConfig & {
+    skipOrganizationHeader?: boolean;
+};
+
 // Request interceptor: attach JWT + business ID
-client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+client.interceptors.request.use(async (config: RequestConfigWithFlags) => {
     const token = await getStoredToken();
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
-    const businessId = await getStoredBusinessId();
-    if (businessId) {
-        config.headers['X-Organization-Id'] = businessId;
+    if (!config.skipOrganizationHeader) {
+        const businessId = await getStoredBusinessId();
+        if (businessId) {
+            config.headers['X-Organization-Id'] = businessId;
+        }
     }
     return config;
 });
@@ -149,8 +167,9 @@ client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
 client.interceptors.response.use(
     (res) => res,
     (error) => {
-        if (error instanceof AxiosError && (error.response?.status === 401 || error.response?.status === 403)) {
+        if (error instanceof AxiosError && error.response?.status === 401) {
             clearToken().catch(() => null);
+            clearStoredBusinessId().catch(() => null);
         }
         return Promise.reject(toApiError(error));
     }
@@ -158,16 +177,20 @@ client.interceptors.response.use(
 
 export default client;
 
+export type ApiRequestConfig = AxiosRequestConfig & {
+    skipOrganizationHeader?: boolean;
+};
+
 // Typed API helpers
 export const api = {
-    get: <T>(url: string, config?: AxiosRequestConfig) =>
+    get: <T>(url: string, config?: ApiRequestConfig) =>
         client.get<T>(url, config).then((r) => r.data),
-    post: <T>(url: string, data?: unknown, config?: AxiosRequestConfig) =>
+    post: <T>(url: string, data?: unknown, config?: ApiRequestConfig) =>
         client.post<T>(url, data, config).then((r) => r.data),
-    put: <T>(url: string, data?: unknown, config?: AxiosRequestConfig) =>
+    put: <T>(url: string, data?: unknown, config?: ApiRequestConfig) =>
         client.put<T>(url, data, config).then((r) => r.data),
-    patch: <T>(url: string, data?: unknown, config?: AxiosRequestConfig) =>
+    patch: <T>(url: string, data?: unknown, config?: ApiRequestConfig) =>
         client.patch<T>(url, data, config).then((r) => r.data),
-    delete: <T>(url: string, config?: AxiosRequestConfig) =>
+    delete: <T>(url: string, config?: ApiRequestConfig) =>
         client.delete<T>(url, config).then((r) => r.data),
 };

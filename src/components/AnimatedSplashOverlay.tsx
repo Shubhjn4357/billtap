@@ -1,30 +1,49 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet } from 'react-native';
-import { useIsAuthenticated } from '../store/authStore';
+
+type AnimatedSplashOverlayProps = {
+    ready: boolean;
+    backgroundColor?: string;
+};
 
 /**
- * Animated splash/fade overlay that shows on first mount.
- * Fades out once the auth state is known.
+ * Keeps a solid splash overlay visible while bootstrapping.
+ * Fade-out only begins after the app is actually ready.
  */
-export default function AnimatedSplashOverlay() {
+export default function AnimatedSplashOverlay({
+    ready,
+    backgroundColor = '#007B83',
+}: AnimatedSplashOverlayProps) {
     const opacity = useRef(new Animated.Value(1)).current;
-    const isAuthenticated = useIsAuthenticated();
+    const [visible, setVisible] = useState(true);
 
     useEffect(() => {
-        // Give it a short delay then fade out
+        if (!ready) {
+            opacity.setValue(1);
+            setVisible(true);
+            return;
+        }
+
         const timer = setTimeout(() => {
             Animated.timing(opacity, {
                 toValue: 0,
-                duration: 400,
+                duration: 320,
                 useNativeDriver: true,
-            }).start();
-        }, 600);
+            }).start(({ finished }) => {
+                if (finished) {
+                    setVisible(false);
+                }
+            });
+        }, 120);
+
         return () => clearTimeout(timer);
-    }, [isAuthenticated, opacity]);
+    }, [opacity, ready]);
+
+    if (!visible) return null;
 
     return (
         <Animated.View
-            style={[styles.overlay, { opacity }]}
+            style={[styles.overlay, { opacity, backgroundColor }]}
             pointerEvents="none"
         />
     );
@@ -33,7 +52,6 @@ export default function AnimatedSplashOverlay() {
 const styles = StyleSheet.create({
     overlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: '#007B83',
         zIndex: 999,
     },
 });

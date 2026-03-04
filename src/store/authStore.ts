@@ -5,6 +5,7 @@ import {
     api,
     storeToken,
     clearToken,
+    clearStoredBusinessId,
     storeBusinessId,
     isUnauthorizedError,
     toUserMessage,
@@ -267,6 +268,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             } catch (error) {
                 if (isUnauthorizedError(error)) {
                     await clearToken();
+                    await clearStoredBusinessId();
                     await clearSnapshot();
                     set((state) => {
                         state.user = null;
@@ -320,6 +322,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
         signOut: async () => {
             await clearToken();
+            await clearStoredBusinessId();
             await clearSnapshot();
             set((state) => {
                 state.user = null;

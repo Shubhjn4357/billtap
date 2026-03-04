@@ -129,14 +129,16 @@ export default function RootLayout() {
   if (!ready) {
     return (
       <QueryClientProvider client={queryClient}>
-        <View style={{ flex: 1, backgroundColor: colors.background }} />
-        <AnimatedSplashOverlay />
+        <View style={{ flex: 1, backgroundColor: colors.primary }}>
+          <AnimatedSplashOverlay ready={false} backgroundColor={colors.primary} />
+        </View>
       </QueryClientProvider>
     );
   }
 
   return (
       <QueryClientProvider client={queryClient}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
         <Stack
           screenOptions={{
             headerStyle: { backgroundColor: colors.surface },
@@ -151,7 +153,8 @@ export default function RootLayout() {
           <Stack.Screen name="scan" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
           <Stack.Screen name="index" options={{ headerShown: false }} />
         </Stack>
-        <AnimatedSplashOverlay />
+        <AnimatedSplashOverlay ready={ready} backgroundColor={colors.primary} />
+        </View>
       </QueryClientProvider>
     );
 }
