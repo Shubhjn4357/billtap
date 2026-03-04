@@ -9,6 +9,7 @@ import {
     businesses,
     businessMembers,
     discounts,
+    expenses,
     inventoryMovements,
     invoices,
     items,
@@ -1640,6 +1641,81 @@ adminRoute.get('/transactions', async (c) => {
             updatedAt: entry.updatedAt,
             organizationName: businessById.get(entry.businessId)?.name ?? 'Unknown',
         })),
+    });
+});
+
+adminRoute.get('/expenses/analytics', async (c) => {
+    const db = c.get('db');
+    const fromQuery = c.req.query('from');
+    const toQuery = c.req.query('to');
+
+    const now = new Date();
+    const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = fromQuery ? new Date(fromQuery) : defaultFrom;
+    const toInclusive = toQuery ? new Date(toQuery) : now;
+    const to = new Date(toInclusive);
+    to.setHours(23, 59, 59, 999);
+
+    const thisMonthFrom = new Date(now.getFullYear(), now.getMonth(), 1);
+    const thisMonthTo = new Date(now);
+    thisMonthTo.setHours(23, 59, 59, 999);
+
+    const baseFilters = [
+        eq(expenses.isDeleted, false),
+        gte(expenses.date, from),
+        lte(expenses.date, to),
+    ] as const;
+
+    const monthFilters = [
+        eq(expenses.isDeleted, false),
+        gte(expenses.date, thisMonthFrom),
+        lte(expenses.date, thisMonthTo),
+    ] as const;
+
+    const [byCategoryArr, totalsRows, thisMonthRows] = await Promise.all([
+        db.select({
+            category: expenses.category,
+            total: sql<number>`coalesce(sum(${expenses.amount}), 0)`,
+            count: sql<number>`count(*)`,
+        })
+            .from(expenses)
+            .where(and(...baseFilters))
+            .groupBy(expenses.category)
+            .orderBy(desc(sql`coalesce(sum(${expenses.amount}), 0)`)),
+        db.select({
+            totalExpenses: sql<number>`coalesce(sum(${expenses.amount}), 0)`,
+            totalCount: sql<number>`count(*)`,
+        })
+            .from(expenses)
+            .where(and(...baseFilters)),
+        db.select({
+            thisMonth: sql<number>`coalesce(sum(${expenses.amount}), 0)`,
+        })
+            .from(expenses)
+            .where(and(...monthFilters)),
+    ]);
+
+    const totalExpenses = Number(totalsRows[0]?.totalExpenses ?? 0);
+    const totalCount = Number(totalsRows[0]?.totalCount ?? 0);
+    const thisMonth = Number(thisMonthRows[0]?.thisMonth ?? 0);
+    const dayDiffMs = Math.max(to.getTime() - from.getTime(), 0);
+    const dayDiff = Math.max(Math.floor(dayDiffMs / (1000 * 60 * 60 * 24)) + 1, 1);
+    const avgPerDay = totalExpenses / dayDiff;
+
+    return c.json({
+        ok: true,
+        byCategoryArr: byCategoryArr.map((entry) => ({
+            category: entry.category,
+            total: Number(entry.total ?? 0),
+            count: Number(entry.count ?? 0),
+        })),
+        overview: {
+            totalExpenses,
+            thisMonth,
+            avgPerDay: Number(avgPerDay.toFixed(2)),
+            largestCategory: byCategoryArr[0]?.category ?? 'N/A',
+            totalCount,
+        },
     });
 });
 
