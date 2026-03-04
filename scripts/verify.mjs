@@ -23,6 +23,7 @@ async function verify() {
     console.log('  ' + new Date().toLocaleString());
     console.log('═'.repeat(72) + '\x1b[0m');
 
+    await runStep('Typecheck', 'pnpm typecheck');
     await runStep('Lint', 'pnpm lint');
     await runStep('Build', 'pnpm build');
 
