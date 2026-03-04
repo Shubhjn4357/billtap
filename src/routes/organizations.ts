@@ -82,26 +82,31 @@ const createSignatureSchema = z.object({
 organizationsRoute.use('/*', requireAuth);
 
 organizationsRoute.get('/mine', async (c) => {
-    const db = c.get('db');
-    const authUser = c.get('authUser');
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
 
-    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const owned = await db
-        .select()
-        .from(businesses)
-        .where(and(eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)));
+        const owned = await db
+            .select()
+            .from(businesses)
+            .where(and(eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)));
 
-    const organizations = owned.map((business) => ({
-        id: business.id,
-        name: business.name,
-        code: business.code ?? business.id,
-        currency: business.currency,
-        role: 'owner',
-        permissions: {},
-    }));
+        const organizations = owned.map((business) => ({
+            id: business.id,
+            name: business.name,
+            code: business.code ?? business.id,
+            currency: business.currency,
+            role: 'owner',
+            permissions: {},
+        }));
 
-    return c.json({ ok: true, organizations });
+        return c.json({ ok: true, organizations });
+    } catch (error) {
+        console.error('[organizations] failed to list mine', error);
+        return c.json({ ok: false, message: 'Unable to load businesses right now.' }, 500);
+    }
 });
 
 organizationsRoute.post('/', async (c) => {
@@ -145,35 +150,40 @@ organizationsRoute.post('/', async (c) => {
 });
 
 organizationsRoute.get('/current', async (c) => {
-    const db = c.get('db');
-    const authUser = c.get('authUser');
-    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
-    if (!business) {
-        return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
+        if (!business) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
+
+        return c.json({
+            ok: true,
+            organization: {
+                id: business.id,
+                userId: business.ownerUserId,
+                name: business.name,
+                code: business.code ?? business.id,
+                currency: business.currency,
+                gstNumber: business.gstin,
+                address: business.address,
+                phoneNumber: business.phone,
+                email: business.email,
+            },
+            context: {
+                role: c.get('organizationRole') ?? 'owner',
+                permissions: c.get('organizationPermissions') ?? {},
+                ownerUserId: business.ownerUserId,
+                settings: business.settings ?? {},
+            },
+        });
+    } catch (error) {
+        console.error('[organizations] failed to load current', error);
+        return c.json({ ok: false, message: 'Unable to load selected business right now.' }, 500);
     }
-
-    return c.json({
-        ok: true,
-        organization: {
-            id: business.id,
-            userId: business.ownerUserId,
-            name: business.name,
-            code: business.code ?? business.id,
-            currency: business.currency,
-            gstNumber: business.gstin,
-            address: business.address,
-            phoneNumber: business.phone,
-            email: business.email,
-        },
-        context: {
-            role: c.get('organizationRole') ?? 'owner',
-            permissions: c.get('organizationPermissions') ?? {},
-            ownerUserId: business.ownerUserId,
-            settings: business.settings ?? {},
-        },
-    });
 });
 
 organizationsRoute.patch('/:id', async (c) => {

@@ -117,20 +117,30 @@ const getRoleOverridesFromSecurity = async (
     db: DrizzleClient,
     businessId: string
 ) => {
-    const rows = await db
-        .select({ dataJson: businessSettings.dataJson })
-        .from(businessSettings)
-        .where(and(
-            eq(businessSettings.businessId, businessId),
-            eq(businessSettings.section, 'SECURITY')
-        ))
-        .limit(1);
+    try {
+        const rows = await db
+            .select({ dataJson: businessSettings.dataJson })
+            .from(businessSettings)
+            .where(and(
+                eq(businessSettings.businessId, businessId),
+                eq(businessSettings.section, 'SECURITY')
+            ))
+            .limit(1);
 
-    const security = (rows[0]?.dataJson ?? {}) as Record<string, unknown>;
-    return {
-        actionOverrides: parseRoleOverrides(security.role_action_overrides_json),
-        moduleOverrides: parseRoleOverrides(security.role_module_overrides_json),
-    };
+        const security = (rows[0]?.dataJson ?? {}) as Record<string, unknown>;
+        return {
+            actionOverrides: parseRoleOverrides(security.role_action_overrides_json),
+            moduleOverrides: parseRoleOverrides(security.role_module_overrides_json),
+        };
+    } catch (error) {
+        // Fail-safe: don't block all authenticated requests when settings schema/table
+        // is temporarily unavailable or migrations are behind.
+        console.error('[auth] unable to load SECURITY role overrides', error);
+        return {
+            actionOverrides: {},
+            moduleOverrides: {},
+        };
+    }
 };
 
 const getAuthUserFromRequest = async (
@@ -172,47 +182,52 @@ const resolveActiveBusinessId = async (
     db: DrizzleClient,
     authUser: UserRow
 ): Promise<string | null> => {
-    const requestedBusinessId = getRequestedBusinessId(c);
+    try {
+        const requestedBusinessId = getRequestedBusinessId(c);
 
-    if (requestedBusinessId) {
-        const owned = await db
+        if (requestedBusinessId) {
+            const owned = await db
+                .select({ id: businesses.id })
+                .from(businesses)
+                .where(and(eq(businesses.id, requestedBusinessId), eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)))
+                .limit(1);
+
+            if (owned[0]) return owned[0].id;
+
+            const membership = await db
+                .select({ businessId: businessMembers.businessId })
+                .from(businessMembers)
+                .where(and(
+                    eq(businessMembers.businessId, requestedBusinessId),
+                    eq(businessMembers.userId, authUser.id),
+                    eq(businessMembers.isActive, true),
+                ))
+                .limit(1);
+
+            if (membership[0]) return membership[0].businessId;
+
+            return null;
+        }
+
+        const firstOwned = await db
             .select({ id: businesses.id })
             .from(businesses)
-            .where(and(eq(businesses.id, requestedBusinessId), eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)))
+            .where(and(eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)))
             .limit(1);
 
-        if (owned[0]) return owned[0].id;
+        if (firstOwned[0]) return firstOwned[0].id;
 
-        const membership = await db
+        const firstMember = await db
             .select({ businessId: businessMembers.businessId })
             .from(businessMembers)
-            .where(and(
-                eq(businessMembers.businessId, requestedBusinessId),
-                eq(businessMembers.userId, authUser.id),
-                eq(businessMembers.isActive, true),
-            ))
+            .where(and(eq(businessMembers.userId, authUser.id), eq(businessMembers.isActive, true)))
             .limit(1);
 
-        if (membership[0]) return membership[0].businessId;
-
+        return firstMember[0]?.businessId ?? null;
+    } catch (error) {
+        console.error('[auth] unable to resolve active business', error);
         return null;
     }
-
-    const firstOwned = await db
-        .select({ id: businesses.id })
-        .from(businesses)
-        .where(and(eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)))
-        .limit(1);
-
-    if (firstOwned[0]) return firstOwned[0].id;
-
-    const firstMember = await db
-        .select({ businessId: businessMembers.businessId })
-        .from(businessMembers)
-        .where(and(eq(businessMembers.userId, authUser.id), eq(businessMembers.isActive, true)))
-        .limit(1);
-
-    return firstMember[0]?.businessId ?? null;
 };
 
 const setAnonymousContext = (c: AppContext) => {
@@ -233,7 +248,71 @@ const resolveOrganizationContext = async (
     user: UserRow,
     businessId: string | null
 ) => {
-    if (!businessId) {
+    try {
+        if (!businessId) {
+            return {
+                organizationRole: null as AppVariables['organizationRole'],
+                organizationPermissions: {} as Record<string, boolean>,
+                organizationActionOverrides: {} as Record<string, Record<string, boolean>>,
+                organizationModuleOverrides: {} as Record<string, Record<string, boolean>>,
+                ownerUserId: user.id,
+            };
+        }
+
+        const businessRows = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+        const business = businessRows[0];
+        if (!business) {
+            return {
+                organizationRole: null as AppVariables['organizationRole'],
+                organizationPermissions: {},
+                organizationActionOverrides: {} as Record<string, Record<string, boolean>>,
+                organizationModuleOverrides: {} as Record<string, Record<string, boolean>>,
+                ownerUserId: user.id,
+            };
+        }
+
+        const roleOverrides = await getRoleOverridesFromSecurity(db, businessId);
+
+        if (business.ownerUserId === user.id) {
+            return {
+                organizationRole: 'owner' as const,
+                organizationPermissions: {} as Record<string, boolean>,
+                organizationActionOverrides: roleOverrides.actionOverrides,
+                organizationModuleOverrides: roleOverrides.moduleOverrides,
+                ownerUserId: business.ownerUserId,
+            };
+        }
+
+        const membershipRows = await db
+            .select()
+            .from(businessMembers)
+            .where(and(
+                eq(businessMembers.businessId, businessId),
+                eq(businessMembers.userId, user.id),
+                eq(businessMembers.isActive, true),
+            ))
+            .limit(1);
+        const membership = membershipRows[0];
+
+        if (!membership) {
+            return {
+                organizationRole: null as AppVariables['organizationRole'],
+                organizationPermissions: {} as Record<string, boolean>,
+                organizationActionOverrides: roleOverrides.actionOverrides,
+                organizationModuleOverrides: roleOverrides.moduleOverrides,
+                ownerUserId: business.ownerUserId,
+            };
+        }
+
+        return {
+            organizationRole: membership.role === 'OWNER' ? 'manager' as const : 'salesman' as const,
+            organizationPermissions: (membership.permissions ?? {}) as Record<string, boolean>,
+            organizationActionOverrides: roleOverrides.actionOverrides,
+            organizationModuleOverrides: roleOverrides.moduleOverrides,
+            ownerUserId: business.ownerUserId,
+        };
+    } catch (error) {
+        console.error('[auth] unable to resolve organization context', error);
         return {
             organizationRole: null as AppVariables['organizationRole'],
             organizationPermissions: {} as Record<string, boolean>,
@@ -242,59 +321,6 @@ const resolveOrganizationContext = async (
             ownerUserId: user.id,
         };
     }
-
-    const businessRows = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
-    const business = businessRows[0];
-    if (!business) {
-        return {
-            organizationRole: null as AppVariables['organizationRole'],
-            organizationPermissions: {},
-            organizationActionOverrides: {} as Record<string, Record<string, boolean>>,
-            organizationModuleOverrides: {} as Record<string, Record<string, boolean>>,
-            ownerUserId: user.id,
-        };
-    }
-
-    const roleOverrides = await getRoleOverridesFromSecurity(db, businessId);
-
-    if (business.ownerUserId === user.id) {
-        return {
-            organizationRole: 'owner' as const,
-            organizationPermissions: {} as Record<string, boolean>,
-            organizationActionOverrides: roleOverrides.actionOverrides,
-            organizationModuleOverrides: roleOverrides.moduleOverrides,
-            ownerUserId: business.ownerUserId,
-        };
-    }
-
-    const membershipRows = await db
-        .select()
-        .from(businessMembers)
-        .where(and(
-            eq(businessMembers.businessId, businessId),
-            eq(businessMembers.userId, user.id),
-            eq(businessMembers.isActive, true),
-        ))
-        .limit(1);
-    const membership = membershipRows[0];
-
-    if (!membership) {
-        return {
-            organizationRole: null as AppVariables['organizationRole'],
-            organizationPermissions: {} as Record<string, boolean>,
-            organizationActionOverrides: roleOverrides.actionOverrides,
-            organizationModuleOverrides: roleOverrides.moduleOverrides,
-            ownerUserId: business.ownerUserId,
-        };
-    }
-
-    return {
-        organizationRole: membership.role === 'OWNER' ? 'manager' as const : 'salesman' as const,
-        organizationPermissions: (membership.permissions ?? {}) as Record<string, boolean>,
-        organizationActionOverrides: roleOverrides.actionOverrides,
-        organizationModuleOverrides: roleOverrides.moduleOverrides,
-        ownerUserId: business.ownerUserId,
-    };
 };
 
 const setAuthenticatedContext = async (

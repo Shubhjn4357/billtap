@@ -27,10 +27,16 @@ import businessSettingsRoute from './routes/businessSettings';
 
 const app = new Hono<AppEnv>();
 const apiRoutes = new Hono<AppEnv>();
+const dbClientCache = new Map<string, DrizzleClient>();
 
 const getDbClient = (databaseUrl: string): DrizzleClient => {
+    const cached = dbClientCache.get(databaseUrl);
+    if (cached) return cached;
+
     const pool = new Pool({ connectionString: databaseUrl });
-    return drizzle(pool, { schema }) as unknown as DrizzleClient;
+    const client = drizzle(pool, { schema }) as unknown as DrizzleClient;
+    dbClientCache.set(databaseUrl, client);
+    return client;
 };
 
 app.use('*', async (c, next) => {
