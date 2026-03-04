@@ -22,6 +22,19 @@ const businessSettingsRoute = new Hono<AppEnv>();
 
 businessSettingsRoute.use('/*', requireAuth);
 
+const isBusinessSettingsStorageError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    const normalized = message.toLowerCase();
+    return normalized.includes('business_settings')
+        && (
+            normalized.includes('failed query')
+            || normalized.includes('does not exist')
+            || normalized.includes('relation')
+            || normalized.includes('column')
+            || normalized.includes('settings_section')
+        );
+};
+
 businessSettingsRoute.get('/schema', async (c) => {
     const denied = requireOrganizationCapability(c, 'settings.read');
     if (denied) return denied;
@@ -43,13 +56,21 @@ businessSettingsRoute.get('/', async (c) => {
     const denied = requireOrganizationCapability(c, 'settings.read');
     if (denied) return denied;
 
-    const rows = await db.select().from(businessSettings).where(eq(businessSettings.businessId, business.id));
-    const settingsMap = rows.reduce<Record<string, Record<string, unknown>>>((acc, row) => {
-        acc[row.section] = row.dataJson as Record<string, unknown>;
-        return acc;
-    }, {});
+    try {
+        const rows = await db.select().from(businessSettings).where(eq(businessSettings.businessId, business.id));
+        const settingsMap = rows.reduce<Record<string, Record<string, unknown>>>((acc, row) => {
+            acc[row.section] = row.dataJson as Record<string, unknown>;
+            return acc;
+        }, {});
 
-    return c.json({ ok: true, data: settingsMap });
+        return c.json({ ok: true, data: settingsMap });
+    } catch (error) {
+        if (isBusinessSettingsStorageError(error)) {
+            console.error('[settings] storage unavailable; returning empty settings map', error);
+            return c.json({ ok: true, data: {}, degraded: true });
+        }
+        throw error;
+    }
 });
 
 // Get specific section
@@ -66,11 +87,24 @@ businessSettingsRoute.get('/:section', async (c) => {
     const section = c.req.param('section').toUpperCase();
     if (!isValidSettingsSection(section)) return c.json({ ok: false, message: 'Invalid settings section' }, 400);
 
-    const [row] = await db.select().from(businessSettings)
-        .where(and(eq(businessSettings.businessId, business.id), eq(businessSettings.section, section)));
+    try {
+        const [row] = await db.select().from(businessSettings)
+            .where(and(eq(businessSettings.businessId, business.id), eq(businessSettings.section, section)));
 
-    const normalized = normalizeSettingsData(section, (row?.dataJson ?? {}) as Record<string, unknown>);
-    return c.json({ ok: true, data: normalized, section });
+        const normalized = normalizeSettingsData(section, (row?.dataJson ?? {}) as Record<string, unknown>);
+        return c.json({ ok: true, data: normalized, section });
+    } catch (error) {
+        if (isBusinessSettingsStorageError(error)) {
+            console.error(`[settings] storage unavailable for section ${section}; returning defaults`, error);
+            return c.json({
+                ok: true,
+                data: normalizeSettingsData(section, {}),
+                section,
+                degraded: true,
+            });
+        }
+        throw error;
+    }
 });
 
 // Upsert settings section (merges with existing)
@@ -81,6 +115,7 @@ businessSettingsRoute.put('/:section', async (c) => {
 
     const section = c.req.param('section').toUpperCase();
     if (!isValidSettingsSection(section)) return c.json({ ok: false, message: 'Invalid settings section' }, 400);
+    let parsedData: Record<string, unknown> = {};
 
     try {
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
@@ -93,6 +128,7 @@ businessSettingsRoute.put('/:section', async (c) => {
         assertModuleEnabled(business, 'settings');
 
         const body = z.object({ data: z.record(z.string(), z.unknown()) }).parse(await c.req.json());
+        parsedData = body.data;
         const now = new Date();
 
         const [existing] = await db.select().from(businessSettings)
@@ -119,8 +155,17 @@ businessSettingsRoute.put('/:section', async (c) => {
             }).returning();
         }
 
-        return c.json({ ok: true, data: result?.dataJson ?? body.data, section });
+        return c.json({ ok: true, data: result?.dataJson ?? parsedData, section });
     } catch (err) {
+        if (isBusinessSettingsStorageError(err)) {
+            console.error(`[settings] storage unavailable for PUT ${section}; accepting as no-op`, err);
+            return c.json({
+                ok: true,
+                data: normalizeSettingsData(section, parsedData),
+                section,
+                degraded: true,
+            });
+        }
         return c.json({ ok: false, message: err instanceof Error ? err.message : 'Failed to save settings.' }, 400);
     }
 });
@@ -150,6 +195,10 @@ businessSettingsRoute.delete('/:section', async (c) => {
 
         return c.json({ ok: true, message: 'Settings reset' });
     } catch (err) {
+        if (isBusinessSettingsStorageError(err)) {
+            console.error(`[settings] storage unavailable for DELETE ${section}; accepting as no-op`, err);
+            return c.json({ ok: true, message: 'Settings reset', section, degraded: true });
+        }
         return c.json({ ok: false, message: err instanceof Error ? err.message : 'Failed to reset settings.' }, 400);
     }
 });

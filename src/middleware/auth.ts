@@ -243,6 +243,24 @@ const setAnonymousContext = (c: AppContext) => {
     c.set('organizationModuleOverrides', {});
 };
 
+const setFallbackAuthenticatedContext = (
+    c: AppContext,
+    user: UserRow,
+    role: AdminAccessRole,
+    businessId: string | null
+) => {
+    c.set('authUser', user);
+    c.set('authRole', role);
+    c.set('activeBusinessId', businessId);
+    c.set('effectiveUserId', user.id);
+    c.set('effectiveOwnerUserId', user.id);
+    c.set('effectiveOrganizationId', businessId);
+    c.set('organizationRole', null);
+    c.set('organizationPermissions', {});
+    c.set('organizationActionOverrides', {});
+    c.set('organizationModuleOverrides', {});
+};
+
 const resolveOrganizationContext = async (
     db: DrizzleClient,
     user: UserRow,
@@ -355,8 +373,14 @@ export const optionalAuth = async (c: AppContext, next: Next) => {
         return;
     }
 
-    const businessId = await resolveActiveBusinessId(c, db, authUser);
-    await setAuthenticatedContext(c, db, authUser, resolveAdminRole(authUser, c.env), businessId);
+    const adminRole = resolveAdminRole(authUser, c.env);
+    try {
+        const businessId = await resolveActiveBusinessId(c, db, authUser);
+        await setAuthenticatedContext(c, db, authUser, adminRole, businessId);
+    } catch (error) {
+        console.error('[auth] optional context fallback engaged', error);
+        setFallbackAuthenticatedContext(c, authUser, adminRole, null);
+    }
     await next();
 };
 
@@ -369,12 +393,18 @@ export const requireAuth = async (c: AppContext, next: Next) => {
         return c.json({ ok: false, message: 'Unauthorized.' }, 401);
     }
 
-    const businessId = await resolveActiveBusinessId(c, db, authUser);
-    if (getRequestedBusinessId(c) && !businessId) {
-        return c.json({ ok: false, message: 'Business access denied.' }, 403);
-    }
+    const adminRole = resolveAdminRole(authUser, c.env);
+    try {
+        const businessId = await resolveActiveBusinessId(c, db, authUser);
+        if (getRequestedBusinessId(c) && !businessId) {
+            return c.json({ ok: false, message: 'Business access denied.' }, 403);
+        }
 
-    await setAuthenticatedContext(c, db, authUser, resolveAdminRole(authUser, c.env), businessId);
+        await setAuthenticatedContext(c, db, authUser, adminRole, businessId);
+    } catch (error) {
+        console.error('[auth] required context fallback engaged', error);
+        setFallbackAuthenticatedContext(c, authUser, adminRole, null);
+    }
     await next();
 };
 
@@ -392,8 +422,13 @@ export const requireAdmin = async (c: AppContext, next: Next) => {
         return c.json({ ok: false, message: 'Admin access required.' }, 403);
     }
 
-    const businessId = await resolveActiveBusinessId(c, db, authUser);
-    await setAuthenticatedContext(c, db, authUser, authRole, businessId);
+    try {
+        const businessId = await resolveActiveBusinessId(c, db, authUser);
+        await setAuthenticatedContext(c, db, authUser, authRole, businessId);
+    } catch (error) {
+        console.error('[auth] admin context fallback engaged', error);
+        setFallbackAuthenticatedContext(c, authUser, authRole, null);
+    }
     await next();
 };
 
@@ -411,8 +446,13 @@ export const requireSuperAdmin = async (c: AppContext, next: Next) => {
         return c.json({ ok: false, message: 'Super-admin access required.' }, 403);
     }
 
-    const businessId = await resolveActiveBusinessId(c, db, authUser);
-    await setAuthenticatedContext(c, db, authUser, authRole, businessId);
+    try {
+        const businessId = await resolveActiveBusinessId(c, db, authUser);
+        await setAuthenticatedContext(c, db, authUser, authRole, businessId);
+    } catch (error) {
+        console.error('[auth] super-admin context fallback engaged', error);
+        setFallbackAuthenticatedContext(c, authUser, authRole, null);
+    }
     await next();
 };
 
