@@ -245,7 +245,7 @@ export const assertBusinessCreationAllowed = async (
     if (!subscriptionBusinessId) return;
 
     const subscription = await getLatestSubscriptionForBusiness(db, subscriptionBusinessId);
-    assertSubscriptionWriteAllowed(subscription);
+    assertSubscriptionWritableByStatus(subscription);
 
     if (subscription?.maxBusinesses !== null && subscription?.maxBusinesses !== undefined && activeBusinessCount >= subscription.maxBusinesses) {
         throw new Error(`Plan limit exceeded: max businesses is ${subscription.maxBusinesses}.`);
