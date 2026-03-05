@@ -44,16 +44,19 @@ export function useManualSubscription() {
             planId,
             status,
             durationDays,
+            businessId,
         }: {
             uid: string;
             planId: string;
             status: string;
             durationDays: number;
+            businessId?: string;
         }) => {
             const { data } = await api.post<ApiResponse<null>>(`/admin/users/${uid}/subscription`, {
                 planId,
                 status,
                 durationDays,
+                ...(businessId ? { businessId } : {}),
             });
             return data;
         },

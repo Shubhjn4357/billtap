@@ -30,6 +30,7 @@ export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProp
             planId: "",
             status: "active",
             durationDays: 30,
+            businessId: "",
         },
     });
 
@@ -40,11 +41,12 @@ export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProp
                 planId: user.subscriptionPlanId || "",
                 status: user.subscriptionStatus,
                 durationDays: 30,
+                businessId: user.primaryBusinessId || "",
             });
         }
     }, [user, reset]);
 
-    const onSubmit = async (data: { role: string; planId: string; status: string; durationDays: number | string }) => {
+    const onSubmit = async (data: { role: string; planId: string; status: string; durationDays: number | string; businessId: string }) => {
         if (!user) return;
 
         try {
@@ -60,6 +62,7 @@ export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProp
                     planId: data.planId,
                     status: data.status,
                     durationDays: Number(data.durationDays),
+                    businessId: data.businessId || undefined,
                 });
             } else if (data.status !== user.subscriptionStatus) {
                 // Even if plan didn't change, status might (e.g. deactivate)
@@ -71,7 +74,8 @@ export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProp
                         uid: user.uid,
                         planId: user.subscriptionPlanId,
                         status: data.status,
-                        durationDays: Number(data.durationDays) // Reset duration or keep? Logic might verify
+                        durationDays: Number(data.durationDays),
+                        businessId: data.businessId || undefined,
                     });
                 }
             }
@@ -109,6 +113,18 @@ export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProp
 
                 <div className="space-y-2">
                     <h3 className="text-sm font-semibold">Subscription Management</h3>
+
+                    <div>
+                        <label className="text-xs font-medium">Target Business</label>
+                        <Select {...register("businessId")}>
+                            <option value="">Primary Business</option>
+                            {(user?.businesses ?? []).map((biz) => (
+                                <option key={biz.id} value={biz.id}>
+                                    {biz.name} ({biz.id})
+                                </option>
+                            ))}
+                        </Select>
+                    </div>
 
                     <div>
                         <label className="text-xs font-medium">Assign Plan</label>

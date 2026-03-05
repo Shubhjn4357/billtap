@@ -16,6 +16,8 @@ export interface User {
     email: string | null;
     displayName: string | null;
     businessName: string | null;
+    primaryBusinessId?: string | null;
+    businesses?: { id: string; name: string; ownerUserId: string }[];
     phoneNumber: string | null;
     role: "owner" | "staff" | "admin";
     subscriptionStatus: "active" | "inactive" | "canceled" | "past_due";
