@@ -1,10 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { Pool } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import * as schema from './db/schema';
 import type { AppEnv } from './middleware/auth';
-import type { DrizzleClient } from './db/client';
+import { createDbClient } from './db/client';
 import authRoute from './routes/auth';
 import usersRoute from './routes/users';
 import itemsRoute from './routes/items';
@@ -27,11 +24,6 @@ import businessSettingsRoute from './routes/businessSettings';
 
 const app = new Hono<AppEnv>();
 const apiRoutes = new Hono<AppEnv>();
-
-const getDbClient = (databaseUrl: string): DrizzleClient => {
-    const pool = new Pool({ connectionString: databaseUrl });
-    return drizzle(pool, { schema }) as unknown as DrizzleClient;
-};
 
 app.use('*', async (c, next) => {
     const configuredOrigins = c.env.CORS_ORIGINS?.split(',').map((entry) => entry.trim()).filter(Boolean) ?? [];
@@ -71,7 +63,7 @@ apiRoutes.use(async (c, next) => {
         return c.json({ ok: false, message: 'Database configuration missing.' }, 500);
     }
 
-    c.set('db', getDbClient(c.env.DATABASE_URL));
+    c.set('db', createDbClient(c.env.DATABASE_URL));
     await next();
 });
 

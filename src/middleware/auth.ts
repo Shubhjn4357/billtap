@@ -76,6 +76,19 @@ const getRequestedBusinessId = (c: AppContext): string | null => {
     return value || null;
 };
 
+const isUsersStorageSchemaError = (error: unknown) => {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
+    return message.includes('failed query')
+        && message.includes(' from "users"')
+        && (
+            message.includes('photo_url')
+            || message.includes('is_disabled')
+            || message.includes('metadata')
+            || message.includes('does not exist')
+            || message.includes('column')
+        );
+};
+
 const parseJsonLike = (value: unknown): unknown => {
     if (typeof value === 'string') {
         const trimmed = value.trim();
@@ -158,6 +171,25 @@ const getAuthUserFromRequest = async (
         const entry = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
         return entry[0] ?? null;
     } catch (error) {
+        if (isUsersStorageSchemaError(error)) {
+            // Degraded auth fallback for partially-migrated databases:
+            // trust verified JWT subject and continue with limited user shape.
+            const fallbackEmail = payload.email?.trim().toLowerCase() || `${payload.sub}@local.vahi`;
+            const fallbackName = fallbackEmail.split('@')[0] || 'user';
+            const now = new Date(0);
+            return {
+                id: payload.sub,
+                googleSub: payload.sub,
+                name: fallbackName,
+                email: fallbackEmail,
+                phone: null,
+                photoUrl: null,
+                isDisabled: false,
+                metadata: { degradedAuth: true },
+                createdAt: now,
+                updatedAt: now,
+            } satisfies UserRow;
+        }
         console.error('[auth] unable to fetch auth user', error);
         throw new Error('AUTH_DB_UNAVAILABLE');
     }

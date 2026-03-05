@@ -34,14 +34,19 @@ const createOrganizationSchema = z.object({
     code: z.string().trim().min(2),
     currency: z.string().trim().min(3).max(3).optional(),
     phoneNumber: z.string().trim().optional(),
-    email: z.string().email().optional(),
+    email: z.string().trim().email().optional(),
     gstNumber: z.string().trim().optional(),
     address: z.string().trim().optional(),
+    legalName: z.string().trim().optional(),
+    state: z.string().trim().optional(),
+    city: z.string().trim().optional(),
+    pincode: z.string().trim().optional(),
+    booksStartDate: z.string().trim().optional(),
+    openingCashInHand: z.number().finite().optional(),
+    openingCashInBank: z.number().finite().optional(),
 });
 
 const patchOrganizationSchema = createOrganizationSchema.partial().extend({
-    state: z.string().trim().optional(),
-    legalName: z.string().trim().optional(),
     pan: z.string().trim().optional(),
     category: z.string().trim().optional(),
     isActive: z.boolean().optional(),
@@ -78,6 +83,63 @@ const createSignatureSchema = z.object({
     signatureUrl: z.string().trim().optional(),
     isDefault: z.boolean().optional().default(false),
 });
+
+const asRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+const sanitizeOptional = (value?: string | null): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+};
+
+const sanitizeUnknownText = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    return sanitizeOptional(value);
+};
+
+const parseDateOnly = (value?: string | null): Date | null => {
+    const normalized = sanitizeOptional(value);
+    if (!normalized) return null;
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+};
+
+const toFiniteNumber = (value: unknown, fallback = 0) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+};
+
+const withOnboardingSnapshot = (
+    baseSettings: Record<string, unknown>,
+    payload: {
+        city?: string | null;
+        pincode?: string | null;
+        openingCashInHand?: number | null;
+        openingCashInBank?: number | null;
+        booksStartDate?: string | null;
+    }
+) => {
+    const existingOnboarding = asRecord(baseSettings.onboarding);
+    const openingCashInHand = toFiniteNumber(payload.openingCashInHand ?? existingOnboarding.openingCashInHand ?? 0, 0);
+    const openingCashInBank = toFiniteNumber(payload.openingCashInBank ?? existingOnboarding.openingCashInBank ?? 0, 0);
+
+    return {
+        ...baseSettings,
+        onboarding: {
+            ...existingOnboarding,
+            city: sanitizeOptional(payload.city) ?? null,
+            pincode: sanitizeOptional(payload.pincode) ?? null,
+            booksStartDate: sanitizeOptional(payload.booksStartDate) ?? null,
+            openingCashInHand,
+            openingCashInBank,
+            openingCashTotal: openingCashInHand + openingCashInBank,
+        },
+    };
+};
 
 organizationsRoute.use('/*', requireAuth);
 
@@ -119,6 +181,14 @@ organizationsRoute.post('/', async (c) => {
 
         const payload = createOrganizationSchema.parse(await c.req.json());
         const now = new Date();
+        const booksStartDate = parseDateOnly(payload.booksStartDate) ?? now;
+        const settings = withOnboardingSnapshot({}, {
+            city: payload.city,
+            pincode: payload.pincode,
+            openingCashInHand: payload.openingCashInHand ?? 0,
+            openingCashInBank: payload.openingCashInBank ?? 0,
+            booksStartDate: payload.booksStartDate,
+        });
         const id = `biz_${nanoid(18)}`;
 
         await db.insert(businesses).values({
@@ -127,18 +197,18 @@ organizationsRoute.post('/', async (c) => {
             name: payload.name,
             code: payload.code,
             currency: payload.currency?.toUpperCase() ?? 'INR',
-            phone: payload.phoneNumber ?? null,
-            email: payload.email ?? null,
-            gstin: payload.gstNumber?.toUpperCase() ?? null,
-            address: payload.address ?? null,
-            legalName: null,
-            state: null,
+            phone: sanitizeOptional(payload.phoneNumber),
+            email: sanitizeOptional(payload.email),
+            gstin: sanitizeOptional(payload.gstNumber)?.toUpperCase() ?? null,
+            address: sanitizeOptional(payload.address),
+            legalName: sanitizeOptional(payload.legalName),
+            state: sanitizeOptional(payload.state),
             pan: null,
-            booksStartDate: now,
+            booksStartDate,
             logoUrl: null,
             category: null,
             isActive: true,
-            settings: {},
+            settings,
             createdAt: now,
             updatedAt: now,
         });
@@ -178,6 +248,8 @@ organizationsRoute.get('/current', async (c) => {
             return c.json({ ok: false, message: 'Organization not found.' }, 404);
         }
 
+        const onboarding = asRecord(asRecord(business.settings).onboarding);
+
         return c.json({
             ok: true,
             organization: {
@@ -190,6 +262,14 @@ organizationsRoute.get('/current', async (c) => {
                 address: business.address,
                 phoneNumber: business.phone,
                 email: business.email,
+                legalName: business.legalName,
+                state: business.state,
+                pan: business.pan,
+                booksStartDate: business.booksStartDate ? business.booksStartDate.toISOString().slice(0, 10) : null,
+                city: sanitizeUnknownText(onboarding.city),
+                pincode: sanitizeUnknownText(onboarding.pincode),
+                openingCashInHand: toFiniteNumber(onboarding.openingCashInHand, 0),
+                openingCashInBank: toFiniteNumber(onboarding.openingCashInBank, 0),
             },
             context: {
                 role: c.get('organizationRole') ?? 'owner',
@@ -223,25 +303,78 @@ organizationsRoute.patch('/:id', async (c) => {
         assertSubscriptionWriteAllowed(subscription);
         assertModuleEnabled(targetBusiness, 'settings');
 
+        const nextSettings = withOnboardingSnapshot(asRecord(targetBusiness.settings), {
+            city: payload.city,
+            pincode: payload.pincode,
+            openingCashInHand: payload.openingCashInHand,
+            openingCashInBank: payload.openingCashInBank,
+            booksStartDate: payload.booksStartDate,
+        });
+
+        const booksStartDate = payload.booksStartDate !== undefined
+            ? (parseDateOnly(payload.booksStartDate) ?? targetBusiness.booksStartDate ?? new Date())
+            : undefined;
+
         await db.update(businesses).set({
             ...(payload.name !== undefined ? { name: payload.name } : {}),
             ...(payload.code !== undefined ? { code: payload.code } : {}),
             ...(payload.currency !== undefined ? { currency: payload.currency.toUpperCase() } : {}),
-            ...(payload.phoneNumber !== undefined ? { phone: payload.phoneNumber } : {}),
-            ...(payload.email !== undefined ? { email: payload.email } : {}),
-            ...(payload.gstNumber !== undefined ? { gstin: payload.gstNumber?.toUpperCase() ?? null } : {}),
-            ...(payload.address !== undefined ? { address: payload.address } : {}),
-            ...(payload.state !== undefined ? { state: payload.state } : {}),
-            ...(payload.legalName !== undefined ? { legalName: payload.legalName } : {}),
+            ...(payload.phoneNumber !== undefined ? { phone: sanitizeOptional(payload.phoneNumber) } : {}),
+            ...(payload.email !== undefined ? { email: sanitizeOptional(payload.email) } : {}),
+            ...(payload.gstNumber !== undefined ? { gstin: sanitizeOptional(payload.gstNumber)?.toUpperCase() ?? null } : {}),
+            ...(payload.address !== undefined ? { address: sanitizeOptional(payload.address) } : {}),
+            ...(payload.state !== undefined ? { state: sanitizeOptional(payload.state) } : {}),
+            ...(payload.legalName !== undefined ? { legalName: sanitizeOptional(payload.legalName) } : {}),
+            ...(booksStartDate !== undefined ? { booksStartDate } : {}),
             ...(payload.pan !== undefined ? { pan: payload.pan } : {}),
             ...(payload.category !== undefined ? { category: payload.category } : {}),
             ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            settings: nextSettings,
             updatedAt: new Date(),
         }).where(and(eq(businesses.id, id), eq(businesses.ownerUserId, authUser.id)));
 
         return c.json({ ok: true });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update organization.' }, 400);
+    }
+});
+
+organizationsRoute.delete('/:id', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+        const id = c.req.param('id');
+        const rows = await db
+            .select()
+            .from(businesses)
+            .where(and(eq(businesses.id, id), eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)))
+            .limit(1);
+
+        const target = rows[0];
+        if (!target) {
+            return c.json({ ok: false, message: 'Organization not found.' }, 404);
+        }
+
+        const owned = await db
+            .select({ id: businesses.id })
+            .from(businesses)
+            .where(and(eq(businesses.ownerUserId, authUser.id), eq(businesses.isActive, true)));
+
+        if (owned.length <= 1) {
+            return c.json({ ok: false, message: 'At least one active organization is required.' }, 409);
+        }
+
+        await db
+            .update(businesses)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(and(eq(businesses.id, id), eq(businesses.ownerUserId, authUser.id)));
+
+        return c.json({ ok: true });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to delete organization.';
+        return c.json({ ok: false, message }, 400);
     }
 });
 
