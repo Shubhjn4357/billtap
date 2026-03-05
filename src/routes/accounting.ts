@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import {
@@ -332,6 +332,24 @@ accountingRoute.post('/accounts/:id/deactivate', async (c) => {
         if (!account) return c.json({ ok: false, message: 'Account not found.' }, 404);
         if (account.isSystem || account.isDefault) {
             return c.json({ ok: false, message: 'System/default accounts cannot be deactivated.' }, 400);
+        }
+        const [usage] = await db
+            .select({ total: count() })
+            .from(voucherLines)
+            .innerJoin(vouchers, eq(vouchers.id, voucherLines.voucherId))
+            .where(and(
+                eq(voucherLines.accountId, account.id),
+                eq(vouchers.businessId, business.id),
+            ));
+        if (Number(usage?.total ?? 0) > 0) {
+            return c.json({
+                ok: false,
+                message: 'Ledger has posted entries and cannot be deactivated.',
+                error: {
+                    code: 'LEDGER_HAS_ENTRIES',
+                    message: 'Ledger has posted entries and cannot be deactivated.',
+                },
+            }, 409);
         }
 
         await db.update(accounts).set({

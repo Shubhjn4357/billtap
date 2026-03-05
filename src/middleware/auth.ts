@@ -434,18 +434,39 @@ export const requireAuth = async (c: AppContext, next: Next) => {
         authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
     } catch (error) {
         console.error('[auth] required auth lookup failed', error);
-        return c.json({ ok: false, message: 'Authentication service unavailable. Please try again.' }, 503);
+        return c.json({
+            ok: false,
+            message: 'Authentication service unavailable. Please try again.',
+            error: {
+                code: 'AUTH_SERVICE_UNAVAILABLE',
+                message: 'Authentication service unavailable. Please try again.',
+            },
+        }, 503);
     }
 
     if (!authUser) {
-        return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        return c.json({
+            ok: false,
+            message: 'Unauthorized.',
+            error: {
+                code: 'UNAUTHORIZED',
+                message: 'Unauthorized.',
+            },
+        }, 401);
     }
 
     const adminRole = resolveAdminRole(authUser, c.env);
     try {
         const businessId = await resolveActiveBusinessId(c, db, authUser);
         if (getRequestedBusinessId(c) && !businessId) {
-            return c.json({ ok: false, message: 'Business access denied.' }, 403);
+            return c.json({
+                ok: false,
+                message: 'Business access denied.',
+                error: {
+                    code: 'BUSINESS_ACCESS_DENIED',
+                    message: 'Business access denied.',
+                },
+            }, 403);
         }
 
         await setAuthenticatedContext(c, db, authUser, adminRole, businessId);
@@ -464,16 +485,37 @@ export const requireAdmin = async (c: AppContext, next: Next) => {
         authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
     } catch (error) {
         console.error('[auth] admin auth lookup failed', error);
-        return c.json({ ok: false, message: 'Authentication service unavailable. Please try again.' }, 503);
+        return c.json({
+            ok: false,
+            message: 'Authentication service unavailable. Please try again.',
+            error: {
+                code: 'AUTH_SERVICE_UNAVAILABLE',
+                message: 'Authentication service unavailable. Please try again.',
+            },
+        }, 503);
     }
 
     if (!authUser) {
-        return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        return c.json({
+            ok: false,
+            message: 'Unauthorized.',
+            error: {
+                code: 'UNAUTHORIZED',
+                message: 'Unauthorized.',
+            },
+        }, 401);
     }
 
     const authRole = resolveAdminRole(authUser, c.env);
     if (!authRole) {
-        return c.json({ ok: false, message: 'Admin access required.' }, 403);
+        return c.json({
+            ok: false,
+            message: 'Admin access required.',
+            error: {
+                code: 'ADMIN_ACCESS_REQUIRED',
+                message: 'Admin access required.',
+            },
+        }, 403);
     }
 
     try {
@@ -494,16 +536,37 @@ export const requireSuperAdmin = async (c: AppContext, next: Next) => {
         authUser = await getAuthUserFromRequest(c.req.header('Authorization'), db, jwtSecret);
     } catch (error) {
         console.error('[auth] super-admin auth lookup failed', error);
-        return c.json({ ok: false, message: 'Authentication service unavailable. Please try again.' }, 503);
+        return c.json({
+            ok: false,
+            message: 'Authentication service unavailable. Please try again.',
+            error: {
+                code: 'AUTH_SERVICE_UNAVAILABLE',
+                message: 'Authentication service unavailable. Please try again.',
+            },
+        }, 503);
     }
 
     if (!authUser) {
-        return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        return c.json({
+            ok: false,
+            message: 'Unauthorized.',
+            error: {
+                code: 'UNAUTHORIZED',
+                message: 'Unauthorized.',
+            },
+        }, 401);
     }
 
     const authRole = resolveAdminRole(authUser, c.env);
     if (authRole !== 'SUPER_ADMIN') {
-        return c.json({ ok: false, message: 'Super-admin access required.' }, 403);
+        return c.json({
+            ok: false,
+            message: 'Super-admin access required.',
+            error: {
+                code: 'SUPER_ADMIN_REQUIRED',
+                message: 'Super-admin access required.',
+            },
+        }, 403);
     }
 
     try {

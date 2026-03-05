@@ -25,6 +25,7 @@ import {
     assertStaffCreationAllowed,
     assertSubscriptionWriteAllowed,
 } from '../services/subscriptionPolicy';
+import { toApiErrorPayload } from '../services/apiError';
 import { normalizeSettingsData } from '../constants/settingsSchema';
 
 const organizationsRoute = new Hono<AppEnv>();
@@ -215,25 +216,25 @@ organizationsRoute.post('/', async (c) => {
 
         return c.json({ ok: true, id });
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to create organization.';
-        if (message.toLowerCase().includes('failed query')) {
-            return c.json({ ok: false, message: 'Database error while creating business. Please try again.' }, 500);
+        const mapped = toApiErrorPayload(error, {
+            code: 'ORGANIZATION_CREATE_FAILED',
+            message: 'Failed to create organization.',
+            status: 400,
+        });
+        if (mapped.error.message.toLowerCase().includes('failed query')) {
+            return c.json({
+                ok: false,
+                message: 'Database error while creating business. Please try again.',
+                error: {
+                    code: 'DATABASE_ERROR',
+                    message: 'Database error while creating business. Please try again.',
+                },
+            }, 500);
         }
-        if (
-            message.includes('multiple businesses')
-            || message.includes('max businesses')
-            || message.includes('Plan limit exceeded')
-        ) {
-            return c.json({ ok: false, message }, 409);
-        }
-        if (
-            message.includes('offline mode only')
-            || message.includes('Subscription is required')
-            || message.includes('read-only')
-        ) {
-            return c.json({ ok: false, message }, 403);
-        }
-        return c.json({ ok: false, message }, 400);
+        return c.json(
+            { ok: false, message: mapped.error.message, error: mapped.error },
+            mapped.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 
@@ -335,7 +336,15 @@ organizationsRoute.patch('/:id', async (c) => {
 
         return c.json({ ok: true });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update organization.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'ORGANIZATION_UPDATE_FAILED',
+            message: 'Failed to update organization.',
+            status: 400,
+        });
+        return c.json(
+            { ok: false, message: mapped.error.message, error: mapped.error },
+            mapped.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 
@@ -373,8 +382,15 @@ organizationsRoute.delete('/:id', async (c) => {
 
         return c.json({ ok: true });
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to delete organization.';
-        return c.json({ ok: false, message }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'ORGANIZATION_DELETE_FAILED',
+            message: 'Failed to delete organization.',
+            status: 400,
+        });
+        return c.json(
+            { ok: false, message: mapped.error.message, error: mapped.error },
+            mapped.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 
@@ -416,7 +432,15 @@ organizationsRoute.put('/settings/current', async (c) => {
 
         return c.json({ ok: true, settings });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update settings.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'ORGANIZATION_SETTINGS_UPDATE_FAILED',
+            message: 'Failed to update settings.',
+            status: 400,
+        });
+        return c.json(
+            { ok: false, message: mapped.error.message, error: mapped.error },
+            mapped.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 

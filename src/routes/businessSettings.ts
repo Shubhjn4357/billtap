@@ -17,6 +17,7 @@ import {
     SETTINGS_SECTIONS,
 } from '../constants/settingsSchema';
 import { assertModuleEnabled, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
+import { toApiErrorPayload } from '../services/apiError';
 
 const businessSettingsRoute = new Hono<AppEnv>();
 
@@ -166,7 +167,15 @@ businessSettingsRoute.put('/:section', async (c) => {
                 degraded: true,
             });
         }
-        return c.json({ ok: false, message: err instanceof Error ? err.message : 'Failed to save settings.' }, 400);
+        const mapped = toApiErrorPayload(err, {
+            code: 'SETTINGS_SAVE_FAILED',
+            message: 'Failed to save settings.',
+            status: 400,
+        });
+        return c.json(
+            { ok: false, message: mapped.error.message, error: mapped.error },
+            mapped.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 
@@ -199,7 +208,15 @@ businessSettingsRoute.delete('/:section', async (c) => {
             console.error(`[settings] storage unavailable for DELETE ${section}; accepting as no-op`, err);
             return c.json({ ok: true, message: 'Settings reset', section, degraded: true });
         }
-        return c.json({ ok: false, message: err instanceof Error ? err.message : 'Failed to reset settings.' }, 400);
+        const mapped = toApiErrorPayload(err, {
+            code: 'SETTINGS_RESET_FAILED',
+            message: 'Failed to reset settings.',
+            status: 400,
+        });
+        return c.json(
+            { ok: false, message: mapped.error.message, error: mapped.error },
+            mapped.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 

@@ -17,6 +17,7 @@ import {
     assertStaffCreationAllowed,
     assertSubscriptionWriteAllowed,
 } from '../services/subscriptionPolicy';
+import { toApiErrorPayload } from '../services/apiError';
 
 const staffRoute = new Hono<AppEnv>();
 
@@ -114,7 +115,15 @@ staffRoute.post('/', async (c) => {
 
         return c.json({ ok: true, inviteId: id, code });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create invite.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'STAFF_INVITE_CREATE_FAILED',
+            message: 'Failed to create invite.',
+            status: 400,
+        });
+        return c.json(
+            { ok: false, message: mapped.error.message, error: mapped.error },
+            mapped.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 

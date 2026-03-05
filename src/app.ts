@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './middleware/auth';
 import { createDbClient } from './db/client';
+import { toApiErrorPayload } from './services/apiError';
 import authRoute from './routes/auth';
 import usersRoute from './routes/users';
 import itemsRoute from './routes/items';
@@ -60,7 +61,14 @@ apiRoutes.use(async (c, next) => {
     }
 
     if (!c.env.DATABASE_URL) {
-        return c.json({ ok: false, message: 'Database configuration missing.' }, 500);
+        return c.json({
+            ok: false,
+            message: 'Database configuration missing.',
+            error: {
+                code: 'DATABASE_CONFIG_MISSING',
+                message: 'Database configuration missing.',
+            },
+        }, 500);
     }
 
     c.set('db', createDbClient(c.env.DATABASE_URL));
@@ -107,10 +115,30 @@ apiRoutes.route('/admin', adminRoute);
 app.route('/api', apiRoutes);
 app.route('/', apiRoutes);
 
-app.notFound((c) => c.json({ ok: false, message: 'Route not found.' }, 404));
+app.notFound((c) =>
+    c.json(
+        {
+            ok: false,
+            message: 'Route not found.',
+            error: {
+                code: 'ROUTE_NOT_FOUND',
+                message: 'Route not found.',
+            },
+        },
+        404
+    )
+);
 app.onError((err, c) => {
+    const mapped = toApiErrorPayload(err, {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Internal Server Error',
+        status: 500,
+    });
     console.error(err);
-    return c.json({ ok: false, message: err instanceof Error ? err.message : 'Internal Server Error' }, 500);
+    return c.json(
+        { ok: false, message: mapped.error.message, error: mapped.error },
+        mapped.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+    );
 });
 
 export default app;

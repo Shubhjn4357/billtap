@@ -413,6 +413,11 @@ export const requireOrganizationModule = (c: AppContext, module: AppModule) => {
     return c.json({
         ok: false,
         message: `Permission denied for module "${module}".`,
+        error: {
+            code: 'MODULE_ACCESS_DENIED',
+            message: `Permission denied for module "${module}".`,
+            details: { module },
+        },
     }, 403);
 };
 
@@ -444,6 +449,11 @@ export const requireOrganizationAction = (c: AppContext, action: AppAction) => {
     return c.json({
         ok: false,
         message: `Permission denied for action "${action}".`,
+        error: {
+            code: 'ACTION_ACCESS_DENIED',
+            message: `Permission denied for action "${action}".`,
+            details: { action },
+        },
     }, 403);
 };
 
@@ -479,5 +489,10 @@ export const requireOrganizationCapability = (c: AppContext, capability: string)
     return c.json({
         ok: false,
         message: `Permission denied for capability "${capability}".`,
+        error: {
+            code: 'CAPABILITY_ACCESS_DENIED',
+            message: `Permission denied for capability "${capability}".`,
+            details: { capability },
+        },
     }, 403);
 };

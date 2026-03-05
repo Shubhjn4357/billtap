@@ -10,6 +10,7 @@ import {
 } from '../db/schema';
 import type { BusinessRow, SubscriptionRow } from '../db/schema';
 import type { DrizzleClient } from '../db/client';
+import { AppError } from './apiError';
 
 export const GST_RATE_SLABS = [0, 0.25, 3, 5, 18, 40] as const;
 
@@ -39,7 +40,11 @@ export const isAllowedGstRate = (value: number) => {
 
 export const assertAllowedGstRate = (value: number) => {
     if (!isAllowedGstRate(value)) {
-        throw new Error(`Unsupported GST rate: ${value}. Allowed slabs: ${GST_RATE_SLABS.join(', ')}.`);
+        throw new AppError(
+            'GST_RATE_NOT_ALLOWED',
+            `Unsupported GST rate: ${value}. Allowed slabs: ${GST_RATE_SLABS.join(', ')}.`,
+            400
+        );
     }
 };
 
@@ -58,7 +63,7 @@ export const getLatestSubscriptionForBusiness = async (
 
 const assertSubscriptionWritableByStatus = (subscription: SubscriptionRow | null, now = nowDateOnly()) => {
     if (!subscription) {
-        throw new Error('Subscription is required for this action.');
+        throw new AppError('SUBSCRIPTION_REQUIRED', 'Subscription is required for this action.', 403);
     }
 
     if (subscription.status === 'ACTIVE' || subscription.status === 'TRIAL') {
@@ -66,25 +71,45 @@ const assertSubscriptionWritableByStatus = (subscription: SubscriptionRow | null
     }
 
     if (subscription.status === 'GRACE') {
-        throw new Error('Subscription is in grace mode. Account is read-only until renewal.');
+        throw new AppError(
+            'SUBSCRIPTION_READ_ONLY',
+            'Subscription is in grace mode. Account is read-only until renewal.',
+            403
+        );
     }
 
     if (subscription.status === 'EXPIRED' || subscription.status === 'CANCELLED') {
         const graceEndDate = subscription.graceEndDate ? toDateOnly(subscription.graceEndDate) : null;
         if (graceEndDate && graceEndDate >= now) {
-            throw new Error('Subscription is expired and within grace period. Account is read-only.');
+            throw new AppError(
+                'SUBSCRIPTION_READ_ONLY',
+                'Subscription is expired and within grace period. Account is read-only.',
+                403
+            );
         }
-        throw new Error('Subscription is expired/cancelled. Account is read-only.');
+        throw new AppError(
+            'SUBSCRIPTION_READ_ONLY',
+            'Subscription is expired/cancelled. Account is read-only.',
+            403
+        );
     }
 
-    throw new Error(`Subscription status "${subscription.status}" does not permit writes.`);
+    throw new AppError(
+        'SUBSCRIPTION_READ_ONLY',
+        `Subscription status "${subscription.status}" does not permit writes.`,
+        403
+    );
 };
 
 export const assertSubscriptionWriteAllowed = (subscription: SubscriptionRow | null) => {
     assertSubscriptionWritableByStatus(subscription);
     if (!subscription) return;
     if (subscription.offlineOnly || !subscription.cloudSyncAllowed) {
-        throw new Error('Current subscription allows offline mode only. Cloud write actions are blocked.');
+        throw new AppError(
+            'SUBSCRIPTION_WRITE_BLOCKED',
+            'Current subscription allows offline mode only. Cloud write actions are blocked.',
+            403
+        );
     }
 };
 
@@ -95,7 +120,11 @@ export const hasFeatureFlag = (subscription: SubscriptionRow | null, featureFlag
 
 export const assertFeatureFlag = (subscription: SubscriptionRow | null, featureFlag: string) => {
     if (!hasFeatureFlag(subscription, featureFlag)) {
-        throw new Error(`Feature "${featureFlag}" is not enabled for current subscription.`);
+        throw new AppError(
+            'FEATURE_NOT_ENABLED',
+            `Feature "${featureFlag}" is not enabled for current subscription.`,
+            403
+        );
     }
 };
 
@@ -120,7 +149,11 @@ export const assertBillCreationAllowed = async (
     const totalBills = toNumber(totalResult?.total);
 
     if (subscription.maxBillsTotal !== null && totalBills >= subscription.maxBillsTotal) {
-        throw new Error(`Plan limit exceeded: max total bills is ${subscription.maxBillsTotal}.`);
+        throw new AppError(
+            'PLAN_LIMIT_EXCEEDED',
+            `Plan limit exceeded: max total bills is ${subscription.maxBillsTotal}.`,
+            409
+        );
     }
 
     const [monthlyResult] = await db
@@ -133,7 +166,11 @@ export const assertBillCreationAllowed = async (
         ));
     const monthlyBills = toNumber(monthlyResult?.total);
     if (subscription.maxBillsPerMonth !== null && monthlyBills >= subscription.maxBillsPerMonth) {
-        throw new Error(`Plan limit exceeded: max bills per month is ${subscription.maxBillsPerMonth}.`);
+        throw new AppError(
+            'PLAN_LIMIT_EXCEEDED',
+            `Plan limit exceeded: max bills per month is ${subscription.maxBillsPerMonth}.`,
+            409
+        );
     }
 };
 
@@ -204,7 +241,11 @@ export const assertStaffCreationAllowed = async (
         ));
     const currentStaffUsers = toNumber(result?.total);
     if (currentStaffUsers >= subscription.maxStaffUsers) {
-        throw new Error(`Plan limit exceeded: max staff users is ${subscription.maxStaffUsers}.`);
+        throw new AppError(
+            'STAFF_INVITE_NOT_ALLOWED',
+            `Plan limit exceeded: max staff users is ${subscription.maxStaffUsers}.`,
+            409
+        );
     }
 };
 
@@ -224,7 +265,11 @@ export const assertDeviceRegistrationAllowed = async (
         .where(eq(devices.businessId, businessId));
     const currentDevices = toNumber(result?.total);
     if (currentDevices >= subscription.maxDevices) {
-        throw new Error(`Plan limit exceeded: max devices is ${subscription.maxDevices}.`);
+        throw new AppError(
+            'PLAN_LIMIT_EXCEEDED',
+            `Plan limit exceeded: max devices is ${subscription.maxDevices}.`,
+            409
+        );
     }
 };
 
@@ -248,11 +293,19 @@ export const assertBusinessCreationAllowed = async (
     assertSubscriptionWritableByStatus(subscription);
 
     if (subscription?.maxBusinesses !== null && subscription?.maxBusinesses !== undefined && activeBusinessCount >= subscription.maxBusinesses) {
-        throw new Error(`Plan limit exceeded: max businesses is ${subscription.maxBusinesses}.`);
+        throw new AppError(
+            'PLAN_LIMIT_EXCEEDED',
+            `Plan limit exceeded: max businesses is ${subscription.maxBusinesses}.`,
+            409
+        );
     }
 
     if (!hasFeatureFlag(subscription, 'MULTI_BUSINESS') && activeBusinessCount >= 1) {
-        throw new Error('Current subscription does not allow multiple businesses.');
+        throw new AppError(
+            'MULTI_BUSINESS_NOT_ALLOWED',
+            'Current subscription does not allow multiple businesses.',
+            409
+        );
     }
 };
 
@@ -269,6 +322,10 @@ export const isModuleEnabled = (business: BusinessRow | null, moduleKey: string)
 
 export const assertModuleEnabled = (business: BusinessRow | null, moduleKey: string) => {
     if (!isModuleEnabled(business, moduleKey)) {
-        throw new Error(`Module "${moduleKey}" is disabled in organization settings.`);
+        throw new AppError(
+            'MODULE_DISABLED',
+            `Module "${moduleKey}" is disabled in organization settings.`,
+            403
+        );
     }
 };

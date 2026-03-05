@@ -78,6 +78,7 @@ const manualSubscriptionSchema = z.object({
     planId: z.string().trim().min(1),
     status: z.enum(['active', 'inactive', 'canceled', 'past_due']),
     durationDays: z.number().int().positive().default(30),
+    businessId: z.string().trim().min(1).optional(),
 });
 
 const organizationCreateSchema = z.object({
@@ -791,6 +792,7 @@ adminRoute.get('/users', async (c) => {
             email: entry.email,
             displayName: entry.name,
             businessName: primaryBusiness?.name ?? null,
+            primaryBusinessId: primaryBusiness?.id ?? null,
             phoneNumber: entry.phone,
             role,
             subscriptionStatus: mapSubscriptionStatusLegacy(subscription?.status),
@@ -858,6 +860,7 @@ adminRoute.get('/users/:uid', async (c) => {
             email: user.email,
             displayName: user.name,
             businessName: primaryBusiness?.name ?? null,
+            primaryBusinessId: primaryBusiness?.id ?? null,
             phoneNumber: user.phone,
             role,
             subscriptionStatus: mapSubscriptionStatusLegacy(subscription?.status),
@@ -865,6 +868,11 @@ adminRoute.get('/users/:uid', async (c) => {
             subscriptionPlanName: linkedPlan?.displayName ?? (subscription?.tier ?? null),
             subscriptionEndsAt: subscription?.endDate ?? null,
             createdAt: user.createdAt,
+            businesses: businessRows.map((entry) => ({
+                id: entry.id,
+                name: entry.name,
+                ownerUserId: entry.ownerUserId,
+            })),
         },
     });
 });
@@ -918,10 +926,20 @@ adminRoute.post('/users/:uid/subscription', async (c) => {
         if (!user) return c.json({ ok: false, message: 'User not found.' }, 404);
         if (!plan) return c.json({ ok: false, message: 'Plan not found.' }, 404);
 
-        let primaryBusiness = (await db.select().from(businesses)
-            .where(eq(businesses.ownerUserId, uid))
-            .orderBy(asc(businesses.createdAt))
-            .limit(1))[0];
+        let primaryBusiness = payload.businessId
+            ? (await db.select().from(businesses).where(eq(businesses.id, payload.businessId)).limit(1))[0]
+            : undefined;
+
+        if (primaryBusiness && primaryBusiness.ownerUserId !== uid) {
+            return c.json({ ok: false, message: 'Selected business does not belong to this user.' }, 400);
+        }
+
+        if (!primaryBusiness) {
+            primaryBusiness = (await db.select().from(businesses)
+                .where(eq(businesses.ownerUserId, uid))
+                .orderBy(asc(businesses.createdAt))
+                .limit(1))[0];
+        }
 
         if (!primaryBusiness) {
             const now = new Date();
