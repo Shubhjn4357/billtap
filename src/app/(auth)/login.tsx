@@ -7,7 +7,6 @@ import {
     Image,
     useColorScheme,
     ActivityIndicator,
-    Alert,
     Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +20,7 @@ import {
 } from '../../utils/googleNativeSignIn';
 import { getApiBaseUrl, toUserMessage } from '../../api/client';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 
 const APP_LOGO = require('../../../assets/images/icon.png');
 
@@ -32,6 +32,7 @@ export default function LoginScreen() {
 
     const [loading, setLoading] = useState(false);
     const [nativeConfigured, setNativeConfigured] = useState(false);
+    const dialog = useAppDialog();
 
     const googleConfig = useMemo(
         () => ({
@@ -95,7 +96,7 @@ export default function LoginScreen() {
 
     const handleGoogleSignIn = async () => {
         if (Platform.OS === 'web') {
-            Alert.alert(
+            dialog.alert(
                 'Google Login in Native Build',
                 'This login uses react-native-google-signin. Run Android/iOS build (dev client or release) to use it.'
             );
@@ -103,7 +104,7 @@ export default function LoginScreen() {
         }
 
         if (!nativeConfigured) {
-            Alert.alert(
+            dialog.alert(
                 'Google Sign-In Not Configured',
                 'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (required) and platform client IDs in your environment.'
             );
@@ -117,7 +118,7 @@ export default function LoginScreen() {
             const result = await signInWithNativeGoogle();
             await exchangeIdToken(result.idToken);
         } catch (error) {
-            Alert.alert('Sign in failed', toReadableSignInError(error));
+            dialog.alert('Sign in failed', toReadableSignInError(error));
         } finally {
             setLoading(false);
         }
@@ -152,7 +153,7 @@ export default function LoginScreen() {
                         accessibilityLabel="Sign in with Google"
                     >
                         {loading ? (
-                            <ActivityIndicator color="#fff" />
+                            <ActivityIndicator color={colors.onPrimary} />
                         ) : (
                             <>
                                 <Text style={s.googleIcon}>G</Text>
@@ -213,8 +214,8 @@ const styles = (colors: ColorPalette) =>
             gap: Spacing.sm,
         },
         googleBtnPressed: { opacity: 0.85 },
-        googleIcon: { color: '#fff', fontWeight: '700', fontSize: 20 },
-        googleBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+        googleIcon: { color: colors.onPrimary, fontWeight: '700', fontSize: 20 },
+        googleBtnText: { color: colors.onPrimary, fontWeight: '600', fontSize: 16 },
         terms: { textAlign: 'center', fontSize: 11, color: colors.textSecondary, lineHeight: 16 },
         termsLinksRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.xs },
         termsLink: { fontSize: 12, fontWeight: '700', color: colors.primary },

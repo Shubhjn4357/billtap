@@ -1,24 +1,23 @@
 import { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../../../hooks/useSmartBack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loanApi } from '../../../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../../../constants/theme';
+import { AppTopBar } from '../../../../../components/ui/AppTopBar';
+import { AppInput } from '../../../../../components/ui/AppInput';
+import { DateField } from '../../../../../components/ui/DateField';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 export default function LoanPaymentEntryScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/accounts');
     const qc = useQueryClient();
     const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -43,61 +42,48 @@ export default function LoanPaymentEntryScreen() {
             qc.invalidateQueries({ queryKey: ['loan', id] });
             qc.invalidateQueries({ queryKey: ['loan-transactions', id] });
             qc.invalidateQueries({ queryKey: ['loans'] });
-            Alert.alert('Saved', 'Loan repayment recorded.');
+            dialog.alert('Saved', 'Loan repayment recorded.');
             router.back();
         },
         onError: (error) => {
-            Alert.alert('Failed', error instanceof Error ? error.message : 'Unable to save repayment.');
+            dialog.alert('Failed', error instanceof Error ? error.message : 'Unable to save repayment.');
         },
     });
 
     return (
-        <SafeAreaView style={s.safe}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.headerAction, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Add Payment</Text>
-                <Pressable onPress={() => mutate()} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.headerAction, { color: colors.primary }]}>Save</Text>}
-                </Pressable>
-            </View>
+        <SafeAreaView style={s.safe} edges={['top']}>
+            <AppTopBar
+                title="Add Payment"
+                subtitle="Loan repayment transaction"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => mutate()} disabled={isPending}>
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                    </Pressable>
+                )}
+            />
 
             <View style={s.content}>
                 <View style={[s.heroCard, { backgroundColor: colors.success }]}>
                     <Text style={s.heroLabel}>REPAYMENT AMOUNT</Text>
-                    <TextInput
-                        value={amount}
-                        onChangeText={setAmount}
-                        keyboardType="numeric"
-                        placeholder="0.00"
-                        placeholderTextColor="#ffffffaa"
-                        style={s.heroInput}
-                    />
+                    <AppInput inputType="decimal" value={amount} onChangeText={setAmount} placeholder="0.00" style={s.heroInput} />
                 </View>
 
                 <Text style={[s.label, { color: colors.textSecondary }]}>Date</Text>
-                <TextInput
-                    value={date}
-                    onChangeText={setDate}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.textSecondary}
-                    style={[s.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                />
+                <DateField value={date} onChange={(value) => setDate(value ?? date)} allowClear={false} />
 
                 <Text style={[s.label, { color: colors.textSecondary }]}>Notes (optional)</Text>
-                <TextInput
+                <AppInput
+                    inputType="text"
                     value={notes}
                     onChangeText={setNotes}
                     placeholder="Reference / remarks"
-                    placeholderTextColor={colors.textSecondary}
                     multiline
-                    textAlignVertical="top"
-                    style={[s.input, s.notesInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                    style={s.notesInput}
                 />
 
                 <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={() => mutate()} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryBtnText}>Record Payment</Text>}
+                    {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Record Payment</Text>}
                 </Pressable>
             </View>
         </SafeAreaView>
@@ -107,30 +93,27 @@ export default function LoanPaymentEntryScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        },
-        headerAction: { fontSize: 14, fontWeight: '700' },
-        title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
-        content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
-        heroCard: { borderRadius: Radius.card, padding: Spacing.xl, marginBottom: Spacing.md, alignItems: 'center' },
-        heroLabel: { color: '#ffffffcc', fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-        heroInput: { marginTop: Spacing.sm, color: '#fff', fontSize: 38, fontWeight: '800', minWidth: 150, textAlign: 'center' },
-        label: { fontSize: 12, fontWeight: '700', marginBottom: Spacing.xs, marginTop: Spacing.md },
-        input: {
+        saveBtn: {
+            minHeight: 34,
+            minWidth: 56,
             borderWidth: 1,
-            borderRadius: Radius.md,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
             paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            fontSize: 14,
         },
-        notesInput: { minHeight: 90 },
-        primaryBtn: { marginTop: Spacing.lg, borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center' },
-        primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+        saveText: { fontSize: 12, fontWeight: '700' },
+        content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.sm },
+        heroCard: { borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.sm, gap: Spacing.xs },
+        heroLabel: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
+        heroInput: { color: colors.onPrimary, fontSize: 24, fontWeight: '800' },
+        label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.xs },
+        notesInput: { minHeight: 64, textAlignVertical: 'top' },
+        primaryBtn: {
+            marginTop: Spacing.md,
+            borderRadius: Radius.pill,
+            paddingVertical: Spacing.md,
+            alignItems: 'center',
+        },
+        primaryBtnText: { color: colors.onPrimary, fontSize: 14, fontWeight: '700' },
     });
-
-

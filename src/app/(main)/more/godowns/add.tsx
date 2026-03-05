@@ -1,26 +1,23 @@
 import { useState } from 'react';
-import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { godownApi } from '../../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
+import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { AppInput } from '../../../../components/ui/AppInput';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 export default function AddGodownScreen() {
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
+    const dialog = useAppDialog();
+    const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
-    const qc = useQueryClient();
+    const smartBack = useSmartBack('/(main)/more');
+    const queryClient = useQueryClient();
 
     const [name, setName] = useState('');
     const [address, setAddress] = useState('');
@@ -28,13 +25,12 @@ export default function AddGodownScreen() {
 
     const { mutateAsync: createGodown, isPending } = useMutation({
         mutationFn: () => godownApi.create({ name: name.trim(), address: address.trim() || undefined, isDefault }),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['godowns'] }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['godowns'] }),
     });
 
     const onSave = async () => {
-        const trimmedName = name.trim();
-        if (!trimmedName) {
-            Alert.alert('Validation', 'Godown name is required.');
+        if (!name.trim()) {
+            dialog.alert('Validation', 'Godown name is required.');
             return;
         }
 
@@ -42,48 +38,61 @@ export default function AddGodownScreen() {
             await createGodown();
             router.back();
         } catch (error) {
-            Alert.alert('Create failed', error instanceof Error ? error.message : 'Unable to create godown.');
+            dialog.alert('Create failed', error instanceof Error ? error.message : 'Unable to create godown.');
         }
     };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>{'< Back'}</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Add Godown</Text>
-                <View style={{ width: 58 }} />
-            </View>
+            <AppTopBar
+                title="Add Godown"
+                subtitle="Create a warehouse location"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={[s.saveBtn, { backgroundColor: colors.primary }]} onPress={() => void onSave()} disabled={isPending}>
+                        {isPending ? (
+                            <ActivityIndicator size="small" color={colors.onPrimary} />
+                        ) : (
+                            <>
+                                <MaterialCommunityIcons name="content-save-outline" size={15} color={colors.onPrimary} />
+                                <Text style={s.saveBtnText}>Save</Text>
+                            </>
+                        )}
+                    </Pressable>
+                )}
+            />
 
-            <View style={[s.card, { backgroundColor: colors.card }]}> 
-                <Text style={[s.label, { color: colors.text }]}>Godown Name</Text>
-                <TextInput
-                    style={[s.input, { borderColor: colors.border, color: colors.text }]}
+            <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <AppInput
+                    label="Godown Name"
+                    inputType="name"
                     value={name}
                     onChangeText={setName}
                     placeholder="Main warehouse"
-                    placeholderTextColor={colors.textSecondary}
                 />
 
-                <Text style={[s.label, { color: colors.text }]}>Address</Text>
-                <TextInput
-                    style={[s.input, s.addressInput, { borderColor: colors.border, color: colors.text }]}
+                <AppInput
+                    label="Address"
+                    inputType="text"
                     value={address}
                     onChangeText={setAddress}
                     placeholder="Address (optional)"
-                    placeholderTextColor={colors.textSecondary}
                     multiline
+                    numberOfLines={3}
+                    style={s.multilineInput}
                 />
 
                 <View style={s.switchRow}>
-                    <Text style={[s.label, { color: colors.text }]}>Set as default</Text>
-                    <Switch value={isDefault} onValueChange={setIsDefault} trackColor={{ true: colors.primary, false: colors.border }} />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[s.switchTitle, { color: colors.text }]}>Set As Default</Text>
+                        <Text style={[s.switchMeta, { color: colors.textSecondary }]}>Used as the default stock location for new entries.</Text>
+                    </View>
+                    <Switch
+                        value={isDefault}
+                        onValueChange={setIsDefault}
+                        trackColor={{ true: colors.primary, false: colors.border }}
+                    />
                 </View>
-
-                <Pressable style={[s.saveBtn, { backgroundColor: colors.primary }]} onPress={onSave} disabled={isPending}>
-                    {isPending ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.saveBtnText}>Save Godown</Text>}
-                </Pressable>
             </View>
         </SafeAreaView>
     );
@@ -92,14 +101,32 @@ export default function AddGodownScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-        back: { width: 58, fontWeight: '600', fontSize: 14 },
-        title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 16 },
-        card: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md },
-        label: { fontWeight: '600', fontSize: 13, marginBottom: 6 },
-        input: { borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, fontSize: 14, marginBottom: Spacing.md },
-        addressInput: { minHeight: 72, textAlignVertical: 'top' },
-        switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
-        saveBtn: { borderRadius: Radius.pill, alignItems: 'center', paddingVertical: Spacing.sm },
-        saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+        saveBtn: {
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            minWidth: 76,
+            justifyContent: 'center',
+        },
+        saveBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
+        card: {
+            marginHorizontal: Spacing.lg,
+            marginTop: Spacing.sm,
+            borderRadius: Radius.card,
+            borderWidth: 1,
+            padding: Spacing.md,
+            gap: Spacing.md,
+        },
+        multilineInput: { minHeight: 72, textAlignVertical: 'top' },
+        switchRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: Spacing.md,
+        },
+        switchTitle: { fontSize: Typography.body.size, fontWeight: '700' },
+        switchMeta: { fontSize: Typography.caption.size, marginTop: 2 },
     });

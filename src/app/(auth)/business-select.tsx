@@ -1,38 +1,50 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Image,
     KeyboardAvoidingView,
     Platform,
     Pressable,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     View,
     useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
-import { storeBusinessId, toUserMessage } from '../../api/client';
+import { storeBusinessId, toApiError, toUserMessage } from '../../api/client';
 import { businessApi, settingsApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 import { extractUpiIdFromPayload, isValidUpiId, sanitizeUpiId } from '../../utils/upi';
 import { SignatureCaptureSheet } from '../../components/signature/SignatureCaptureSheet';
+import { AppTopBar } from '../../components/ui/AppTopBar';
+import { AppInput } from '../../components/ui/AppInput';
+import { DateField } from '../../components/ui/DateField';
+import { SelectField } from '../../components/ui/SelectField';
+import { CURRENCY_OPTIONS, DEFAULT_CURRENCY_CODE } from '../../constants/countryOptions';
+import { INDIAN_STATE_LIST } from '../../constants/gstRates';
+import { useAppDialog } from '../../components/providers/DialogProvider';
 
 type OrganizationLite = {
     id: string;
     name: string;
     code?: string | null;
     currency?: string | null;
+    state?: string | null;
+    city?: string | null;
+    pincode?: string | null;
+    booksStartDate?: string | null;
+    openingCashInHand?: number | null;
+    openingCashInBank?: number | null;
     role?: string | null;
 };
 
-const CURRENCIES = ['INR', 'USD', 'EUR', 'AED'];
 const PENDING_SETUP_KEY_PREFIX = 'vahi_pending_setup_';
 
 const sanitizeBusinessCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
@@ -54,6 +66,14 @@ const deriveBusinessCode = (name: string) => {
     return `VH${Date.now().toString().slice(-4)}`;
 };
 
+const todayDateString = () => new Date().toISOString().slice(0, 10);
+
+const toPositiveNumber = (value: string) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return parsed;
+};
+
 const fetchOrganizations = async (): Promise<OrganizationLite[]> => {
     const response = await businessApi.list();
     return (response.data ?? []).map((entry) => ({
@@ -61,15 +81,47 @@ const fetchOrganizations = async (): Promise<OrganizationLite[]> => {
         name: entry.name,
         code: entry.code ?? null,
         currency: entry.currency ?? 'INR',
+        state: entry.state ?? null,
+        city: entry.city ?? null,
+        pincode: entry.pincode ?? null,
+        booksStartDate: entry.booksStartDate ?? null,
+        openingCashInHand: entry.openingCashInHand ?? null,
+        openingCashInBank: entry.openingCashInBank ?? null,
         role: 'owner',
     }));
 };
 
-const createOrganization = async (input: { name: string; code: string; currency: string }): Promise<string> => {
+const createOrganization = async (input: {
+    name: string;
+    code: string;
+    currency: string;
+    legalName?: string;
+    phoneNumber?: string;
+    email?: string;
+    gstNumber?: string;
+    address?: string;
+    state?: string;
+    city?: string;
+    pincode?: string;
+    booksStartDate?: string;
+    openingCashInHand?: number;
+    openingCashInBank?: number;
+}): Promise<string> => {
     const response = await businessApi.create({
         name: input.name,
         code: input.code,
         currency: input.currency,
+        legalName: input.legalName ?? null,
+        phone: input.phoneNumber ?? null,
+        email: input.email ?? null,
+        gstin: input.gstNumber ?? null,
+        address: input.address ?? null,
+        state: input.state ?? null,
+        city: input.city ?? null,
+        pincode: input.pincode ?? null,
+        booksStartDate: input.booksStartDate ?? null,
+        openingCashInHand: input.openingCashInHand ?? null,
+        openingCashInBank: input.openingCashInBank ?? null,
     });
     return response.data.id;
 };
@@ -87,6 +139,7 @@ export default function BusinessSelectScreen() {
     const scheme = useColorScheme();
     const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
     const s = styles(colors);
+    const dialog = useAppDialog();
     const queryClient = useQueryClient();
     const params = useLocalSearchParams<{ upiPayload?: string | string[]; scanAt?: string | string[] }>();
 
@@ -96,15 +149,31 @@ export default function BusinessSelectScreen() {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [businessName, setBusinessName] = useState('');
     const [businessCode, setBusinessCode] = useState('');
-    const [currency, setCurrency] = useState('INR');
+    const [currency, setCurrency] = useState(DEFAULT_CURRENCY_CODE);
+    const [legalName, setLegalName] = useState('');
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [email, setEmail] = useState('');
+    const [gstNumber, setGstNumber] = useState('');
+    const [address, setAddress] = useState('');
+    const [stateCode, setStateCode] = useState('');
+    const [city, setCity] = useState('');
+    const [pincode, setPincode] = useState('');
+    const [booksStartDate, setBooksStartDate] = useState<string | null>(todayDateString());
+    const [openingCashInHand, setOpeningCashInHand] = useState('0');
+    const [openingCashInBank, setOpeningCashInBank] = useState('0');
     const [switchingBusinessId, setSwitchingBusinessId] = useState<string | null>(null);
     const [paymentUpiId, setPaymentUpiId] = useState('');
     const [signatureUrl, setSignatureUrl] = useState('');
     const [signatureCaptureVisible, setSignatureCaptureVisible] = useState(false);
 
+    const openInfoDialog = (title: string, message: string) => {
+        dialog.alert(title, message);
+    };
+
     const {
         data: organizations = [],
         isLoading,
+        isFetching,
         refetch,
     } = useQuery({
         queryKey: ['organizations-mine'],
@@ -122,22 +191,33 @@ export default function BusinessSelectScreen() {
         mutationFn: createOrganization,
     });
 
+    const deleteMutation = useMutation({
+        mutationFn: async (businessId: string) => {
+            await businessApi.remove(businessId);
+        },
+    });
+
     useEffect(() => {
         const payload = Array.isArray(params.upiPayload) ? params.upiPayload[0] : params.upiPayload;
         if (!payload) return;
         const extracted = extractUpiIdFromPayload(payload);
         if (!extracted) {
-            Alert.alert('UPI', 'Scanned QR does not contain a valid UPI ID.');
+            dialog.alert('UPI', 'Scanned QR does not contain a valid UPI ID.');
             return;
         }
         setPaymentUpiId(extracted);
-        Alert.alert('UPI', 'UPI ID captured. It will be saved in General settings after continue.');
-    }, [params.scanAt, params.upiPayload]);
+        dialog.alert('UPI', 'UPI ID captured. It will be saved in General settings after continue.');
+    }, [dialog, params.scanAt, params.upiPayload]);
 
     const helperText = useMemo(() => {
         if (!businessName.trim()) return 'Business code auto-generates from business name.';
         return `Suggested code: ${deriveBusinessCode(businessName)}`;
     }, [businessName]);
+
+    const handleRefresh = async () => {
+        await refetch();
+        await queryClient.invalidateQueries({ queryKey: ['organizations-mine'] });
+    };
 
     const persistBusinessSetup = async (receiverName?: string) => {
         const normalizedUpi = sanitizeUpiId(paymentUpiId);
@@ -171,7 +251,7 @@ export default function BusinessSelectScreen() {
     const handleContinue = async (businessId?: string, receiverName?: string) => {
         const nextBusinessId = businessId ?? selectedId;
         if (!nextBusinessId) {
-            Alert.alert('Select Business', 'Choose a business or create one to continue.');
+            openInfoDialog('Select Business', 'Choose a business or create one to continue.');
             return;
         }
 
@@ -184,14 +264,14 @@ export default function BusinessSelectScreen() {
                 if (isCloudWriteRestriction(error)) {
                     await persistSetupOfflineDraft(nextBusinessId, receiverName);
                 } else {
-                    Alert.alert('Setup not saved', toUserMessage(error, 'Unable to save UPI/signature setup.'));
+                    openInfoDialog('Setup not saved', toUserMessage(error, 'Unable to save UPI/signature setup.'));
                 }
             }
             await refreshUser();
             router.replace('/(main)');
         } catch (error) {
             const message = toUserMessage(error, 'Unable to switch business.');
-            Alert.alert('Could not continue', message);
+            openInfoDialog('Could not continue', message);
         } finally {
             setSwitchingBusinessId(null);
         }
@@ -200,28 +280,106 @@ export default function BusinessSelectScreen() {
     const handleCreateBusiness = async () => {
         const name = businessName.trim();
         if (name.length < 2) {
-            Alert.alert('Business Name Required', 'Enter a valid business name with at least 2 characters.');
+            openInfoDialog('Business Name Required', 'Enter a valid business name with at least 2 characters.');
             return;
         }
 
         const code = sanitizeBusinessCode(businessCode.trim()) || deriveBusinessCode(name);
         if (code.length < 2) {
-            Alert.alert('Business Code Invalid', 'Enter at least 2 alphanumeric characters for business code.');
+            openInfoDialog('Business Code Invalid', 'Enter at least 2 alphanumeric characters for business code.');
             return;
         }
 
         try {
-            const id = await createMutation.mutateAsync({ name, code, currency });
+            const id = await createMutation.mutateAsync({
+                name,
+                code,
+                currency,
+                legalName: legalName.trim() || undefined,
+                phoneNumber: phoneNumber.trim() || undefined,
+                email: email.trim() || undefined,
+                gstNumber: gstNumber.trim() || undefined,
+                address: address.trim() || undefined,
+                state: stateCode.trim() || undefined,
+                city: city.trim() || undefined,
+                pincode: pincode.trim() || undefined,
+                booksStartDate: booksStartDate ?? undefined,
+                openingCashInHand: toPositiveNumber(openingCashInHand),
+                openingCashInBank: toPositiveNumber(openingCashInBank),
+            });
             setBusinessName('');
             setBusinessCode('');
+            setLegalName('');
+            setPhoneNumber('');
+            setEmail('');
+            setGstNumber('');
+            setAddress('');
+            setStateCode('');
+            setCity('');
+            setPincode('');
+            setBooksStartDate(todayDateString());
+            setOpeningCashInHand('0');
+            setOpeningCashInBank('0');
             await refetch();
             await queryClient.invalidateQueries({ queryKey: ['organizations-mine'] });
             setSelectedId(id);
             await handleContinue(id, name);
         } catch (error) {
+            const normalized = toApiError(error);
             const message = toUserMessage(error, 'Failed to create business.');
-            Alert.alert('Create Business Failed', message);
+
+            if (normalized.status === 409) {
+                const existing = organizations[0];
+                if (existing) {
+                    dialog.alert('Business Limit Reached', message, [
+                        {
+                            text: 'Use Existing Business',
+                            onPress: () => {
+                                setSelectedId(existing.id);
+                                void handleContinue(existing.id, existing.name);
+                            },
+                        },
+                        { text: 'Cancel', style: 'cancel' },
+                    ]);
+                } else {
+                    dialog.alert('Business Limit Reached', message);
+                }
+                return;
+            }
+
+            openInfoDialog('Create Business Failed', message);
         }
+    };
+
+    const handleDeleteBusiness = (org: OrganizationLite) => {
+        dialog.confirm(
+            'Delete Organization',
+            `Delete "${org.name}"? This removes active access for this organization.`,
+            () => {
+                void (async () => {
+                    try {
+                        setSwitchingBusinessId(org.id);
+                        await deleteMutation.mutateAsync(org.id);
+                        const refreshed = await refetch();
+                        await queryClient.invalidateQueries({ queryKey: ['organizations-mine'] });
+                        const remaining = refreshed.data ?? [];
+
+                        if (selectedId === org.id) {
+                            const next = remaining.find((entry) => entry.id !== org.id) ?? remaining[0] ?? null;
+                            setSelectedId(next?.id ?? null);
+                            if (next) {
+                                await handleContinue(next.id, next.name);
+                            }
+                        }
+                    } catch (error) {
+                        openInfoDialog('Delete Failed', toUserMessage(error, 'Unable to delete organization.'));
+                    } finally {
+                        setSwitchingBusinessId(null);
+                    }
+                })();
+            },
+            'Delete'
+        );
     };
 
     const handleSignOut = async () => {
@@ -231,13 +389,32 @@ export default function BusinessSelectScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+            <AppTopBar
+                leftMode="none"
+                title="Select Business"
+                subtitle="Choose existing business or create a new one"
+                rightAction={(
+                    <Pressable style={[s.signOutTopBtn, { borderColor: colors.border }]} onPress={() => void handleSignOut()}>
+                        <MaterialCommunityIcons name="logout" size={15} color={colors.textSecondary} />
+                        <Text style={[s.signOutTopText, { color: colors.textSecondary }]}>Sign out</Text>
+                    </Pressable>
+                )}
+            />
             <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
-                    <View style={s.header}>
-                        <Text style={s.title}>Select Business</Text>
-                        <Text style={s.subtitle}>Choose an existing business or create a new one before entering Vahi.</Text>
-                    </View>
-
+                <ScrollView
+                    contentContainerStyle={s.container}
+                    keyboardShouldPersistTaps="handled"
+                    refreshControl={(
+                        <RefreshControl
+                            refreshing={isFetching && !isLoading}
+                            onRefresh={() => {
+                                void handleRefresh();
+                            }}
+                            tintColor={colors.primary}
+                            colors={[colors.primary]}
+                        />
+                    )}
+                >
                     <View style={s.section}>
                         <Text style={s.sectionTitle}>Your Businesses</Text>
                         {isLoading ? (
@@ -252,6 +429,7 @@ export default function BusinessSelectScreen() {
                             organizations.map((org) => {
                                 const isActive = selectedId === org.id;
                                 const isSwitching = switchingBusinessId === org.id;
+                                const canDelete = organizations.length > 1;
                                 return (
                                     <Pressable
                                         key={org.id}
@@ -273,6 +451,13 @@ export default function BusinessSelectScreen() {
                                         <Text style={s.orgMeta}>
                                             Code: {org.code ?? '-'} | Currency: {org.currency ?? 'INR'}
                                         </Text>
+                                        {org.state || org.city || org.pincode ? (
+                                            <Text style={s.orgMeta}>
+                                                {org.city ? `${org.city}, ` : ''}
+                                                {org.state ?? ''}
+                                                {org.pincode ? ` - ${org.pincode}` : ''}
+                                            </Text>
+                                        ) : null}
                                         {isActive ? (
                                             <Pressable
                                                 style={[s.primaryButton, isSwitching && s.buttonDisabled]}
@@ -280,12 +465,25 @@ export default function BusinessSelectScreen() {
                                                 disabled={Boolean(isSwitching)}
                                             >
                                                 {isSwitching ? (
-                                                    <ActivityIndicator color="#fff" />
+                                                    <ActivityIndicator color={colors.onPrimary} />
                                                 ) : (
                                                     <Text style={s.primaryButtonText}>Continue with this business</Text>
                                                 )}
                                             </Pressable>
                                         ) : null}
+                                        <Pressable
+                                            style={[
+                                                s.dangerButton,
+                                                (!canDelete || isSwitching || deleteMutation.isPending) && s.buttonDisabled,
+                                            ]}
+                                            onPress={() => handleDeleteBusiness(org)}
+                                            disabled={Boolean(!canDelete || isSwitching || deleteMutation.isPending)}
+                                        >
+                                            <MaterialCommunityIcons name="trash-can-outline" size={14} color={colors.error} />
+                                            <Text style={s.dangerButtonText}>
+                                                {canDelete ? 'Delete Organization' : 'At least one required'}
+                                            </Text>
+                                        </Pressable>
                                     </Pressable>
                                 );
                             })
@@ -296,52 +494,152 @@ export default function BusinessSelectScreen() {
                         <Text style={s.sectionTitle}>Create New Business</Text>
                         <View style={s.formCard}>
                             <Text style={s.inputLabel}>Business Name</Text>
-                            <TextInput
+                            <AppInput
                                 value={businessName}
                                 onChangeText={setBusinessName}
+                                inputType="name"
                                 placeholder="e.g. Vahi Traders"
-                                placeholderTextColor={colors.textSecondary}
-                                style={s.input}
-                                autoCapitalize="words"
+                                containerStyle={s.inputWrap}
                             />
 
                             <Text style={s.inputLabel}>Business Code (optional)</Text>
-                            <TextInput
+                            <AppInput
                                 value={businessCode}
                                 onChangeText={(value) => setBusinessCode(sanitizeBusinessCode(value))}
+                                inputType="text"
                                 placeholder="Auto-generated if left empty"
-                                placeholderTextColor={colors.textSecondary}
-                                style={s.input}
+                                containerStyle={s.inputWrap}
                                 autoCapitalize="characters"
                             />
                             <Text style={s.helperText}>{helperText}</Text>
 
                             <Text style={s.inputLabel}>Currency</Text>
-                            <View style={s.currencyRow}>
-                                {CURRENCIES.map((entry) => (
-                                    <Pressable
-                                        key={entry}
-                                        onPress={() => setCurrency(entry)}
-                                        style={[
-                                            s.currencyChip,
-                                            currency === entry && {
-                                                borderColor: colors.primary,
-                                                backgroundColor: colors.surfaceVariant,
-                                            },
-                                        ]}
-                                    >
-                                        <Text style={s.currencyChipText}>{entry}</Text>
-                                    </Pressable>
-                                ))}
-                            </View>
+                            <SelectField
+                                value={currency}
+                                onChange={setCurrency}
+                                title="Business Currency"
+                                placeholder="Select currency"
+                                options={CURRENCY_OPTIONS.map((entry) => ({
+                                    label: entry.code,
+                                    value: entry.code,
+                                    description: entry.label,
+                                }))}
+                            />
+
+                            <Text style={s.inputLabel}>Legal Name (optional)</Text>
+                            <AppInput
+                                value={legalName}
+                                onChangeText={setLegalName}
+                                inputType="name"
+                                placeholder="As per registration"
+                                containerStyle={s.inputWrap}
+                            />
+
+                            <Text style={s.inputLabel}>Phone (optional)</Text>
+                            <AppInput
+                                value={phoneNumber}
+                                onChangeText={setPhoneNumber}
+                                inputType="phone"
+                                placeholder="Business contact number"
+                                containerStyle={s.inputWrap}
+                            />
+
+                            <Text style={s.inputLabel}>Email (optional)</Text>
+                            <AppInput
+                                value={email}
+                                onChangeText={setEmail}
+                                inputType="email"
+                                placeholder="billing@business.com"
+                                containerStyle={s.inputWrap}
+                                autoCapitalize="none"
+                            />
+
+                            <Text style={s.inputLabel}>GST Number (optional)</Text>
+                            <AppInput
+                                value={gstNumber}
+                                onChangeText={setGstNumber}
+                                inputType="text"
+                                placeholder="GSTIN"
+                                containerStyle={s.inputWrap}
+                                autoCapitalize="characters"
+                            />
+
+                            <Text style={s.inputLabel}>Address (optional)</Text>
+                            <AppInput
+                                value={address}
+                                onChangeText={setAddress}
+                                inputType="text"
+                                placeholder="Street / area"
+                                containerStyle={s.inputWrap}
+                            />
+
+                            <Text style={s.inputLabel}>State (optional)</Text>
+                            <SelectField
+                                value={stateCode}
+                                onChange={setStateCode}
+                                title="State"
+                                placeholder="Select state"
+                                options={INDIAN_STATE_LIST.map((entry) => ({
+                                    label: entry.name,
+                                    value: entry.code,
+                                    description: entry.label,
+                                }))}
+                                allowClear
+                                onClear={() => setStateCode('')}
+                            />
+
+                            <Text style={s.inputLabel}>City (optional)</Text>
+                            <AppInput
+                                value={city}
+                                onChangeText={setCity}
+                                inputType="name"
+                                placeholder="City"
+                                containerStyle={s.inputWrap}
+                            />
+
+                            <Text style={s.inputLabel}>Pincode (optional)</Text>
+                            <AppInput
+                                value={pincode}
+                                onChangeText={setPincode}
+                                inputType="number"
+                                placeholder="Postal code"
+                                containerStyle={s.inputWrap}
+                            />
+
+                            <Text style={s.inputLabel}>Books Opening Date</Text>
+                            <DateField
+                                value={booksStartDate}
+                                onChange={setBooksStartDate}
+                                placeholder="Select opening date"
+                                title="Books opening date"
+                                allowClear={false}
+                            />
+
+                            <Text style={s.inputLabel}>Opening Cash in Hand</Text>
+                            <AppInput
+                                value={openingCashInHand}
+                                onChangeText={setOpeningCashInHand}
+                                inputType="decimal"
+                                placeholder="0"
+                                containerStyle={s.inputWrap}
+                            />
+
+                            <Text style={s.inputLabel}>Opening Cash in Bank</Text>
+                            <AppInput
+                                value={openingCashInBank}
+                                onChangeText={setOpeningCashInBank}
+                                inputType="decimal"
+                                placeholder="0"
+                                containerStyle={s.inputWrap}
+                            />
 
                             <Text style={s.inputLabel}>Payment UPI ID (optional)</Text>
-                            <TextInput
+                            <AppInput
                                 value={paymentUpiId}
                                 onChangeText={setPaymentUpiId}
+                                inputType="upi"
                                 placeholder="merchant@upi"
-                                placeholderTextColor={colors.textSecondary}
-                                style={s.input}
+                                containerStyle={s.inputWrap}
                                 autoCapitalize="none"
                             />
                             <Pressable
@@ -358,12 +656,12 @@ export default function BusinessSelectScreen() {
                             </Pressable>
 
                             <Text style={s.inputLabel}>Signature Image URL (optional)</Text>
-                            <TextInput
+                            <AppInput
                                 value={signatureUrl}
                                 onChangeText={setSignatureUrl}
+                                inputType="url"
                                 placeholder="https://.../signature.png"
-                                placeholderTextColor={colors.textSecondary}
-                                style={s.input}
+                                containerStyle={s.inputWrap}
                                 autoCapitalize="none"
                             />
                             <View style={s.signatureActions}>
@@ -395,7 +693,7 @@ export default function BusinessSelectScreen() {
                                 disabled={createMutation.isPending}
                             >
                                 {createMutation.isPending ? (
-                                    <ActivityIndicator color="#fff" />
+                                    <ActivityIndicator color={colors.onPrimary} />
                                 ) : (
                                     <Text style={s.primaryButtonText}>Create and Continue</Text>
                                 )}
@@ -403,9 +701,6 @@ export default function BusinessSelectScreen() {
                         </View>
                     </View>
 
-                    <Pressable style={s.secondaryButton} onPress={handleSignOut}>
-                        <Text style={s.secondaryButtonText}>Sign out</Text>
-                    </Pressable>
                 </ScrollView>
             </KeyboardAvoidingView>
             <SignatureCaptureSheet
@@ -426,21 +721,22 @@ const styles = (colors: ColorPalette) =>
         flex: { flex: 1 },
         container: {
             paddingHorizontal: Spacing.lg,
-            paddingTop: Spacing.lg,
+            paddingTop: Spacing.sm,
             paddingBottom: Spacing.xl,
             gap: Spacing.lg,
         },
-        header: {
-            gap: Spacing.xs,
+        signOutTopBtn: {
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
         },
-        title: {
-            fontSize: Typography.headline.size,
+        signOutTopText: {
+            fontSize: Typography.caption.size,
             fontWeight: '700',
-            color: colors.text,
-        },
-        subtitle: {
-            fontSize: Typography.body.size,
-            color: colors.textSecondary,
         },
         section: {
             gap: Spacing.sm,
@@ -521,15 +817,8 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
             fontWeight: '600',
         },
-        input: {
-            backgroundColor: colors.surfaceVariant,
-            borderRadius: Radius.md,
-            borderWidth: 1,
-            borderColor: colors.border,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: 10,
-            color: colors.text,
-            fontSize: Typography.body.size,
+        inputWrap: {
+            marginBottom: Spacing.xs,
         },
         helperText: {
             color: colors.textSecondary,
@@ -556,7 +845,7 @@ const styles = (colors: ColorPalette) =>
             borderColor: colors.border,
             borderRadius: Radius.md,
             overflow: 'hidden',
-            backgroundColor: '#fff',
+            backgroundColor: colors.surface,
             marginTop: Spacing.xs,
         },
         signaturePreview: {
@@ -572,24 +861,6 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
             fontWeight: '700',
         },
-        currencyRow: {
-            flexDirection: 'row',
-            gap: Spacing.sm,
-            flexWrap: 'wrap',
-        },
-        currencyChip: {
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: 8,
-            backgroundColor: colors.backgroundElement,
-        },
-        currencyChipText: {
-            color: colors.text,
-            fontSize: Typography.caption.size,
-            fontWeight: '700',
-        },
         primaryButton: {
             backgroundColor: colors.primary,
             borderRadius: Radius.pill,
@@ -599,24 +870,28 @@ const styles = (colors: ColorPalette) =>
             marginTop: Spacing.xs,
         },
         primaryButtonText: {
-            color: '#fff',
+            color: colors.onPrimary,
             fontWeight: '700',
             fontSize: Typography.body.size,
         },
-        buttonDisabled: {
-            opacity: 0.7,
-        },
-        secondaryButton: {
-            borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.card,
+        dangerButton: {
             borderRadius: Radius.pill,
-            minHeight: 44,
+            minHeight: 38,
             alignItems: 'center',
             justifyContent: 'center',
+            marginTop: Spacing.xs,
+            borderWidth: 1,
+            borderColor: colors.error,
+            backgroundColor: colors.surface,
+            flexDirection: 'row',
+            gap: Spacing.xs,
         },
-        secondaryButtonText: {
-            color: colors.textSecondary,
+        dangerButtonText: {
+            color: colors.error,
             fontWeight: '700',
+            fontSize: Typography.caption.size,
+        },
+        buttonDisabled: {
+            opacity: 0.7,
         },
     });

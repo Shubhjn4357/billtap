@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { expenseApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { getColors, Spacing, Radius, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { ExpenseCategory } from '../../../constants/enums';
 import type { Expense } from '../../../types/domain';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 const CATEGORIES = ['ALL', ...Object.values(ExpenseCategory)] as const;
 
@@ -15,12 +19,14 @@ const toggleId = (list: string[], id: string) =>
     list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
 
 export default function ExpensesScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);
     const [cat, setCat] = useState<string>('ALL');
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/accounts');
     const queryClient = useQueryClient();
 
     const { data, isLoading } = useQuery({
@@ -31,6 +37,8 @@ export default function ExpensesScreen() {
 
     const expenses = useMemo(() => (data?.data ?? []) as Expense[], [data?.data]);
     const total = expenses.reduce((sum, entry) => sum + entry.amount, 0);
+    const average = expenses.length > 0 ? total / expenses.length : 0;
+    const categoriesUsed = new Set(expenses.map((entry) => entry.category)).size;
     const selectedCount = selectedIds.length;
 
     const { mutate: bulkDelete, isPending: bulkDeleting } = useMutation({
@@ -44,7 +52,7 @@ export default function ExpensesScreen() {
             setSelectedIds([]);
         },
         onError: (error) => {
-            Alert.alert('Bulk delete failed', error instanceof Error ? error.message : 'Unable to archive selected expenses.');
+            dialog.alert('Bulk delete failed', error instanceof Error ? error.message : 'Unable to archive selected expenses.');
         },
     });
 
@@ -58,13 +66,13 @@ export default function ExpensesScreen() {
             setSelectedIds([]);
         },
         onError: (error) => {
-            Alert.alert('Bulk update failed', error instanceof Error ? error.message : 'Unable to update selected expenses.');
+            dialog.alert('Bulk update failed', error instanceof Error ? error.message : 'Unable to update selected expenses.');
         },
     });
 
     const requestBulkDelete = () => {
         if (selectedCount === 0) return;
-        Alert.alert('Archive expenses', `Move ${selectedCount} expense(s) to recycle bin?`, [
+        dialog.alert('Archive expenses', `Move ${selectedCount} expense(s) to recycle bin?`, [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Archive', style: 'destructive', onPress: () => bulkDelete(selectedIds) },
         ]);
@@ -72,7 +80,7 @@ export default function ExpensesScreen() {
 
     const requestBulkSetMisc = () => {
         if (selectedCount === 0) return;
-        Alert.alert('Set category', `Set ${selectedCount} expense(s) category to Miscellaneous?`, [
+        dialog.alert('Set category', `Set ${selectedCount} expense(s) category to Miscellaneous?`, [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Apply', onPress: () => bulkSetMisc(selectedIds) },
         ]);
@@ -80,34 +88,59 @@ export default function ExpensesScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>{'< Back'}</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Expenses</Text>
-                <View style={s.headerActions}>
-                    <Pressable style={[s.iconBtn, { borderColor: colors.border }]} onPress={() => {
-                        setSelectionMode((current) => !current);
-                        setSelectedIds([]);
-                    }}>
-                        <Text style={[s.iconBtnText, { color: colors.textSecondary }]}>
-                            {selectionMode ? 'Cancel' : 'Select'}
-                        </Text>
-                    </Pressable>
-                    <Pressable style={[s.iconBtn, { borderColor: colors.border }]} onPress={() => router.push('/(main)/accounts/expenses/recycle-bin' as Parameters<typeof router.push>[0])}>
-                        <Text style={[s.iconBtnText, { color: colors.textSecondary }]}>Bin</Text>
-                    </Pressable>
-                    <Pressable style={s.addBtn} onPress={() => router.push('/(main)/accounts/expenses/add' as Parameters<typeof router.push>[0])}>
-                        <Text style={s.addBtnText}>+ Add</Text>
-                    </Pressable>
-                </View>
-            </View>
+            <AppTopBar
+                title="Expenses"
+                subtitle="Track spending and categories"
+                onBackPress={smartBack}
+                rightAction={(
+                    <View style={s.topActionRow}>
+                        <Pressable
+                            style={[s.iconBtn, { borderColor: colors.border }]}
+                            onPress={() => {
+                                setSelectionMode((current) => !current);
+                                setSelectedIds([]);
+                            }}
+                        >
+                            <MaterialCommunityIcons
+                                name={selectionMode ? 'close' : 'checkbox-multiple-marked-outline'}
+                                size={18}
+                                color={colors.textSecondary}
+                            />
+                        </Pressable>
+                        <Pressable
+                            style={[s.iconBtn, { borderColor: colors.border }]}
+                            onPress={() => router.push('/(main)/accounts/expenses/recycle-bin' as Parameters<typeof router.push>[0])}
+                        >
+                            <MaterialCommunityIcons name="delete-outline" size={18} color={colors.textSecondary} />
+                        </Pressable>
+                        <Pressable style={s.addBtn} onPress={() => router.push('/(main)/accounts/expenses/add' as Parameters<typeof router.push>[0])}>
+                            <MaterialCommunityIcons name="plus" size={18} color={colors.onPrimary} />
+                        </Pressable>
+                    </View>
+                )}
+            />
 
-            <View style={[s.totalCard, { backgroundColor: `${colors.error}18` }]}>
+            <View style={[s.totalCard, { backgroundColor: withAlpha(colors.error, '18') }]}>
                 <Text style={[s.totalLabel, { color: colors.textSecondary }]}>Total Expenses (filtered)</Text>
                 <Text style={[s.totalVal, { color: colors.error }]}>{`INR ${total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}</Text>
             </View>
 
+            <View style={s.statsRow}>
+                <View style={[s.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[s.statLabel, { color: colors.textSecondary }]}>Entries</Text>
+                    <Text style={[s.statValue, { color: colors.text }]}>{expenses.length}</Text>
+                </View>
+                <View style={[s.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[s.statLabel, { color: colors.textSecondary }]}>Average</Text>
+                    <Text style={[s.statValue, { color: colors.warning }]}>Rs {average.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                </View>
+                <View style={[s.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[s.statLabel, { color: colors.textSecondary }]}>Categories</Text>
+                    <Text style={[s.statValue, { color: colors.primary }]}>{categoriesUsed}</Text>
+                </View>
+            </View>
+
+            <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>Category Filter</Text>
             <View style={s.catRow}>
                 <FlatList
                     horizontal
@@ -116,8 +149,17 @@ export default function ExpensesScreen() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={{ gap: Spacing.sm, paddingHorizontal: Spacing.lg }}
                     renderItem={({ item }) => (
-                        <Pressable style={[s.catChip, { backgroundColor: cat === item ? colors.primary : colors.surfaceVariant }]} onPress={() => setCat(item)}>
-                            <Text style={{ color: cat === item ? '#fff' : colors.textSecondary, fontWeight: '600', fontSize: 12 }}>
+                        <Pressable
+                            style={[
+                                s.catChip,
+                                {
+                                    backgroundColor: cat === item ? colors.primary : colors.surfaceVariant,
+                                    borderColor: cat === item ? colors.primary : colors.border,
+                                },
+                            ]}
+                            onPress={() => setCat(item)}
+                        >
+                            <Text style={{ color: cat === item ? colors.onPrimary : colors.textSecondary, fontWeight: '600', fontSize: 12 }}>
                                 {item === 'ALL' ? 'All' : item.replace(/_/g, ' ')}
                             </Text>
                         </Pressable>
@@ -126,6 +168,8 @@ export default function ExpensesScreen() {
             </View>
 
             {selectionMode ? (
+                <>
+                    <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>Bulk Actions</Text>
                 <View style={s.bulkRow}>
                     <Text style={[s.bulkLabel, { color: colors.textSecondary }]}>Selected: {selectedCount}</Text>
                     <Pressable style={[s.bulkAction, { borderColor: colors.primary }]} onPress={requestBulkSetMisc} disabled={selectedCount === 0 || bulkUpdating}>
@@ -139,8 +183,10 @@ export default function ExpensesScreen() {
                         </Text>
                     </Pressable>
                 </View>
+                </>
             ) : null}
 
+            <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>Entries</Text>
             {isLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
             ) : (
@@ -182,15 +228,15 @@ function ExpenseRow({
             style={[
                 rowStyles.row,
                 {
-                    backgroundColor: selected ? `${colors.primary}20` : colors.card,
-                    borderColor: selected ? colors.primary : 'transparent',
-                    borderWidth: selected ? 1 : 0,
+                    backgroundColor: selected ? withAlpha(colors.primary, '20') : colors.card,
+                    borderColor: selected ? colors.primary : colors.border,
+                    borderWidth: 1,
                 },
             ]}
             onPress={selectionMode ? onToggleSelect : undefined}
         >
             {selectionMode ? (
-                <View style={[rowStyles.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? `${colors.primary}22` : 'transparent' }]}>
+                <View style={[rowStyles.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' }]}>
                     <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '700' }}>
                         {selected ? 'ON' : 'OFF'}
                     </Text>
@@ -235,26 +281,44 @@ const rowStyles = StyleSheet.create({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-        back: { fontWeight: '600', fontSize: 14, width: 52 },
-        title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 17 },
-        headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+        topActionRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
         iconBtn: {
             borderWidth: 1,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.sm,
-            paddingVertical: 4,
-            minWidth: 42,
+            width: 34,
+            height: 34,
+            borderRadius: 17,
             alignItems: 'center',
+            justifyContent: 'center',
         },
-        iconBtnText: { fontWeight: '700', fontSize: 12 },
-        addBtn: { backgroundColor: colors.primary, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 4 },
-        addBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-        totalCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.md },
+        addBtn: { backgroundColor: colors.primary, borderRadius: Radius.pill, width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+        totalCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.sm },
         totalLabel: { fontSize: 12 },
         totalVal: { fontSize: 24, fontWeight: '800', marginTop: 4 },
+        statsRow: {
+            flexDirection: 'row',
+            gap: Spacing.sm,
+            paddingHorizontal: Spacing.lg,
+            marginBottom: Spacing.sm,
+        },
+        statCard: {
+            flex: 1,
+            borderWidth: 1,
+            borderRadius: Radius.md,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: Spacing.sm,
+        },
+        statLabel: { fontSize: Typography.caption.size, fontWeight: '600' },
+        statValue: { marginTop: 2, fontSize: Typography.title.size, fontWeight: '800' },
+        sectionLabel: {
+            paddingHorizontal: Spacing.lg,
+            marginBottom: Spacing.xs,
+            fontSize: Typography.caption.size,
+            fontWeight: '700',
+            letterSpacing: 0.8,
+            textTransform: 'uppercase',
+        },
         catRow: { marginBottom: Spacing.sm },
-        catChip: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
+        catChip: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
         bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         bulkLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
         bulkAction: {
@@ -265,4 +329,3 @@ const styles = (colors: ColorPalette) =>
         },
         centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
     });
-

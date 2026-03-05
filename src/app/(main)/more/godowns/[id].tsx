@@ -1,25 +1,21 @@
 import { useMemo } from 'react';
-import {
-    ActivityIndicator,
-    FlatList,
-    Pressable,
-    StyleSheet,
-    Text,
-    useColorScheme,
-    View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useQuery } from '@tanstack/react-query';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { godownApi } from '../../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import type { GodownStockEntry } from '../../../../types/domain';
 
 export default function GodownDetailScreen() {
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
+    const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
-    const { id } = useLocalSearchParams<{ id: string }>();
+    const smartBack = useSmartBack('/(main)/more');
+    const { id } = useLocalSearchParams<{ id?: string }>();
 
     const godownId = useMemo(() => (Array.isArray(id) ? id[0] : id), [id]);
 
@@ -34,31 +30,45 @@ export default function GodownDetailScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>{'< Back'}</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Godown Stock</Text>
-                <View style={{ width: 58 }} />
-            </View>
+            <AppTopBar
+                title="Godown Stock"
+                subtitle="Item-wise quantities at this location"
+                onBackPress={smartBack}
+            />
 
             {isLoading ? (
-                <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
+                <View style={s.centered}>
+                    <ActivityIndicator color={colors.primary} />
+                </View>
             ) : (
                 <FlatList
                     data={stock}
                     keyExtractor={(item) => item.itemId}
-                    ListEmptyComponent={<View style={s.centered}><Text style={{ color: colors.textSecondary }}>No stock entries found.</Text></View>}
-                    renderItem={({ item }) => (
-                        <View style={[s.row, { backgroundColor: colors.card }]}> 
-                            <View style={{ flex: 1 }}>
-                                <Text style={[s.itemName, { color: colors.text }]}>{item.itemName ?? item.itemId}</Text>
-                                <Text style={[s.meta, { color: colors.textSecondary }]}>{item.itemSku ?? 'No SKU'}</Text>
-                            </View>
-                            <Text style={[s.qty, { color: colors.primary }]}>{`${item.quantity} ${item.itemUnit ?? ''}`.trim()}</Text>
+                    contentContainerStyle={{ paddingBottom: 120 }}
+                    ListEmptyComponent={(
+                        <View style={s.centered}>
+                            <MaterialCommunityIcons name="inbox-outline" size={42} color={colors.textSecondary} />
+                            <Text style={[s.emptyText, { color: colors.textSecondary }]}>No stock entries found.</Text>
                         </View>
                     )}
-                    contentContainerStyle={{ paddingBottom: 120 }}
+                    renderItem={({ item }) => (
+                        <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[s.iconWrap, { backgroundColor: withAlpha(colors.primary, '16') }]}>
+                                <MaterialCommunityIcons name="package-variant-closed" size={16} color={colors.primary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[s.itemName, { color: colors.text }]} numberOfLines={1}>
+                                    {item.itemName ?? item.itemId}
+                                </Text>
+                                <Text style={[s.meta, { color: colors.textSecondary }]} numberOfLines={1}>
+                                    {item.itemSku ?? 'No SKU'}
+                                </Text>
+                            </View>
+                            <Text style={[s.qty, { color: colors.primary }]}>
+                                {`${item.quantity} ${item.itemUnit ?? ''}`.trim()}
+                            </Text>
+                        </View>
+                    )}
                 />
             )}
         </SafeAreaView>
@@ -68,20 +78,31 @@ export default function GodownDetailScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-        back: { width: 58, fontWeight: '600', fontSize: 14 },
-        title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 16 },
-        centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+        centered: {
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: Spacing.sm,
+        },
+        emptyText: { fontSize: Typography.body.size },
         row: {
             marginHorizontal: Spacing.lg,
             marginBottom: Spacing.sm,
             borderRadius: Radius.card,
+            borderWidth: 1,
             padding: Spacing.md,
             flexDirection: 'row',
             alignItems: 'center',
             gap: Spacing.sm,
         },
-        itemName: { fontWeight: '700', fontSize: 14 },
-        meta: { fontSize: 12, marginTop: 2 },
-        qty: { fontWeight: '700', fontSize: 14 },
+        iconWrap: {
+            width: 34,
+            height: 34,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        itemName: { fontSize: Typography.body.size, fontWeight: '700' },
+        meta: { fontSize: Typography.caption.size, marginTop: 2 },
+        qty: { fontSize: Typography.body.size, fontWeight: '700' },
     });

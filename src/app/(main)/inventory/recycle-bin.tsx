@@ -1,25 +1,23 @@
 import { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Pressable,
-    StyleSheet,
-    Text,
-    useColorScheme,
-    View,
-} from 'react-native';
-import { router } from 'expo-router';
+    ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { itemApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import type { Item } from '../../../types/domain';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 export default function ItemRecycleBinScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/inventory');
     const queryClient = useQueryClient();
     const [processingId, setProcessingId] = useState<string | null>(null);
 
@@ -48,7 +46,7 @@ export default function ItemRecycleBinScreen() {
     });
 
     const confirmRestore = (id: string) => {
-        Alert.alert('Restore item', 'Move this item back to active inventory?', [
+        dialog.alert('Restore item', 'Move this item back to active inventory?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Restore',
@@ -57,7 +55,7 @@ export default function ItemRecycleBinScreen() {
                         setProcessingId(id);
                         await restore(id);
                     } catch (error) {
-                        Alert.alert('Restore failed', error instanceof Error ? error.message : 'Unable to restore item.');
+                        dialog.alert('Restore failed', error instanceof Error ? error.message : 'Unable to restore item.');
                     } finally {
                         setProcessingId(null);
                     }
@@ -67,7 +65,7 @@ export default function ItemRecycleBinScreen() {
     };
 
     const confirmPermanentDelete = (id: string) => {
-        Alert.alert('Delete permanently', 'This action cannot be undone.', [
+        dialog.alert('Delete permanently', 'This action cannot be undone.', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Delete',
@@ -77,7 +75,7 @@ export default function ItemRecycleBinScreen() {
                         setProcessingId(id);
                         await permanentDelete(id);
                     } catch (error) {
-                        Alert.alert('Delete failed', error instanceof Error ? error.message : 'Unable to delete item.');
+                        dialog.alert('Delete failed', error instanceof Error ? error.message : 'Unable to delete item.');
                     } finally {
                         setProcessingId(null);
                     }
@@ -88,13 +86,11 @@ export default function ItemRecycleBinScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.backText, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Item Recycle Bin</Text>
-                <View style={{ width: 44 }} />
-            </View>
+            <AppTopBar
+                title="Item Recycle Bin"
+                subtitle="Restore or delete permanently"
+                onBackPress={smartBack}
+            />
 
             {isLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
@@ -118,10 +114,10 @@ export default function ItemRecycleBinScreen() {
                                 </View>
                                 <View style={s.actions}>
                                     <Pressable style={[s.actionBtn, { borderColor: colors.primary }]} onPress={() => confirmRestore(item.id)} disabled={busy}>
-                                        <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>Restore</Text>
+                                        <MaterialCommunityIcons name="backup-restore" size={16} color={colors.primary} />
                                     </Pressable>
                                     <Pressable style={[s.actionBtn, { borderColor: colors.error }]} onPress={() => confirmPermanentDelete(item.id)} disabled={busy}>
-                                        <Text style={{ color: colors.error, fontWeight: '700', fontSize: 12 }}>Delete</Text>
+                                        <MaterialCommunityIcons name="delete-forever-outline" size={16} color={colors.error} />
                                     </Pressable>
                                 </View>
                             </View>
@@ -141,15 +137,6 @@ export default function ItemRecycleBinScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        },
-        backText: { fontSize: 14, fontWeight: '700' },
-        title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
         centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 120 },
         row: {
             borderWidth: 1,
@@ -165,8 +152,9 @@ const styles = (colors: ColorPalette) =>
         actionBtn: {
             borderWidth: 1,
             borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.sm,
-            paddingVertical: 5,
+            width: 34,
+            height: 34,
             alignItems: 'center',
+            justifyContent: 'center',
         },
     });

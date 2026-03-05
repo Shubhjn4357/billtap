@@ -1,6 +1,7 @@
 import { useMemo, type ComponentType } from 'react';
-import { Alert, Modal, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
-import { getColors, Radius, Spacing, Typography } from '../../constants/theme';
+import { Modal, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { getColors, Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 type SignatureCaptureSheetProps = {
     visible: boolean;
@@ -13,7 +14,8 @@ const buildSignatureHtml = (
     borderColor: string,
     pageBackground: string,
     surfaceBackground: string,
-    textColor: string
+    textColor: string,
+    onPrimaryColor: string
 ) => `
 <!doctype html>
 <html>
@@ -80,7 +82,7 @@ const buildSignatureHtml = (
     button.primary {
       background: ${strokeColor};
       border-color: ${strokeColor};
-      color: #fff;
+      color: ${onPrimaryColor};
     }
   </style>
 </head>
@@ -203,6 +205,7 @@ const buildSignatureHtml = (
 `;
 
 export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCaptureSheetProps) {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
@@ -214,9 +217,10 @@ export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCap
                 colors.border,
                 colors.background,
                 colors.surface,
-                colors.text
+                colors.text,
+                colors.onPrimary
             ),
-        [colors.background, colors.border, colors.primary, colors.surface, colors.text]
+        [colors.background, colors.border, colors.onPrimary, colors.primary, colors.surface, colors.text]
     );
 
     const WebViewComponent = useMemo(() => {
@@ -249,7 +253,7 @@ export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCap
                 return;
             }
             if (parsed.type === 'error' && parsed.message) {
-                Alert.alert('Signature', parsed.message);
+                dialog.alert('Signature', parsed.message);
             }
         } catch {
             // Ignore malformed WebView messages.
@@ -296,7 +300,7 @@ const styles = (colors: ReturnType<typeof getColors>) =>
         overlay: {
             flex: 1,
             justifyContent: 'flex-end',
-            backgroundColor: '#00000088',
+            backgroundColor: withAlpha(colors.text, '66'),
         },
         sheet: {
             borderTopLeftRadius: Radius.lg,

@@ -1,14 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, useColorScheme, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { usePosStore } from '../../../store/posStore';
 import { posApi, itemApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { GST_SLABS } from '../../../constants/gstRates';
 import { useScannerMode } from '../../../hooks/useScannerMode';
 import type { Item } from '../../../types/domain';
+import { toUserMessage } from '../../../api/client';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { useAppDialog } from '../../../components/providers/DialogProvider';
+
+const normalizeGstRate = (value: number) => {
+    if (GST_SLABS.includes(value as (typeof GST_SLABS)[number])) return value;
+    const nearest = GST_SLABS.reduce((best, slab) => {
+        if (Math.abs(slab - value) < Math.abs(best - value)) return slab;
+        return best;
+    }, GST_SLABS[0]);
+    return nearest;
+};
 
 export default function PosScreen() {
     const scheme = useColorScheme();
@@ -20,8 +36,14 @@ export default function PosScreen() {
     const total = store.getTotal();
     const queryClient = useQueryClient();
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/billing');
+    const dialog = useAppDialog();
     const [search, setSearch] = useState('');
     const scanner = useScannerMode();
+
+    const openInfoDialog = (title: string, message: string) => {
+        dialog.alert(title, message);
+    };
 
     const { data: itemsData } = useQuery({
         queryKey: ['items'],
@@ -56,7 +78,7 @@ export default function PosScreen() {
                 description: ci.description,
                 quantity: ci.quantity,
                 rate: ci.rate,
-                gstRate: ci.gstRate,
+                gstRate: normalizeGstRate(ci.gstRate),
                 discountPercent: ci.discountPercent,
                 isInterState: ci.isInterState,
                 unit: ci.unit,
@@ -68,7 +90,7 @@ export default function PosScreen() {
             notes: store.notes || undefined,
         }),
         onSuccess: (res) => {
-            Alert.alert('Sale Recorded', `Invoice: ${res.data.invoiceNumber}`, [
+            dialog.alert('Sale Recorded', `Invoice: ${res.data.invoiceNumber}`, [
                 {
                     text: 'View Invoice',
                     onPress: () => {
@@ -81,6 +103,7 @@ export default function PosScreen() {
                 },
                 {
                     text: 'New Sale',
+                    style: 'cancel',
                     onPress: () => {
                         store.clearCart();
                         queryClient.invalidateQueries({ queryKey: ['invoices'] });
@@ -89,7 +112,7 @@ export default function PosScreen() {
             ]);
         },
         onError: (err) => {
-            Alert.alert('Error', err instanceof Error ? err.message : 'Sale failed');
+            openInfoDialog('Sale failed', toUserMessage(err, 'Unable to complete quick sale.'));
         },
     });
 
@@ -102,7 +125,7 @@ export default function PosScreen() {
             rate: item.salePrice,
             mrp: item.mrp,
             discountPercent: 0,
-            gstRate: item.gstRate,
+            gstRate: normalizeGstRate(item.gstRate),
             isInterState: store.isInterState,
         });
     };
@@ -114,48 +137,38 @@ export default function PosScreen() {
         }
 
         if (!scanner.barcodeEnabled) {
-            Alert.alert('Scanner disabled', 'Enable barcode scanning in Settings > Item Settings.');
+            openInfoDialog('Scanner disabled', 'Enable barcode scanning in Settings > Item Settings.');
             return;
         }
 
-        Alert.alert('USB scanner mode', 'Use a connected USB scanner and scan directly into the search field.');
+        openInfoDialog('USB scanner mode', 'Use a connected USB scanner and scan directly into the search field.');
     };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()} style={s.backBtn}>
-                    <Text style={[s.backText, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={[s.headerTitle, { color: colors.text }]}>POS Mode</Text>
-                {store.cartItems.length > 0 ? (
-                    <Pressable style={s.clearBtn} onPress={store.clearCart}>
-                        <Text style={[s.clearBtnText, { color: colors.error }]}>Clear</Text>
-                    </Pressable>
-                ) : (
-                    <View style={{ width: 42 }} />
-                )}
-            </View>
+            <AppTopBar
+                title="Quick Sale (POS)"
+                subtitle="Fast counter billing"
+                onBackPress={smartBack}
+                rightAction={
+                    store.cartItems.length > 0 ? (
+                        <Pressable style={s.topBarAction} onPress={store.clearCart}>
+                            <MaterialCommunityIcons name="cart-off" size={20} color={colors.error} />
+                        </Pressable>
+                    ) : undefined
+                }
+            />
 
             <View style={s.layout}>
                 <View style={s.catalog}>
-                    <View style={s.searchRow}>
-                        <TextInput
-                            style={[s.searchInput, { color: colors.text }]}
-                            placeholder={scanner.isUsbScannerMode ? 'Scan via USB or type search...' : 'Search item / barcode...'}
-                            placeholderTextColor={colors.textSecondary}
-                            value={search}
-                            onChangeText={setSearch}
-                        />
-                        <Pressable
-                            style={[s.scanBtn, { backgroundColor: colors.surfaceVariant }]}
-                            onPress={handleScanPress}
-                        >
-                            <Text style={{ color: colors.primary, fontWeight: '700' }}>
-                                {scanner.canUseCameraScanner ? 'Scan' : scanner.isUsbScannerMode ? 'USB' : 'Off'}
-                            </Text>
-                        </Pressable>
-                    </View>
+                    <AppSearchBar
+                        value={search}
+                        onChangeText={setSearch}
+                        placeholder={scanner.isUsbScannerMode ? 'Scan via USB or type search...' : 'Search item / barcode...'}
+                        showScanAction
+                        scanLabel={scanner.canUseCameraScanner ? 'Scan' : scanner.isUsbScannerMode ? 'USB' : 'Off'}
+                        onScanPress={handleScanPress}
+                    />
                     {scanner.isUsbScannerMode ? (
                         <Text style={{ color: colors.textSecondary, fontSize: 11, paddingBottom: Spacing.sm }}>
                             USB scanner mode active. Keep cursor in search and scan from scanner device.
@@ -167,8 +180,15 @@ export default function PosScreen() {
                         keyExtractor={(i) => i.id}
                         renderItem={({ item }) => (
                             <Pressable
-                                style={({ pressed }) => [s.catalogItem, { backgroundColor: colors.card, opacity: pressed ? 0.8 : 1 }]}
+                                style={({ pressed }) => [
+                                    s.catalogItem,
+                                    {
+                                        backgroundColor: colors.card,
+                                        opacity: item.stock <= 0 ? 0.5 : pressed ? 0.8 : 1,
+                                    },
+                                ]}
                                 onPress={() => handleAddItem(item)}
+                                disabled={item.stock <= 0}
                             >
                                 <Text style={[s.itemName, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
                                 <Text style={[s.itemPrice, { color: colors.primary }]}>Rs {item.salePrice}</Text>
@@ -224,7 +244,7 @@ export default function PosScreen() {
                             onPress={() => checkout()}
                             disabled={store.cartItems.length === 0 || isPending}
                         >
-                            {isPending ? <ActivityIndicator color="#fff" /> : <Text style={s.checkoutBtnText}>Checkout Rs {total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>}
+                            {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.checkoutBtnText}>Checkout Rs {total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>}
                         </Pressable>
                     </View>
                 </View>
@@ -235,24 +255,16 @@ export default function PosScreen() {
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.sm },
-    backBtn: {},
-    backText: { fontWeight: '600', fontSize: 14 },
-    headerTitle: { flex: 1, fontWeight: '700', fontSize: Typography.title.size, textAlign: 'center' },
-    clearBtn: {},
-    clearBtnText: { fontWeight: '600', fontSize: 13 },
-    layout: { flex: 1, flexDirection: 'column' },
-    catalog: { flex: 1, paddingHorizontal: Spacing.sm },
-    searchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingBottom: Spacing.sm },
-    searchInput: {
-        flex: 1,
+    topBarAction: {
+        width: 36,
+        height: 36,
         borderRadius: Radius.pill,
+        alignItems: 'center',
+        justifyContent: 'center',
         backgroundColor: colors.surfaceVariant,
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.sm,
-        fontSize: 13,
     },
-    scanBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+    layout: { flex: 1, flexDirection: 'column' },
+    catalog: { flex: 1, paddingHorizontal: Spacing.sm, gap: Spacing.sm },
     catalogItem: { flex: 1, borderRadius: Radius.card, padding: Spacing.sm, minHeight: 86, justifyContent: 'space-between' },
     itemName: { fontWeight: '600', fontSize: 13 },
     itemPrice: { fontWeight: '700', fontSize: 16, marginTop: 4 },
@@ -271,6 +283,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     totalLabel: { fontWeight: '700', fontSize: 16 },
     totalValue: { fontWeight: '800', fontSize: 18 },
     checkoutBtn: { borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.sm },
-    checkoutBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+    checkoutBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 16 },
 });
 

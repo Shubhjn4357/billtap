@@ -4,17 +4,20 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     useColorScheme,
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useQuery } from '@tanstack/react-query';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FeatureFlag } from '../../../constants/enums';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
 import { accountingApi, cashBankApi, invoiceApi, itemApi, loanApi, partyApi } from '../../../api/endpoints';
 import { useAuthStore } from '../../../store/authStore';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 import {
     canAccessModule,
     canUsePos,
@@ -138,6 +141,7 @@ export default function ScreenDirectoryScreen() {
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/more');
 
     const [search, setSearch] = useState('');
     const role = useAuthStore((state) => state.organizationRole);
@@ -287,21 +291,18 @@ export default function ScreenDirectoryScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Screen Directory</Text>
-                <View style={{ width: 40 }} />
-            </View>
+            <AppTopBar
+                title="Screen Directory"
+                subtitle="Quick navigation across modules"
+                onBackPress={smartBack}
+            />
 
             <View style={s.searchWrap}>
-                <TextInput
+                <AppSearchBar
                     value={search}
                     onChangeText={setSearch}
                     placeholder="Search screens..."
-                    placeholderTextColor={colors.textSecondary}
-                    style={s.searchInput}
+                    showScanAction={false}
                 />
             </View>
 
@@ -319,13 +320,13 @@ export default function ScreenDirectoryScreen() {
                                 ]}
                                 onPress={() => router.push(link.route as Parameters<typeof router.push>[0])}
                             >
-                                <View style={s.itemTextWrap}>
-                                    <Text style={s.itemLabel}>{link.label}</Text>
-                                    <Text style={s.itemDescription}>{link.subtitle}</Text>
-                                </View>
-                                <Text style={[s.chevron, { color: colors.textSecondary }]}>{'>'}</Text>
-                            </Pressable>
-                        ))}
+                                    <View style={s.itemTextWrap}>
+                                        <Text style={s.itemLabel}>{link.label}</Text>
+                                        <Text style={s.itemDescription}>{link.subtitle}</Text>
+                                    </View>
+                                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
+                                </Pressable>
+                            ))}
                         {smartLinks.length === 0 ? (
                             <View style={s.emptyInline}>
                                 <Text style={s.itemDescription}>No deep links available for current search or plan.</Text>
@@ -352,7 +353,7 @@ export default function ScreenDirectoryScreen() {
                                         <Text style={s.itemLabel}>{item.label}</Text>
                                         <Text style={s.itemDescription}>{item.description}</Text>
                                     </View>
-                                    <Text style={[s.chevron, { color: colors.textSecondary }]}>{'>'}</Text>
+                                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
                                 </Pressable>
                             ))}
                         </View>
@@ -373,24 +374,7 @@ export default function ScreenDirectoryScreen() {
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    header: {
-        paddingHorizontal: Spacing.lg,
-        paddingVertical: Spacing.md,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    back: { fontSize: 14, fontWeight: '600' },
-    title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
     searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    searchInput: {
-        backgroundColor: colors.surfaceVariant,
-        color: colors.text,
-        borderRadius: Radius.pill,
-        paddingHorizontal: Spacing.lg,
-        paddingVertical: Spacing.sm,
-        fontSize: Typography.body.size,
-    },
     content: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg, gap: Spacing.md },
     section: { gap: Spacing.sm },
     sectionTitle: {
@@ -410,7 +394,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     itemTextWrap: { flex: 1 },
     itemLabel: { color: colors.text, fontWeight: '700', fontSize: Typography.body.size },
     itemDescription: { color: colors.textSecondary, fontSize: Typography.caption.size, marginTop: 2 },
-    chevron: { fontSize: 16, fontWeight: '700' },
     emptyInline: {
         paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.md,

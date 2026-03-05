@@ -1,21 +1,16 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Pressable,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
-import { router } from 'expo-router';
+    ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppInput } from '../../../components/ui/AppInput';
 import { settingsApi } from '../../../api/endpoints';
 import { offlineSyncService } from '../../../services/offlineSyncService';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 type QueueEntry = {
     id: string;
@@ -40,9 +35,11 @@ const formatRetryAt = (value?: number) => {
 };
 
 export default function SyncDiagnosticsScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/more');
     const qc = useQueryClient();
 
     const [intervalInput, setIntervalInput] = useState('60');
@@ -79,10 +76,10 @@ export default function SyncDiagnosticsScreen() {
         mutationFn: () => offlineSyncService.flushQueue(),
         onSuccess: async (result) => {
             await refetch();
-            Alert.alert('Sync complete', `Processed: ${result.processed}, Remaining: ${result.remaining}`);
+            dialog.alert('Sync complete', `Processed: ${result.processed}, Remaining: ${result.remaining}`);
         },
         onError: (error) => {
-            Alert.alert('Sync failed', error instanceof Error ? error.message : 'Unable to flush queue.');
+            dialog.alert('Sync failed', error instanceof Error ? error.message : 'Unable to flush queue.');
         },
     });
 
@@ -113,22 +110,20 @@ export default function SyncDiagnosticsScreen() {
         },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['settings-section', 'GENERAL'] });
-            Alert.alert('Saved', 'Auto sync interval updated.');
+            dialog.alert('Saved', 'Auto sync interval updated.');
         },
         onError: (error) => {
-            Alert.alert('Save failed', error instanceof Error ? error.message : 'Unable to save interval.');
+            dialog.alert('Save failed', error instanceof Error ? error.message : 'Unable to save interval.');
         },
     });
 
     return (
-        <SafeAreaView style={s.safe}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Sync Diagnostics</Text>
-                <View style={{ width: 44 }} />
-            </View>
+        <SafeAreaView style={s.safe} edges={['top']}>
+            <AppTopBar
+                title="Sync Diagnostics"
+                subtitle="Queue, retries and conflict controls"
+                onBackPress={smartBack}
+            />
 
             {queueLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
@@ -158,14 +153,14 @@ export default function SyncDiagnosticsScreen() {
                                 <Text style={s.cardTitle}>Conflict Resolution</Text>
                                 <View style={s.optionRow}>
                                     <Pressable
-                                        style={[s.optionChip, conflictPolicy === 'LAST_WRITE_WINS' && { borderColor: colors.primary, backgroundColor: `${colors.primary}22` }]}
+                                        style={[s.optionChip, conflictPolicy === 'LAST_WRITE_WINS' && { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, '22') }]}
                                         onPress={() => savePolicy('LAST_WRITE_WINS')}
                                         disabled={savingPolicy}
                                     >
                                         <Text style={s.optionText}>Last Write Wins</Text>
                                     </Pressable>
                                     <Pressable
-                                        style={[s.optionChip, conflictPolicy === 'SERVER_WINS' && { borderColor: colors.primary, backgroundColor: `${colors.primary}22` }]}
+                                        style={[s.optionChip, conflictPolicy === 'SERVER_WINS' && { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, '22') }]}
                                         onPress={() => savePolicy('SERVER_WINS')}
                                         disabled={savingPolicy}
                                     >
@@ -176,13 +171,12 @@ export default function SyncDiagnosticsScreen() {
 
                             <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
                                 <Text style={s.cardTitle}>Auto Sync Interval (seconds)</Text>
-                                <TextInput
-                                    style={[s.input, { borderColor: colors.border, color: colors.text }]}
-                                    keyboardType="numeric"
+                                <AppInput
+                                    inputType="number"
                                     value={intervalInput}
                                     onChangeText={setIntervalInput}
                                     placeholder="60"
-                                    placeholderTextColor={colors.textSecondary}
+                                    containerStyle={s.intervalInputWrap}
                                 />
                                 <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => saveInterval()} disabled={savingInterval}>
                                     <Text style={s.actionBtnText}>{savingInterval ? 'Saving...' : 'Save Interval'}</Text>
@@ -211,15 +205,6 @@ export default function SyncDiagnosticsScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        },
-        back: { fontWeight: '600', fontSize: 14 },
-        title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         card: {
             borderWidth: 1,
@@ -238,7 +223,7 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'center',
         },
-        actionBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+        actionBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
         optionRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap', marginTop: Spacing.xs },
         optionChip: {
             borderWidth: 1,
@@ -248,15 +233,7 @@ const styles = (colors: ColorPalette) =>
             paddingVertical: Spacing.sm,
         },
         optionText: { color: colors.text, fontSize: 12, fontWeight: '700' },
-        input: {
-            borderWidth: 1,
-            borderRadius: Radius.md,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            fontSize: 14,
-            marginTop: Spacing.xs,
-            marginBottom: Spacing.sm,
-        },
+        intervalInputWrap: { marginTop: Spacing.xs, marginBottom: Spacing.sm },
         sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
         row: {
             borderWidth: 1,

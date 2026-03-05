@@ -80,6 +80,34 @@ export type ColorPalette = {
     skeletonHighlight: string;
 };
 
+const normalizeHexColor = (value: string): string | null => {
+    const candidate = value.trim();
+    if (/^#[0-9a-fA-F]{3}$/.test(candidate)) {
+        const hex = candidate.slice(1);
+        return `#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`;
+    }
+    if (/^#[0-9a-fA-F]{6}$/.test(candidate)) return candidate.toLowerCase();
+    if (/^#[0-9a-fA-F]{8}$/.test(candidate)) return candidate.toLowerCase().slice(0, 7);
+    return null;
+};
+
+const normalizeAlphaHex = (alpha: number | string): string | null => {
+    if (typeof alpha === 'number') {
+        if (!Number.isFinite(alpha)) return null;
+        const clamped = Math.max(0, Math.min(1, alpha));
+        return Math.round(clamped * 255).toString(16).padStart(2, '0');
+    }
+    const hex = alpha.trim().replace(/^#/, '').slice(0, 2);
+    return /^[0-9a-fA-F]{2}$/.test(hex) ? hex.toLowerCase() : null;
+};
+
+export const withAlpha = (color: string, alpha: number | string): string => {
+    const normalized = normalizeHexColor(color);
+    const alphaHex = normalizeAlphaHex(alpha);
+    if (!normalized || !alphaHex) return color;
+    return `${normalized}${alphaHex}`;
+};
+
 let themePreference: ThemePreference = 'system';
 
 const normalizeThemePreference = (value: unknown): ThemePreference => {

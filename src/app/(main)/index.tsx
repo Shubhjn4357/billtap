@@ -1,19 +1,22 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, useColorScheme } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { endOfMonth, format, startOfMonth } from 'date-fns';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 import { reportApi } from '../../api/endpoints';
 import { canAccessModule, canUsePos, type AppModule } from '../../utils/accessControl';
+import { AppTopBar } from '../../components/ui/AppTopBar';
+import { useHaptics } from '../../hooks/useHaptics';
 
 const TODAY = new Date();
 const MONTH_START = format(startOfMonth(TODAY), 'yyyy-MM-dd');
 const MONTH_END = format(endOfMonth(TODAY), 'yyyy-MM-dd');
 
 type QuickAction = {
-    icon: string;
+    icon: keyof typeof MaterialCommunityIcons.glyphMap;
     label: string;
     route: string;
     module: AppModule;
@@ -21,12 +24,12 @@ type QuickAction = {
 };
 
 const QUICK_ACTIONS: QuickAction[] = [
-    { icon: 'SI', label: 'Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', module: 'billing' },
-    { icon: 'PS', label: 'POS', route: '/(main)/billing/pos', module: 'billing', requiresPos: true },
-    { icon: 'PB', label: 'Purchase', route: '/(main)/billing/create?type=PURCHASE_BILL', module: 'billing' },
-    { icon: 'ES', label: 'Estimate', route: '/(main)/billing/create?type=ESTIMATE', module: 'billing' },
-    { icon: 'EX', label: 'Expense', route: '/(main)/accounts/expenses/add', module: 'accounts' },
-    { icon: 'IT', label: 'Add Item', route: '/(main)/inventory/add-item', module: 'inventory' },
+    { icon: 'file-document-plus-outline', label: 'Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', module: 'billing' },
+    { icon: 'point-of-sale', label: 'POS', route: '/(main)/billing/pos', module: 'billing', requiresPos: true },
+    { icon: 'cart-plus', label: 'Purchase', route: '/(main)/billing/create?type=PURCHASE_BILL', module: 'billing' },
+    { icon: 'file-document-edit-outline', label: 'Estimate', route: '/(main)/billing/create?type=ESTIMATE', module: 'billing' },
+    { icon: 'cash-minus', label: 'Expense', route: '/(main)/accounts/expenses/add', module: 'accounts' },
+    { icon: 'package-variant-plus', label: 'Add Item', route: '/(main)/inventory/add-item', module: 'inventory' },
 ];
 
 export default function HomeScreen() {
@@ -38,8 +41,9 @@ export default function HomeScreen() {
     const tier = useAuthStore((state) => state.subscription?.tier ?? 'FREE');
     const subscription = useAuthStore((state) => state.subscription);
     const role = useAuthStore((state) => state.organizationRole);
+    const { selection } = useHaptics();
 
-    const { data: summary, isLoading } = useQuery({
+    const { data: summary, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['report-summary', MONTH_START, MONTH_END],
         queryFn: () => reportApi.getSummary({ from: MONTH_START, to: MONTH_END }),
         staleTime: 5 * 60 * 1000,
@@ -53,17 +57,28 @@ export default function HomeScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-            <ScrollView style={s.scroll} showsVerticalScrollIndicator={false}>
-                <View style={s.header}>
-                    <View>
-                        <Text style={s.greeting}>Hello, {user?.name?.split(' ')[0] ?? 'there'}</Text>
-                        <Text style={s.bizName}>{business?.name ?? 'My Business'}</Text>
-                    </View>
+            <AppTopBar
+                title={business?.name ?? 'Dashboard'}
+                subtitle={`Hello, ${user?.name?.split(' ')[0] ?? 'there'}`}
+                rightAction={(
                     <Pressable style={s.tierBadge} onPress={() => router.push('/(main)/more')}>
                         <Text style={s.tierText}>{tier}</Text>
                     </Pressable>
-                </View>
-
+                )}
+            />
+            <ScrollView
+                style={s.scroll}
+                showsVerticalScrollIndicator={false}
+                refreshControl={(
+                    <RefreshControl
+                        refreshing={isRefetching && !isLoading}
+                        onRefresh={() => {
+                            void refetch();
+                        }}
+                        tintColor={colors.primary}
+                    />
+                )}
+            >
                 <View style={s.section}>
                     <Text style={s.sectionTitle}>This Month</Text>
                     <View style={s.statsGrid}>
@@ -101,11 +116,14 @@ export default function HomeScreen() {
                             <Pressable
                                 key={qa.label}
                                 style={({ pressed }) => [s.quickCard, pressed && { opacity: 0.7 }]}
-                                onPress={() => router.push(qa.route as Parameters<typeof router.push>[0])}
+                                onPress={() => {
+                                    void selection();
+                                    router.push(qa.route as Parameters<typeof router.push>[0]);
+                                }}
                                 accessibilityRole="button"
                                 accessibilityLabel={qa.label}
                             >
-                                <Text style={s.quickIcon}>{qa.icon}</Text>
+                                <MaterialCommunityIcons name={qa.icon} size={18} color={colors.primary} />
                                 <Text style={s.quickLabel}>{qa.label}</Text>
                             </Pressable>
                         ))}
@@ -210,7 +228,7 @@ const styles = (colors: ColorPalette) =>
             paddingVertical: 4,
             borderRadius: Radius.pill,
         },
-        tierText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+        tierText: { color: colors.onPrimary, fontWeight: '600', fontSize: 12 },
         section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
         sectionTitle: {
             fontSize: Typography.label.size,
@@ -231,7 +249,6 @@ const styles = (colors: ColorPalette) =>
             width: '30%',
             gap: Spacing.xs,
         },
-        quickIcon: { fontSize: 14, fontWeight: '700', color: colors.primary },
         quickLabel: { fontSize: 11, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
         directoryButton: {
             borderWidth: 1,

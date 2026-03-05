@@ -1,171 +1,169 @@
-import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Controller, useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loanApi } from '../../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette } from '../../../../constants/theme';
-import { format } from 'date-fns';
+import { getColors, Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
+import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { AppInput } from '../../../../components/ui/AppInput';
+import { SelectField } from '../../../../components/ui/SelectField';
+import { DateField } from '../../../../components/ui/DateField';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
-const loanSchema = z.object({
-    loanType: z.enum(['BORROWED', 'GIVEN']),
-    lenderBorrowerName: z.string().min(1, 'Name is required'),
-    principalAmount: z.coerce.number().positive('Amount must be positive'),
-    interestRatePercent: z.coerce.number().nonnegative().default(0),
-    interestType: z.enum(['SIMPLE', 'COMPOUND']).default('SIMPLE'),
-    startDate: z.string().default(() => format(new Date(), 'yyyy-MM-dd')),
-    dueDate: z.string().optional(),
-    description: z.string().optional(),
-});
-type LoanFormInput = z.input<typeof loanSchema>;
-type LoanForm = z.output<typeof loanSchema>;
+type LoanType = 'BORROWED' | 'GIVEN';
+type InterestType = 'SIMPLE' | 'COMPOUND';
+
+const toAmount = (value: string) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function AddLoanScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);
     const qc = useQueryClient();
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/accounts');
 
-    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<LoanFormInput, unknown, LoanForm>({
-        resolver: zodResolver(loanSchema),
-        defaultValues: { loanType: 'BORROWED', interestRatePercent: 0, interestType: 'SIMPLE', startDate: format(new Date(), 'yyyy-MM-dd') },
-    });
+    const [loanType, setLoanType] = useState<LoanType>('BORROWED');
+    const [name, setName] = useState('');
+    const [principalAmount, setPrincipalAmount] = useState('');
+    const [interestRatePercent, setInterestRatePercent] = useState('0');
+    const [interestType, setInterestType] = useState<InterestType>('SIMPLE');
+    const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+    const [dueDate, setDueDate] = useState<string | null>(null);
+    const [description, setDescription] = useState('');
 
     const { mutate, isPending } = useMutation({
-        mutationFn: (data: LoanForm) => loanApi.create({
-            loanType: data.loanType,
-            lenderBorrowerName: data.lenderBorrowerName,
-            openingDate: data.startDate,
-            openingBalance: data.principalAmount,
-            interestRatePercent: data.interestRatePercent,
-            emiAmount: null,
-            accountId: null,
-            partyId: null,
-            dueDate: data.dueDate ?? null,
-            notes: data.description ?? null,
-        }),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['loans'] }); router.back(); },
-        onError: (e) => Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create loan'),
-    });
+        mutationFn: () => {
+            const principal = toAmount(principalAmount);
+            const rate = toAmount(interestRatePercent);
+            if (!name.trim()) throw new Error('Name is required.');
+            if (principal <= 0) throw new Error('Principal must be positive.');
+            if (rate < 0) throw new Error('Interest rate cannot be negative.');
 
-    const loanType = watch('loanType');
-    const interestType = watch('interestType');
+            return loanApi.create({
+                loanType,
+                lenderBorrowerName: name.trim(),
+                openingDate: startDate,
+                openingBalance: principal,
+                interestRatePercent: rate,
+                emiAmount: null,
+                accountId: null,
+                partyId: null,
+                dueDate: dueDate || null,
+                notes: description.trim() || null,
+            });
+        },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['loans'] });
+            dialog.alert('Saved', 'Loan created.');
+            router.back();
+        },
+        onError: (error) => dialog.alert('Error', error instanceof Error ? error.message : 'Failed to create loan'),
+    });
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}><Text style={[s.back, { color: colors.primary }]}>← Cancel</Text></Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Add Loan</Text>
-                <Pressable onPress={handleSubmit((d) => mutate(d))} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.save, { color: colors.primary }]}>Save</Text>}
+            <AppTopBar
+                title="Add Loan"
+                subtitle="Track borrowed or given amount"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => mutate()} disabled={isPending}>
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                    </Pressable>
+                )}
+            />
+
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
+                <Text style={[s.label, { color: colors.textSecondary }]}>Loan Type</Text>
+                <SelectField
+                    value={loanType}
+                    onChange={(value) => setLoanType(value as LoanType)}
+                    options={[
+                        { label: 'Borrowed', value: 'BORROWED', description: 'Money you owe' },
+                        { label: 'Given', value: 'GIVEN', description: 'Money owed to you' },
+                    ]}
+                    title="Select Loan Type"
+                />
+
+                <Text style={[s.label, { color: colors.textSecondary }]}>{loanType === 'BORROWED' ? 'Lender Name' : 'Borrower Name'}</Text>
+                <AppInput inputType="name" value={name} onChangeText={setName} placeholder="Name" />
+
+                <Text style={[s.label, { color: colors.textSecondary }]}>Principal Amount</Text>
+                <AppInput inputType="decimal" value={principalAmount} onChangeText={setPrincipalAmount} placeholder="0.00" />
+
+                <View style={s.row}>
+                    <View style={s.flex1}>
+                        <Text style={[s.label, { color: colors.textSecondary }]}>Interest Rate %</Text>
+                        <AppInput inputType="decimal" value={interestRatePercent} onChangeText={setInterestRatePercent} placeholder="0" />
+                    </View>
+                    <View style={s.flex1}>
+                        <Text style={[s.label, { color: colors.textSecondary }]}>Interest Type</Text>
+                        <SelectField
+                            value={interestType}
+                            onChange={(value) => setInterestType(value as InterestType)}
+                            options={[
+                                { label: 'Simple', value: 'SIMPLE' },
+                                { label: 'Compound', value: 'COMPOUND' },
+                            ]}
+                            title="Select Interest Type"
+                        />
+                    </View>
+                </View>
+
+                <View style={s.row}>
+                    <View style={s.flex1}>
+                        <Text style={[s.label, { color: colors.textSecondary }]}>Start Date</Text>
+                        <DateField value={startDate} onChange={(value) => setStartDate(value ?? startDate)} allowClear={false} />
+                    </View>
+                    <View style={s.flex1}>
+                        <Text style={[s.label, { color: colors.textSecondary }]}>Due Date (optional)</Text>
+                        <DateField value={dueDate} onChange={setDueDate} />
+                    </View>
+                </View>
+
+                <Text style={[s.label, { color: colors.textSecondary }]}>Notes (optional)</Text>
+                <AppInput inputType="text" value={description} onChangeText={setDescription} placeholder="Purpose" multiline style={s.notesInput} />
+
+                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={() => mutate()} disabled={isPending}>
+                    {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Create Loan</Text>}
                 </Pressable>
-            </View>
 
-            <ScrollView keyboardShouldPersistTaps="handled">
-                {/* Type */}
-                <View style={s.section}>
-                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>LOAN TYPE</Text>
-                    <View style={s.typeRow}>
-                        <Pressable style={[s.typeChip, { backgroundColor: loanType === 'BORROWED' ? colors.error : colors.surfaceVariant }]} onPress={() => setValue('loanType', 'BORROWED')}>
-                            <Text style={{ color: loanType === 'BORROWED' ? '#fff' : colors.text, fontWeight: '700' }}>🏛 Borrowed</Text>
-                            <Text style={{ color: loanType === 'BORROWED' ? '#ffffffbb' : colors.textSecondary, fontSize: 11 }}>Money you owe</Text>
-                        </Pressable>
-                        <Pressable style={[s.typeChip, { backgroundColor: loanType === 'GIVEN' ? colors.success : colors.surfaceVariant }]} onPress={() => setValue('loanType', 'GIVEN')}>
-                            <Text style={{ color: loanType === 'GIVEN' ? '#fff' : colors.text, fontWeight: '700' }}>💸 Given</Text>
-                            <Text style={{ color: loanType === 'GIVEN' ? '#ffffffbb' : colors.textSecondary, fontSize: 11 }}>Money owed to you</Text>
-                        </Pressable>
-                    </View>
-                </View>
-
-                <View style={s.section}>
-                    <Field label={loanType === 'BORROWED' ? 'Lender Name *' : 'Borrower Name *'} error={errors.lenderBorrowerName?.message} colors={colors}>
-                        <Controller control={control} name="lenderBorrowerName" render={({ field: { onChange, value } }) => (
-                            <TextInput style={inp(colors)} value={value} onChangeText={onChange} placeholder="Name" placeholderTextColor={colors.textSecondary} />
-                        )} />
-                    </Field>
-
-                    <Field label="Principal Amount (₹) *" error={errors.principalAmount?.message} colors={colors}>
-                        <Controller control={control} name="principalAmount" render={({ field: { onChange, value } }) => (
-                            <TextInput style={inp(colors)} value={String(value || '')} onChangeText={onChange} keyboardType="numeric" placeholder="0.00" placeholderTextColor={colors.textSecondary} />
-                        )} />
-                    </Field>
-
-                    <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Interest Rate % p.a." colors={colors}>
-                                <Controller control={control} name="interestRatePercent" render={({ field: { onChange, value } }) => (
-                                    <TextInput style={inp(colors)} value={String(value || '')} onChangeText={onChange} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.textSecondary} />
-                                )} />
-                            </Field>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Interest Type" colors={colors}>
-                                <View style={{ flexDirection: 'row', gap: 4 }}>
-                                    {(['SIMPLE', 'COMPOUND'] as const).map((t) => (
-                                        <Pressable key={t} style={[s.smallChip, { backgroundColor: interestType === t ? colors.primary : colors.surfaceVariant, flex: 1 }]} onPress={() => setValue('interestType', t)}>
-                                            <Text style={{ color: interestType === t ? '#fff' : colors.text, fontSize: 11, fontWeight: '600' }}>{t[0]}{t.slice(1,3).toLowerCase()}</Text>
-                                        </Pressable>
-                                    ))}
-                                </View>
-                            </Field>
-                        </View>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Start Date" colors={colors}>
-                                <Controller control={control} name="startDate" render={({ field: { onChange, value } }) => (
-                                    <TextInput style={inp(colors)} value={value} onChangeText={onChange} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textSecondary} />
-                                )} />
-                            </Field>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Due Date (optional)" colors={colors}>
-                                <Controller control={control} name="dueDate" render={({ field: { onChange, value } }) => (
-                                    <TextInput style={inp(colors)} value={value} onChangeText={onChange} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textSecondary} />
-                                )} />
-                            </Field>
-                        </View>
-                    </View>
-
-                    <Field label="Notes (optional)" colors={colors}>
-                        <Controller control={control} name="description" render={({ field: { onChange, value } }) => (
-                            <TextInput style={[inp(colors), { minHeight: 60 }]} value={value} onChangeText={onChange} placeholder="Purpose of loan…" placeholderTextColor={colors.textSecondary} multiline textAlignVertical="top" />
-                        )} />
-                    </Field>
-                </View>
-
-                <View style={{ height: 80 }} />
+                <View style={{ height: 60 }} />
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-function Field({ label, children, error, colors }: { label: string; children: React.ReactNode; error?: string; colors: ColorPalette }) {
-    return (
-        <View style={{ marginBottom: Spacing.md }}>
-            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>{label}</Text>
-            {children}
-            {error && <Text style={{ color: colors.error, fontSize: 11, marginTop: 2 }}>{error}</Text>}
-        </View>
-    );
-}
-const inp = (c: ColorPalette) => ({ borderWidth: 1, borderColor: c.border, borderRadius: Radius.md, padding: Spacing.md, color: c.text, fontSize: 14 });
-const styles = (colors: ColorPalette) => StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-    back: { fontWeight: '600', fontSize: 14 },
-    title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 17 },
-    save: { fontWeight: '700', fontSize: 15 },
-    section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-    sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
-    typeRow: { flexDirection: 'row', gap: Spacing.sm },
-    typeChip: { flex: 1, borderRadius: Radius.card, padding: Spacing.md, alignItems: 'center', gap: 4 },
-    smallChip: { borderRadius: Radius.pill, paddingVertical: 6, alignItems: 'center' },
-});
-
-
-
-
+const styles = (colors: ColorPalette) =>
+    StyleSheet.create({
+        safe: { flex: 1, backgroundColor: colors.background },
+        saveBtn: {
+            minHeight: 34,
+            minWidth: 56,
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: Spacing.md,
+        },
+        saveText: { fontSize: 12, fontWeight: '700' },
+        content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.lg },
+        label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.xs },
+        row: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start' },
+        flex1: { flex: 1 },
+        notesInput: { minHeight: 64, textAlignVertical: 'top' },
+        primaryBtn: {
+            marginTop: Spacing.md,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 44,
+        },
+        primaryBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 14 },
+    });

@@ -69,11 +69,15 @@ export const businessApi = {
             ownerUserId: 'unknown',
             name: String(org.name ?? ''),
             legalName: null,
-            address: null,
-            state: null,
+            address: typeof org.address === 'string' ? org.address : null,
+            state: typeof org.state === 'string' ? org.state : null,
+            city: typeof org.city === 'string' ? org.city : null,
+            pincode: typeof org.pincode === 'string' ? org.pincode : null,
             gstin: null,
             pan: null,
-            booksStartDate: null,
+            booksStartDate: typeof org.booksStartDate === 'string' ? org.booksStartDate : null,
+            openingCashInHand: typeof org.openingCashInHand === 'number' ? org.openingCashInHand : null,
+            openingCashInBank: typeof org.openingCashInBank === 'number' ? org.openingCashInBank : null,
             logoUrl: null,
             phone: null,
             email: null,
@@ -101,12 +105,16 @@ export const businessApi = {
             id: String(org.id ?? ''),
             ownerUserId: String(org.userId ?? ''),
             name: String(org.name ?? ''),
-            legalName: null,
+            legalName: typeof org.legalName === 'string' ? org.legalName : null,
             address: typeof org.address === 'string' ? org.address : null,
-            state: null,
+            state: typeof org.state === 'string' ? org.state : null,
+            city: typeof org.city === 'string' ? org.city : null,
+            pincode: typeof org.pincode === 'string' ? org.pincode : null,
             gstin: typeof org.gstNumber === 'string' ? org.gstNumber : null,
-            pan: null,
-            booksStartDate: null,
+            pan: typeof org.pan === 'string' ? org.pan : null,
+            booksStartDate: typeof org.booksStartDate === 'string' ? org.booksStartDate : null,
+            openingCashInHand: typeof org.openingCashInHand === 'number' ? org.openingCashInHand : null,
+            openingCashInBank: typeof org.openingCashInBank === 'number' ? org.openingCashInBank : null,
             logoUrl: null,
             phone: typeof org.phoneNumber === 'string' ? org.phoneNumber : null,
             email: typeof org.email === 'string' ? org.email : null,
@@ -129,6 +137,13 @@ export const businessApi = {
             email: data.email ?? undefined,
             gstNumber: data.gstin ?? undefined,
             address: data.address ?? undefined,
+            legalName: data.legalName ?? undefined,
+            state: data.state ?? undefined,
+            city: data.city ?? undefined,
+            pincode: data.pincode ?? undefined,
+            booksStartDate: data.booksStartDate ?? undefined,
+            openingCashInHand: typeof data.openingCashInHand === 'number' ? data.openingCashInHand : undefined,
+            openingCashInBank: typeof data.openingCashInBank === 'number' ? data.openingCashInBank : undefined,
         }, {
             skipOrganizationHeader: true,
         });
@@ -136,6 +151,15 @@ export const businessApi = {
             throw new Error(res.message ?? 'Failed to create business.');
         }
         return { ok: true, data: { id: res.id } } as ApiResponse<{ id: string }>;
+    },
+    remove: async (id: string) => {
+        const res = await api.delete<{ ok: boolean; message?: string }>(`/api/organizations/${id}`, {
+            skipOrganizationHeader: true,
+        });
+        if (!res.ok) {
+            throw new Error(res.message ?? 'Failed to delete business.');
+        }
+        return { ok: true } as ApiOkResponse;
     },
     update: async (id: string, data: Partial<Business>) =>
         api.patch<ApiResponse<Business>>(`/api/organizations/${id}`, data),

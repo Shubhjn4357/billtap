@@ -14,7 +14,7 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FeatureFlag } from '../../constants/enums';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { accountingApi, cashBankApi, invoiceApi, itemApi, loanApi, partyApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -366,7 +366,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     },
     backdrop: {
         ...StyleSheet.absoluteFill,
-        backgroundColor: '#00000088',
+        backgroundColor: withAlpha(colors.text, '88'),
     },
     sheet: {
         borderTopLeftRadius: Radius.lg,

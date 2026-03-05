@@ -1,18 +1,13 @@
 import { useMemo, useState } from 'react';
-import {
-    ActivityIndicator,
-    FlatList,
-    Pressable,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    useColorScheme,
-    View,
-} from 'react-native';
-import { router } from 'expo-router';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { reportApi } from '../../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { AppTopBar } from '../../../../components/ui/AppTopBar';
 
 const CURRENT_DATE = new Date();
 const DEFAULT_MONTH = CURRENT_DATE.getMonth() + 1;
@@ -40,9 +35,10 @@ type GstSummaryRow = {
 };
 
 export default function Gstr3bReportScreen() {
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
+    const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/reports');
     const [month, setMonth] = useState(DEFAULT_MONTH);
     const [year] = useState(DEFAULT_YEAR);
 
@@ -57,8 +53,8 @@ export default function Gstr3bReportScreen() {
         return payload?.data?.rows ?? payload?.rows ?? [];
     }, [data]);
 
-    const totals = useMemo<{ taxable: number; tax: number; cgst: number; sgst: number; igst: number }>(() => {
-        return rows.reduce<{ taxable: number; tax: number; cgst: number; sgst: number; igst: number }>(
+    const totals = useMemo(
+        () => rows.reduce<{ taxable: number; tax: number; cgst: number; sgst: number; igst: number }>(
             (acc, row) => ({
                 taxable: acc.taxable + asNumber(row.taxableTurnover ?? row.taxable ?? row.totalTaxable),
                 tax: acc.tax + asNumber(row.totalTax ?? row.taxAmount),
@@ -67,33 +63,34 @@ export default function Gstr3bReportScreen() {
                 igst: acc.igst + asNumber(row.igstAmount ?? row.igst),
             }),
             { taxable: 0, tax: 0, cgst: 0, sgst: 0, igst: 0 }
-        );
-    }, [rows]);
+        ),
+        [rows]
+    );
 
     const changeMonth = (delta: number) => {
         const next = month + delta;
-        if (next >= 1 && next <= 12) setMonth(next);
+        if (next >= 1 && next <= 12) {
+            setMonth(next);
+        }
     };
 
     return (
-        <SafeAreaView style={s.safe}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>GSTR-3B</Text>
-                <View style={{ width: 48 }} />
-            </View>
+        <SafeAreaView style={s.safe} edges={['top']}>
+            <AppTopBar
+                title="GSTR-3B"
+                subtitle="Monthly GST liability summary"
+                onBackPress={smartBack}
+            />
 
             <View style={s.periodRow}>
                 <Pressable style={[s.periodBtn, { borderColor: colors.border }]} onPress={() => changeMonth(-1)}>
-                    <Text style={{ color: colors.textSecondary }}>{'<'}</Text>
+                    <MaterialCommunityIcons name="chevron-left" size={18} color={colors.textSecondary} />
                 </Pressable>
                 <Text style={[s.periodText, { color: colors.text }]}>
                     {String(month).padStart(2, '0')}/{year}
                 </Text>
                 <Pressable style={[s.periodBtn, { borderColor: colors.border }]} onPress={() => changeMonth(1)}>
-                    <Text style={{ color: colors.textSecondary }}>{'>'}</Text>
+                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
                 </Pressable>
             </View>
 
@@ -103,7 +100,11 @@ export default function Gstr3bReportScreen() {
                     Rs {totals.tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                 </Text>
                 <Text style={s.summaryMeta}>
-                    CGST {totals.cgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })} | SGST {totals.sgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })} | IGST {totals.igst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    CGST {totals.cgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    {' | '}
+                    SGST {totals.sgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    {' | '}
+                    IGST {totals.igst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                 </Text>
             </View>
 
@@ -114,13 +115,13 @@ export default function Gstr3bReportScreen() {
             ) : (
                 <FlatList
                     data={rows}
-                    keyExtractor={(item, idx) => `${item.gstRate ?? idx}`}
+                    keyExtractor={(item, index) => `${item.gstRate ?? index}`}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
-                    ListEmptyComponent={
+                    ListEmptyComponent={(
                         <View style={s.centered}>
                             <Text style={{ color: colors.textSecondary }}>No GST rows found for this period.</Text>
                         </View>
-                    }
+                    )}
                     renderItem={({ item }) => {
                         const rate = asNumber(item.gstRate ?? item.rate);
                         const taxable = asNumber(item.taxableTurnover ?? item.taxable ?? item.totalTaxable);
@@ -128,17 +129,26 @@ export default function Gstr3bReportScreen() {
                         const cgst = asNumber(item.cgstAmount ?? item.cgst);
                         const sgst = asNumber(item.sgstAmount ?? item.sgst);
                         const igst = asNumber(item.igstAmount ?? item.igst);
+
                         return (
                             <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[s.rowTitle, { color: colors.text }]}>GST {rate}%</Text>
                                     <Text style={[s.rowMeta, { color: colors.textSecondary }]}>
-                                        CGST {cgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })} | SGST {sgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })} | IGST {igst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                        CGST {cgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                        {' | '}
+                                        SGST {sgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                        {' | '}
+                                        IGST {igst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                                     </Text>
                                 </View>
                                 <View style={{ alignItems: 'flex-end' }}>
-                                    <Text style={[s.rowValue, { color: colors.text }]}>Rs {taxable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
-                                    <Text style={[s.rowTax, { color: colors.primary }]}>Tax Rs {tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
+                                    <Text style={[s.rowValue, { color: colors.text }]}>
+                                        Rs {taxable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                    </Text>
+                                    <Text style={[s.rowTax, { color: colors.primary }]}>
+                                        Tax Rs {tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                    </Text>
                                 </View>
                             </View>
                         );
@@ -152,10 +162,14 @@ export default function Gstr3bReportScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-        back: { fontWeight: '700', fontSize: 14, width: 48 },
-        title: { fontWeight: '700', fontSize: 17 },
-        periodRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.md, marginBottom: Spacing.md },
+        periodRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: Spacing.md,
+            marginBottom: Spacing.md,
+            marginTop: Spacing.xs,
+        },
         periodBtn: {
             borderWidth: 1,
             width: 34,
@@ -165,16 +179,16 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             backgroundColor: colors.surfaceVariant,
         },
-        periodText: { fontSize: 16, fontWeight: '700', minWidth: 100, textAlign: 'center' },
+        periodText: { fontSize: Typography.title.size, fontWeight: '700', minWidth: 100, textAlign: 'center' },
         summaryCard: {
             marginHorizontal: Spacing.lg,
             marginBottom: Spacing.md,
             borderRadius: Radius.card,
             padding: Spacing.lg,
         },
-        summaryLabel: { color: '#ffffffcc', fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-        summaryValue: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 6 },
-        summaryMeta: { color: '#ffffffcc', fontSize: 12, marginTop: 4 },
+        summaryLabel: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: Typography.caption.size, fontWeight: '700', letterSpacing: 0.8 },
+        summaryValue: { color: colors.onPrimary, fontSize: 28, fontWeight: '800', marginTop: 6 },
+        summaryMeta: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: Typography.caption.size, marginTop: 4 },
         centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xl },
         row: {
             borderWidth: 1,
@@ -185,9 +199,8 @@ const styles = (colors: ColorPalette) =>
             flexDirection: 'row',
             gap: Spacing.sm,
         },
-        rowTitle: { fontSize: 14, fontWeight: '700' },
-        rowMeta: { fontSize: 11, marginTop: 3 },
-        rowValue: { fontSize: 13, fontWeight: '700' },
-        rowTax: { fontSize: 11, fontWeight: '700', marginTop: 3 },
+        rowTitle: { fontSize: Typography.body.size, fontWeight: '700' },
+        rowMeta: { fontSize: Typography.caption.size, marginTop: 3 },
+        rowValue: { fontSize: Typography.body.size, fontWeight: '700' },
+        rowTax: { fontSize: Typography.caption.size, fontWeight: '700', marginTop: 3 },
     });
-

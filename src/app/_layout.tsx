@@ -27,6 +27,7 @@ import {
   registerNotificationListeners,
   requestNotificationPermissions,
 } from '../services/notificationService';
+import { DialogProvider } from '../components/providers/DialogProvider';
 
 const PENDING_SETUP_KEY_PREFIX = 'vahi_pending_setup_';
 
@@ -129,32 +130,36 @@ export default function RootLayout() {
   if (!ready) {
     return (
       <QueryClientProvider client={queryClient}>
-        <View style={{ flex: 1, backgroundColor: colors.primary }}>
-          <AnimatedSplashOverlay ready={false} backgroundColor={colors.primary} />
-        </View>
+        <DialogProvider>
+          <View style={{ flex: 1, backgroundColor: colors.primary }}>
+            <AnimatedSplashOverlay ready={false} backgroundColor={colors.primary} />
+          </View>
+        </DialogProvider>
       </QueryClientProvider>
     );
   }
 
   return (
       <QueryClientProvider client={queryClient}>
-        <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: colors.surface },
-            headerTintColor: colors.primary,
-            contentStyle: { backgroundColor: colors.background },
-            animation: 'slide_from_right',
-          }}
-        >
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="(main)" options={{ headerShown: false }} />
-          <Stack.Screen name="legal" options={{ headerShown: false }} />
-          <Stack.Screen name="scan" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-        </Stack>
-        <AnimatedSplashOverlay ready={ready} backgroundColor={colors.primary} />
-        </View>
+        <DialogProvider>
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <Stack
+            screenOptions={{
+              headerStyle: { backgroundColor: colors.surface },
+              headerTintColor: colors.primary,
+              contentStyle: { backgroundColor: colors.background },
+              animation: 'slide_from_right',
+            }}
+          >
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+            <Stack.Screen name="(main)" options={{ headerShown: false }} />
+            <Stack.Screen name="legal" options={{ headerShown: false }} />
+            <Stack.Screen name="scan" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+          </Stack>
+          <AnimatedSplashOverlay ready={ready} backgroundColor={colors.primary} />
+          </View>
+        </DialogProvider>
       </QueryClientProvider>
     );
 }

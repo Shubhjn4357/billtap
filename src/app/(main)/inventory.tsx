@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { itemApi } from '../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useScannerMode } from '../../hooks/useScannerMode';
 import { useAuthStore } from '../../store/authStore';
 import type { Item } from '../../types/domain';
 import { canPerformAction } from '../../utils/accessControl';
+import { AppTopBar } from '../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../components/ui/AppSearchBar';
+import { useAppDialog } from '../../components/providers/DialogProvider';
+import { useHaptics } from '../../hooks/useHaptics';
 
 type FilterType = 'all' | 'in' | 'low' | 'out';
 const EMPTY_ITEMS: Item[] = [];
@@ -34,11 +39,28 @@ export default function InventoryScreen() {
     const canCreateItem = canPerformAction(role, 'inventory.create', subscription);
     const canUpdateItem = canPerformAction(role, 'inventory.update', subscription);
     const canDeleteItem = canPerformAction(role, 'inventory.delete', subscription);
+    const dialog = useAppDialog();
+    const { selection, impact } = useHaptics();
 
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<FilterType>('all');
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+    const openInfoDialog = (title: string, message: string) => {
+        dialog.alert(title, message);
+    };
+
+    const openConfirmDialog = (title: string, message: string, onConfirm: () => void, destructive = false) => {
+        dialog.alert(title, message, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: destructive ? 'Delete' : 'Apply',
+                style: destructive ? 'destructive' : 'default',
+                onPress: onConfirm,
+            },
+        ]);
+    };
 
     useEffect(() => {
         const scannedSearch = Array.isArray(params.search) ? params.search[0] : params.search;
@@ -47,7 +69,7 @@ export default function InventoryScreen() {
         }
     }, [params.search, params.scanAt]);
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['items', search],
         queryFn: () => itemApi.list({ q: search || undefined, limit: 300 }),
         staleTime: 30_000,
@@ -104,7 +126,7 @@ export default function InventoryScreen() {
             setSelectionMode(false);
         },
         onError: (error) => {
-            Alert.alert('Bulk delete failed', error instanceof Error ? error.message : 'Unable to delete selected items.');
+            openInfoDialog('Bulk delete failed', error instanceof Error ? error.message : 'Unable to delete selected items.');
         },
     });
 
@@ -118,7 +140,7 @@ export default function InventoryScreen() {
             setSelectionMode(false);
         },
         onError: (error) => {
-            Alert.alert('Bulk update failed', error instanceof Error ? error.message : 'Unable to update selected items.');
+            openInfoDialog('Bulk update failed', error instanceof Error ? error.message : 'Unable to update selected items.');
         },
     });
 
@@ -130,95 +152,101 @@ export default function InventoryScreen() {
             return;
         }
         if (!scanner.barcodeEnabled) {
-            Alert.alert('Scanner disabled', 'Enable barcode scanning in Settings > Item Settings.');
+            openInfoDialog('Scanner disabled', 'Enable barcode scanning in Settings > Item Settings.');
             return;
         }
-        Alert.alert('USB scanner mode', 'Use a connected USB scanner and scan into the search input.');
+        openInfoDialog('USB scanner mode', 'Use a connected USB scanner and scan into the search input.');
     };
 
     const requestBulkDelete = () => {
         if (selectedCount === 0) return;
         if (!canDeleteItem) {
-            Alert.alert('Access denied', 'Your role cannot delete inventory items.');
+            openInfoDialog('Access denied', 'Your role cannot delete inventory items.');
             return;
         }
-        Alert.alert(
+        openConfirmDialog(
             'Delete selected items',
             `Move ${selectedCount} item(s) to recycle bin?`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => bulkDelete(selectedIds) },
-            ]
+            () => bulkDelete(selectedIds),
+            true
         );
     };
 
     const requestBulkGst = (rate: number) => {
         if (selectedCount === 0) return;
         if (!canUpdateItem) {
-            Alert.alert('Access denied', 'Your role cannot update inventory items.');
+            openInfoDialog('Access denied', 'Your role cannot update inventory items.');
             return;
         }
-        Alert.alert(
+        openConfirmDialog(
             'Bulk GST update',
             `Set GST rate to ${rate}% for ${selectedCount} item(s)?`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Apply', onPress: () => bulkGstUpdate({ ids: selectedIds, gstRate: rate }) },
-            ]
+            () => bulkGstUpdate({ ids: selectedIds, gstRate: rate })
         );
     };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-                <View style={s.header}>
-                    <Text style={s.title}>Inventory</Text>
-                    <View style={s.headerActions}>
-                        <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
-                            <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>All</Text>
+            <AppTopBar
+                title="Inventory"
+                subtitle="Items, stock, categories and units"
+                rightAction={(
+                    <View style={s.topActions}>
+                        <Pressable
+                            style={[s.topIconBtn, { borderColor: colors.border }]}
+                            onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}
+                        >
+                            <MaterialCommunityIcons name="compass-outline" size={18} color={colors.primary} />
                         </Pressable>
-                        <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => {
-                            setSelectionMode((current) => !current);
-                            setSelectedIds([]);
-                        }}>
-                        <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>
+                        <Pressable
+                            style={[s.topIconBtn, { borderColor: canCreateItem ? colors.primary : colors.border, backgroundColor: canCreateItem ? colors.primary : colors.border }]}
+                            onPress={() => {
+                                if (!canCreateItem) {
+                                    openInfoDialog('Access denied', 'Your role cannot create inventory items.');
+                                    return;
+                                }
+                                void impact();
+                                router.push('/(main)/inventory/add-item' as Parameters<typeof router.push>[0]);
+                            }}
+                        >
+                            <MaterialCommunityIcons name="plus" size={18} color={colors.onPrimary} />
+                        </Pressable>
+                    </View>
+                )}
+            />
+
+            <View style={s.actionBar}>
+                <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>Controls</Text>
+                <View style={s.actionRow}>
+                    <Pressable style={[s.actionChip, { borderColor: colors.border }]} onPress={() => {
+                        void selection();
+                        setSelectionMode((current) => !current);
+                        setSelectedIds([]);
+                    }}>
+                        <MaterialCommunityIcons name={selectionMode ? 'close' : 'check-circle-outline'} size={14} color={colors.textSecondary} />
+                        <Text style={[s.actionChipText, { color: colors.textSecondary }]}>
                             {selectionMode ? 'Cancel' : 'Select'}
                         </Text>
                     </Pressable>
-                    <Pressable style={[s.headerChip, { borderColor: colors.border }]} onPress={() => router.push('/(main)/inventory/recycle-bin' as Parameters<typeof router.push>[0])}>
-                        <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>Bin</Text>
-                    </Pressable>
-                    <Pressable
-                        style={[s.addBtn, { backgroundColor: canCreateItem ? colors.primary : colors.border }]}
-                        onPress={() => {
-                            if (!canCreateItem) {
-                                Alert.alert('Access denied', 'Your role cannot create inventory items.');
-                                return;
-                            }
-                            router.push('/(main)/inventory/add-item' as Parameters<typeof router.push>[0]);
-                        }}
-                    >
-                        <Text style={s.addBtnText}>+ Add</Text>
+                    <Pressable style={[s.actionChip, { borderColor: colors.border }]} onPress={() => {
+                        void selection();
+                        router.push('/(main)/inventory/recycle-bin' as Parameters<typeof router.push>[0]);
+                    }}>
+                        <MaterialCommunityIcons name="delete-outline" size={14} color={colors.textSecondary} />
+                        <Text style={[s.actionChipText, { color: colors.textSecondary }]}>Bin</Text>
                     </Pressable>
                 </View>
             </View>
 
             <View style={s.searchRow}>
-                <TextInput
-                    style={[s.searchInput, { color: colors.text }]}
-                    placeholder={scanner.isUsbScannerMode ? 'Scan via USB or type search...' : 'Search by name or barcode...'}
-                    placeholderTextColor={colors.textSecondary}
+                <AppSearchBar
                     value={search}
                     onChangeText={setSearch}
-                    returnKeyType="search"
+                    placeholder={scanner.isUsbScannerMode ? 'Scan via USB or type search...' : 'Search by name or barcode...'}
+                    showScanAction
+                    scanLabel={scanner.canUseCameraScanner ? 'Scan' : scanner.isUsbScannerMode ? 'USB' : 'Off'}
+                    onScanPress={handleScanPress}
                 />
-                <Pressable
-                    style={[s.scanBtn, { backgroundColor: colors.surfaceVariant }]}
-                    onPress={handleScanPress}
-                >
-                    <Text style={{ color: colors.primary, fontWeight: '700' }}>
-                        {scanner.canUseCameraScanner ? 'Scan' : scanner.isUsbScannerMode ? 'USB' : 'Off'}
-                    </Text>
-                </Pressable>
             </View>
 
             {scanner.isUsbScannerMode ? (
@@ -227,11 +255,12 @@ export default function InventoryScreen() {
                 </Text>
             ) : null}
 
-            <View style={[s.statsCard, { backgroundColor: `${colors.primary}15` }]}>
+            <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>Stock Health</Text>
+            <View style={[s.statsCard, { backgroundColor: withAlpha(colors.primary, '15') }]}>
                 <View style={s.statsRow}>
-                    <StatChip label="In Stock" value={stats.inStock} color={colors.success} />
-                    <StatChip label="Low" value={stats.lowStock} color={colors.warning} />
-                    <StatChip label="Out" value={stats.outOfStock} color={colors.error} />
+                    <StatChip label="In Stock" value={stats.inStock} color={colors.success} mutedColor={colors.textSecondary} />
+                    <StatChip label="Low" value={stats.lowStock} color={colors.warning} mutedColor={colors.textSecondary} />
+                    <StatChip label="Out" value={stats.outOfStock} color={colors.error} mutedColor={colors.textSecondary} />
                 </View>
                 <Text style={[s.stockValue, { color: colors.text }]}>
                     Stock Value: Rs {stats.stockValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
@@ -252,7 +281,7 @@ export default function InventoryScreen() {
                             style={[s.filterChip, selected && { backgroundColor: colors.primary }]}
                             onPress={() => setFilter(value)}
                         >
-                            <Text style={[s.filterText, selected && { color: '#fff', fontWeight: '700' }]}>{label}</Text>
+                            <Text style={[s.filterText, selected && { color: colors.onPrimary, fontWeight: '700' }]}>{label}</Text>
                         </Pressable>
                     );
                 })}
@@ -294,14 +323,14 @@ export default function InventoryScreen() {
                             onOpen={() => router.push(`/(main)/inventory/${item.id}` as Parameters<typeof router.push>[0])}
                             onQuickIn={() => {
                                 if (!canUpdateItem) {
-                                    Alert.alert('Access denied', 'Your role cannot update stock.');
+                                    openInfoDialog('Access denied', 'Your role cannot update stock.');
                                     return;
                                 }
                                 quickAdjustStock({ itemId: item.id, type: 'IN', quantity: 1 });
                             }}
                             onQuickOut={() => {
                                 if (!canUpdateItem) {
-                                    Alert.alert('Access denied', 'Your role cannot update stock.');
+                                    openInfoDialog('Access denied', 'Your role cannot update stock.');
                                     return;
                                 }
                                 quickAdjustStock({ itemId: item.id, type: 'OUT', quantity: 1 });
@@ -311,20 +340,50 @@ export default function InventoryScreen() {
                     contentContainerStyle={{ paddingBottom: 100 }}
                     ListEmptyComponent={
                         <View style={s.centered}>
-                            <Text style={{ color: colors.textSecondary }}>No items found.</Text>
+                            <Text style={{ color: colors.textSecondary, marginBottom: Spacing.sm }}>No items found.</Text>
+                            {canCreateItem ? (
+                                <Pressable
+                                    style={[s.emptyAddBtn, { backgroundColor: colors.primary }]}
+                                    onPress={() => {
+                                        void impact();
+                                        router.push('/(main)/inventory/add-item' as Parameters<typeof router.push>[0]);
+                                    }}
+                                >
+                                    <Text style={s.emptyAddBtnText}>Add Item</Text>
+                                </Pressable>
+                            ) : null}
                         </View>
                     }
+                    refreshControl={(
+                        <RefreshControl
+                            refreshing={isRefetching && !isLoading}
+                            onRefresh={() => {
+                                void refetch();
+                            }}
+                            tintColor={colors.primary}
+                        />
+                    )}
                 />
             )}
         </SafeAreaView>
     );
 }
 
-function StatChip({ label, value, color }: { label: string; value: number; color: string }) {
+function StatChip({
+    label,
+    value,
+    color,
+    mutedColor,
+}: {
+    label: string;
+    value: number;
+    color: string;
+    mutedColor: string;
+}) {
     return (
         <View style={[rowStyles.statChip, { borderColor: color }]}>
             <Text style={[rowStyles.statValue, { color }]}>{value}</Text>
-            <Text style={rowStyles.statLabel}>{label}</Text>
+            <Text style={[rowStyles.statLabel, { color: mutedColor }]}>{label}</Text>
         </View>
     );
 }
@@ -357,16 +416,16 @@ function ItemRow({
             style={({ pressed }) => [
                 rowStyles.row,
                 {
-                    backgroundColor: selected ? `${colors.primary}20` : colors.card,
+                    backgroundColor: selected ? withAlpha(colors.primary, '20') : colors.card,
                     opacity: pressed ? 0.8 : 1,
-                    borderColor: selected ? colors.primary : 'transparent',
-                    borderWidth: selected ? 1 : 0,
+                    borderColor: selected ? colors.primary : colors.border,
+                    borderWidth: 1,
                 },
             ]}
             onPress={selectionMode ? onToggleSelect : onOpen}
         >
             {selectionMode ? (
-                <View style={[rowStyles.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? `${colors.primary}22` : 'transparent' }]}>
+                <View style={[rowStyles.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' }]}>
                     <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '700' }}>
                         {selected ? 'ON' : 'OFF'}
                     </Text>
@@ -395,10 +454,10 @@ function ItemRow({
                 {selectionMode ? null : (
                     <View style={rowStyles.quickRow}>
                         <Pressable style={[rowStyles.quickBtn, { backgroundColor: colors.success }]} onPress={onQuickIn}>
-                            <Text style={rowStyles.quickBtnText}>+1</Text>
+                            <Text style={[rowStyles.quickBtnText, { color: colors.onPrimary }]}>+1</Text>
                         </Pressable>
                         <Pressable style={[rowStyles.quickBtn, { backgroundColor: colors.error }]} onPress={onQuickOut}>
-                            <Text style={rowStyles.quickBtnText}>-1</Text>
+                            <Text style={[rowStyles.quickBtnText, { color: colors.onPrimary }]}>-1</Text>
                         </Pressable>
                     </View>
                 )}
@@ -410,39 +469,52 @@ function ItemRow({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
+        topActions: {
             flexDirection: 'row',
-            justifyContent: 'space-between',
             alignItems: 'center',
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
+            gap: Spacing.xs,
         },
-        title: { fontSize: Typography.headline.size, fontWeight: '700', color: colors.text },
-        headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-        headerChip: {
+        topIconBtn: {
+            width: 34,
+            height: 34,
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        actionBar: {
+            paddingHorizontal: Spacing.lg,
+            marginBottom: Spacing.xs,
+        },
+        sectionLabel: {
+            fontSize: Typography.caption.size,
+            fontWeight: '700',
+            letterSpacing: 0.8,
+            marginBottom: Spacing.xs,
+            textTransform: 'uppercase',
+        },
+        actionRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.sm,
+            flexWrap: 'wrap',
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: Radius.card,
+            backgroundColor: colors.card,
+            padding: Spacing.sm,
+        },
+        actionChip: {
             borderWidth: 1,
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
-        },
-        addBtn: { backgroundColor: colors.primary, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
-        addBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-        searchRow: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-        searchInput: {
-            flex: 1,
-            backgroundColor: colors.surfaceVariant,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.sm,
-            fontSize: 14,
-        },
-        scanBtn: {
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            minWidth: 60,
+            flexDirection: 'row',
             alignItems: 'center',
+            gap: 4,
         },
+        actionChipText: { fontWeight: '700', fontSize: 12 },
+        searchRow: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
         inlineHint: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm, fontSize: 11 },
         statsCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.sm },
         statsRow: { flexDirection: 'row', gap: Spacing.sm },
@@ -459,6 +531,16 @@ const styles = (colors: ColorPalette) =>
             paddingVertical: 6,
         },
         centered: { paddingTop: 80, alignItems: 'center' },
+        emptyAddBtn: {
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.lg,
+            paddingVertical: Spacing.sm,
+        },
+        emptyAddBtnText: {
+            color: colors.onPrimary,
+            fontWeight: '700',
+            fontSize: Typography.body.size,
+        },
     });
 
 const rowStyles = StyleSheet.create({
@@ -490,7 +572,7 @@ const rowStyles = StyleSheet.create({
     stock: { fontSize: 12, fontWeight: '600', marginTop: 2 },
     quickRow: { flexDirection: 'row', gap: 6, marginTop: 6 },
     quickBtn: { borderRadius: Radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
-    quickBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+    quickBtnText: { fontSize: 11, fontWeight: '700' },
     statChip: {
         flex: 1,
         borderWidth: 1,
@@ -500,5 +582,5 @@ const rowStyles = StyleSheet.create({
         alignItems: 'center',
     },
     statValue: { fontSize: 16, fontWeight: '800' },
-    statLabel: { fontSize: 10, marginTop: 2, color: '#6b7280', fontWeight: '600' },
+    statLabel: { fontSize: 10, marginTop: 2, fontWeight: '600' },
 });

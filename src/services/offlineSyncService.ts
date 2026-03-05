@@ -18,6 +18,7 @@ const MAX_MUTATIONS_PER_FLUSH = 28;
 const AUTO_SYNC_INTERVAL_MS = 30_000;
 const RETRY_BASE_DELAY_MS = 4_000;
 const RETRY_MAX_DELAY_MS = 5 * 60 * 1000;
+const MAX_ATTEMPTS_PER_MUTATION = 12;
 
 type QueueMutationBase = {
     id: string;
@@ -120,12 +121,18 @@ const shouldDropMutation = (error: unknown): boolean => {
     const axiosError = asAxiosError(error);
     if (!axiosError?.response) return false;
     const status = axiosError.response.status;
-    return status === 400 || status === 404 || status === 409 || status === 422;
+    return status === 400 || status === 404 || status === 422;
 };
 
 const shouldStopFlush = (error: unknown): boolean => {
     const axiosError = asAxiosError(error);
     return axiosError?.response?.status === 401;
+};
+
+const isConflictMutationError = (error: unknown): boolean => {
+    const axiosError = asAxiosError(error);
+    const status = axiosError?.response?.status;
+    return status === 409 || status === 412;
 };
 
 const getRetryDelayMs = (attemptCount: number): number => {
@@ -315,6 +322,63 @@ const applyMutation = async (mutation: QueueMutation): Promise<void> => {
     }
 };
 
+const asObject = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+const resolveConflict = async (mutation: QueueMutation): Promise<boolean> => {
+    try {
+        switch (mutation.type) {
+            case 'upsert_item':
+                await api.patch(`/api/items/${encodeURIComponent(mutation.payload.id)}`, mutation.payload);
+                return true;
+            case 'upsert_party':
+                await api.patch(`/api/parties/${encodeURIComponent(mutation.payload.id)}`, mutation.payload);
+                return true;
+            case 'update_settings_section': {
+                const section = encodeURIComponent(mutation.payload.section);
+                const current = await api.get<{ ok?: boolean; data?: Record<string, unknown> }>(`/api/settings/${section}`);
+                const merged = {
+                    ...asObject(current?.data),
+                    ...asObject(mutation.payload.data),
+                };
+                await api.put(`/api/settings/${section}`, { data: merged });
+                return true;
+            }
+            case 'record_invoice_payment': {
+                const invoiceId = encodeURIComponent(mutation.payload.invoiceId);
+                const current = await api.get<{ invoice?: Record<string, unknown>; data?: Record<string, unknown> }>(
+                    `/api/transactions/${invoiceId}`
+                );
+                const invoice = asObject(current?.invoice ?? current?.data);
+                const serverPaid = Number(invoice.paidAmount ?? 0);
+                const wantedPaid = Number(mutation.payload.paidAmount ?? 0);
+                if (serverPaid >= wantedPaid && wantedPaid > 0) return true;
+
+                await api.patch(`/api/transactions/${invoiceId}/payment`, {
+                    paidAmount: mutation.payload.paidAmount,
+                    paymentMode: mutation.payload.paymentMode,
+                    date: mutation.payload.date,
+                });
+                return true;
+            }
+            case 'create_invoice':
+            case 'create_pos_sale':
+            case 'delete_item':
+            case 'archive_party':
+            case 'delete_invoice':
+            case 'delete_godown':
+                // Conflict here is usually duplicate/already-applied. Treat as resolved.
+                return true;
+            default:
+                return false;
+        }
+    } catch {
+        return false;
+    }
+};
+
 class OfflineSyncService {
     createLocalId(prefix: string): string {
         return generateLocalId(prefix);
@@ -375,12 +439,25 @@ class OfflineSyncService {
                     await applyMutation(mutation);
                     processed += 1;
                 } catch (error) {
+                    if (isConflictMutationError(error)) {
+                        const resolved = await resolveConflict(mutation);
+                        if (resolved) {
+                            processed += 1;
+                            continue;
+                        }
+                    }
+
                     if (shouldDropMutation(error)) {
                         processed += 1;
                         continue;
                     }
 
                     const attemptCount = (mutation.attemptCount ?? 0) + 1;
+                    if (attemptCount >= MAX_ATTEMPTS_PER_MUTATION) {
+                        processed += 1;
+                        continue;
+                    }
+
                     nextQueue.push({
                         ...mutation,
                         attemptCount,
@@ -397,6 +474,14 @@ class OfflineSyncService {
             }
 
             await writeJson(OFFLINE_QUEUE_KEY, nextQueue);
+            if (nextQueue.length > 0) {
+                const nearestRetryAt = nextQueue.reduce<number>((minValue, entry) => {
+                    const nextAt = entry.nextRetryAt ?? Date.now() + AUTO_SYNC_INTERVAL_MS;
+                    return Math.min(minValue, nextAt);
+                }, Date.now() + AUTO_SYNC_INTERVAL_MS);
+                const delayMs = Math.max(250, nearestRetryAt - Date.now());
+                scheduleFlushSoon(delayMs);
+            }
             return { processed, remaining: nextQueue.length };
         })();
 

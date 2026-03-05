@@ -1,22 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toUserMessage } from '../../../api/client';
 import { settingsApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAuthStore } from '../../../store/authStore';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 import {
     APP_ACTIONS,
     APP_MODULES,
@@ -37,6 +30,9 @@ import {
     type RoleActionOverrides,
     type RoleModuleOverrides,
 } from '../../../utils/accessControl';
+import { useSmartBack } from '../../../hooks/useSmartBack';
+import { useHaptics } from '../../../hooks/useHaptics';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 const ROLE_LABELS: Record<OrganizationRole, string> = {
     owner: 'Owner',
@@ -124,16 +120,21 @@ const setRoleModule = (
 const isOverrideActive = (value: boolean, defaultValue: boolean) => value !== defaultValue;
 
 export default function RoleAccessScreen() {
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = getColors(scheme ?? 'light');
+    const dialog = useAppDialog();
+    const scheme = useColorScheme() ?? 'light';
+    const colors = getColors(scheme);
     const s = styles(colors);
     const queryClient = useQueryClient();
+    const smartBack = useSmartBack('/(main)/more');
+    const { selection } = useHaptics();
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
     const canEditSettings = canPerformAction(role, 'settings.update', subscription) && role === 'owner';
 
     const [actionOverrides, setActionOverrides] = useState<RoleActionOverrides>({});
     const [moduleOverrides, setModuleOverrides] = useState<RoleModuleOverrides>({});
+    const [selectedRole, setSelectedRole] = useState<OrganizationRole>('owner');
+    const [search, setSearch] = useState('');
 
     const { data, isLoading } = useQuery({
         queryKey: ['settings-section', 'SECURITY'],
@@ -149,6 +150,21 @@ export default function RoleAccessScreen() {
         setActionOverrides(parseRoleActionOverrides(securitySettings[ROLE_ACTION_OVERRIDES_KEY]));
         setModuleOverrides(parseRoleModuleOverrides(securitySettings[ROLE_MODULE_OVERRIDES_KEY]));
     }, [securitySettings]);
+    const visibleModules = useMemo(() => {
+        const needle = search.trim().toLowerCase();
+        if (!needle) return APP_MODULES;
+        return APP_MODULES.filter((module) => MODULE_LABELS[module].toLowerCase().includes(needle));
+    }, [search]);
+    const visibleActions = useMemo(() => {
+        const needle = search.trim().toLowerCase();
+        if (!needle) return APP_ACTIONS;
+        return APP_ACTIONS.filter((action) => ACTION_LABELS[action].toLowerCase().includes(needle) || action.toLowerCase().includes(needle));
+    }, [search]);
+    const overrideCount = useMemo(() => {
+        const moduleCount = Object.keys(moduleOverrides[selectedRole] ?? {}).length;
+        const actionCount = Object.keys(actionOverrides[selectedRole] ?? {}).length;
+        return { moduleCount, actionCount, total: moduleCount + actionCount };
+    }, [actionOverrides, moduleOverrides, selectedRole]);
 
     const { mutate: saveOverrides, isPending: saving } = useMutation({
         mutationFn: async () => {
@@ -165,15 +181,15 @@ export default function RoleAccessScreen() {
         onSuccess: async () => {
             setRoleAccessOverrides({ actionOverrides, moduleOverrides });
             await queryClient.invalidateQueries({ queryKey: ['settings-section', 'SECURITY'] });
-            Alert.alert('Saved', 'Role access controls updated.');
+            dialog.alert('Saved', 'Role access controls updated.');
         },
         onError: (error) => {
-            Alert.alert('Save failed', toUserMessage(error, 'Unable to save role access controls.'));
+            dialog.alert('Save failed', toUserMessage(error, 'Unable to save role access controls.'));
         },
     });
 
     const resetToDefault = () => {
-        Alert.alert(
+        dialog.alert(
             'Reset overrides',
             'Remove all custom overrides and use built-in default role access?',
             [
@@ -193,6 +209,7 @@ export default function RoleAccessScreen() {
     if (isLoading) {
         return (
             <SafeAreaView style={s.safe} edges={['top']}>
+                <AppTopBar title="Role Access" onBackPress={smartBack} />
                 <View style={s.centered}>
                     <ActivityIndicator color={colors.primary} />
                 </View>
@@ -202,15 +219,27 @@ export default function RoleAccessScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Role Access</Text>
-                <Pressable onPress={() => saveOverrides()} disabled={saving || !canEditSettings}>
-                    {saving ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.save, { color: canEditSettings ? colors.primary : colors.textSecondary }]}>Save</Text>}
-                </Pressable>
-            </View>
+            <AppTopBar
+                title="Role Access"
+                subtitle="Module and action permissions"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable
+                        style={[s.saveBtn, { backgroundColor: canEditSettings ? colors.primary : colors.border }]}
+                        onPress={() => saveOverrides()}
+                        disabled={saving || !canEditSettings}
+                    >
+                        {saving ? (
+                            <ActivityIndicator color={colors.onPrimary} size="small" />
+                        ) : (
+                            <>
+                                <MaterialCommunityIcons name="content-save-outline" size={15} color={colors.onPrimary} />
+                                <Text style={s.saveBtnText}>Save</Text>
+                            </>
+                        )}
+                    </Pressable>
+                )}
+            />
 
             {!canEditSettings ? (
                 <View style={s.readOnlyBanner}>
@@ -221,6 +250,46 @@ export default function RoleAccessScreen() {
             ) : null}
 
             <ScrollView contentContainerStyle={s.content}>
+                <AppSearchBar
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder="Search modules or actions..."
+                />
+
+                <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>ROLE ACCESS SUMMARY</Text>
+                    <Text style={s.summaryValue}>{ROLE_LABELS[selectedRole]}</Text>
+                    <Text style={[s.summaryMeta, { color: colors.textSecondary }]}>
+                        {overrideCount.total} overrides ({overrideCount.moduleCount} modules, {overrideCount.actionCount} actions)
+                    </Text>
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.roleChipsRow}>
+                    {ORGANIZATION_ROLES.map((targetRole) => {
+                        const active = selectedRole === targetRole;
+                        return (
+                            <Pressable
+                                key={targetRole}
+                                style={[
+                                    s.roleChip,
+                                    {
+                                        borderColor: active ? colors.primary : colors.border,
+                                        backgroundColor: active ? withAlpha(colors.primary, '16') : colors.surfaceVariant,
+                                    },
+                                ]}
+                                onPress={() => {
+                                    void selection();
+                                    setSelectedRole(targetRole);
+                                }}
+                            >
+                                <Text style={{ color: active ? colors.primary : colors.textSecondary, fontSize: Typography.caption.size, fontWeight: '700' }}>
+                                    {ROLE_LABELS[targetRole]}
+                                </Text>
+                            </Pressable>
+                        );
+                    })}
+                </ScrollView>
+
                 <View style={s.toolsRow}>
                     <Pressable
                         style={[s.toolBtn, { borderColor: colors.border }]}
@@ -231,19 +300,18 @@ export default function RoleAccessScreen() {
                     </Pressable>
                 </View>
 
-                {ORGANIZATION_ROLES.map((targetRole) => (
-                    <View key={targetRole} style={[s.roleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[s.roleTitle, { color: colors.text }]}>{ROLE_LABELS[targetRole]}</Text>
+                <View key={selectedRole} style={[s.roleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[s.roleTitle, { color: colors.text }]}>{ROLE_LABELS[selectedRole]}</Text>
 
-                        <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>Module Access</Text>
-                        {APP_MODULES.map((module) => {
-                            const defaultValue = getDefaultModulePermission(targetRole, module);
-                            const overrideValue = moduleOverrides[targetRole]?.[module];
+                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>Module Access</Text>
+                    {visibleModules.map((module) => {
+                            const defaultValue = getDefaultModulePermission(selectedRole, module);
+                            const overrideValue = moduleOverrides[selectedRole]?.[module];
                             const value = typeof overrideValue === 'boolean' ? overrideValue : defaultValue;
                             const overridden = isOverrideActive(value, defaultValue);
 
                             return (
-                                <View key={`${targetRole}-${module}`} style={s.row}>
+                                <View key={`${selectedRole}-${module}`} style={s.row}>
                                     <View style={s.rowTextWrap}>
                                         <Text style={[s.rowLabel, { color: colors.text }]}>{MODULE_LABELS[module]}</Text>
                                         <Text style={[s.rowMeta, { color: overridden ? colors.primary : colors.textSecondary }]}>
@@ -252,7 +320,7 @@ export default function RoleAccessScreen() {
                                     </View>
                                     <Switch
                                         value={value}
-                                        onValueChange={(next) => setModuleOverrides((current) => setRoleModule(current, targetRole, module, next))}
+                                        onValueChange={(next) => setModuleOverrides((current) => setRoleModule(current, selectedRole, module, next))}
                                         trackColor={{ true: colors.primary }}
                                         disabled={!canEditSettings}
                                     />
@@ -260,15 +328,15 @@ export default function RoleAccessScreen() {
                             );
                         })}
 
-                        <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>Action Access</Text>
-                        {APP_ACTIONS.map((action) => {
-                            const defaultValue = getDefaultActionPermission(targetRole, action);
-                            const overrideValue = actionOverrides[targetRole]?.[action];
+                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>Action Access</Text>
+                    {visibleActions.map((action) => {
+                            const defaultValue = getDefaultActionPermission(selectedRole, action);
+                            const overrideValue = actionOverrides[selectedRole]?.[action];
                             const value = typeof overrideValue === 'boolean' ? overrideValue : defaultValue;
                             const overridden = isOverrideActive(value, defaultValue);
 
                             return (
-                                <View key={`${targetRole}-${action}`} style={s.row}>
+                                <View key={`${selectedRole}-${action}`} style={s.row}>
                                     <View style={s.rowTextWrap}>
                                         <Text style={[s.rowLabel, { color: colors.text }]}>{ACTION_LABELS[action]}</Text>
                                         <Text style={[s.rowMeta, { color: overridden ? colors.primary : colors.textSecondary }]}>
@@ -277,15 +345,20 @@ export default function RoleAccessScreen() {
                                     </View>
                                     <Switch
                                         value={value}
-                                        onValueChange={(next) => setActionOverrides((current) => setRoleAction(current, targetRole, action, next))}
+                                        onValueChange={(next) => setActionOverrides((current) => setRoleAction(current, selectedRole, action, next))}
                                         trackColor={{ true: colors.primary }}
                                         disabled={!canEditSettings}
                                     />
                                 </View>
                             );
                         })}
-                    </View>
-                ))}
+                    {visibleModules.length === 0 && visibleActions.length === 0 ? (
+                        <View style={[s.emptyState, { borderColor: colors.border }]}>
+                            <Text style={[s.emptyTitle, { color: colors.text }]}>No matching access controls</Text>
+                            <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Try a different search term.</Text>
+                        </View>
+                    ) : null}
+                </View>
 
                 <View style={{ height: 80 }} />
             </ScrollView>
@@ -297,19 +370,36 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
+        saveBtn: {
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            gap: 4,
+            minWidth: 76,
+            justifyContent: 'center',
         },
-        back: { fontSize: 14, fontWeight: '600' },
-        title: { fontSize: 17, fontWeight: '700', color: colors.text },
-        save: { fontSize: 14, fontWeight: '700' },
+        saveBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
         readOnlyBanner: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
         readOnlyText: { fontSize: 12 },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.md },
+        summaryCard: {
+            borderWidth: 1,
+            borderRadius: Radius.card,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.md,
+        },
+        summaryLabel: { fontSize: Typography.caption.size, fontWeight: '700', letterSpacing: 0.8 },
+        summaryValue: { marginTop: 4, color: colors.text, fontSize: Typography.headline.size, fontWeight: '800' },
+        summaryMeta: { marginTop: 2, fontSize: Typography.caption.size },
+        roleChipsRow: { gap: Spacing.sm },
+        roleChip: {
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.sm,
+        },
         toolsRow: { flexDirection: 'row', justifyContent: 'flex-end' },
         toolBtn: {
             borderWidth: 1,
@@ -330,4 +420,13 @@ const styles = (colors: ColorPalette) =>
         rowTextWrap: { flex: 1 },
         rowLabel: { fontSize: 13, fontWeight: '600' },
         rowMeta: { fontSize: 11, marginTop: 2 },
+        emptyState: {
+            borderWidth: 1,
+            borderRadius: Radius.card,
+            paddingVertical: Spacing.md,
+            alignItems: 'center',
+            marginTop: Spacing.sm,
+        },
+        emptyTitle: { fontSize: Typography.body.size, fontWeight: '700' },
+        emptySubtitle: { fontSize: Typography.caption.size },
     });

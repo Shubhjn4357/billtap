@@ -1,16 +1,22 @@
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Alert } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSmartBack } from '../../../hooks/useSmartBack';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { godownApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
 import type { Godown } from '../../../types/domain';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 export default function GodownsScreen() {
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
+    const dialog = useAppDialog();
+    const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
-    const qc = useQueryClient();
+    const queryClient = useQueryClient();
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/more');
 
     const { data, isLoading } = useQuery({
         queryKey: ['godowns'],
@@ -20,79 +26,133 @@ export default function GodownsScreen() {
 
     const { mutate: deleteGodown } = useMutation({
         mutationFn: (id: string) => godownApi.delete(id),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['godowns'] }),
-        onError: (e) => Alert.alert('Error', e instanceof Error ? e.message : 'Failed'),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['godowns'] }),
+        onError: (error) => dialog.alert('Delete failed', error instanceof Error ? error.message : 'Unable to delete godown.'),
     });
 
     const godowns = (data?.data ?? []) as Godown[];
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}><Text style={[s.back, { color: colors.primary }]}>← Back</Text></Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Godowns / Warehouses</Text>
-                <Pressable style={s.addBtn} onPress={() => router.push('/(main)/more/godowns/add' as Parameters<typeof router.push>[0])}>
-                    <Text style={s.addBtnText}>+ Add</Text>
-                </Pressable>
-            </View>
+            <AppTopBar
+                title="Godowns"
+                subtitle="Warehouse and stock location control"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable
+                        style={[s.addBtn, { backgroundColor: colors.primary }]}
+                        onPress={() => router.push('/(main)/more/godowns/add')}
+                    >
+                        <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
+                        <Text style={s.addBtnText}>Add</Text>
+                    </Pressable>
+                )}
+            />
 
             {isLoading ? (
-                <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
+                <View style={s.centered}>
+                    <ActivityIndicator color={colors.primary} />
+                </View>
             ) : godowns.length === 0 ? (
                 <View style={s.centered}>
-                    <Text style={{ fontSize: 40 }}>🏭</Text>
-                    <Text style={{ color: colors.textSecondary, marginTop: Spacing.md }}>No godowns configured.</Text>
-                    <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Add warehouses to track stock location.</Text>
-                    <Pressable style={[s.emptyBtn, { backgroundColor: colors.primary }]} onPress={() => router.push('/(main)/more/godowns/add' as Parameters<typeof router.push>[0])}>
-                        <Text style={{ color: '#fff', fontWeight: '700' }}>+ Add Godown</Text>
+                    <MaterialCommunityIcons name="warehouse" size={52} color={colors.textSecondary} />
+                    <Text style={[s.emptyTitle, { color: colors.text }]}>No godowns configured</Text>
+                    <Text style={[s.emptyMeta, { color: colors.textSecondary }]}>Add warehouses to track stock location and transfers.</Text>
+                    <Pressable
+                        style={[s.emptyBtn, { backgroundColor: colors.primary }]}
+                        onPress={() => router.push('/(main)/more/godowns/add')}
+                    >
+                        <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
+                        <Text style={s.emptyBtnText}>Add Godown</Text>
                     </Pressable>
                 </View>
             ) : (
                 <FlatList
                     data={godowns}
-                    keyExtractor={(g) => g.id}
-                    renderItem={({ item: g }) => (
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={{ paddingBottom: 120 }}
+                    renderItem={({ item }) => (
                         <Pressable
-                            style={[rowS.row, { backgroundColor: colors.card }]}
-                            onPress={() => router.push(`/(main)/more/godowns/${g.id}` as Parameters<typeof router.push>[0])}
-                            onLongPress={() => Alert.alert('Delete Godown', `Delete "${g.name}"?`, [
+                            style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}
+                            onPress={() => router.push(`/(main)/more/godowns/${item.id}`)}
+                            onLongPress={() => dialog.alert('Delete Godown', `Delete "${item.name}"?`, [
                                 { text: 'Cancel', style: 'cancel' },
-                                { text: 'Delete', style: 'destructive', onPress: () => deleteGodown(g.id) },
+                                { text: 'Delete', style: 'destructive', onPress: () => deleteGodown(item.id) },
                             ])}
                         >
-                            <View style={rowS.icon}><Text style={{ fontSize: 24 }}>🏭</Text></View>
+                            <View style={[s.iconWrap, { backgroundColor: withAlpha(colors.primary, '20') }]}>
+                                <MaterialCommunityIcons name="warehouse" size={20} color={colors.primary} />
+                            </View>
                             <View style={{ flex: 1 }}>
-                                <Text style={[rowS.name, { color: colors.text }]}>{g.name}</Text>
-                                {g.address && <Text style={[rowS.meta, { color: colors.textSecondary }]}>📍 {g.address}</Text>}
-                                {g.managerName && <Text style={[rowS.meta, { color: colors.textSecondary }]}>👤 {g.managerName}</Text>}
+                                <Text style={[s.rowTitle, { color: colors.text }]}>{item.name}</Text>
+                                {item.address ? (
+                                    <Text style={[s.rowMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                                        {item.address}
+                                    </Text>
+                                ) : null}
+                                {item.managerName ? (
+                                    <Text style={[s.rowMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                                        Manager: {item.managerName}
+                                    </Text>
+                                ) : null}
                             </View>
-                            <View style={rowS.stockTag}>
-                                <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '700' }}>View Stock →</Text>
-                            </View>
+                            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
                         </Pressable>
                     )}
-                    contentContainerStyle={{ paddingBottom: 100 }}
                 />
             )}
         </SafeAreaView>
     );
 }
 
-const rowS = StyleSheet.create({
-    row: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderRadius: Radius.card, gap: Spacing.md },
-    icon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#007B8322', alignItems: 'center', justifyContent: 'center' },
-    name: { fontWeight: '600', fontSize: 15 },
-    meta: { fontSize: 12, marginTop: 2 },
-    stockTag: {},
-});
-
-const styles = (colors: ColorPalette) => StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-    back: { fontWeight: '600', fontSize: 14 },
-    title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 15, marginHorizontal: Spacing.sm },
-    addBtn: { backgroundColor: colors.primary, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 4 },
-    addBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
-    emptyBtn: { marginTop: Spacing.md, borderRadius: Radius.pill, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md },
-});
+const styles = (colors: ColorPalette) =>
+    StyleSheet.create({
+        safe: { flex: 1, backgroundColor: colors.background },
+        centered: {
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: Spacing.lg,
+            gap: Spacing.sm,
+        },
+        addBtn: {
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+        },
+        addBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
+        emptyTitle: { fontSize: Typography.title.size, fontWeight: '700' },
+        emptyMeta: { fontSize: Typography.body.size, textAlign: 'center' },
+        emptyBtn: {
+            marginTop: Spacing.sm,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.sm,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+        },
+        emptyBtnText: { color: colors.onPrimary, fontSize: Typography.body.size, fontWeight: '700' },
+        row: {
+            marginHorizontal: Spacing.lg,
+            marginBottom: Spacing.sm,
+            borderRadius: Radius.card,
+            borderWidth: 1,
+            padding: Spacing.md,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.sm,
+        },
+        iconWrap: {
+            width: 40,
+            height: 40,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        rowTitle: { fontSize: Typography.body.size, fontWeight: '700' },
+        rowMeta: { fontSize: Typography.caption.size, marginTop: 2 },
+    });

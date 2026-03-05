@@ -6,23 +6,26 @@ import {
     Pressable,
     StyleSheet,
     useColorScheme,
-    Alert,
     ActivityIndicator,
     Share,
     Image,
     Linking,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { printToFileAsync } from 'expo-print';
 import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import { format, parseISO } from 'date-fns';
 import { invoiceApi, settingsApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { getColors, Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { buildUpiPaymentUri, buildUpiQrImageUrl, isValidUpiId, sanitizeUpiId } from '../../../utils/upi';
 import { useAuthStore } from '../../../store/authStore';
 import { generateInvoiceHtml, type InvoicePrintConfig } from '../../../utils/invoiceHtml';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { useAppDialog } from '../../../components/providers/DialogProvider';
 
 export default function InvoiceDetailScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
@@ -30,7 +33,13 @@ export default function InvoiceDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const qc = useQueryClient();
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/billing');
     const business = useAuthStore((state) => state.business);
+    const dialog = useAppDialog();
+
+    const openInfoDialog = (title: string, message: string) => {
+        dialog.alert(title, message);
+    };
 
     const { data, isLoading } = useQuery({
         queryKey: ['invoice', id],
@@ -55,7 +64,7 @@ export default function InvoiceDetailScreen() {
             qc.invalidateQueries({ queryKey: ['invoice', id] });
             qc.invalidateQueries({ queryKey: ['invoices'] });
         },
-        onError: (e) => Alert.alert('Error', e instanceof Error ? e.message : 'Failed'),
+        onError: (e) => openInfoDialog('Error', e instanceof Error ? e.message : 'Failed'),
     });
 
     const invoice = data?.data;
@@ -142,7 +151,7 @@ export default function InvoiceDetailScreen() {
         if (!upiPayload) return;
         const supported = await Linking.canOpenURL(upiPayload);
         if (!supported) {
-            Alert.alert('UPI', 'No UPI app found on this device.');
+            openInfoDialog('UPI', 'No UPI app found on this device.');
             return;
         }
         await Linking.openURL(upiPayload);
@@ -170,7 +179,7 @@ export default function InvoiceDetailScreen() {
                 await shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
             }
         } catch {
-            Alert.alert('Error', 'Could not generate PDF');
+            openInfoDialog('Error', 'Could not generate PDF');
         }
     };
 
@@ -197,17 +206,24 @@ export default function InvoiceDetailScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}><Text style={[s.back, { color: colors.primary }]}>Back</Text></Pressable>
-                <Text style={[s.headerTitle, { color: colors.text }]} numberOfLines={1}>{invoice.invoiceNumber}</Text>
-                <View style={s.headerActions}>
-                    <Pressable onPress={handleShare}><Text style={s.iconBtn}>Share</Text></Pressable>
-                    <Pressable onPress={handlePrint}><Text style={s.iconBtn}>PDF</Text></Pressable>
-                </View>
-            </View>
+            <AppTopBar
+                title={invoice.invoiceNumber}
+                subtitle={invoice.invoiceType}
+                onBackPress={smartBack}
+                rightAction={(
+                    <View style={s.headerActions}>
+                        <Pressable style={s.iconBtnWrap} onPress={handleShare}>
+                            <MaterialCommunityIcons name="share-variant-outline" size={18} color={colors.primary} />
+                        </Pressable>
+                        <Pressable style={s.iconBtnWrap} onPress={handlePrint}>
+                            <MaterialCommunityIcons name="file-pdf-box" size={19} color={colors.primary} />
+                        </Pressable>
+                    </View>
+                )}
+            />
 
             <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={[s.statusBanner, { backgroundColor: statusColor + '22' }]}>
+                <View style={[s.statusBanner, { backgroundColor: withAlpha(statusColor, '22') }]}>
                     <View>
                         <Text style={[s.invNum, { color: colors.text }]}>{invoice.invoiceNumber}</Text>
                         <Text style={[s.invDate, { color: colors.textSecondary }]}>{format(parseISO(invoice.invoiceDate), 'dd MMMM yyyy')}</Text>
@@ -288,13 +304,15 @@ export default function InvoiceDetailScreen() {
                     <View style={s.actions}>
                         <Pressable
                             style={[s.actionBtn, { backgroundColor: colors.success }]}
-                            onPress={() => Alert.alert('Mark as Paid', 'Record full payment?', [
-                                { text: 'Cancel', style: 'cancel' },
-                                { text: 'Mark Paid', onPress: () => markPaid() },
-                            ])}
+                            onPress={() =>
+                                dialog.alert('Mark as Paid', 'Record full payment?', [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    { text: 'Mark Paid', onPress: () => markPaid() },
+                                ])
+                            }
                             disabled={paymentPending}
                         >
-                            {paymentPending ? <ActivityIndicator color="#fff" /> : <Text style={s.actionBtnText}>Mark as Paid</Text>}
+                            {paymentPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.actionBtnText}>Mark as Paid</Text>}
                         </Pressable>
                         <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={handlePrint}>
                             <Text style={s.actionBtnText}>Print / PDF</Text>
@@ -336,11 +354,15 @@ function TRow({ label, val, bold, neg, color, colors, formatAmount }: {
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-    back: { fontWeight: '600', fontSize: 14 },
-    headerTitle: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 17 },
     headerActions: { flexDirection: 'row', gap: Spacing.md },
-    iconBtn: { fontSize: 12, fontWeight: '700', color: colors.primary },
+    iconBtnWrap: {
+        width: 34,
+        height: 34,
+        borderRadius: Radius.pill,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.surfaceVariant,
+    },
     statusBanner: { marginHorizontal: Spacing.lg, marginBottom: Spacing.md, borderRadius: Radius.card, padding: Spacing.lg, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     invNum: { fontWeight: '700', fontSize: 18 },
     invDate: { fontSize: 12 },
@@ -350,7 +372,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     cardTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
     partyName: { fontWeight: '700', fontSize: 15 },
     partyMeta: { fontSize: 12 },
-    tableHeader: { flexDirection: 'row', paddingBottom: Spacing.sm, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+    tableHeader: { flexDirection: 'row', paddingBottom: Spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
     tableRow: { flexDirection: 'row', paddingVertical: Spacing.sm, borderBottomWidth: 0.5, alignItems: 'flex-start' },
     th: { flex: 1, fontWeight: '600', fontSize: 11 },
     td: { flex: 1, fontSize: 13 },
@@ -358,13 +380,13 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     divider: { height: 1, marginVertical: Spacing.sm },
     actions: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
     actionBtn: { flex: 1, borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center' },
-    actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+    actionBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 14 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     qrWrap: { alignItems: 'center', gap: 6 },
     qrImage: { width: 220, height: 220, borderRadius: Radius.md },
     qrMeta: { fontSize: 12 },
     upiBtn: { borderRadius: Radius.pill, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg, marginTop: 4 },
-    upiBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+    upiBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
 });
 
 

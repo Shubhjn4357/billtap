@@ -1,23 +1,24 @@
-import { Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+
+import { useSmartBack } from '../../hooks/useSmartBack';
+import { getColors, Radius, Spacing, type ColorPalette } from '../../constants/theme';
 import { CHANGELOG_ENTRIES } from '../../constants/legal';
+import { AppTopBar } from '../../components/ui/AppTopBar';
 
 export default function ChangelogScreen() {
     const scheme = useColorScheme();
     const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
     const s = styles(colors);
+    const smartBack = useSmartBack('/legal');
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Changelog</Text>
-                <View style={s.headerSpacer} />
-            </View>
+            <AppTopBar
+                title="Changelog"
+                subtitle="Version history and highlights"
+                onBackPress={smartBack}
+            />
 
             <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
                 {CHANGELOG_ENTRIES.map((entry) => (
@@ -43,16 +44,6 @@ export default function ChangelogScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        },
-        back: { fontSize: 14, fontWeight: '600' },
-        title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
-        headerSpacer: { width: 44 },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
         sectionCard: {
             borderWidth: 1,

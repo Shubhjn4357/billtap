@@ -1,26 +1,20 @@
 import { Tabs } from 'expo-router';
-import { useColorScheme, View } from 'react-native';
-import { getColors } from '../../constants/theme';
 import { VahiTabBar } from '../../components/VahiTabBar';
 import { GoToPalette } from '../../components/navigation/GoToPalette';
+import { AppDrawerLayout } from '../../components/layout/AppDrawerLayout';
 
 export default function MainLayout() {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
-
     return (
-        <View style={{ flex: 1 }}>
+        <AppDrawerLayout>
             <Tabs
                 tabBar={(props) => <VahiTabBar {...props} />}
                 screenOptions={{
-                    headerStyle: { backgroundColor: colors.surface },
-                    headerTintColor: colors.text,
-                    headerShadowVisible: false,
+                    headerShown: false,
                 }}
             >
                 <Tabs.Screen
                     name="index"
-                    options={{ title: 'Dashboard', headerTitle: 'Dashboard' }}
+                    options={{ title: 'Dashboard' }}
                 />
                 <Tabs.Screen
                     name="billing"
@@ -28,15 +22,15 @@ export default function MainLayout() {
                 />
                 <Tabs.Screen
                     name="inventory"
-                    options={{ href: null, title: 'Inventory', headerTitle: 'Inventory' }}
+                    options={{ href: null, title: 'Inventory' }}
                 />
                 <Tabs.Screen
                     name="accounts"
-                    options={{ href: null, title: 'Accounts', headerTitle: 'Accounts' }}
+                    options={{ href: null, title: 'Accounts' }}
                 />
                 <Tabs.Screen
                     name="reports"
-                    options={{ href: null, title: 'Reports', headerTitle: 'Reports' }}
+                    options={{ href: null, title: 'Reports' }}
                 />
                 <Tabs.Screen
                     name="more"
@@ -48,6 +42,6 @@ export default function MainLayout() {
                 />
             </Tabs>
             <GoToPalette />
-        </View>
+        </AppDrawerLayout>
     );
 }

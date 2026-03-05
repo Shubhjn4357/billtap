@@ -4,7 +4,9 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, CameraView, type BarcodeScanningResult } from 'expo-camera';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../hooks/useSmartBack';
 import { getColors, Radius, Spacing } from '../constants/theme';
+import { AppTopBar } from '../components/ui/AppTopBar';
 
 type ScanTarget = 'stock' | 'billing' | 'item_detail' | 'upi' | 'upi_profile';
 
@@ -38,6 +40,7 @@ export default function ScanScreen() {
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme ?? 'light');
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/more/settings/GENERAL');
     const params = useLocalSearchParams<{ target?: string | string[]; returnPath?: string | string[]; scanField?: string | string[] }>();
     const [hasPermission, setHasPermission] = useState<boolean | null>(null);
     const [scanned, setScanned] = useState(false);
@@ -119,15 +122,11 @@ export default function ScanScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.backText, { color: colors.primary }]}>Close</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Scan</Text>
-                <View style={{ width: 42 }} />
-            </View>
-
-            <Text style={[s.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+            <AppTopBar
+                title="Scan"
+                subtitle={subtitle}
+                onBackPress={smartBack}
+            />
 
             <View style={s.cameraWrap}>
                 <CameraView
@@ -152,16 +151,7 @@ export default function ScanScreen() {
 const styles = (colors: ReturnType<typeof getColors>) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-        },
-        backText: { fontWeight: '600', fontSize: 14 },
         title: { fontWeight: '700', fontSize: 18 },
-        subtitle: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md, fontSize: 13 },
         cameraWrap: {
             flex: 1,
             borderRadius: Radius.card,
@@ -191,5 +181,5 @@ const styles = (colors: ReturnType<typeof getColors>) =>
             paddingVertical: Spacing.sm,
             marginTop: Spacing.sm,
         },
-        actionText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+        actionText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
     });

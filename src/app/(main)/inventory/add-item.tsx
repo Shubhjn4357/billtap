@@ -1,18 +1,10 @@
 import { useEffect } from 'react';
 import {
-    View,
-    Text,
-    TextInput,
-    ScrollView,
-    Pressable,
-    StyleSheet,
-    useColorScheme,
-    Alert,
-    ActivityIndicator,
-    Switch,
-} from 'react-native';
+    View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../hooks/useSmartBack';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -25,6 +17,12 @@ import { useScannerMode } from '../../../hooks/useScannerMode';
 import { useAuthStore } from '../../../store/authStore';
 import { canPerformAction } from '../../../utils/accessControl';
 import { getItemCategoryOptions, getItemUnitOptions } from '../../../utils/itemMasters';
+import { DateField } from '../../../components/ui/DateField';
+import { SelectField, type SelectOption } from '../../../components/ui/SelectField';
+import { AppInput } from '../../../components/ui/AppInput';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { useHaptics } from '../../../hooks/useHaptics';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 const GST_RATES = [...GST_SLABS];
 
@@ -44,11 +42,14 @@ const itemSchema = z.object({
     isSalesPriceInclusiveGst: z.boolean().default(false),
     description: z.string().optional(),
     location: z.string().optional(),
+    expiresAt: z.string().nullable().optional(),
+    autoDeleteAt: z.string().nullable().optional(),
 });
 type ItemFormInput = z.input<typeof itemSchema>;
 type ItemForm = z.output<typeof itemSchema>;
 
 export default function AddItemScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);
     const params = useLocalSearchParams<{
@@ -61,9 +62,11 @@ export default function AddItemScreen() {
     const editId = params.id;
     const qc = useQueryClient();
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/inventory');
     const scanner = useScannerMode();
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
+    const { selection } = useHaptics();
 
     const {
         control,
@@ -82,6 +85,8 @@ export default function AddItemScreen() {
             purchasePrice: 0,
             mrp: 0,
             isSalesPriceInclusiveGst: false,
+            expiresAt: null,
+            autoDeleteAt: null,
         },
     });
 
@@ -105,6 +110,23 @@ export default function AddItemScreen() {
     const selectedCategory = watch('category');
     const gstRate = watch('gstRate');
 
+    const categorySelectOptions: SelectOption[] = [
+        ...categoryOptions.map((entry) => ({ label: entry, value: entry })),
+        ...(selectedCategory && !categoryOptions.some((entry) => entry.toLowerCase() === selectedCategory.toLowerCase())
+            ? [{ label: selectedCategory, value: selectedCategory, description: 'Custom' }]
+            : []),
+    ];
+    const unitSelectOptions: SelectOption[] = [
+        ...unitOptions.map((entry) => ({ label: entry, value: entry })),
+        ...(selectedUnit && !unitOptions.some((entry) => entry.toLowerCase() === selectedUnit.toLowerCase())
+            ? [{ label: selectedUnit, value: selectedUnit, description: 'Custom' }]
+            : []),
+    ];
+    const gstRateOptions: SelectOption[] = GST_RATES.map((entry) => ({
+        label: `${entry}%`,
+        value: String(entry),
+    }));
+
     const { mutate, isPending } = useMutation({
         mutationFn: (data: ItemForm) => {
             if (!canSaveItem) {
@@ -126,8 +148,8 @@ export default function AddItemScreen() {
                 stock: data.stock,
                 reorderLevel: data.reorderLevel,
                 imageUrl: null,
-                expiresAt: null,
-                autoDeleteAt: null,
+                expiresAt: data.expiresAt ?? null,
+                autoDeleteAt: data.autoDeleteAt ?? null,
                 autoDeleteEnabled: false,
                 isSalesPriceInclusiveGst: data.isSalesPriceInclusiveGst,
                 description: data.description ?? null,
@@ -146,7 +168,7 @@ export default function AddItemScreen() {
             await qc.invalidateQueries({ queryKey: ['items'] });
             router.back();
         },
-        onError: (error) => Alert.alert('Error', toUserMessage(error, 'Failed to save item.')),
+        onError: (error) => dialog.alert('Error', toUserMessage(error, 'Failed to save item.')),
     });
 
     useEffect(() => {
@@ -168,6 +190,8 @@ export default function AddItemScreen() {
         setValue('isSalesPriceInclusiveGst', Boolean(item.isSalesPriceInclusiveGst));
         setValue('description', item.description ?? '');
         setValue('location', item.location ?? '');
+        setValue('expiresAt', item.expiresAt ?? null);
+        setValue('autoDeleteAt', item.autoDeleteAt ?? null);
     }, [editItemData?.item, setValue]);
 
     useEffect(() => {
@@ -209,11 +233,11 @@ export default function AddItemScreen() {
         }
 
         if (!scanner.barcodeEnabled) {
-            Alert.alert('Scanner disabled', 'Enable barcode scanning in Settings > Item Settings.');
+            dialog.alert('Scanner disabled', 'Enable barcode scanning in Settings > Item Settings.');
             return;
         }
 
-        Alert.alert('USB scanner mode', `Use a connected USB scanner and scan directly into the ${field === 'barcode' ? 'Barcode' : 'HSN'} field.`);
+        dialog.alert('USB scanner mode', `Use a connected USB scanner and scan directly into the ${field === 'barcode' ? 'Barcode' : 'HSN'} field.`);
     };
 
     if (editId && editItemLoading) {
@@ -228,24 +252,26 @@ export default function AddItemScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Cancel</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>{editId ? 'Edit Item' : 'Add Item'}</Text>
-                <Pressable
-                    onPress={handleSubmit((data) => {
-                        if (!canSaveItem) {
-                            Alert.alert('Access denied', 'Your role cannot save inventory items.');
-                            return;
-                        }
-                        mutate(data);
-                    })}
-                    disabled={isPending || !canSaveItem}
-                >
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.save, { color: colors.primary }]}>Save</Text>}
-                </Pressable>
-            </View>
+            <AppTopBar
+                title={editId ? 'Edit Item' : 'Add Item'}
+                subtitle="Inventory master with GST and stock controls"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable
+                        onPress={handleSubmit((data) => {
+                            if (!canSaveItem) {
+                                dialog.alert('Access denied', 'Your role cannot save inventory items.');
+                                return;
+                            }
+                            void selection();
+                            mutate(data);
+                        })}
+                        disabled={isPending || !canSaveItem}
+                    >
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={20} color={colors.primary} />}
+                    </Pressable>
+                )}
+            />
 
             {!canSaveItem ? (
                 <View style={s.permissionHintWrap}>
@@ -272,12 +298,12 @@ export default function AddItemScreen() {
                             control={control}
                             name="name"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={inp(colors)}
+                                <AppInput
+                                    containerStyle={s.inputWrap}
                                     value={value}
                                     onChangeText={onChange}
+                                    inputType="name"
                                     placeholder="Product/service name"
-                                    placeholderTextColor={colors.textSecondary}
                                 />
                             )}
                         />
@@ -290,12 +316,12 @@ export default function AddItemScreen() {
                                     control={control}
                                     name="sku"
                                     render={({ field: { onChange, value } }) => (
-                                        <TextInput
-                                            style={inp(colors)}
+                                        <AppInput
+                                            containerStyle={s.inputWrap}
                                             value={value}
                                             onChangeText={onChange}
+                                            inputType="text"
                                             placeholder="Item code"
-                                            placeholderTextColor={colors.textSecondary}
                                         />
                                     )}
                                 />
@@ -307,12 +333,12 @@ export default function AddItemScreen() {
                                     control={control}
                                     name="barcode"
                                     render={({ field: { onChange, value } }) => (
-                                        <TextInput
-                                            style={inp(colors)}
+                                        <AppInput
+                                            containerStyle={s.inputWrap}
                                             value={value}
                                             onChangeText={onChange}
+                                            inputType="text"
                                             placeholder="EAN / QR"
-                                            placeholderTextColor={colors.textSecondary}
                                         />
                                     )}
                                 />
@@ -332,12 +358,12 @@ export default function AddItemScreen() {
                                     control={control}
                                     name="hsnCode"
                                     render={({ field: { onChange, value } }) => (
-                                        <TextInput
-                                            style={inp(colors)}
+                                        <AppInput
+                                            containerStyle={s.inputWrap}
                                             value={value}
                                             onChangeText={onChange}
+                                            inputType="text"
                                             placeholder="GST HSN"
-                                            placeholderTextColor={colors.textSecondary}
                                         />
                                     )}
                                 />
@@ -354,33 +380,17 @@ export default function AddItemScreen() {
                                     control={control}
                                     name="category"
                                     render={({ field: { onChange, value } }) => (
-                                        <TextInput
-                                            style={inp(colors)}
-                                            value={value}
-                                            onChangeText={onChange}
-                                            placeholder="Electronics..."
-                                            placeholderTextColor={colors.textSecondary}
+                                        <SelectField
+                                            value={value ?? null}
+                                            onChange={onChange}
+                                            placeholder="Select category"
+                                            title="Item Category"
+                                            options={categorySelectOptions}
+                                            allowClear
+                                            onClear={() => onChange('')}
                                         />
                                     )}
                                 />
-                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.suggestionList}>
-                                    <View style={s.suggestionRow}>
-                                        {categoryOptions.map((entry) => {
-                                            const selected = (selectedCategory ?? '').toLowerCase() === entry.toLowerCase();
-                                            return (
-                                                <Pressable
-                                                    key={entry}
-                                                    style={[s.suggestionChip, { backgroundColor: selected ? colors.primary : colors.surfaceVariant }]}
-                                                    onPress={() => setValue('category', entry)}
-                                                >
-                                                    <Text style={{ color: selected ? '#fff' : colors.text, fontWeight: '600', fontSize: 12 }}>
-                                                        {entry}
-                                                    </Text>
-                                                </Pressable>
-                                            );
-                                        })}
-                                    </View>
-                                </ScrollView>
                                 <Pressable
                                     style={s.scanInlineAction}
                                     onPress={() => router.push('/(main)/more/item-masters?focus=categories' as Parameters<typeof router.push>[0])}
@@ -392,21 +402,19 @@ export default function AddItemScreen() {
                     </View>
 
                     <Field label="Unit" colors={colors}>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                            <View style={s.suggestionRow}>
-                                {unitOptions.map((entry) => (
-                                    <Pressable
-                                        key={entry}
-                                        style={[s.unitChip, { backgroundColor: selectedUnit === entry ? colors.primary : colors.surfaceVariant }]}
-                                        onPress={() => setValue('unit', entry)}
-                                    >
-                                        <Text style={{ color: selectedUnit === entry ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>
-                                            {entry}
-                                        </Text>
-                                    </Pressable>
-                                ))}
-                            </View>
-                        </ScrollView>
+                        <Controller
+                            control={control}
+                            name="unit"
+                            render={({ field: { onChange, value } }) => (
+                                <SelectField
+                                    value={value ?? null}
+                                    onChange={onChange}
+                                    placeholder="Select unit"
+                                    title="Item Unit"
+                                    options={unitSelectOptions}
+                                />
+                            )}
+                        />
                         <Pressable
                             style={s.scanInlineAction}
                             onPress={() => router.push('/(main)/more/item-masters?focus=units' as Parameters<typeof router.push>[0])}
@@ -426,13 +434,12 @@ export default function AddItemScreen() {
                                     control={control}
                                     name="salePrice"
                                     render={({ field: { onChange, value } }) => (
-                                        <TextInput
-                                            style={inp(colors)}
+                                        <AppInput
+                                            containerStyle={s.inputWrap}
                                             value={String(value)}
                                             onChangeText={onChange}
-                                            keyboardType="numeric"
+                                            inputType="decimal"
                                             placeholder="0.00"
-                                            placeholderTextColor={colors.textSecondary}
                                         />
                                     )}
                                 />
@@ -444,13 +451,12 @@ export default function AddItemScreen() {
                                     control={control}
                                     name="mrp"
                                     render={({ field: { onChange, value } }) => (
-                                        <TextInput
-                                            style={inp(colors)}
+                                        <AppInput
+                                            containerStyle={s.inputWrap}
                                             value={String(value)}
                                             onChangeText={onChange}
-                                            keyboardType="numeric"
+                                            inputType="decimal"
                                             placeholder="0.00"
-                                            placeholderTextColor={colors.textSecondary}
                                         />
                                     )}
                                 />
@@ -463,34 +469,30 @@ export default function AddItemScreen() {
                             control={control}
                             name="purchasePrice"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={inp(colors)}
+                                <AppInput
+                                    containerStyle={s.inputWrap}
                                     value={String(value)}
                                     onChangeText={onChange}
-                                    keyboardType="numeric"
+                                    inputType="decimal"
                                     placeholder="0.00"
-                                    placeholderTextColor={colors.textSecondary}
                                 />
                             )}
                         />
                     </Field>
 
                     <Field label="GST Rate %" colors={colors}>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                            <View style={s.suggestionRow}>
-                                {GST_RATES.map((entry) => (
-                                    <Pressable
-                                        key={entry}
-                                        style={[s.unitChip, { backgroundColor: gstRate === entry ? colors.primary : colors.surfaceVariant }]}
-                                        onPress={() => setValue('gstRate', entry)}
-                                    >
-                                        <Text style={{ color: gstRate === entry ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>
-                                            {entry}%
-                                        </Text>
-                                    </Pressable>
-                                ))}
-                            </View>
-                        </ScrollView>
+                        <Controller
+                            control={control}
+                            name="gstRate"
+                            render={({ field: { onChange, value } }) => (
+                                <SelectField
+                                    value={String(value ?? gstRate ?? 0)}
+                                    onChange={(next) => onChange(Number(next))}
+                                    title="GST Slab"
+                                    options={gstRateOptions}
+                                />
+                            )}
+                        />
                     </Field>
 
                     <View style={s.toggleRow}>
@@ -514,13 +516,12 @@ export default function AddItemScreen() {
                                     control={control}
                                     name="stock"
                                     render={({ field: { onChange, value } }) => (
-                                        <TextInput
-                                            style={inp(colors)}
+                                        <AppInput
+                                            containerStyle={s.inputWrap}
                                             value={String(value)}
                                             onChangeText={onChange}
-                                            keyboardType="numeric"
+                                            inputType="number"
                                             placeholder="0"
-                                            placeholderTextColor={colors.textSecondary}
                                         />
                                     )}
                                 />
@@ -532,13 +533,12 @@ export default function AddItemScreen() {
                                     control={control}
                                     name="reorderLevel"
                                     render={({ field: { onChange, value } }) => (
-                                        <TextInput
-                                            style={inp(colors)}
+                                        <AppInput
+                                            containerStyle={s.inputWrap}
                                             value={String(value)}
                                             onChangeText={onChange}
-                                            keyboardType="numeric"
+                                            inputType="number"
                                             placeholder="5"
-                                            placeholderTextColor={colors.textSecondary}
                                         />
                                     )}
                                 />
@@ -550,16 +550,51 @@ export default function AddItemScreen() {
                             control={control}
                             name="location"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={inp(colors)}
+                                <AppInput
+                                    containerStyle={s.inputWrap}
                                     value={value}
                                     onChangeText={onChange}
+                                    inputType="text"
                                     placeholder="Shelf A3, Rack 2..."
-                                    placeholderTextColor={colors.textSecondary}
                                 />
                             )}
                         />
                     </Field>
+
+                    <View style={s.row}>
+                        <View style={{ flex: 1 }}>
+                            <Field label="Expiry Date" colors={colors}>
+                                <Controller
+                                    control={control}
+                                    name="expiresAt"
+                                    render={({ field: { onChange, value } }) => (
+                                        <DateField
+                                            value={value ?? null}
+                                            onChange={onChange}
+                                            placeholder="Set expiry date"
+                                            title="Expiry Date"
+                                        />
+                                    )}
+                                />
+                            </Field>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Field label="Auto Delete Date" colors={colors}>
+                                <Controller
+                                    control={control}
+                                    name="autoDeleteAt"
+                                    render={({ field: { onChange, value } }) => (
+                                        <DateField
+                                            value={value ?? null}
+                                            onChange={onChange}
+                                            placeholder="Set auto delete date"
+                                            title="Auto Delete Date"
+                                        />
+                                    )}
+                                />
+                            </Field>
+                        </View>
+                    </View>
                 </View>
 
                 <View style={{ height: 80 }} />
@@ -588,15 +623,6 @@ function Field({
     );
 }
 
-const inp = (colors: ColorPalette) => ({
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    color: colors.text,
-    fontSize: 14,
-});
-
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
@@ -609,16 +635,6 @@ const styles = (colors: ColorPalette) =>
         permissionHint: {
             fontSize: 12,
         },
-        header: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-        },
-        back: { fontWeight: '600', fontSize: 14 },
-        title: { fontWeight: '700', fontSize: 17, flex: 1, textAlign: 'center' },
-        save: { fontWeight: '700', fontSize: 15 },
         section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
         sectionTitle: {
             color: colors.textSecondary,
@@ -627,6 +643,7 @@ const styles = (colors: ColorPalette) =>
             letterSpacing: 0.8,
             marginBottom: Spacing.sm,
         },
+        inputWrap: { marginBottom: Spacing.xs },
         row: { flexDirection: 'row', gap: Spacing.sm },
         suggestionList: { marginTop: Spacing.xs },
         suggestionRow: { flexDirection: 'row', gap: Spacing.sm },

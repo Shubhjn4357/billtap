@@ -1,21 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toUserMessage } from '../../../api/client';
 import { settingsApi } from '../../../api/endpoints';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppInput } from '../../../components/ui/AppInput';
 import {
     DEFAULT_ITEM_CATEGORIES,
     DEFAULT_ITEM_UNITS,
@@ -24,6 +19,7 @@ import {
     withCustomItemCategories,
     withCustomItemUnits,
 } from '../../../utils/itemMasters';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 const unique = (values: string[]) => {
     const seen = new Set<string>();
@@ -42,10 +38,12 @@ const unique = (values: string[]) => {
 };
 
 export default function ItemMastersScreen() {
+    const dialog = useAppDialog();
     const { focus } = useLocalSearchParams<{ focus?: string }>();
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/more');
     const queryClient = useQueryClient();
 
     const [newCategory, setNewCategory] = useState('');
@@ -85,10 +83,10 @@ export default function ItemMastersScreen() {
         },
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ['settings-section', 'ITEM_SETTINGS'] });
-            Alert.alert('Saved', 'Item categories and units updated.');
+            dialog.alert('Saved', 'Item categories and units updated.');
         },
         onError: (error) => {
-            Alert.alert('Save failed', toUserMessage(error, 'Unable to save item masters.'));
+            dialog.alert('Save failed', toUserMessage(error, 'Unable to save item masters.'));
         },
     });
 
@@ -117,24 +115,31 @@ export default function ItemMastersScreen() {
     if (isLoading) {
         return (
             <SafeAreaView style={s.safe} edges={['top']}>
-                <View style={s.centered}>
-                    <ActivityIndicator color={colors.primary} />
-                </View>
+                <AppTopBar title="Item Masters" onBackPress={smartBack} />
+                <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
             </SafeAreaView>
         );
     }
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Item Masters</Text>
-                <Pressable onPress={() => save()} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.save, { color: colors.primary }]}>Save</Text>}
-                </Pressable>
-            </View>
+            <AppTopBar
+                title="Item Masters"
+                subtitle="Categories and units"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={[s.saveBtn, { backgroundColor: colors.primary }]} onPress={() => save()} disabled={isPending}>
+                        {isPending ? (
+                            <ActivityIndicator size="small" color={colors.onPrimary} />
+                        ) : (
+                            <>
+                                <MaterialCommunityIcons name="content-save-outline" size={15} color={colors.onPrimary} />
+                                <Text style={s.saveBtnText}>Save</Text>
+                            </>
+                        )}
+                    </Pressable>
+                )}
+            />
 
             <ScrollView contentContainerStyle={s.content}>
                 <View style={[s.card, focus === 'categories' ? s.focusedCard : null]}>
@@ -143,12 +148,12 @@ export default function ItemMastersScreen() {
                         Preset: {DEFAULT_ITEM_CATEGORIES.length} | Total available: {mergedCategoryCount}
                     </Text>
                     <View style={s.inputRow}>
-                        <TextInput
-                            style={[s.input, { borderColor: colors.border, color: colors.text }]}
+                        <AppInput
+                            inputType="text"
                             value={newCategory}
                             onChangeText={setNewCategory}
                             placeholder="Add custom category"
-                            placeholderTextColor={colors.textSecondary}
+                            containerStyle={s.inputWrap}
                         />
                         <Pressable style={[s.addBtn, { backgroundColor: colors.primary }]} onPress={addCategory}>
                             <Text style={s.addBtnText}>Add</Text>
@@ -177,12 +182,12 @@ export default function ItemMastersScreen() {
                         Preset: {DEFAULT_ITEM_UNITS.length} | Total available: {mergedUnitCount}
                     </Text>
                     <View style={s.inputRow}>
-                        <TextInput
-                            style={[s.input, { borderColor: colors.border, color: colors.text }]}
+                        <AppInput
+                            inputType="text"
                             value={newUnit}
                             onChangeText={setNewUnit}
                             placeholder="Add custom unit"
-                            placeholderTextColor={colors.textSecondary}
+                            containerStyle={s.inputWrap}
                         />
                         <Pressable style={[s.addBtn, { backgroundColor: colors.primary }]} onPress={addUnit}>
                             <Text style={s.addBtnText}>Add</Text>
@@ -214,20 +219,17 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
+        saveBtn: {
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            gap: 4,
+            minWidth: 76,
+            justifyContent: 'center',
         },
-        back: { fontWeight: '600', fontSize: 14 },
-        title: {
-            fontSize: Typography.title.size,
-            fontWeight: '700',
-            color: colors.text,
-        },
-        save: { fontSize: 14, fontWeight: '700' },
+        saveBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.md },
         card: {
             backgroundColor: colors.card,
@@ -255,14 +257,7 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             gap: Spacing.sm,
         },
-        input: {
-            flex: 1,
-            borderWidth: 1,
-            borderRadius: Radius.md,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            fontSize: 14,
-        },
+        inputWrap: { flex: 1 },
         addBtn: {
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.md,
@@ -271,7 +266,7 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
         },
         addBtnText: {
-            color: '#fff',
+            color: colors.onPrimary,
             fontWeight: '700',
             fontSize: 12,
         },

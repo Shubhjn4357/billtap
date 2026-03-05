@@ -1,28 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { invoiceApi, type InvoiceCreateInput } from '../../api/endpoints';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invoiceApi, itemApi, type InvoiceCreateInput } from '../../api/endpoints';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { GST_SLABS } from '../../constants/gstRates';
 import { InvoiceType, PaymentMode } from '../../constants/enums';
 import { useAuthStore } from '../../store/authStore';
 import { useInvoiceBuilderStore, useInvoiceTotals } from '../../store/invoiceBuilderStore';
-import type { InvoiceLineItem } from '../../types/domain';
+import type { InvoiceLineItem, Item } from '../../types/domain';
 import { useSmartBack } from '../../hooks/useSmartBack';
 import { toUserMessage } from '../../api/client';
 import { canPerformAction } from '../../utils/accessControl';
+import { SelectField, type SelectOption } from '../ui/SelectField';
+import { DateField } from '../ui/DateField';
+import { AppTopBar } from '../ui/AppTopBar';
+import { AppInput } from '../ui/AppInput';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 export type BillingDocumentConfig = {
     title: string;
@@ -38,6 +35,9 @@ type LineItemRowProps = {
     line: InvoiceLineItem;
     onUpdate: (key: string, updates: Partial<InvoiceLineItem>) => void;
     onRemove: (key: string) => void;
+    transactionType?: BillingDocumentConfig['transactionType'];
+    itemOptions: SelectOption[];
+    itemById: Record<string, Item>;
     colors: ColorPalette;
     gstEnabled: boolean;
 };
@@ -48,6 +48,19 @@ const toNumber = (value: string) => {
 };
 
 const formatDate = (value: string) => value.slice(0, 10);
+
+const normalizeGstRate = (value: number) => {
+    if (GST_SLABS.includes(value as (typeof GST_SLABS)[number])) {
+        return value;
+    }
+    const nearest = GST_SLABS.reduce((best, slab) => {
+        if (Math.abs(slab - value) < Math.abs(best - value)) {
+            return slab;
+        }
+        return best;
+    }, GST_SLABS[0]);
+    return nearest;
+};
 
 const generateBillNumber = (seed: string) => {
     const date = new Date();
@@ -76,6 +89,7 @@ const withNoGst = (line: InvoiceLineItem): InvoiceLineItem => {
 };
 
 export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig }) {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
@@ -108,6 +122,29 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
 
     const [gstEnabled, setGstEnabled] = useState(config.invoiceType !== InvoiceType.BILL_OF_SUPPLY);
     const [eWayBillNumber, setEWayBillNumber] = useState('');
+
+    const { data: itemCatalogResponse } = useQuery({
+        queryKey: ['billing-item-catalog'],
+        queryFn: () => itemApi.list({ limit: 400 }),
+        staleTime: 5 * 60_000,
+    });
+    const itemCatalog = useMemo(() => itemCatalogResponse?.items ?? [], [itemCatalogResponse?.items]);
+    const itemOptions: SelectOption[] = useMemo(
+        () =>
+            itemCatalog.map((item) => ({
+                label: item.name,
+                value: item.id,
+                description: `Stock ${item.stock} ${item.unit ?? 'pcs'} | GST ${item.gstRate}%`,
+            })),
+        [itemCatalog]
+    );
+    const itemById = useMemo(() => {
+        const map: Record<string, Item> = {};
+        itemCatalog.forEach((item) => {
+            map[item.id] = item;
+        });
+        return map;
+    }, [itemCatalog]);
 
     useEffect(() => {
         init((config.invoiceType as InvoiceType) ?? InvoiceType.TAX_INVOICE);
@@ -175,31 +212,38 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
             smartBack();
         },
         onError: (error) => {
-            Alert.alert('Save failed', toUserMessage(error, 'Could not save transaction.'));
+            dialog.alert('Save failed', toUserMessage(error, 'Could not save transaction.'));
         },
     });
 
+    const handleSave = () => {
+        if (!canCreateBilling) {
+            dialog.alert('Access denied', 'Your role cannot create billing transactions.');
+            return;
+        }
+        submit();
+    };
+
     return (
         <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-            <View style={s.header}>
-                <Pressable onPress={smartBack} style={s.backBtn}>
-                    <Text style={[s.backText, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={[s.headerTitle, { color: colors.text }]}>{config.title}</Text>
+            <AppTopBar
+                title={config.title}
+                subtitle={config.billMode === 'ESTIMATE' ? 'Non-posting document' : 'Posting document'}
+                onBackPress={smartBack}
+                rightAction={(
                 <Pressable
                     style={[s.saveBtn, { backgroundColor: isPending || !canCreateBilling ? colors.border : colors.primary }]}
-                    onPress={() => {
-                        if (!canCreateBilling) {
-                            Alert.alert('Access denied', 'Your role cannot create billing transactions.');
-                            return;
-                        }
-                        submit();
-                    }}
+                    onPress={handleSave}
                     disabled={isPending || !canCreateBilling}
                 >
-                    {isPending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>Save</Text>}
+                    {isPending ? (
+                        <ActivityIndicator color={colors.onPrimary} size="small" />
+                    ) : (
+                        <MaterialCommunityIcons name="content-save-outline" color={colors.onPrimary} size={18} />
+                    )}
                 </Pressable>
-            </View>
+            )}
+            />
 
             <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={s.scrollContent}>
                 {config.helperText ? (
@@ -219,12 +263,12 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
 
                     <Text style={s.inputLabel}>Bill Number</Text>
                     <View style={s.row}>
-                        <TextInput
-                            style={[s.input, s.flex1, { backgroundColor: colors.surfaceVariant, borderColor: colors.border, color: colors.text }]}
+                        <AppInput
+                            inputType="text"
+                            containerStyle={s.flex1}
                             value={state.invoiceNumber}
                             onChangeText={setInvoiceNumber}
                             placeholder="Invoice number"
-                            placeholderTextColor={colors.textSecondary}
                         />
                         <Pressable
                             style={[s.secondaryBtn, { borderColor: colors.border }]}
@@ -234,42 +278,39 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                         </Pressable>
                     </View>
 
-                    <Text style={s.inputLabel}>Invoice Date (YYYY-MM-DD)</Text>
-                    <TextInput
-                        style={[s.input, { backgroundColor: colors.surfaceVariant, borderColor: colors.border, color: colors.text }]}
+                    <Text style={s.inputLabel}>Invoice Date</Text>
+                    <DateField
                         value={state.invoiceDate}
-                        onChangeText={setInvoiceDate}
-                        placeholder="2026-03-04"
-                        placeholderTextColor={colors.textSecondary}
+                        onChange={(value) => setInvoiceDate(value ?? formatDate(new Date().toISOString()))}
+                        placeholder="Select invoice date"
+                        title="Invoice Date"
+                        allowClear={false}
                     />
 
                     <Text style={s.inputLabel}>Due Date (optional)</Text>
-                    <TextInput
-                        style={[s.input, { backgroundColor: colors.surfaceVariant, borderColor: colors.border, color: colors.text }]}
-                        value={state.dueDate ?? ''}
-                        onChangeText={(value) => setDueDate(value.trim() ? value : null)}
-                        placeholder="2026-03-11"
-                        placeholderTextColor={colors.textSecondary}
+                    <DateField
+                        value={state.dueDate}
+                        onChange={setDueDate}
+                        placeholder="Select due date"
+                        title="Due Date"
                     />
 
                     {gstEnabled ? (
                         <>
                             <Text style={s.inputLabel}>Place Of Supply</Text>
-                            <TextInput
-                                style={[s.input, { backgroundColor: colors.surfaceVariant, borderColor: colors.border, color: colors.text }]}
+                            <AppInput
+                                inputType="text"
                                 value={state.placeOfSupply}
                                 onChangeText={setPlaceOfSupply}
                                 placeholder="State / UT"
-                                placeholderTextColor={colors.textSecondary}
                             />
 
                             <Text style={s.inputLabel}>E-Way Bill Number (optional)</Text>
-                            <TextInput
-                                style={[s.input, { backgroundColor: colors.surfaceVariant, borderColor: colors.border, color: colors.text }]}
+                            <AppInput
+                                inputType="text"
                                 value={eWayBillNumber}
                                 onChangeText={setEWayBillNumber}
                                 placeholder="Enter e-way bill number"
-                                placeholderTextColor={colors.textSecondary}
                             />
 
                             <View style={s.toggleRow}>
@@ -326,6 +367,9 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                             line={line}
                             onUpdate={updateLine}
                             onRemove={removeLine}
+                            transactionType={config.transactionType}
+                            itemOptions={itemOptions}
+                            itemById={itemById}
                             colors={colors}
                             gstEnabled={gstEnabled}
                         />
@@ -360,13 +404,11 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                         </Pressable>
                     </View>
                     <Text style={s.inputLabel}>Paid Amount</Text>
-                    <TextInput
-                        style={[s.input, { backgroundColor: colors.surfaceVariant, borderColor: colors.border, color: colors.text }]}
+                    <AppInput
+                        inputType="decimal"
                         value={String(state.paidAmount)}
                         onChangeText={(value) => setPaidAmount(toNumber(value))}
-                        keyboardType="numeric"
                         placeholder="0"
-                        placeholderTextColor={colors.textSecondary}
                     />
                 </View>
 
@@ -382,10 +424,11 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
 
                 <View style={[s.card, { backgroundColor: colors.card }]}>
                     <Text style={s.fieldTitle}>Notes</Text>
-                    <TextInput
-                        style={[s.notesInput, { backgroundColor: colors.surfaceVariant, color: colors.text, borderColor: colors.border }]}
+                    <AppInput
+                        inputType="text"
+                        containerStyle={s.notesInputWrap}
+                        style={[s.notesInput, { color: colors.text }]}
                         placeholder="Add notes or terms..."
-                        placeholderTextColor={colors.textSecondary}
                         value={state.notes}
                         onChangeText={setNotes}
                         multiline
@@ -397,53 +440,92 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
     );
 }
 
-function LineItemRow({ line, onUpdate, onRemove, colors, gstEnabled }: LineItemRowProps) {
+function LineItemRow({
+    line,
+    onUpdate,
+    onRemove,
+    transactionType,
+    itemOptions,
+    itemById,
+    colors,
+    gstEnabled,
+}: LineItemRowProps) {
+    const selectedItem = line.itemId ? itemById[line.itemId] : undefined;
+    const resolveRateFromItem = (item: Item) => {
+        if (transactionType === 'PURCHASE' || transactionType === 'RETURN_INWARD') {
+            return item.purchasePrice > 0 ? item.purchasePrice : item.salePrice;
+        }
+        return item.salePrice;
+    };
+
     return (
         <View style={[lineStyles.card, { backgroundColor: colors.surfaceVariant }]}>
+            <SelectField
+                value={line.itemId}
+                onChange={(itemId) => {
+                    const selected = itemById[itemId];
+                    if (!selected) return;
+                    onUpdate(line._key, {
+                        itemId: selected.id,
+                        description: selected.name,
+                        unit: selected.unit ?? line.unit ?? 'pcs',
+                        rate: resolveRateFromItem(selected),
+                        gstRate: normalizeGstRate(Number(selected.gstRate ?? 0)),
+                    });
+                }}
+                title="Select Inventory Item"
+                options={itemOptions}
+                placeholder="Select item from inventory"
+                allowClear
+                onClear={() =>
+                    onUpdate(line._key, {
+                        itemId: null,
+                    })
+                }
+            />
+            {selectedItem ? (
+                <Text style={[lineStyles.stockHint, { color: selectedItem.stock <= 0 ? colors.error : colors.textSecondary }]}>
+                    Available stock: {selectedItem.stock} {selectedItem.unit ?? 'pcs'}
+                </Text>
+            ) : null}
             <View style={lineStyles.row1}>
-                <TextInput
-                    style={[lineStyles.desc, { color: colors.text, flex: 1 }]}
+                <AppInput
+                    inputType="text"
+                    containerStyle={lineStyles.flex1}
                     value={line.description}
                     onChangeText={(value) => onUpdate(line._key, { description: value })}
                     placeholder="Item description"
-                    placeholderTextColor={colors.textSecondary}
                 />
-                <Pressable onPress={() => onRemove(line._key)}>
-                    <Text style={{ color: colors.error, fontSize: 18, paddingHorizontal: 4 }}>x</Text>
+                <Pressable style={lineStyles.removeBtn} onPress={() => onRemove(line._key)}>
+                    <MaterialCommunityIcons name="close-circle-outline" color={colors.error} size={22} />
                 </Pressable>
             </View>
             <View style={lineStyles.row2}>
-                <View style={lineStyles.field}>
-                    <Text style={[lineStyles.label, { color: colors.textSecondary }]}>Qty</Text>
-                    <TextInput
-                        style={[lineStyles.input, { color: colors.text, borderColor: colors.border }]}
-                        value={String(line.quantity)}
-                        onChangeText={(value) => onUpdate(line._key, { quantity: toNumber(value) })}
-                        keyboardType="numeric"
-                    />
-                </View>
-                <View style={lineStyles.field}>
-                    <Text style={[lineStyles.label, { color: colors.textSecondary }]}>Rate</Text>
-                    <TextInput
-                        style={[lineStyles.input, { color: colors.text, borderColor: colors.border }]}
-                        value={String(line.rate)}
-                        onChangeText={(value) => onUpdate(line._key, { rate: toNumber(value) })}
-                        keyboardType="numeric"
-                    />
-                </View>
+                <AppInput
+                    label="Qty"
+                    inputType="decimal"
+                    containerStyle={lineStyles.field}
+                    value={String(line.quantity)}
+                    onChangeText={(value) => onUpdate(line._key, { quantity: toNumber(value) })}
+                />
+                <AppInput
+                    label="Rate"
+                    inputType="decimal"
+                    containerStyle={lineStyles.field}
+                    value={String(line.rate)}
+                    onChangeText={(value) => onUpdate(line._key, { rate: toNumber(value) })}
+                />
                 {gstEnabled ? (
-                    <View style={lineStyles.field}>
-                        <Text style={[lineStyles.label, { color: colors.textSecondary }]}>GST%</Text>
-                        <TextInput
-                            style={[lineStyles.input, { color: colors.text, borderColor: colors.border }]}
-                            value={String(line.gstRate)}
-                            onChangeText={(value) => onUpdate(line._key, { gstRate: toNumber(value) })}
-                            keyboardType="numeric"
-                        />
-                    </View>
+                    <AppInput
+                        label="GST%"
+                        inputType="decimal"
+                        containerStyle={lineStyles.field}
+                        value={String(line.gstRate)}
+                        onChangeText={(value) => onUpdate(line._key, { gstRate: toNumber(value) })}
+                    />
                 ) : null}
                 <View style={lineStyles.field}>
-                    <Text style={[lineStyles.label, { color: colors.textSecondary }]}>Total</Text>
+                    <Text style={[lineStyles.totalLabel, { color: colors.textSecondary }]}>Total</Text>
                     <Text style={[lineStyles.total, { color: colors.text }]}>
                         Rs {line.total.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                     </Text>
@@ -479,24 +561,13 @@ function TotalRow({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            gap: Spacing.sm,
-        },
-        backBtn: { paddingRight: Spacing.sm },
-        backText: { fontSize: 14, fontWeight: '600' },
-        headerTitle: { flex: 1, fontWeight: '700', fontSize: Typography.title.size, textAlign: 'center' },
         saveBtn: {
+            width: 38,
+            height: 38,
             borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.sm,
-            minWidth: 64,
             alignItems: 'center',
+            justifyContent: 'center',
         },
-        saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
         scrollContent: { paddingBottom: 120, gap: Spacing.sm },
         helperCard: {
             marginHorizontal: Spacing.lg,
@@ -521,17 +592,10 @@ const styles = (colors: ColorPalette) =>
             fontWeight: '600',
             marginTop: 2,
         },
-        input: {
-            borderWidth: 1,
-            borderRadius: Radius.md,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            fontSize: 14,
-        },
         row: {
             flexDirection: 'row',
             gap: Spacing.sm,
-            alignItems: 'center',
+            alignItems: 'flex-end',
         },
         rowBetween: {
             flexDirection: 'row',
@@ -585,16 +649,18 @@ const styles = (colors: ColorPalette) =>
         },
         totalsCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md, backgroundColor: colors.card },
         divider: { height: 1, marginVertical: Spacing.sm },
-        notesInput: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, minHeight: 80, textAlignVertical: 'top' },
+        notesInputWrap: { marginTop: Spacing.xs },
+        notesInput: { minHeight: 72, textAlignVertical: 'top' },
     });
 
 const lineStyles = StyleSheet.create({
     card: { borderRadius: Radius.md, padding: Spacing.sm, marginBottom: Spacing.sm },
-    row1: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.xs },
-    desc: { fontSize: 14, fontWeight: '500' },
-    row2: { flexDirection: 'row', gap: Spacing.xs },
+    stockHint: { fontSize: 11, fontWeight: '500', marginBottom: Spacing.xs },
+    row1: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.xs, marginBottom: Spacing.xs },
+    flex1: { flex: 1 },
+    removeBtn: { marginBottom: 6 },
+    row2: { flexDirection: 'row', gap: Spacing.xs, alignItems: 'flex-start' },
     field: { flex: 1 },
-    label: { fontSize: 10, marginBottom: 2 },
-    input: { borderWidth: 1, borderRadius: 4, paddingHorizontal: Spacing.xs, paddingVertical: 4, fontSize: 13 },
-    total: { fontWeight: '700', fontSize: 12, paddingTop: 4 },
+    totalLabel: { fontSize: 11, fontWeight: '700', marginBottom: 6 },
+    total: { fontWeight: '700', fontSize: 12, paddingTop: 12 },
 });

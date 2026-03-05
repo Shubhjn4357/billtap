@@ -1,24 +1,19 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Pressable,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, FlatList, Pressable, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { operationsApi } from '../../../api/endpoints';
 import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useOrganizationRole } from '../../../store/authStore';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { DateField } from '../../../components/ui/DateField';
+import { AppInput } from '../../../components/ui/AppInput';
 import type { FinancialPeriod, OperationApproval, OperationsControls } from '../../../types/domain';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 const toDateInput = (value?: string) => {
     if (!value) return new Date().toISOString().slice(0, 10);
@@ -34,9 +29,11 @@ const APPROVAL_ACTION_LABEL: Record<string, string> = {
 };
 
 export default function OperationsScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/more');
     const qc = useQueryClient();
     const organizationRole = useOrganizationRole();
     const canReviewApprovals = organizationRole === 'owner' || organizationRole === 'manager';
@@ -135,11 +132,11 @@ export default function OperationsScreen() {
         try {
             const response = await updateControls({ ...controls, [key]: value });
             if (response.data?.status === 'PENDING_APPROVAL') {
-                Alert.alert('Approval required', 'Control change has been sent for approval.');
+                dialog.alert('Approval required', 'Control change has been sent for approval.');
                 await qc.invalidateQueries({ queryKey: ['operations-approvals'] });
             }
         } catch (error) {
-            Alert.alert('Save failed', error instanceof Error ? error.message : 'Unable to update control.');
+            dialog.alert('Save failed', error instanceof Error ? error.message : 'Unable to update control.');
         }
     };
 
@@ -147,17 +144,17 @@ export default function OperationsScreen() {
         try {
             const response = await lockPeriod();
             if (response.data?.status === 'PENDING_APPROVAL') {
-                Alert.alert('Approval required', 'Lock request is pending approval.');
+                dialog.alert('Approval required', 'Lock request is pending approval.');
                 return;
             }
-            Alert.alert('Period locked', 'Financial period has been added as locked.');
+            dialog.alert('Period locked', 'Financial period has been added as locked.');
         } catch (error) {
-            Alert.alert('Lock failed', error instanceof Error ? error.message : 'Unable to lock period.');
+            dialog.alert('Lock failed', error instanceof Error ? error.message : 'Unable to lock period.');
         }
     };
 
     const onClose = (id: string) => {
-        Alert.alert('Close period', 'Mark this period as closed?', [
+        dialog.alert('Close period', 'Mark this period as closed?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Close',
@@ -165,10 +162,10 @@ export default function OperationsScreen() {
                     try {
                         const response = await closePeriod(id);
                         if (response.data?.status === 'PENDING_APPROVAL') {
-                            Alert.alert('Approval required', 'Close request is pending approval.');
+                            dialog.alert('Approval required', 'Close request is pending approval.');
                         }
                     } catch (error) {
-                        Alert.alert('Close failed', error instanceof Error ? error.message : 'Unable to close period.');
+                        dialog.alert('Close failed', error instanceof Error ? error.message : 'Unable to close period.');
                     }
                 },
             },
@@ -176,7 +173,7 @@ export default function OperationsScreen() {
     };
 
     const onReopen = (id: string) => {
-        Alert.alert('Reopen period', 'Reopen this period for entries?', [
+        dialog.alert('Reopen period', 'Reopen this period for entries?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Reopen',
@@ -184,10 +181,10 @@ export default function OperationsScreen() {
                     try {
                         const response = await reopenPeriod(id);
                         if (response.data?.status === 'PENDING_APPROVAL') {
-                            Alert.alert('Approval required', 'Reopen request is pending approval.');
+                            dialog.alert('Approval required', 'Reopen request is pending approval.');
                         }
                     } catch (error) {
-                        Alert.alert('Reopen failed', error instanceof Error ? error.message : 'Unable to reopen period.');
+                        dialog.alert('Reopen failed', error instanceof Error ? error.message : 'Unable to reopen period.');
                     }
                 },
             },
@@ -195,7 +192,7 @@ export default function OperationsScreen() {
     };
 
     const onApprove = (approvalId: string) => {
-        Alert.alert('Approve request', 'Apply this pending request now?', [
+        dialog.alert('Approve request', 'Apply this pending request now?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Approve',
@@ -203,7 +200,7 @@ export default function OperationsScreen() {
                     try {
                         await approveApproval(approvalId);
                     } catch (error) {
-                        Alert.alert('Approve failed', error instanceof Error ? error.message : 'Unable to approve request.');
+                        dialog.alert('Approve failed', error instanceof Error ? error.message : 'Unable to approve request.');
                     }
                 },
             },
@@ -211,7 +208,7 @@ export default function OperationsScreen() {
     };
 
     const onReject = (approvalId: string) => {
-        Alert.alert('Reject request', 'Reject this pending request?', [
+        dialog.alert('Reject request', 'Reject this pending request?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Reject',
@@ -220,7 +217,7 @@ export default function OperationsScreen() {
                     try {
                         await rejectApproval(approvalId);
                     } catch (error) {
-                        Alert.alert('Reject failed', error instanceof Error ? error.message : 'Unable to reject request.');
+                        dialog.alert('Reject failed', error instanceof Error ? error.message : 'Unable to reject request.');
                     }
                 },
             },
@@ -231,13 +228,11 @@ export default function OperationsScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>{'< Back'}</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Operations Controls</Text>
-                <View style={{ width: 58 }} />
-            </View>
+            <AppTopBar
+                title="Operations Controls"
+                subtitle="Financial period and approval workflows"
+                onBackPress={smartBack}
+            />
 
             {controlsLoading || periodsLoading || approvalsLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
@@ -322,30 +317,30 @@ export default function OperationsScreen() {
 
                             <View style={[s.card, { backgroundColor: colors.card }]}>
                                 <Text style={[s.sectionTitle, { color: colors.text }]}>Lock New Financial Period</Text>
-                                <TextInput
-                                    style={[s.input, { borderColor: colors.border, color: colors.text }]}
+                                <DateField
                                     value={periodStart}
-                                    onChangeText={setPeriodStart}
-                                    placeholder="YYYY-MM-DD"
-                                    placeholderTextColor={colors.textSecondary}
+                                    placeholder="Period start"
+                                    title="Select Period Start"
+                                    onChange={(value) => setPeriodStart(value ?? '')}
                                 />
-                                <TextInput
-                                    style={[s.input, { borderColor: colors.border, color: colors.text }]}
+                                <DateField
                                     value={periodEnd}
-                                    onChangeText={setPeriodEnd}
-                                    placeholder="YYYY-MM-DD"
-                                    placeholderTextColor={colors.textSecondary}
+                                    placeholder="Period end"
+                                    title="Select Period End"
+                                    onChange={(value) => setPeriodEnd(value ?? '')}
                                 />
-                                <TextInput
-                                    style={[s.input, s.notesInput, { borderColor: colors.border, color: colors.text }]}
+                                <AppInput
+                                    inputType="text"
                                     value={notes}
                                     onChangeText={setNotes}
                                     placeholder="Notes (optional)"
-                                    placeholderTextColor={colors.textSecondary}
                                     multiline
+                                    numberOfLines={3}
+                                    containerStyle={s.notesInputWrap}
+                                    style={s.notesInput}
                                 />
                                 <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={onLockPeriod} disabled={lockingPeriod}>
-                                    {lockingPeriod ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.primaryBtnText}>Lock Period</Text>}
+                                    {lockingPeriod ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Lock Period</Text>}
                                 </Pressable>
                             </View>
 
@@ -423,9 +418,6 @@ const rowStyles = StyleSheet.create({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-        back: { width: 58, fontWeight: '600', fontSize: 14 },
-        title: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         card: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
         sectionTitle: { fontWeight: '700', fontSize: 14, marginBottom: Spacing.sm },
@@ -442,10 +434,10 @@ const styles = (colors: ColorPalette) =>
         },
         approvalTitle: { fontWeight: '700', fontSize: 13 },
         approvalActions: { flexDirection: 'row', gap: 6 },
-        input: { borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginBottom: Spacing.sm, fontSize: 14 },
+        notesInputWrap: { marginTop: Spacing.sm },
         notesInput: { minHeight: 72, textAlignVertical: 'top' },
         primaryBtn: { borderRadius: Radius.pill, alignItems: 'center', paddingVertical: Spacing.sm, marginTop: 4 },
-        primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+        primaryBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
         listHeaderWrap: { marginHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         blockTitle: { fontWeight: '700', fontSize: 12, textTransform: 'uppercase' },
         periodRow: {

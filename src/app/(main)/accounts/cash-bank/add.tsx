@@ -1,19 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { accountingApi } from '../../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { AppInput } from '../../../../components/ui/AppInput';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 type AccountKind = 'CASH' | 'BANK' | 'CHEQUE' | 'OTHER';
 
@@ -21,7 +17,6 @@ type AccountSummary = {
     id: string;
     code: string;
     name: string;
-    isActive: boolean;
 };
 
 const buildDefaultName = (kind: AccountKind) => {
@@ -40,9 +35,11 @@ const inferKind = (name: string): AccountKind => {
 };
 
 export default function AddCashBankAccountScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/accounts');
     const qc = useQueryClient();
     const { id } = useLocalSearchParams<{ id?: string }>();
     const isEdit = Boolean(id);
@@ -73,8 +70,8 @@ export default function AddCashBankAccountScreen() {
         mutationFn: async () => {
             const finalName = name.trim();
             if (!finalName) throw new Error('Account name is required.');
-            const generatedCode = code.trim() || `1${Date.now().toString().slice(-5)}`;
 
+            const generatedCode = code.trim() || `1${Date.now().toString().slice(-5)}`;
             if (isEdit && id) {
                 return accountingApi.updateAccount(id, {
                     name: finalName,
@@ -95,13 +92,13 @@ export default function AddCashBankAccountScreen() {
             qc.invalidateQueries({ queryKey: ['accounting-accounts'] });
 
             if (isEdit) {
-                Alert.alert('Saved', 'Cash/Bank account updated.');
+                dialog.alert('Saved', 'Cash/Bank account updated.');
                 router.back();
                 return;
             }
 
             const createdId = (res as { data?: { id?: string } })?.data?.id;
-            Alert.alert('Saved', 'Cash/Bank account created.');
+            dialog.alert('Saved', 'Cash/Bank account created.');
             if (createdId) {
                 router.replace(`/(main)/accounts/cash-bank/${createdId}` as Parameters<typeof router.replace>[0]);
                 return;
@@ -109,7 +106,7 @@ export default function AddCashBankAccountScreen() {
             router.back();
         },
         onError: (error) => {
-            Alert.alert(isEdit ? 'Update failed' : 'Create failed', error instanceof Error ? error.message : 'Unable to save account.');
+            dialog.alert(isEdit ? 'Update failed' : 'Create failed', error instanceof Error ? error.message : 'Unable to save account.');
         },
     });
 
@@ -122,23 +119,24 @@ export default function AddCashBankAccountScreen() {
 
     if (accountsLoading && isEdit) {
         return (
-            <SafeAreaView style={s.safe}>
+            <SafeAreaView style={s.safe} edges={['top']}>
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
             </SafeAreaView>
         );
     }
 
     return (
-        <SafeAreaView style={s.safe}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.headerAction, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>{isEdit ? 'Edit Account' : 'Add Account'}</Text>
-                <Pressable onPress={() => mutate()} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.headerAction, { color: colors.primary }]}>Save</Text>}
-                </Pressable>
-            </View>
+        <SafeAreaView style={s.safe} edges={['top']}>
+            <AppTopBar
+                title={isEdit ? 'Edit Account' : 'Add Account'}
+                subtitle="Cash and bank setup"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => mutate()} disabled={isPending}>
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                    </Pressable>
+                )}
+            />
 
             <View style={s.content}>
                 <Text style={[s.label, { color: colors.textSecondary }]}>Account Kind</Text>
@@ -152,7 +150,7 @@ export default function AddCashBankAccountScreen() {
                                     s.kindChip,
                                     {
                                         borderColor: selected ? colors.primary : colors.border,
-                                        backgroundColor: selected ? `${colors.primary}22` : colors.surfaceVariant,
+                                        backgroundColor: selected ? withAlpha(colors.primary, '22') : colors.surfaceVariant,
                                     },
                                 ]}
                                 onPress={() => onKindSelect(entry)}
@@ -164,31 +162,29 @@ export default function AddCashBankAccountScreen() {
                 </View>
 
                 <Text style={[s.label, { color: colors.textSecondary }]}>Account Name</Text>
-                <TextInput
+                <AppInput
+                    inputType="text"
+                    leadingIcon="bank-outline"
                     value={name}
                     onChangeText={setName}
                     placeholder="Account name"
-                    placeholderTextColor={colors.textSecondary}
-                    style={[s.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                 />
 
                 <Text style={[s.label, { color: colors.textSecondary }]}>Account Code (optional)</Text>
-                <TextInput
+                <AppInput
+                    inputType="text"
+                    leadingIcon="pound"
                     value={code}
                     onChangeText={setCode}
                     placeholder="Auto-generated if empty"
-                    placeholderTextColor={colors.textSecondary}
-                    style={[s.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                 />
 
-                <View style={[s.noteBox, { borderColor: colors.border, backgroundColor: colors.card }]}> 
-                    <Text style={[s.note, { color: colors.textSecondary }]}>
-                        Account is maintained under Assets and appears in Cash & Bank balances.
-                    </Text>
+                <View style={[s.noteBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[s.note, { color: colors.textSecondary }]}>Account is maintained under Assets and appears in Cash and Bank balances.</Text>
                 </View>
 
                 <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={() => mutate()} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryBtnText}>{isEdit ? 'Update Account' : 'Create Account'}</Text>}
+                    {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>{isEdit ? 'Update Account' : 'Create Account'}</Text>}
                 </Pressable>
             </View>
         </SafeAreaView>
@@ -198,18 +194,19 @@ export default function AddCashBankAccountScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        },
-        headerAction: { fontSize: 14, fontWeight: '700' },
-        title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
-        label: { fontSize: 12, fontWeight: '700', marginBottom: Spacing.xs, marginTop: Spacing.md },
+        saveBtn: {
+            minHeight: 34,
+            minWidth: 56,
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: Spacing.md,
+        },
+        saveText: { fontSize: 12, fontWeight: '700' },
+        content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.sm },
+        label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.sm },
         kindsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
         kindChip: {
             borderWidth: 1,
@@ -217,25 +214,18 @@ const styles = (colors: ColorPalette) =>
             paddingHorizontal: Spacing.md,
             paddingVertical: 7,
         },
-        input: {
-            borderWidth: 1,
-            borderRadius: Radius.md,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            fontSize: 14,
-        },
         noteBox: {
             borderWidth: 1,
             borderRadius: Radius.card,
             padding: Spacing.md,
-            marginTop: Spacing.lg,
+            marginTop: Spacing.sm,
         },
         note: { fontSize: 12, lineHeight: 18 },
         primaryBtn: {
-            marginTop: Spacing.lg,
+            marginTop: Spacing.md,
             borderRadius: Radius.pill,
             paddingVertical: Spacing.md,
             alignItems: 'center',
         },
-        primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+        primaryBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 14 },
     });

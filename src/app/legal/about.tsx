@@ -1,25 +1,26 @@
 import { Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useSmartBack } from '../../hooks/useSmartBack';
 import Constants from 'expo-constants';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette } from '../../constants/theme';
+import { AppTopBar } from '../../components/ui/AppTopBar';
 
 export default function AboutScreen() {
     const scheme = useColorScheme();
     const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
     const s = styles(colors);
+    const smartBack = useSmartBack('/legal');
     const version = Constants.expoConfig?.version ?? '0.0.0';
     const packageName = Constants.expoConfig?.android?.package ?? 'com.blockbucket.vahi';
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>About Vahi</Text>
-                <View style={s.headerSpacer} />
-            </View>
+            <AppTopBar
+                title="About Vahi"
+                subtitle="Build and support details"
+                onBackPress={smartBack}
+            />
 
             <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
                 <View style={[s.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
@@ -66,16 +67,6 @@ export default function AboutScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        },
-        back: { fontSize: 14, fontWeight: '600' },
-        title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
-        headerSpacer: { width: 44 },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
         card: {
             borderWidth: 1,

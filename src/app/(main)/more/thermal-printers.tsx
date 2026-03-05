@@ -1,20 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
-import { router } from 'expo-router';
+    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppInput } from '../../../components/ui/AppInput';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 type ThermalPreset = '58MM_COMPACT' | '80MM_STANDARD' | 'A4_CLASSIC';
 type PrinterConnection = 'USB' | 'BLUETOOTH' | 'WIFI';
@@ -23,9 +19,11 @@ const THERMAL_PRESETS: ThermalPreset[] = ['58MM_COMPACT', '80MM_STANDARD', 'A4_C
 const CONNECTIONS: PrinterConnection[] = ['USB', 'BLUETOOTH', 'WIFI'];
 
 export default function ThermalPrintersScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/more');
     const queryClient = useQueryClient();
 
     const [profile, setProfile] = useState<ThermalPreset>('80MM_STANDARD');
@@ -33,11 +31,31 @@ export default function ThermalPrintersScreen() {
     const [pairingName, setPairingName] = useState('');
     const [printLayoutType, setPrintLayoutType] = useState<'REGULAR' | 'THERMAL'>('THERMAL');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['settings-section', 'INVOICE_PRINT'],
         queryFn: () => settingsApi.get('INVOICE_PRINT'),
         staleTime: 60_000,
     });
+
+    const preview = useMemo(() => {
+        const lineChars = profile === '58MM_COMPACT' ? 24 : profile === '80MM_STANDARD' ? 34 : 44;
+        const textSize = profile === '58MM_COMPACT' ? 10 : profile === '80MM_STANDARD' ? 12 : 13;
+        const sampleDivider = '-'.repeat(lineChars);
+        const timestamp = new Date().toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+        return {
+            lineChars,
+            textSize,
+            sampleDivider,
+            timestamp,
+            pageLabel: profile === 'A4_CLASSIC' ? 'A4 / PDF' : profile === '80MM_STANDARD' ? '80mm Thermal' : '58mm Thermal',
+        };
+    }, [profile]);
 
     useEffect(() => {
         const raw = (data?.data ?? {}) as Record<string, unknown>;
@@ -80,37 +98,56 @@ export default function ThermalPrintersScreen() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings-section', 'INVOICE_PRINT'] });
-            Alert.alert('Saved', 'Thermal printer profile updated.');
+            dialog.alert('Saved', 'Thermal printer profile updated.');
         },
         onError: (error) => {
-            Alert.alert('Save failed', error instanceof Error ? error.message : 'Unable to save printer profile.');
+            dialog.alert('Save failed', error instanceof Error ? error.message : 'Unable to save printer profile.');
         },
     });
 
     const handleTestPair = () => {
         if (!pairingName.trim()) {
-            Alert.alert('Pairing name required', 'Enter printer pairing name before running test.');
+            dialog.alert('Pairing name required', 'Enter printer pairing name before running test.');
             return;
         }
-        Alert.alert('Pairing test', `Attempting ${connection} pairing with "${pairingName.trim()}".\n\nSave settings after successful test.`);
+        dialog.alert('Pairing test', `Attempting ${connection} pairing with "${pairingName.trim()}".\n\nSave settings after successful test.`);
     };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.backText, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Thermal Printers</Text>
-                <Pressable onPress={() => saveProfile()} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
-                </Pressable>
-            </View>
+            <AppTopBar
+                title="Thermal Printers"
+                subtitle="Profile and pairing setup"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={[s.saveBtn, { backgroundColor: colors.primary }]} onPress={() => saveProfile()} disabled={isPending}>
+                        {isPending ? (
+                            <ActivityIndicator color={colors.onPrimary} size="small" />
+                        ) : (
+                            <>
+                                <MaterialCommunityIcons name="content-save-outline" size={15} color={colors.onPrimary} />
+                                <Text style={s.saveBtnText}>Save</Text>
+                            </>
+                        )}
+                    </Pressable>
+                )}
+            />
 
             {isLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
             ) : (
-                <ScrollView contentContainerStyle={s.content}>
+                <ScrollView
+                    contentContainerStyle={s.content}
+                    refreshControl={(
+                        <RefreshControl
+                            refreshing={isRefetching && !isLoading}
+                            onRefresh={() => {
+                                void refetch();
+                            }}
+                            tintColor={colors.primary}
+                        />
+                    )}
+                >
                     <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Text style={s.sectionTitle}>PRINT LAYOUT</Text>
                         <View style={s.chipsRow}>
@@ -119,7 +156,7 @@ export default function ThermalPrintersScreen() {
                                 return (
                                     <Pressable
                                         key={layout}
-                                        style={[s.chip, selected && { borderColor: colors.primary, backgroundColor: `${colors.primary}22` }]}
+                                        style={[s.chip, selected && { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, '22') }]}
                                         onPress={() => setPrintLayoutType(layout)}
                                     >
                                         <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontWeight: '700', fontSize: 12 }}>
@@ -139,7 +176,7 @@ export default function ThermalPrintersScreen() {
                                 return (
                                     <Pressable
                                         key={preset}
-                                        style={[s.chip, selected && { borderColor: colors.primary, backgroundColor: `${colors.primary}22` }]}
+                                        style={[s.chip, selected && { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, '22') }]}
                                         onPress={() => setProfile(preset)}
                                     >
                                         <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontWeight: '700', fontSize: 12 }}>
@@ -159,7 +196,7 @@ export default function ThermalPrintersScreen() {
                                 return (
                                     <Pressable
                                         key={entry}
-                                        style={[s.chip, selected && { borderColor: colors.primary, backgroundColor: `${colors.primary}22` }]}
+                                        style={[s.chip, selected && { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, '22') }]}
                                         onPress={() => setConnection(entry)}
                                     >
                                         <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontWeight: '700', fontSize: 12 }}>
@@ -171,12 +208,11 @@ export default function ThermalPrintersScreen() {
                         </View>
 
                         <Text style={[s.inputLabel, { color: colors.textSecondary }]}>Printer Pairing Name</Text>
-                        <TextInput
-                            style={[s.input, { borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
+                        <AppInput
                             value={pairingName}
                             onChangeText={setPairingName}
                             placeholder="e.g. EPSON-TM-T82"
-                            placeholderTextColor={colors.textSecondary}
+                            containerStyle={s.pairingInputWrap}
                         />
 
                         <Pressable style={[s.testBtn, { borderColor: colors.primary }]} onPress={handleTestPair}>
@@ -193,6 +229,32 @@ export default function ThermalPrintersScreen() {
                             58MM profile is compact billing, 80MM is recommended for full POS counters.
                         </Text>
                     </View>
+
+                    <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Text style={s.sectionTitle}>LIVE PREVIEW</Text>
+                        <View style={[s.previewPaper, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                            <Text style={[s.previewTitle, { color: colors.text, fontSize: preview.textSize + 1 }]}>VAHI BILLING APP</Text>
+                            <Text style={[s.previewMeta, { color: colors.textSecondary, fontSize: preview.textSize - 1 }]}>
+                                {preview.pageLabel} | {connection}
+                            </Text>
+                            <Text style={[s.previewMeta, { color: colors.textSecondary, fontSize: preview.textSize - 1 }]}>
+                                {pairingName.trim() ? `Pair: ${pairingName.trim()}` : 'Pair: (not set)'}
+                            </Text>
+                            <Text style={[s.previewMeta, { color: colors.textSecondary, fontSize: preview.textSize - 1 }]}>{preview.timestamp}</Text>
+                            <Text style={[s.previewLine, { color: colors.textSecondary, fontSize: preview.textSize - 1 }]}>
+                                {preview.sampleDivider}
+                            </Text>
+                            <Text style={[s.previewRow, { color: colors.text, fontSize: preview.textSize }]}>Item A x 2        Rs 240.00</Text>
+                            <Text style={[s.previewRow, { color: colors.text, fontSize: preview.textSize }]}>Item B x 1        Rs  60.00</Text>
+                            <Text style={[s.previewLine, { color: colors.textSecondary, fontSize: preview.textSize - 1 }]}>
+                                {preview.sampleDivider}
+                            </Text>
+                            <Text style={[s.previewRow, { color: colors.text, fontSize: preview.textSize, fontWeight: '700' }]}>TOTAL             Rs 300.00</Text>
+                            <Text style={[s.previewMeta, { color: colors.textSecondary, fontSize: preview.textSize - 1, marginTop: 6 }]}>
+                                Layout: {printLayoutType}
+                            </Text>
+                        </View>
+                    </View>
                 </ScrollView>
             )}
         </SafeAreaView>
@@ -202,16 +264,17 @@ export default function ThermalPrintersScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
+        saveBtn: {
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            gap: 4,
+            minWidth: 76,
+            justifyContent: 'center',
         },
-        backText: { fontSize: 14, fontWeight: '700' },
-        title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
-        saveText: { fontSize: 14, fontWeight: '700' },
+        saveBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         content: { paddingHorizontal: Spacing.lg, paddingBottom: 120, gap: Spacing.sm },
         card: {
@@ -230,13 +293,7 @@ const styles = (colors: ColorPalette) =>
             paddingVertical: 6,
         },
         inputLabel: { fontSize: 12, fontWeight: '600', marginTop: 2 },
-        input: {
-            borderWidth: 1,
-            borderRadius: Radius.md,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            fontSize: 14,
-        },
+        pairingInputWrap: { marginTop: Spacing.xs },
         testBtn: {
             borderWidth: 1,
             borderRadius: Radius.pill,
@@ -247,4 +304,26 @@ const styles = (colors: ColorPalette) =>
         },
         testBtnText: { fontSize: 12, fontWeight: '700' },
         noteText: { fontSize: 12, lineHeight: 18 },
+        previewPaper: {
+            borderWidth: 1,
+            borderRadius: Radius.md,
+            padding: Spacing.md,
+            gap: 2,
+        },
+        previewTitle: {
+            fontWeight: '800',
+            textAlign: 'center',
+            marginBottom: 2,
+        },
+        previewMeta: {
+            fontWeight: '500',
+            textAlign: 'center',
+        },
+        previewLine: {
+            textAlign: 'center',
+            marginVertical: 2,
+        },
+        previewRow: {
+            fontVariant: ['tabular-nums'],
+        },
     });

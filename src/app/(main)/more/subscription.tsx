@@ -1,25 +1,20 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+
+import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
 import { toUserMessage } from '../../../api/client';
 import { subscriptionApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAuthStore } from '../../../store/authStore';
 import type { Subscription } from '../../../types/domain';
 import { canPerformAction } from '../../../utils/accessControl';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppInput } from '../../../components/ui/AppInput';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 type PlanLike = {
     id: string;
@@ -59,9 +54,11 @@ const computeRenewalDate = (billingCycle: PlanLike['billingCycle']) => {
 };
 
 export default function SubscriptionScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme ?? 'light');
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/more');
     const subscription = useAuthStore((state) => state.subscription);
     const business = useAuthStore((state) => state.business);
     const setSubscription = useAuthStore((state) => state.setSubscription);
@@ -103,16 +100,16 @@ export default function SubscriptionScreen() {
         onSuccess: (response) => {
             const discount = response.data?.discount;
             if (!discount) {
-                Alert.alert('Discount', 'Discount code is valid.');
+                dialog.alert('Discount', 'Discount code is valid.');
                 return;
             }
             const amountText = discount.type === 'PERCENTAGE'
                 ? `${discount.value}% OFF`
                 : `Rs ${Number(discount.value).toLocaleString('en-IN')} OFF`;
-            Alert.alert('Discount Applied', `${discount.code} (${amountText})`);
+            dialog.alert('Discount Applied', `${discount.code} (${amountText})`);
         },
         onError: (error) => {
-            Alert.alert('Discount Error', toUserMessage(error, 'Invalid discount code.'));
+            dialog.alert('Discount Error', toUserMessage(error, 'Invalid discount code.'));
         },
     });
 
@@ -192,17 +189,17 @@ export default function SubscriptionScreen() {
                 if (!livePaymentsEnabled) {
                     applyMockUpgrade(result.plan);
                 }
-                Alert.alert('Payment Successful', 'Plan activated successfully.');
+                dialog.alert('Payment Successful', 'Plan activated successfully.');
             } else if (result.status === 'failed') {
-                Alert.alert('Payment Failed', 'Payment was not completed.');
+                dialog.alert('Payment Failed', 'Payment was not completed.');
             } else {
-                Alert.alert('Payment Pending', 'Payment is still processing. Please check again shortly.');
+                dialog.alert('Payment Pending', 'Payment is still processing. Please check again shortly.');
             }
 
             await refetchPlans();
         },
         onError: (error) => {
-            Alert.alert('Checkout Error', toUserMessage(error, 'Failed to start checkout.'));
+            dialog.alert('Checkout Error', toUserMessage(error, 'Failed to start checkout.'));
         },
         onSettled: () => setSelectedPlanId(null),
     });
@@ -211,13 +208,11 @@ export default function SubscriptionScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>Upgrade Plan</Text>
-                <View style={{ width: 44 }} />
-            </View>
+            <AppTopBar
+                title="Subscription"
+                subtitle="Plan and billing controls"
+                onBackPress={smartBack}
+            />
 
             <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
                 <View style={[s.modeCard, { backgroundColor: colors.surfaceVariant }]}>
@@ -240,7 +235,7 @@ export default function SubscriptionScreen() {
                                             s.modeChip,
                                             {
                                                 borderColor: selected ? colors.primary : colors.border,
-                                                backgroundColor: selected ? `${colors.primary}22` : 'transparent',
+                                                backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent',
                                             },
                                         ]}
                                         onPress={() => setMockOutcome(entry)}
@@ -267,20 +262,20 @@ export default function SubscriptionScreen() {
                 ) : null}
 
                 {(offersRes?.data ?? []).slice(0, 2).map((offer) => (
-                    <View key={offer.id} style={[s.offerCard, { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}50` }]}>
+                    <View key={offer.id} style={[s.offerCard, { backgroundColor: withAlpha(colors.primary, '18'), borderColor: withAlpha(colors.primary, '50') }]}>
                         <Text style={[s.offerTitle, { color: colors.primary }]}>{offer.title}</Text>
                         <Text style={[s.offerMessage, { color: colors.text }]}>{offer.message}</Text>
                     </View>
                 ))}
 
                 <View style={s.discountRow}>
-                    <TextInput
+                    <AppInput
+                        inputType="text"
                         value={discountCode}
                         onChangeText={setDiscountCode}
-                        style={[s.discountInput, { borderColor: colors.border, color: colors.text }]}
                         placeholder="Discount code (optional)"
-                        placeholderTextColor={colors.textSecondary}
                         autoCapitalize="characters"
+                        containerStyle={s.discountInputWrap}
                     />
                     <Pressable
                         style={[s.validateBtn, { backgroundColor: colors.primary }]}
@@ -288,7 +283,7 @@ export default function SubscriptionScreen() {
                         onPress={() => validateDiscount(selectedPlanId ?? undefined)}
                     >
                         {validatingDiscount ? (
-                            <ActivityIndicator color="#fff" size="small" />
+                            <ActivityIndicator color={colors.onPrimary} size="small" />
                         ) : (
                             <Text style={s.validateBtnText}>Apply</Text>
                         )}
@@ -333,7 +328,7 @@ export default function SubscriptionScreen() {
                                             disabled={isBusy || checkoutPending || !canCheckout}
                                             onPress={() => {
                                                 if (!canCheckout) {
-                                                    Alert.alert('Access denied', 'Your role cannot purchase or upgrade plans.');
+                                                    dialog.alert('Access denied', 'Your role cannot purchase or upgrade plans.');
                                                     return;
                                                 }
                                                 setSelectedPlanId(plan.id);
@@ -341,7 +336,7 @@ export default function SubscriptionScreen() {
                                             }}
                                         >
                                             {isBusy ? (
-                                                <ActivityIndicator color="#fff" size="small" />
+                                                <ActivityIndicator color={colors.onPrimary} size="small" />
                                             ) : (
                                                 <Text style={s.upgradeBtnText}>Upgrade</Text>
                                             )}
@@ -374,15 +369,6 @@ export default function SubscriptionScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        },
-        back: { fontSize: 14, fontWeight: '600' },
-        title: { fontSize: 17, fontWeight: '700', color: colors.text },
         content: { paddingHorizontal: Spacing.lg, paddingBottom: 80, gap: Spacing.md },
         modeCard: { borderRadius: Radius.card, padding: Spacing.md, marginTop: Spacing.sm },
         modeTitle: { fontSize: 14, fontWeight: '700' },
@@ -396,16 +382,9 @@ const styles = (colors: ColorPalette) =>
         offerTitle: { fontSize: 14, fontWeight: '700' },
         offerMessage: { fontSize: 12, marginTop: 4 },
         discountRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
-        discountInput: {
-            flex: 1,
-            borderWidth: 1,
-            borderRadius: Radius.md,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            fontSize: 14,
-        },
+        discountInputWrap: { flex: 1 },
         validateBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, minWidth: 72, alignItems: 'center' },
-        validateBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+        validateBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
         centered: { paddingVertical: 32, alignItems: 'center' },
         planCard: { borderWidth: 1, borderRadius: Radius.card, padding: Spacing.md, gap: Spacing.sm },
         planHeader: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start' },
@@ -414,9 +393,9 @@ const styles = (colors: ColorPalette) =>
         planDescription: { marginTop: 4, fontSize: 12 },
         planMeta: { marginTop: 6, fontSize: 11, fontWeight: '600' },
         currentPill: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
-        currentPillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+        currentPillText: { color: colors.onPrimary, fontSize: 11, fontWeight: '700' },
         upgradeBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, minWidth: 84, alignItems: 'center' },
-        upgradeBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+        upgradeBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
         featuresWrap: { gap: 4 },
         featureText: { fontSize: 12 },
         intentMeta: { marginTop: 4, fontSize: 11, textAlign: 'center' },

@@ -1,27 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../../../api/endpoints';
 import { getSettingsSectionLabel } from '../../../../constants/settingsSchema';
-import { getColors, Radius, setThemePreference, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
+import { getColors, Radius, setThemePreference, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import type { SettingsFieldDefinition } from '../../../../types/api';
 import { extractUpiIdFromPayload } from '../../../../utils/upi';
 import { SignatureCaptureSheet } from '../../../../components/signature/SignatureCaptureSheet';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { AppInput } from '../../../../components/ui/AppInput';
+import { AppSearchBar } from '../../../../components/ui/AppSearchBar';
 import {
     parseRoleActionOverrides,
     parseRoleModuleOverrides,
@@ -29,6 +21,7 @@ import {
     ROLE_MODULE_OVERRIDES_KEY,
     setRoleAccessOverrides,
 } from '../../../../utils/accessControl';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 const coerceValue = (field: SettingsFieldDefinition, input: unknown) => {
     if ((input === null || input === undefined) && field.nullable) return null;
@@ -64,7 +57,20 @@ const coerceValue = (field: SettingsFieldDefinition, input: unknown) => {
     }
 };
 
+const inputTypeForField = (field: SettingsFieldDefinition) => {
+    const key = field.key.toLowerCase();
+    if (field.type === 'integer' || field.type === 'number') return 'decimal' as const;
+    if (key.includes('date')) return 'date' as const;
+    if (key.includes('url') || key.includes('link')) return 'url' as const;
+    if (key.includes('upi')) return 'upi' as const;
+    if (key.includes('email')) return 'email' as const;
+    if (key.includes('phone') || key.includes('mobile')) return 'phone' as const;
+    if (key.includes('passcode') || key.includes('password')) return 'password' as const;
+    return 'text' as const;
+};
+
 export default function SettingsSectionEditorScreen() {
+    const dialog = useAppDialog();
     const { section: rawSection, upiPayload, scanAt } = useLocalSearchParams<{
         section?: string;
         upiPayload?: string | string[];
@@ -77,6 +83,7 @@ export default function SettingsSectionEditorScreen() {
     const queryClient = useQueryClient();
     const smartBack = useSmartBack('/(main)/more/settings');
     const [draft, setDraft] = useState<Record<string, unknown>>({});
+    const [fieldSearch, setFieldSearch] = useState('');
     const [signatureCaptureVisible, setSignatureCaptureVisible] = useState(false);
     const handledUpiPayloadRef = useRef<string>('');
 
@@ -97,7 +104,7 @@ export default function SettingsSectionEditorScreen() {
         return (schemaResponse.schema[section] ?? []) as SettingsFieldDefinition[];
     }, [schemaResponse, section]);
 
-    useEffect(() => {
+    const baselineDraft = useMemo(() => {
         const incoming = (sectionData?.data ?? {}) as Record<string, unknown>;
         const normalized: Record<string, unknown> = {};
         for (const field of fields) {
@@ -106,8 +113,12 @@ export default function SettingsSectionEditorScreen() {
                 : field.default;
             normalized[field.key] = coerceValue(field, value);
         }
-        setDraft(normalized);
-    }, [sectionData, fields]);
+        return normalized;
+    }, [fields, sectionData?.data]);
+
+    useEffect(() => {
+        setDraft(baselineDraft);
+    }, [baselineDraft]);
 
     useEffect(() => {
         if (section !== 'GENERAL') return;
@@ -119,13 +130,13 @@ export default function SettingsSectionEditorScreen() {
         handledUpiPayloadRef.current = key;
         const extractedUpiId = extractUpiIdFromPayload(payload);
         if (!extractedUpiId) {
-            Alert.alert('UPI', 'Scanned QR does not contain a valid UPI ID.');
+            dialog.alert('UPI', 'Scanned QR does not contain a valid UPI ID.');
             return;
         }
 
         setDraft((prev) => ({ ...prev, payment_upi_id: extractedUpiId }));
-        Alert.alert('UPI', 'UPI ID captured from QR. Save settings to apply.');
-    }, [scanAt, section, upiPayload]);
+        dialog.alert('UPI', 'UPI ID captured from QR. Save settings to apply.');
+    }, [dialog, scanAt, section, upiPayload]);
 
     useEffect(() => {
         if (section !== 'GENERAL') return;
@@ -141,14 +152,27 @@ export default function SettingsSectionEditorScreen() {
         });
     }, [draft, section]);
 
+    const filteredFields = useMemo(() => {
+        const needle = fieldSearch.trim().toLowerCase();
+        if (!needle) return fields;
+        return fields.filter((field) => `${field.label} ${field.key}`.toLowerCase().includes(needle));
+    }, [fieldSearch, fields]);
+    const changedCount = useMemo(() => {
+        return fields.reduce((count, field) => {
+            const prev = baselineDraft[field.key];
+            const next = draft[field.key];
+            return JSON.stringify(prev) === JSON.stringify(next) ? count : count + 1;
+        }, 0);
+    }, [baselineDraft, draft, fields]);
+
     const { mutate: saveSettings, isPending } = useMutation({
         mutationFn: () => settingsApi.update(section, { data: draft }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings-section', section] });
-            Alert.alert('Saved', 'Settings updated successfully.');
+            dialog.alert('Saved', 'Settings updated successfully.');
         },
         onError: (error) => {
-            Alert.alert('Error', error instanceof Error ? error.message : 'Failed to save settings.');
+            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to save settings.');
         },
     });
 
@@ -166,15 +190,16 @@ export default function SettingsSectionEditorScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={smartBack}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>{getSettingsSectionLabel(section)}</Text>
-                <Pressable onPress={() => saveSettings()} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.save, { color: colors.primary }]}>Save</Text>}
-                </Pressable>
-            </View>
+            <AppTopBar
+                title={getSettingsSectionLabel(section)}
+                subtitle="Section preferences"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => saveSettings()} disabled={isPending}>
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                    </Pressable>
+                )}
+            />
 
             {isLoading ? (
                 <View style={s.centered}>
@@ -182,7 +207,20 @@ export default function SettingsSectionEditorScreen() {
                 </View>
             ) : (
                 <ScrollView contentContainerStyle={s.content}>
-                    {fields.map((field) => {
+                    <AppSearchBar
+                        value={fieldSearch}
+                        onChangeText={setFieldSearch}
+                        placeholder="Search fields..."
+                    />
+                    <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>SECTION STATUS</Text>
+                        <Text style={s.summaryValue}>{filteredFields.length}</Text>
+                        <Text style={[s.summaryMeta, { color: colors.textSecondary }]}>
+                            {fieldSearch.trim().length > 0 ? `Filtered from ${fields.length} fields` : `${changedCount} unsaved changes`}
+                        </Text>
+                    </View>
+
+                    {filteredFields.map((field) => {
                         const value = draft[field.key];
                         return (
                             <View key={field.key} style={[s.fieldCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -202,7 +240,7 @@ export default function SettingsSectionEditorScreen() {
                                                     key={option}
                                                     style={[
                                                         s.enumChip,
-                                                        { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : 'transparent' },
+                                                        { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' },
                                                     ]}
                                                     onPress={() => setDraft((prev) => ({ ...prev, [field.key]: option }))}
                                                 >
@@ -223,7 +261,7 @@ export default function SettingsSectionEditorScreen() {
                                                     key={option}
                                                     style={[
                                                         s.enumChip,
-                                                        { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : 'transparent' },
+                                                        { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' },
                                                     ]}
                                                     onPress={() => {
                                                         const next = selected
@@ -241,10 +279,9 @@ export default function SettingsSectionEditorScreen() {
                                     </View>
                                 ) : (
                                     <>
-                                        <TextInput
-                                            style={[s.input, { borderColor: colors.border, color: colors.text }]}
+                                        <AppInput
+                                            inputType={inputTypeForField(field)}
                                             value={value == null ? '' : String(value)}
-                                            keyboardType={field.type === 'integer' || field.type === 'number' ? 'numeric' : 'default'}
                                             onChangeText={(text) => setDraft((prev) => ({ ...prev, [field.key]: coerceValue(field, text) }))}
                                         />
                                         {section === 'GENERAL' && field.key === 'payment_upi_id' ? (
@@ -293,6 +330,12 @@ export default function SettingsSectionEditorScreen() {
                             </View>
                         );
                     })}
+                    {filteredFields.length === 0 ? (
+                        <View style={[s.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Text style={[s.emptyTitle, { color: colors.text }]}>No fields found</Text>
+                            <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Try another search term.</Text>
+                        </View>
+                    ) : null}
                     <View style={{ height: 80 }} />
                 </ScrollView>
             )}
@@ -310,25 +353,27 @@ export default function SettingsSectionEditorScreen() {
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    header: {
-        paddingHorizontal: Spacing.lg,
-        paddingVertical: Spacing.md,
-        flexDirection: 'row',
+    saveBtn: {
+        minHeight: 34,
+        minWidth: 56,
+        borderRadius: Radius.pill,
+        borderWidth: 1,
+        paddingHorizontal: Spacing.md,
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
     },
-    back: { fontSize: 14, fontWeight: '600' },
-    title: {
-        fontSize: Typography.title.size,
-        fontWeight: '700',
-        color: colors.text,
-        flex: 1,
-        textAlign: 'center',
-        marginHorizontal: Spacing.sm,
-    },
-    save: { fontSize: 14, fontWeight: '700' },
+    saveText: { fontSize: 12, fontWeight: '700' },
     centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
+    summaryCard: {
+        borderWidth: 1,
+        borderRadius: Radius.card,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.md,
+    },
+    summaryLabel: { fontSize: Typography.caption.size, fontWeight: '700', letterSpacing: 0.8 },
+    summaryValue: { marginTop: 4, color: colors.text, fontSize: Typography.headline.size, fontWeight: '800' },
+    summaryMeta: { marginTop: 2, fontSize: Typography.caption.size },
     fieldCard: {
         borderWidth: 1,
         borderRadius: Radius.card,
@@ -337,13 +382,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         gap: Spacing.sm,
     },
     fieldLabel: { fontSize: 13, fontWeight: '600' },
-    input: {
-        borderWidth: 1,
-        borderRadius: Radius.md,
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.sm,
-        fontSize: 14,
-    },
     enumWrap: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -369,13 +407,22 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     signaturePreviewWrap: {
         borderWidth: 1,
         borderRadius: Radius.md,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         overflow: 'hidden',
     },
     signaturePreview: {
         width: '100%',
         height: 110,
     },
+    emptyState: {
+        borderWidth: 1,
+        borderRadius: Radius.card,
+        paddingVertical: Spacing.lg,
+        alignItems: 'center',
+        gap: 2,
+    },
+    emptyTitle: { fontSize: Typography.body.size, fontWeight: '700' },
+    emptySubtitle: { fontSize: Typography.caption.size },
 });
 
 

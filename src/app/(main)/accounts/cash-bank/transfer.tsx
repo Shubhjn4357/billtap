@@ -1,128 +1,183 @@
-import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, useColorScheme, Alert, ActivityIndicator } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { Controller, useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { cashBankApi } from '../../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette } from '../../../../constants/theme';
-import { format } from 'date-fns';
+import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { AppInput } from '../../../../components/ui/AppInput';
+import { SelectField, type SelectOption } from '../../../../components/ui/SelectField';
+import { DateField } from '../../../../components/ui/DateField';
 import type { Account } from '../../../../types/domain';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
-const transferSchema = z.object({
-    fromAccountId: z.string().min(1, 'Select source'),
-    toAccountId: z.string().min(1, 'Select destination'),
-    amount: z.coerce.number().positive('Amount must be positive'),
-    description: z.string().optional(),
-    date: z.string().default(() => format(new Date(), 'yyyy-MM-dd')),
-});
-type TransferFormInput = z.input<typeof transferSchema>;
-type TransferForm = z.output<typeof transferSchema>;
+const toAmount = (value: string) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function TransferScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);
     const qc = useQueryClient();
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/accounts');
+    const params = useLocalSearchParams<{ fromAccountId?: string }>();
+
+    const [fromAccountId, setFromAccountId] = useState(params.fromAccountId ?? '');
+    const [toAccountId, setToAccountId] = useState('');
+    const [amount, setAmount] = useState('');
+    const [description, setDescription] = useState('');
+    const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
     const { data: accountsData } = useQuery({ queryKey: ['cash-bank-balances'], queryFn: () => cashBankApi.getBalances() });
-    const accounts = (accountsData?.data ?? []) as Account[];
+    const accounts = useMemo(() => (accountsData?.data ?? []) as Account[], [accountsData?.data]);
 
-    const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<TransferFormInput, unknown, TransferForm>({
-        resolver: zodResolver(transferSchema),
-        defaultValues: { date: format(new Date(), 'yyyy-MM-dd') },
-    });
+    const accountOptions = useMemo<SelectOption[]>(
+        () =>
+            accounts.map((entry) => ({
+                label: entry.name,
+                value: entry.id,
+                description: `Balance Rs ${Number(entry.balance ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`,
+            })),
+        [accounts]
+    );
+
+    const toOptions = useMemo(
+        () => accountOptions.filter((entry) => entry.value !== fromAccountId),
+        [accountOptions, fromAccountId]
+    );
 
     const { mutate, isPending } = useMutation({
-        mutationFn: (data: TransferForm) => cashBankApi.transfer({ fromAccountId: data.fromAccountId, toAccountId: data.toAccountId, amount: data.amount, description: data.description, date: data.date }),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['cash-bank-balances'] }); router.back(); Alert.alert('✅ Transfer recorded'); },
-        onError: (e) => Alert.alert('Error', e instanceof Error ? e.message : 'Failed'),
+        mutationFn: () => {
+            const numericAmount = toAmount(amount);
+            if (!fromAccountId) throw new Error('Select source account.');
+            if (!toAccountId) throw new Error('Select destination account.');
+            if (fromAccountId === toAccountId) throw new Error('Source and destination must be different.');
+            if (numericAmount <= 0) throw new Error('Amount must be positive.');
+
+            return cashBankApi.transfer({
+                fromAccountId,
+                toAccountId,
+                amount: numericAmount,
+                description: description.trim() || undefined,
+                date,
+            });
+        },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['cash-bank-balances'] });
+            qc.invalidateQueries({ queryKey: ['cash-bank-summary'] });
+            dialog.alert('Saved', 'Transfer recorded.');
+            router.back();
+        },
+        onError: (error) => dialog.alert('Error', error instanceof Error ? error.message : 'Failed'),
     });
 
-    const fromId = watch('fromAccountId');
-    const toId = watch('toAccountId');
+    const onSave = () => mutate();
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}><Text style={[s.back, { color: colors.primary }]}>← Cancel</Text></Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Fund Transfer</Text>
-                <Pressable onPress={handleSubmit((d) => mutate(d))} disabled={isPending}>
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.save, { color: colors.primary }]}>Save</Text>}
+            <AppTopBar
+                title="Fund Transfer"
+                subtitle="Move between accounts"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={onSave} disabled={isPending}>
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                    </Pressable>
+                )}
+            />
+
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
+                <View style={[s.heroCard, { backgroundColor: colors.primaryVariant }]}>
+                    <Text style={s.heroLabel}>TRANSFER AMOUNT</Text>
+                    <AppInput
+                        inputType="decimal"
+                        value={amount}
+                        onChangeText={setAmount}
+                        placeholder="0.00"
+                        style={s.heroInput}
+                    />
+                </View>
+
+                <Text style={[s.label, { color: colors.textSecondary }]}>From Account</Text>
+                <SelectField
+                    value={fromAccountId}
+                    onChange={(value) => {
+                        setFromAccountId(value);
+                        if (toAccountId === value) {
+                            setToAccountId('');
+                        }
+                    }}
+                    options={accountOptions}
+                    title="Select Source Account"
+                    placeholder="Choose source"
+                    searchable
+                />
+
+                <Text style={[s.label, { color: colors.textSecondary }]}>To Account</Text>
+                <SelectField
+                    value={toAccountId}
+                    onChange={setToAccountId}
+                    options={toOptions}
+                    title="Select Destination Account"
+                    placeholder="Choose destination"
+                    searchable
+                />
+
+                <Text style={[s.label, { color: colors.textSecondary }]}>Date</Text>
+                <DateField value={date} onChange={(value) => setDate(value ?? date)} allowClear={false} />
+
+                <Text style={[s.label, { color: colors.textSecondary }]}>Note (optional)</Text>
+                <AppInput
+                    inputType="text"
+                    value={description}
+                    onChangeText={setDescription}
+                    placeholder="Reason"
+                />
+
+                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={onSave} disabled={isPending}>
+                    {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Record Transfer</Text>}
                 </Pressable>
-            </View>
 
-            <ScrollView keyboardShouldPersistTaps="handled">
-                <View style={[s.amtCard, { backgroundColor: colors.primaryVariant }]}>
-                    <Text style={s.amtLabel}>TRANSFER AMOUNT (₹)</Text>
-                    <Controller control={control} name="amount" render={({ field: { onChange, value } }) => (
-                        <TextInput style={s.amtInput} value={String(value || '')} onChangeText={onChange} keyboardType="numeric" placeholder="0.00" placeholderTextColor="#ffffffaa" />
-                    )} />
-                    {errors.amount && <Text style={{ color: '#ffd0d0', fontSize: 11 }}>{errors.amount.message}</Text>}
-                </View>
-
-                <View style={s.form}>
-                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>FROM ACCOUNT</Text>
-                    {accounts.map((acc) => (
-                        <Pressable key={acc.id} style={[s.accChip, { backgroundColor: fromId === acc.id ? colors.primary : colors.surfaceVariant }]} onPress={() => setValue('fromAccountId', acc.id)}>
-                            <Text style={{ color: fromId === acc.id ? '#fff' : colors.text, fontWeight: '600' }}>
-                                {acc.name.toLowerCase().includes('cash') ? 'Cash' : 'Bank'} {acc.name}
-                            </Text>
-                        </Pressable>
-                    ))}
-                    {errors.fromAccountId && <Text style={{ color: colors.error, fontSize: 11 }}>{errors.fromAccountId.message}</Text>}
-
-                    <View style={s.arrowRow}>
-                        <Text style={[s.arrow, { color: colors.primary }]}>↓ Transfer</Text>
-                    </View>
-
-                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>TO ACCOUNT</Text>
-                    {accounts.map((acc) => (
-                        <Pressable key={acc.id} style={[s.accChip, { backgroundColor: toId === acc.id ? colors.success : colors.surfaceVariant }]} onPress={() => setValue('toAccountId', acc.id)}>
-                            <Text style={{ color: toId === acc.id ? '#fff' : colors.text, fontWeight: '600' }}>
-                                {acc.name.toLowerCase().includes('cash') ? 'Cash' : 'Bank'} {acc.name}
-                            </Text>
-                        </Pressable>
-                    ))}
-                    {errors.toAccountId && <Text style={{ color: colors.error, fontSize: 11 }}>{errors.toAccountId.message}</Text>}
-
-                    <View style={{ marginTop: Spacing.md }}>
-                        <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Date</Text>
-                        <Controller control={control} name="date" render={({ field: { onChange, value } }) => (
-                            <TextInput style={[s.input, { color: colors.text, borderColor: colors.border }]} value={value} onChangeText={onChange} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textSecondary} />
-                        )} />
-                    </View>
-
-                    <View style={{ marginTop: Spacing.md }}>
-                        <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Note (optional)</Text>
-                        <Controller control={control} name="description" render={({ field: { onChange, value } }) => (
-                            <TextInput style={[s.input, { color: colors.text, borderColor: colors.border }]} value={value} onChangeText={onChange} placeholder="Notes…" placeholderTextColor={colors.textSecondary} />
-                        )} />
-                    </View>
-                </View>
-                <View style={{ height: 80 }} />
+                <View style={{ height: 60 }} />
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-const styles = (colors: ColorPalette) => StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-    back: { fontWeight: '600', fontSize: 14 },
-    title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 17 },
-    save: { fontWeight: '700', fontSize: 15 },
-    amtCard: { margin: Spacing.lg, borderRadius: Radius.card, padding: Spacing.xl, alignItems: 'center' },
-    amtLabel: { color: '#ffffffbb', fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-    amtInput: { color: '#fff', fontWeight: '800', fontSize: 40, marginTop: Spacing.sm, minWidth: 120, textAlign: 'center' },
-    form: { paddingHorizontal: Spacing.lg },
-    sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
-    accChip: { borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.sm },
-    arrowRow: { alignItems: 'center', marginVertical: Spacing.md },
-    arrow: { fontWeight: '700', fontSize: 18 },
-    input: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, fontSize: 14 },
-});
-
-
-
+const styles = (colors: ColorPalette) =>
+    StyleSheet.create({
+        safe: { flex: 1, backgroundColor: colors.background },
+        saveBtn: {
+            minHeight: 34,
+            minWidth: 56,
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: Spacing.md,
+        },
+        saveText: { fontSize: 12, fontWeight: '700' },
+        content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.lg },
+        heroCard: {
+            borderRadius: Radius.card,
+            padding: Spacing.lg,
+            marginBottom: Spacing.sm,
+            gap: Spacing.xs,
+        },
+        heroLabel: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
+        heroInput: { color: colors.onPrimary, fontSize: 24, fontWeight: '800' },
+        label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.xs },
+        primaryBtn: {
+            marginTop: Spacing.md,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 44,
+        },
+        primaryBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 14 },
+    });

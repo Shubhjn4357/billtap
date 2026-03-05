@@ -1,26 +1,24 @@
 import { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Pressable,
-    StyleSheet,
-    Text,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+
+import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { expenseApi } from '../../../../api/endpoints';
 import { getColors, Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import type { Expense } from '../../../../types/domain';
+import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 export default function ExpenseRecycleBinScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/accounts');
     const qc = useQueryClient();
     const [processingId, setProcessingId] = useState<string | null>(null);
 
@@ -49,7 +47,7 @@ export default function ExpenseRecycleBinScreen() {
     const entries = (data?.data ?? []) as Expense[];
 
     const handleRestore = (id: string) => {
-        Alert.alert('Restore expense', 'Move this expense back to active list?', [
+        dialog.alert('Restore expense', 'Move this expense back to active list?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Restore',
@@ -58,7 +56,7 @@ export default function ExpenseRecycleBinScreen() {
                         setProcessingId(id);
                         await restore(id);
                     } catch (error) {
-                        Alert.alert('Restore failed', error instanceof Error ? error.message : 'Failed to restore expense.');
+                        dialog.alert('Restore failed', error instanceof Error ? error.message : 'Failed to restore expense.');
                     } finally {
                         setProcessingId(null);
                     }
@@ -68,7 +66,7 @@ export default function ExpenseRecycleBinScreen() {
     };
 
     const handlePermanentDelete = (id: string) => {
-        Alert.alert('Delete permanently', 'This cannot be undone. Continue?', [
+        dialog.alert('Delete permanently', 'This cannot be undone. Continue?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Delete',
@@ -78,7 +76,7 @@ export default function ExpenseRecycleBinScreen() {
                         setProcessingId(id);
                         await permanentDelete(id);
                     } catch (error) {
-                        Alert.alert('Delete failed', error instanceof Error ? error.message : 'Failed to delete expense.');
+                        dialog.alert('Delete failed', error instanceof Error ? error.message : 'Failed to delete expense.');
                     } finally {
                         setProcessingId(null);
                     }
@@ -89,13 +87,11 @@ export default function ExpenseRecycleBinScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>{'< Back'}</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>Expense Recycle Bin</Text>
-                <View style={{ width: 52 }} />
-            </View>
+            <AppTopBar
+                title="Expense Recycle Bin"
+                subtitle="Restore or delete permanently"
+                onBackPress={smartBack}
+            />
 
             {isLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
@@ -114,22 +110,16 @@ export default function ExpenseRecycleBinScreen() {
                             <View style={[s.row, { backgroundColor: colors.card }]}> 
                                 <View style={{ flex: 1 }}>
                                     <Text style={[s.cat, { color: colors.text }]}>{item.category.replace(/_/g, ' ')}</Text>
-                                    <Text style={[s.meta, { color: colors.textSecondary }]}>
-                                        {item.description ?? item.paymentMode}
-                                    </Text>
-                                    <Text style={[s.meta, { color: colors.textSecondary }]}>
-                                        {format(parseISO(item.expenseDate), 'dd MMM yyyy')}
-                                    </Text>
+                                    <Text style={[s.meta, { color: colors.textSecondary }]}>{item.description ?? item.paymentMode}</Text>
+                                    <Text style={[s.meta, { color: colors.textSecondary }]}>{format(parseISO(item.expenseDate), 'dd MMM yyyy')}</Text>
                                 </View>
-                                <Text style={[s.amount, { color: colors.error }]}>
-                                    -{item.amount.toLocaleString('en-IN')}
-                                </Text>
+                                <Text style={[s.amount, { color: colors.error }]}>-Rs {item.amount.toLocaleString('en-IN')}</Text>
                                 <View style={s.actions}>
                                     <Pressable style={[s.actionBtn, { borderColor: colors.primary }]} onPress={() => handleRestore(item.id)} disabled={busy}>
-                                        <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>Restore</Text>
+                                        <MaterialCommunityIcons name="backup-restore" size={16} color={colors.primary} />
                                     </Pressable>
                                     <Pressable style={[s.actionBtn, { borderColor: colors.error }]} onPress={() => handlePermanentDelete(item.id)} disabled={busy}>
-                                        <Text style={{ color: colors.error, fontWeight: '700', fontSize: 12 }}>Delete</Text>
+                                        <MaterialCommunityIcons name="delete-forever-outline" size={16} color={colors.error} />
                                     </Pressable>
                                 </View>
                             </View>
@@ -145,9 +135,6 @@ export default function ExpenseRecycleBinScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-        back: { fontWeight: '600', fontSize: 14, width: 52 },
-        title: { flex: 1, textAlign: 'center', fontWeight: '700', fontSize: 16 },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         row: {
             marginHorizontal: Spacing.lg,
@@ -160,13 +147,14 @@ const styles = (colors: ColorPalette) =>
         },
         cat: { fontWeight: '700', fontSize: 14 },
         meta: { fontSize: 12, marginTop: 2 },
-        amount: { fontWeight: '700', minWidth: 72, textAlign: 'right' },
+        amount: { fontWeight: '700', minWidth: 88, textAlign: 'right' },
         actions: { gap: 6 },
         actionBtn: {
             borderWidth: 1,
             borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.sm,
-            paddingVertical: 4,
+            width: 34,
+            height: 34,
             alignItems: 'center',
+            justifyContent: 'center',
         },
     });

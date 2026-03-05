@@ -23,9 +23,13 @@ export interface Business {
     legalName: string | null;
     address: string | null;
     state: string | null;
+    city?: string | null;
+    pincode?: string | null;
     gstin: string | null;
     pan: string | null;
     booksStartDate: string | null;
+    openingCashInHand?: number | null;
+    openingCashInBank?: number | null;
     logoUrl: string | null;
     phone: string | null;
     email: string | null;

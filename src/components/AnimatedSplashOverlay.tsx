@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet } from 'react-native';
+import { Colors } from '../constants/theme';
 
 type AnimatedSplashOverlayProps = {
     ready: boolean;
@@ -12,7 +13,7 @@ type AnimatedSplashOverlayProps = {
  */
 export default function AnimatedSplashOverlay({
     ready,
-    backgroundColor = '#007B83',
+    backgroundColor = Colors.light.primary,
 }: AnimatedSplashOverlayProps) {
     const opacity = useRef(new Animated.Value(1)).current;
     const [visible, setVisible] = useState(true);

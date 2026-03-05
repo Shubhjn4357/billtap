@@ -1,26 +1,17 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    useColorScheme,
-    View,
-} from 'react-native';
+    ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSmartBack } from '../../../hooks/useSmartBack';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toUserMessage } from '../../../api/client';
 import { partyApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { getColors, Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAuthStore } from '../../../store/authStore';
 import { canPerformAction } from '../../../utils/accessControl';
 import {
@@ -32,6 +23,10 @@ import {
     type CountryDialCode,
 } from '../../../constants/countryDialCodes';
 import { buildE164PhoneNumber, sanitizePhoneLocal } from '../../../utils/phone';
+import { AppInput } from '../../../components/ui/AppInput';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { useHaptics } from '../../../hooks/useHaptics';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 const partySchema = z.object({
     name: z.string().min(1, 'Name is required'),
@@ -49,14 +44,17 @@ type PartyFormInput = z.input<typeof partySchema>;
 type PartyForm = z.output<typeof partySchema>;
 
 export default function AddPartyScreen() {
+    const dialog = useAppDialog();
     const scheme = useColorScheme() as 'light' | 'dark' | null;
     const colors = getColors(scheme);
     const { type: defaultType, id: editId } = useLocalSearchParams<{ type?: string; id?: string }>();
     const qc = useQueryClient();
     const s = styles(colors);
+    const smartBack = useSmartBack('/(main)/parties');
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
     const canSaveParty = canPerformAction(role, 'party.create', subscription);
+    const { selection } = useHaptics();
 
     const [countryPickerVisible, setCountryPickerVisible] = useState(false);
     const [countrySearch, setCountrySearch] = useState('');
@@ -126,7 +124,7 @@ export default function AddPartyScreen() {
             qc.invalidateQueries({ queryKey: ['parties'] });
             router.back();
         },
-        onError: (error) => Alert.alert('Error', toUserMessage(error, 'Failed to save party.')),
+        onError: (error) => dialog.alert('Error', toUserMessage(error, 'Failed to save party.')),
     });
 
     const onCountrySelect = (entry: CountryDialCode) => {
@@ -138,24 +136,26 @@ export default function AddPartyScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <View style={s.header}>
-                <Pressable onPress={() => router.back()}>
-                    <Text style={[s.back, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={[s.title, { color: colors.text }]}>{editId ? 'Edit Party' : 'Add Party'}</Text>
-                <Pressable
-                    onPress={handleSubmit((d) => {
-                        if (!canSaveParty) {
-                            Alert.alert('Access denied', 'Your role cannot create parties.');
-                            return;
-                        }
-                        mutate(d);
-                    })}
-                    disabled={isPending || !canSaveParty}
-                >
-                    {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.save, { color: colors.primary }]}>Save</Text>}
-                </Pressable>
-            </View>
+            <AppTopBar
+                title={editId ? 'Edit Party' : 'Add Party'}
+                subtitle={partyType === 'CUSTOMER' ? 'Customer details' : 'Supplier details'}
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable
+                        onPress={handleSubmit((d) => {
+                            if (!canSaveParty) {
+                                dialog.alert('Access denied', 'Your role cannot create parties.');
+                                return;
+                            }
+                            void selection();
+                            mutate(d);
+                        })}
+                        disabled={isPending || !canSaveParty}
+                    >
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={20} color={colors.primary} />}
+                    </Pressable>
+                )}
+            />
 
             <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
                 <View style={s.typeRow}>
@@ -165,7 +165,7 @@ export default function AddPartyScreen() {
                             style={[s.typeChip, partyType === t && { backgroundColor: colors.primary }]}
                             onPress={() => setValue('type', t)}
                         >
-                            <Text style={[s.typeText, { color: partyType === t ? '#fff' : colors.textSecondary }]}>
+                            <Text style={[s.typeText, { color: partyType === t ? colors.onPrimary : colors.textSecondary }]}>
                                 {t === 'CUSTOMER' ? 'Customer' : 'Supplier'}
                             </Text>
                         </Pressable>
@@ -178,12 +178,13 @@ export default function AddPartyScreen() {
                             control={control}
                             name="name"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[s.input, { color: colors.text, borderColor: errors.name ? colors.error : colors.border }]}
+                                <AppInput
                                     value={value}
                                     onChangeText={onChange}
+                                    inputType="name"
                                     placeholder="Party name"
-                                    placeholderTextColor={colors.textSecondary}
+                                    containerStyle={s.inputWrap}
+                                    error={errors.name?.message}
                                 />
                             )}
                         />
@@ -203,13 +204,12 @@ export default function AddPartyScreen() {
                                 control={control}
                                 name="phone"
                                 render={({ field: { onChange, value } }) => (
-                                    <TextInput
-                                        style={[s.input, s.phoneInput, { color: colors.text, borderColor: colors.border }]}
+                                    <AppInput
+                                        containerStyle={[s.inputWrap, s.phoneInput]}
                                         value={value}
                                         onChangeText={(text) => onChange(sanitizePhoneLocal(text))}
+                                        inputType="phone"
                                         placeholder="Mobile number"
-                                        placeholderTextColor={colors.textSecondary}
-                                        keyboardType="phone-pad"
                                     />
                                 )}
                             />
@@ -221,14 +221,12 @@ export default function AddPartyScreen() {
                             control={control}
                             name="email"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[s.input, { color: colors.text, borderColor: colors.border }]}
+                                <AppInput
                                     value={value}
                                     onChangeText={onChange}
+                                    inputType="email"
                                     placeholder="email@example.com"
-                                    placeholderTextColor={colors.textSecondary}
-                                    keyboardType="email-address"
-                                    autoCapitalize="none"
+                                    containerStyle={s.inputWrap}
                                 />
                             )}
                         />
@@ -239,12 +237,12 @@ export default function AddPartyScreen() {
                             control={control}
                             name="gstin"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[s.input, { color: colors.text, borderColor: colors.border }]}
+                                <AppInput
                                     value={value}
                                     onChangeText={onChange}
+                                    inputType="text"
                                     placeholder="22AAAAA0000A1Z5"
-                                    placeholderTextColor={colors.textSecondary}
+                                    containerStyle={s.inputWrap}
                                     autoCapitalize="characters"
                                     maxLength={15}
                                 />
@@ -257,12 +255,13 @@ export default function AddPartyScreen() {
                             control={control}
                             name="billingAddress"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[s.input, s.multiline, { color: colors.text, borderColor: colors.border }]}
+                                <AppInput
+                                    containerStyle={s.inputWrap}
+                                    style={s.multiline}
                                     value={value}
                                     onChangeText={onChange}
+                                    inputType="text"
                                     placeholder="Full address"
-                                    placeholderTextColor={colors.textSecondary}
                                     multiline
                                     numberOfLines={3}
                                     textAlignVertical="top"
@@ -276,13 +275,12 @@ export default function AddPartyScreen() {
                             control={control}
                             name="openingBalance"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[s.input, { color: colors.text, borderColor: colors.border }]}
+                                <AppInput
                                     value={String(value)}
                                     onChangeText={onChange}
+                                    inputType="decimal"
                                     placeholder="0"
-                                    placeholderTextColor={colors.textSecondary}
-                                    keyboardType="numeric"
+                                    containerStyle={s.inputWrap}
                                 />
                             )}
                         />
@@ -293,13 +291,12 @@ export default function AddPartyScreen() {
                             control={control}
                             name="creditLimit"
                             render={({ field: { onChange, value } }) => (
-                                <TextInput
-                                    style={[s.input, { color: colors.text, borderColor: colors.border }]}
+                                <AppInput
                                     value={String(value)}
                                     onChangeText={onChange}
+                                    inputType="decimal"
                                     placeholder="0"
-                                    placeholderTextColor={colors.textSecondary}
-                                    keyboardType="numeric"
+                                    containerStyle={s.inputWrap}
                                 />
                             )}
                         />
@@ -312,12 +309,12 @@ export default function AddPartyScreen() {
                 <Pressable style={s.modalOverlay} onPress={() => setCountryPickerVisible(false)}>
                     <Pressable style={[s.modalCard, { backgroundColor: colors.surface }]} onPress={() => null}>
                         <Text style={[s.modalTitle, { color: colors.text }]}>Select Country Code</Text>
-                        <TextInput
-                            style={[s.input, { color: colors.text, borderColor: colors.border, marginBottom: Spacing.sm }]}
+                        <AppInput
+                            containerStyle={s.inputWrap}
                             value={countrySearch}
                             onChangeText={setCountrySearch}
+                            inputType="search"
                             placeholder="Search country or code"
-                            placeholderTextColor={colors.textSecondary}
                         />
                         <FlatList
                             data={filteredCountries}
@@ -361,16 +358,6 @@ function FormField({ label, children, error, colors }: { label: string; children
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-        },
-        back: { fontWeight: '600', fontSize: 14 },
-        title: { fontWeight: '700', fontSize: 17, flex: 1, textAlign: 'center' },
-        save: { fontWeight: '700', fontSize: 15 },
         typeRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
         typeChip: {
             flex: 1,
@@ -381,7 +368,7 @@ const styles = (colors: ColorPalette) =>
         },
         typeText: { fontWeight: '600', fontSize: 14 },
         form: { paddingHorizontal: Spacing.lg },
-        input: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, fontSize: 14 },
+        inputWrap: { marginBottom: Spacing.xs },
         multiline: { minHeight: 80 },
         phoneRow: { flexDirection: 'row', gap: Spacing.sm },
         dialCodeButton: {
@@ -397,7 +384,7 @@ const styles = (colors: ColorPalette) =>
         phoneInput: { flex: 1 },
         modalOverlay: {
             flex: 1,
-            backgroundColor: '#00000066',
+            backgroundColor: withAlpha(colors.text, '66'),
             justifyContent: 'flex-end',
         },
         modalCard: {

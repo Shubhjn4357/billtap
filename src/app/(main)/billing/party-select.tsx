@@ -5,17 +5,19 @@ import {
     Pressable,
     StyleSheet,
     Text,
-    TextInput,
     useColorScheme,
     View,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { partyApi } from '../../../api/endpoints';
 import { useInvoiceBuilderStore } from '../../../store/invoiceBuilderStore';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useSmartBack } from '../../../hooks/useSmartBack';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 
 export default function PartySelectScreen() {
     const scheme = useColorScheme() ?? 'light';
@@ -61,15 +63,16 @@ export default function PartySelectScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-            <View style={s.header}>
-                <Pressable onPress={smartBack}>
-                    <Text style={[s.headerAction, { color: colors.primary }]}>Back</Text>
-                </Pressable>
-                <Text style={s.title}>{normalizedPartyType === 'supplier' ? 'Select Supplier' : 'Select Customer'}</Text>
-                <Pressable onPress={clearParty}>
-                    <Text style={[s.headerAction, { color: colors.error }]}>Clear</Text>
-                </Pressable>
-            </View>
+            <AppTopBar
+                title={normalizedPartyType === 'supplier' ? 'Select Supplier' : 'Select Customer'}
+                subtitle="Choose party for this document"
+                onBackPress={smartBack}
+                rightAction={(
+                    <Pressable style={s.clearBtn} onPress={clearParty}>
+                        <MaterialCommunityIcons name="close-circle-outline" size={20} color={colors.error} />
+                    </Pressable>
+                )}
+            />
 
             <View style={s.createPartyWrap}>
                 <Pressable
@@ -85,19 +88,20 @@ export default function PartySelectScreen() {
                         })
                     }
                 >
-                    <Text style={[s.createPartyText, { color: colors.primary }]}>
-                        + Create {normalizedPartyType === 'supplier' ? 'Supplier' : 'Customer'}
-                    </Text>
+                    <View style={s.createPartyRow}>
+                        <MaterialCommunityIcons name="account-plus-outline" size={18} color={colors.primary} />
+                        <Text style={[s.createPartyText, { color: colors.primary }]}>
+                            Create {normalizedPartyType === 'supplier' ? 'Supplier' : 'Customer'}
+                        </Text>
+                    </View>
                 </Pressable>
             </View>
 
             <View style={s.searchWrap}>
-                <TextInput
+                <AppSearchBar
                     value={search}
                     onChangeText={setSearch}
                     placeholder="Search by name, phone or GSTIN"
-                    placeholderTextColor={colors.textSecondary}
-                    style={[s.searchInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceVariant }]}
                 />
             </View>
 
@@ -132,7 +136,7 @@ export default function PartySelectScreen() {
                                     <Text style={[s.rowMeta, { color: colors.textSecondary }]}>GSTIN: {item.gstin}</Text>
                                 ) : null}
                             </View>
-                            <Text style={[s.chevron, { color: colors.textSecondary }]}>{'>'}</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
                         </Pressable>
                     )}
                 />
@@ -144,15 +148,14 @@ export default function PartySelectScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
+        clearBtn: {
+            width: 36,
+            height: 36,
+            borderRadius: Radius.pill,
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: 'center',
+            backgroundColor: colors.surfaceVariant,
         },
-        headerAction: { fontSize: 14, fontWeight: '700' },
-        title: { fontSize: Typography.title.size, fontWeight: '700', color: colors.text },
         searchWrap: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md },
         createPartyWrap: {
             paddingHorizontal: Spacing.lg,
@@ -166,16 +169,10 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             backgroundColor: colors.card,
         },
+        createPartyRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
         createPartyText: {
-            fontSize: Typography.body.size,
-            fontWeight: '700',
-        },
-        searchInput: {
-            borderWidth: 1,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.sm,
             fontSize: 14,
+            fontWeight: '700',
         },
         centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xxl },
         empty: { fontSize: 13 },
@@ -191,7 +188,6 @@ const styles = (colors: ColorPalette) =>
         },
         rowName: { fontSize: 14, fontWeight: '700' },
         rowMeta: { fontSize: 12, marginTop: 2 },
-        chevron: { fontSize: 16, fontWeight: '700' },
     });
 
 

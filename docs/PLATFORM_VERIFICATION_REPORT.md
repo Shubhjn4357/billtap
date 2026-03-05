@@ -1,17 +1,17 @@
 # Platform Verification Report
 
-Generated at: 2026-03-04T11:48:36.861Z
+Generated at: 2026-03-05T04:13:39.139Z
 
 ## Summary
 
-- Server routes discovered: 204
-- Mobile API calls discovered: 133
+- Server routes discovered: 205
+- Mobile API calls discovered: 134
 - Admin API calls discovered: 65
 - Contract issues: 0
 - Server routes missing explicit `ok` response shape: 1
 - Unused server routes (no mobile/admin caller found): 48
 - Mobile screens discovered: 71
-- Mobile screens without reachable API calls: 8
+- Mobile screens without reachable API calls: 1
 - Admin pages discovered: 24
 - Admin pages without reachable API calls: 18
 - Mobile orphan API call sites (not reachable from any screen): 10
@@ -102,6 +102,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
@@ -237,8 +238,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -281,6 +284,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/cash-bank
@@ -362,8 +366,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -406,6 +412,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/cash-bank/[id]
@@ -487,8 +494,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -531,6 +540,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/cash-bank/add
@@ -612,8 +622,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -656,6 +668,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/cash-bank/deposit
@@ -737,8 +750,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -781,6 +796,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/cash-bank/transfer
@@ -862,8 +878,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -906,6 +924,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/cash-bank/withdraw
@@ -987,8 +1006,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -1031,6 +1052,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/expenses
@@ -1112,8 +1134,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -1156,6 +1180,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/expenses/add
@@ -1237,8 +1262,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -1281,6 +1308,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/expenses/recycle-bin
@@ -1362,8 +1390,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -1406,6 +1436,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/loans
@@ -1487,8 +1518,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -1531,6 +1564,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/loans/[id]
@@ -1612,8 +1646,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -1656,6 +1692,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/loans/[id]/interest
@@ -1737,8 +1774,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -1781,6 +1820,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/loans/[id]/payment
@@ -1862,8 +1902,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -1906,6 +1948,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /accounts/loans/add
@@ -1987,8 +2030,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -2031,6 +2076,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /billing
@@ -2112,6 +2158,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -2239,6 +2286,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -2366,6 +2414,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -2493,6 +2542,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -2620,6 +2670,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -2747,8 +2798,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -2791,6 +2844,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /billing/payment-in
@@ -2872,8 +2926,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -2916,6 +2972,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /billing/payment-out
@@ -2997,8 +3054,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -3041,6 +3100,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /billing/pos
@@ -3122,8 +3182,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -3166,6 +3228,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /billing/purchase-bill
@@ -3247,6 +3310,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -3374,6 +3438,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -3501,6 +3566,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -3628,6 +3694,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -3755,6 +3822,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -3882,6 +3950,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -4015,6 +4084,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -4142,8 +4212,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -4186,6 +4258,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /inventory/add-item
@@ -4267,6 +4340,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -4394,8 +4468,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -4438,37 +4514,48 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /legal
 
 - File: `src/app/legal/index.tsx`
 - Direct API calls: none
-- Reachable API calls (via imports): none
+- Reachable API calls (via imports):
+  - `GET /api/organizations/current` (src/store/authStore.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
 
 ### /legal/about
 
 - File: `src/app/legal/about.tsx`
 - Direct API calls: none
-- Reachable API calls (via imports): none
+- Reachable API calls (via imports):
+  - `GET /api/organizations/current` (src/store/authStore.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
 
 ### /legal/changelog
 
 - File: `src/app/legal/changelog.tsx`
 - Direct API calls: none
-- Reachable API calls (via imports): none
+- Reachable API calls (via imports):
+  - `GET /api/organizations/current` (src/store/authStore.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
 
 ### /legal/privacy
 
 - File: `src/app/legal/privacy.tsx`
 - Direct API calls: none
-- Reachable API calls (via imports): none
+- Reachable API calls (via imports):
+  - `GET /api/organizations/current` (src/store/authStore.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
 
 ### /legal/terms
 
 - File: `src/app/legal/terms.tsx`
 - Direct API calls: none
-- Reachable API calls (via imports): none
+- Reachable API calls (via imports):
+  - `GET /api/organizations/current` (src/store/authStore.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
 
 ### /login
 
@@ -4549,6 +4636,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
@@ -4599,7 +4687,7 @@ Generated at: 2026-03-04T11:48:36.861Z
 
 ### /more
 
-- File: `src/app/(main)/more.tsx`
+- File: `src/app/(main)/more/index.tsx`
 - Direct API calls: none
 - Reachable API calls (via imports):
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -4684,8 +4772,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -4728,6 +4818,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/godowns
@@ -4809,8 +4900,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -4853,6 +4946,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/godowns/[id]
@@ -4934,8 +5028,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -4978,6 +5074,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/godowns/add
@@ -5059,8 +5156,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -5103,6 +5202,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/item-masters
@@ -5184,8 +5284,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -5228,6 +5330,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/operations
@@ -5309,6 +5412,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -5436,8 +5540,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -5480,6 +5586,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/reports/gstr3b
@@ -5561,8 +5668,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -5605,6 +5714,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/reports/pnl
@@ -5686,8 +5796,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -5730,6 +5842,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/role-access
@@ -5811,6 +5924,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -5938,6 +6052,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -6065,8 +6180,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -6109,6 +6226,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/settings/[section]
@@ -6190,8 +6308,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -6234,6 +6354,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/staff
@@ -6315,6 +6436,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -6442,6 +6564,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -6569,8 +6692,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -6613,6 +6738,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /more/thermal-printers
@@ -6694,8 +6820,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -6738,6 +6866,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /parties
@@ -6819,8 +6948,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -6863,6 +6994,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /parties/[id]
@@ -6944,8 +7076,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -6988,6 +7122,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /parties/add
@@ -7069,6 +7204,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/store/authStore.ts)
@@ -7196,8 +7332,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -7240,13 +7378,16 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /reports
 
 - File: `src/app/(main)/reports.tsx`
 - Direct API calls: none
-- Reachable API calls (via imports): none
+- Reachable API calls (via imports):
+  - `GET /api/organizations/current` (src/store/authStore.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
 
 ### /reports/gst-summary
 
@@ -7327,8 +7468,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -7371,6 +7514,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /reports/ledgers
@@ -7452,8 +7596,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -7496,6 +7642,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /reports/ledgers/[id]
@@ -7577,8 +7724,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -7621,6 +7770,7 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /reports/trial-balance
@@ -7702,8 +7852,10 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `POST /api/operations/periods/:param/reopen` (src/api/endpoints.ts)
   - `POST /api/operations/periods/lock` (src/api/endpoints.ts)
   - `POST /api/organizations` (src/api/endpoints.ts)
+  - `DELETE /api/organizations/:param` (src/api/endpoints.ts)
   - `PATCH /api/organizations/:param` (src/api/endpoints.ts)
   - `GET /api/organizations/current` (src/api/endpoints.ts)
+  - `GET /api/organizations/current` (src/store/authStore.ts)
   - `GET /api/organizations/mine` (src/api/endpoints.ts)
   - `GET /api/parties` (src/api/endpoints.ts)
   - `POST /api/parties` (src/api/endpoints.ts)
@@ -7746,13 +7898,16 @@ Generated at: 2026-03-04T11:48:36.861Z
   - `PATCH /api/transactions/:param/payment` (src/api/endpoints.ts)
   - `PATCH /api/transactions/:param/payment` (src/services/offlineSyncService.ts)
   - `GET /api/users/me` (src/api/endpoints.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
   - `PATCH /api/users/me` (src/api/endpoints.ts)
 
 ### /scan
 
 - File: `src/app/scan.tsx`
 - Direct API calls: none
-- Reachable API calls (via imports): none
+- Reachable API calls (via imports):
+  - `GET /api/organizations/current` (src/store/authStore.ts)
+  - `GET /api/users/me` (src/store/authStore.ts)
 
 ## Admin Page To API Mapping
 
@@ -7915,13 +8070,6 @@ Generated at: 2026-03-04T11:48:36.861Z
 ## Mobile Screens Without API Reachability
 
 - `/explore` (src/app/explore.tsx)
-- `/legal` (src/app/legal/index.tsx)
-- `/legal/about` (src/app/legal/about.tsx)
-- `/legal/changelog` (src/app/legal/changelog.tsx)
-- `/legal/privacy` (src/app/legal/privacy.tsx)
-- `/legal/terms` (src/app/legal/terms.tsx)
-- `/reports` (src/app/(main)/reports.tsx)
-- `/scan` (src/app/scan.tsx)
 
 ## Admin Pages Without API Reachability
 
