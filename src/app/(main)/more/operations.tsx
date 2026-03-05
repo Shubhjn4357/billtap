@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator, FlatList, Pressable, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -42,23 +42,24 @@ export default function OperationsScreen() {
     const [periodEnd, setPeriodEnd] = useState(new Date().toISOString().slice(0, 10));
     const [notes, setNotes] = useState('');
 
-    const { data: controlsRes, isLoading: controlsLoading } = useQuery({
+    const { data: controlsRes, isLoading: controlsLoading, isRefetching: controlsRefetching, refetch: refetchControls } = useQuery({
         queryKey: ['operations-controls'],
         queryFn: () => operationsApi.getControls(),
         staleTime: 30_000,
     });
 
-    const { data: periodsRes, isLoading: periodsLoading } = useQuery({
+    const { data: periodsRes, isLoading: periodsLoading, isRefetching: periodsRefetching, refetch: refetchPeriods } = useQuery({
         queryKey: ['operations-periods'],
         queryFn: () => operationsApi.getPeriods(),
         staleTime: 30_000,
     });
 
-    const { data: approvalsRes, isLoading: approvalsLoading } = useQuery({
+    const { data: approvalsRes, isLoading: approvalsLoading, isRefetching: approvalsRefetching, refetch: refetchApprovals } = useQuery({
         queryKey: ['operations-approvals'],
         queryFn: () => operationsApi.getApprovals(),
         staleTime: 20_000,
     });
+    const isRefreshing = controlsRefetching || periodsRefetching || approvalsRefetching;
 
     const controls = (controlsRes?.data?.controls ?? {
         makerCheckerEnabled: true,
@@ -240,6 +241,15 @@ export default function OperationsScreen() {
                 <FlatList
                     data={periods}
                     keyExtractor={(item) => item.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefreshing}
+                            onRefresh={() => {
+                                void Promise.all([refetchControls(), refetchPeriods(), refetchApprovals()]);
+                            }}
+                        />
+                    )}
                     ListHeaderComponent={
                         <>
                             <View style={[s.card, { backgroundColor: colors.card }]}>

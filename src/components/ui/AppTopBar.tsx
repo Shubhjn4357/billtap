@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getColors, Radius, Spacing, Typography } from '../../constants/theme';
 import { useHaptics } from '../../hooks/useHaptics';
 import { useAppDrawer } from '../layout/AppDrawerLayout';
+import { openGoToPalette } from '../navigation/GoToPalette';
 
 type AppTopBarProps = {
     title: string;
@@ -12,6 +13,7 @@ type AppTopBarProps = {
     onMenuPress?: () => void;
     rightAction?: React.ReactNode;
     leftMode?: 'auto' | 'none';
+    showSearch?: boolean;
 };
 
 export const AppTopBar = memo(function AppTopBar({
@@ -21,6 +23,7 @@ export const AppTopBar = memo(function AppTopBar({
     onMenuPress,
     rightAction,
     leftMode = 'auto',
+    showSearch = true,
 }: AppTopBarProps) {
     const scheme = useColorScheme();
     const colors = getColors(scheme);
@@ -71,7 +74,20 @@ export const AppTopBar = memo(function AppTopBar({
                 </View>
             </View>
 
-            {rightAction ? <View>{rightAction}</View> : null}
+            <View style={s.rightRow}>
+                {rightAction ? <View>{rightAction}</View> : null}
+                {showSearch ? (
+                    <Pressable
+                        style={s.iconBtn}
+                        onPress={() => {
+                            void selection();
+                            openGoToPalette();
+                        }}
+                    >
+                        <MaterialCommunityIcons name="magnify" size={20} color={colors.text} />
+                    </Pressable>
+                ) : null}
+            </View>
         </View>
     );
 });
@@ -111,6 +127,11 @@ const styles = (colors: ReturnType<typeof getColors>) =>
         },
         titleWrap: {
             flex: 1,
+        },
+        rightRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.xs,
         },
         title: {
             fontSize: Typography.title.size,

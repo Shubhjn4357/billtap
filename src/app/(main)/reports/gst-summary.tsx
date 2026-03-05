@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
@@ -33,7 +33,7 @@ export default function GstSummaryScreen() {
     const month = period === 'current' ? currentMonth : last.getMonth() + 1;
     const year = period === 'current' ? currentYear : last.getFullYear();
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['reports-gst-summary', month, year],
         queryFn: () => reportApi.getGstSummary({ month, year }),
         staleTime: 60_000,
@@ -93,6 +93,15 @@ export default function GstSummaryScreen() {
                 <FlatList
                     data={rows}
                     keyExtractor={(item) => String(item.gstRate)}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>

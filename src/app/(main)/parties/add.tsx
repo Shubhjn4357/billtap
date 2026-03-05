@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -157,7 +157,8 @@ export default function AddPartyScreen() {
                 )}
             />
 
-            <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
+            <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                <ScrollView keyboardShouldPersistTaps="handled" style={s.flex}>
                 <View style={s.typeRow}>
                     {(['CUSTOMER', 'SUPPLIER'] as const).map((t) => (
                         <Pressable
@@ -303,7 +304,8 @@ export default function AddPartyScreen() {
                     </FormField>
                 </View>
                 <View style={{ height: 80 }} />
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
 
             <Modal visible={countryPickerVisible} animationType="slide" transparent onRequestClose={() => setCountryPickerVisible(false)}>
                 <Pressable style={s.modalOverlay} onPress={() => setCountryPickerVisible(false)}>
@@ -358,6 +360,7 @@ function FormField({ label, children, error, colors }: { label: string; children
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
+        flex: { flex: 1 },
         typeRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
         typeChip: {
             flex: 1,

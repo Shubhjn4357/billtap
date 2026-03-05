@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toUserMessage } from '../../../api/client';
 import { settingsApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
 import {
@@ -51,7 +51,7 @@ export default function ItemMastersScreen() {
     const [customCategories, setCustomCategories] = useState<string[]>([]);
     const [customUnits, setCustomUnits] = useState<string[]>([]);
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['settings-section', 'ITEM_SETTINGS'],
         queryFn: () => settingsApi.get('ITEM_SETTINGS'),
     });
@@ -132,16 +132,24 @@ export default function ItemMastersScreen() {
                         {isPending ? (
                             <ActivityIndicator size="small" color={colors.onPrimary} />
                         ) : (
-                            <>
-                                <MaterialCommunityIcons name="content-save-outline" size={15} color={colors.onPrimary} />
-                                <Text style={s.saveBtnText}>Save</Text>
-                            </>
+                            <MaterialCommunityIcons name="content-save-outline" size={16} color={colors.onPrimary} />
                         )}
                     </Pressable>
                 )}
             />
 
-            <ScrollView contentContainerStyle={s.content}>
+            <ScrollView
+                contentContainerStyle={s.content}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefetching}
+                        onRefresh={() => {
+                            refetch();
+                        }}
+                    />
+                )}
+            >
                 <View style={[s.card, focus === 'categories' ? s.focusedCard : null]}>
                     <Text style={s.cardTitle}>Categories</Text>
                     <Text style={s.meta}>
@@ -222,14 +230,11 @@ const styles = (colors: ColorPalette) =>
         saveBtn: {
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
-            paddingVertical: 6,
-            flexDirection: 'row',
+            paddingVertical: 7,
             alignItems: 'center',
-            gap: 4,
-            minWidth: 76,
+            minWidth: 44,
             justifyContent: 'center',
         },
-        saveBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.md },
         card: {
             backgroundColor: colors.card,

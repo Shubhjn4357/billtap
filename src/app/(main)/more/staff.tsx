@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { staffApi } from '../../../api/endpoints';
-import { toUserMessage } from '../../../api/client';
+import { toApiError, toUserMessage } from '../../../api/client';
 import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAuthStore } from '../../../store/authStore';
 import type { StaffInvite, StaffMember } from '../../../types/domain';
@@ -16,6 +16,21 @@ import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+
+const getStaffInviteMessage = (error: unknown) => {
+    const normalized = toApiError(error);
+    const code = (normalized.code ?? '').toUpperCase();
+    if (code === 'STAFF_INVITE_NOT_ALLOWED') {
+        return 'Staff user limit reached for current plan. Upgrade to invite more staff.';
+    }
+    if (code === 'SUBSCRIPTION_WRITE_BLOCKED') {
+        return 'Your current plan is read-only for cloud writes. Upgrade to invite staff.';
+    }
+    if (code === 'ACTION_ACCESS_DENIED' || code === 'CAPABILITY_ACCESS_DENIED') {
+        return 'Your role cannot invite staff members.';
+    }
+    return toUserMessage(error, 'Unable to create invite.');
+};
 
 export default function StaffScreen() {
     const dialog = useAppDialog();
@@ -32,7 +47,7 @@ export default function StaffScreen() {
     const canInviteStaff = canPerformAction(role, 'staff.invite', subscription);
     const canRemoveStaffMember = canPerformAction(role, 'staff.remove', subscription);
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['staff'],
         queryFn: () => staffApi.list(),
         staleTime: 30_000,
@@ -83,7 +98,7 @@ export default function StaffScreen() {
             dialog.alert('Invite created', `Code: ${response.data?.code ?? ''}`);
             setPhoneNumber('');
         } catch (error) {
-            dialog.alert('Invite failed', toUserMessage(error, 'Unable to create invite.'));
+            dialog.alert('Invite failed', getStaffInviteMessage(error));
         }
     };
 
@@ -137,15 +152,16 @@ export default function StaffScreen() {
                 onBackPress={smartBack}
             />
 
-            <View style={s.searchWrap}>
+            <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                <View style={s.searchWrap}>
                 <AppSearchBar
                     value={search}
                     onChangeText={setSearch}
                     placeholder="Search staff, phone, invite code..."
                 />
-            </View>
+                </View>
 
-            <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>TEAM OVERVIEW</Text>
                 <View style={s.summaryGrid}>
                     <View style={[s.summaryCell, { backgroundColor: colors.surfaceVariant }]}>
@@ -159,7 +175,7 @@ export default function StaffScreen() {
                 </View>
             </View>
 
-            <View style={[s.inviteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[s.inviteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[s.sectionTitle, { color: colors.text }]}>Invite Staff</Text>
                 {!canInviteStaff ? (
                     <Text style={[s.accessHint, { color: colors.textSecondary }]}>
@@ -183,14 +199,23 @@ export default function StaffScreen() {
                         {inviting ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <MaterialCommunityIcons name="account-plus-outline" size={18} color={colors.onPrimary} />}
                     </Pressable>
                 </View>
-            </View>
+                </View>
 
-            {isLoading ? (
-                <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
-            ) : (
-                <FlatList
+                {isLoading ? (
+                    <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
+                ) : (
+                    <FlatList
                     data={[{ key: 'members' }, { key: 'invites' }]}
                     keyExtractor={(i) => i.key}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     renderItem={({ item }) => {
                         if (item.key === 'members') {
                             return (
@@ -262,7 +287,8 @@ export default function StaffScreen() {
                     }}
                     contentContainerStyle={{ paddingBottom: 100 }}
                 />
-            )}
+                )}
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
@@ -270,6 +296,7 @@ export default function StaffScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
+        flex: { flex: 1 },
         searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         summaryCard: {
             marginHorizontal: Spacing.lg,

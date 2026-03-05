@@ -3,6 +3,7 @@ import {
     ActivityIndicator,
     FlatList,
     Pressable,
+    RefreshControl,
     StyleSheet,
     Text,
     useColorScheme,
@@ -30,7 +31,7 @@ export default function PartySelectScreen() {
 
     const setParty = useInvoiceBuilderStore((state) => state.setParty);
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['party-select', search, normalizedPartyType],
         queryFn: () => partyApi.list({
             q: search.trim() || undefined,
@@ -113,6 +114,15 @@ export default function PartySelectScreen() {
                 <FlatList
                     data={parties}
                     keyExtractor={(item) => item.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListEmptyComponent={
                         <View style={s.centered}>

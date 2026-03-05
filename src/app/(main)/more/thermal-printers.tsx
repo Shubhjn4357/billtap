@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
 import { useAppDialog } from '@/components/providers/DialogProvider';
@@ -124,10 +124,7 @@ export default function ThermalPrintersScreen() {
                         {isPending ? (
                             <ActivityIndicator color={colors.onPrimary} size="small" />
                         ) : (
-                            <>
-                                <MaterialCommunityIcons name="content-save-outline" size={15} color={colors.onPrimary} />
-                                <Text style={s.saveBtnText}>Save</Text>
-                            </>
+                            <MaterialCommunityIcons name="content-save-outline" size={16} color={colors.onPrimary} />
                         )}
                     </Pressable>
                 )}
@@ -136,7 +133,8 @@ export default function ThermalPrintersScreen() {
             {isLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
             ) : (
-                <ScrollView
+                <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                    <ScrollView
                     contentContainerStyle={s.content}
                     refreshControl={(
                         <RefreshControl
@@ -255,7 +253,8 @@ export default function ThermalPrintersScreen() {
                             </Text>
                         </View>
                     </View>
-                </ScrollView>
+                    </ScrollView>
+                </KeyboardAvoidingView>
             )}
         </SafeAreaView>
     );
@@ -264,6 +263,7 @@ export default function ThermalPrintersScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
+        flex: { flex: 1 },
         saveBtn: {
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
@@ -274,7 +274,6 @@ const styles = (colors: ColorPalette) =>
             minWidth: 76,
             justifyContent: 'center',
         },
-        saveBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         content: { paddingHorizontal: Spacing.lg, paddingBottom: 120, gap: Spacing.sm },
         card: {

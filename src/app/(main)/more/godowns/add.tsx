@@ -53,10 +53,7 @@ export default function AddGodownScreen() {
                         {isPending ? (
                             <ActivityIndicator size="small" color={colors.onPrimary} />
                         ) : (
-                            <>
-                                <MaterialCommunityIcons name="content-save-outline" size={15} color={colors.onPrimary} />
-                                <Text style={s.saveBtnText}>Save</Text>
-                            </>
+                            <MaterialCommunityIcons name="content-save-outline" size={16} color={colors.onPrimary} />
                         )}
                     </Pressable>
                 )}
@@ -104,14 +101,11 @@ const styles = (colors: ColorPalette) =>
         saveBtn: {
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
-            paddingVertical: 6,
-            flexDirection: 'row',
+            paddingVertical: 7,
             alignItems: 'center',
-            gap: 4,
-            minWidth: 76,
+            minWidth: 44,
             justifyContent: 'center',
         },
-        saveBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
         card: {
             marginHorizontal: Spacing.lg,
             marginTop: Spacing.sm,

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Pressable,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -42,13 +43,13 @@ export default function PaymentOutScreen() {
         dialog.alert(title, message);
     };
 
-    const { data: partiesRes, isLoading: partiesLoading } = useQuery({
+    const { data: partiesRes, isLoading: partiesLoading, isRefetching: partiesRefetching, refetch: refetchParties } = useQuery({
         queryKey: ['billing-payment-out-parties'],
         queryFn: () => partyApi.list({ type: 'supplier', limit: 100 }),
         staleTime: 30_000,
     });
 
-    const { data: accountsRes, isLoading: accountsLoading } = useQuery({
+    const { data: accountsRes, isLoading: accountsLoading, isRefetching: accountsRefetching, refetch: refetchAccounts } = useQuery({
         queryKey: ['billing-payment-out-accounts'],
         queryFn: () => cashBankApi.getBalances(),
         staleTime: 30_000,
@@ -114,7 +115,18 @@ export default function PaymentOutScreen() {
                     <ActivityIndicator color={colors.primary} />
                 </View>
             ) : (
-                <ScrollView contentContainerStyle={s.content}>
+                <ScrollView
+                    contentContainerStyle={s.content}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={partiesRefetching || accountsRefetching}
+                            onRefresh={() => {
+                                void Promise.all([refetchParties(), refetchAccounts()]);
+                            }}
+                        />
+                    )}
+                >
                     <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Text style={[s.label, { color: colors.textSecondary }]}>Supplier / Vendor</Text>
                         <SelectField

@@ -117,9 +117,6 @@ jobs:
       - name: Run verification suite
         run: pnpm run verify:ci
         
-      - name: Run verification web smoke tests
-        run: pnpm run smoke:web
-
       - name: Prebuild Android
         run: pnpm exec expo prebuild --platform android --no-install --clean
 

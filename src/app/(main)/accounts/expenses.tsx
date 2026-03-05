@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -29,7 +29,7 @@ export default function ExpensesScreen() {
     const smartBack = useSmartBack('/(main)/accounts');
     const queryClient = useQueryClient();
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['expenses', cat],
         queryFn: () => expenseApi.list({ category: cat === 'ALL' ? undefined : (cat as ExpenseCategory), limit: 150 }),
         staleTime: 60_000,
@@ -193,6 +193,15 @@ export default function ExpensesScreen() {
                 <FlatList
                     data={expenses}
                     keyExtractor={(entry) => entry.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     renderItem={({ item }) => (
                         <ExpenseRow
                             expense={item}

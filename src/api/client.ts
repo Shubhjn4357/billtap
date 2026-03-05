@@ -37,6 +37,17 @@ const extractServerMessage = (payload: unknown): string | null => {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
     const message = (payload as { message?: unknown }).message;
     if (typeof message === 'string' && message.trim().length > 0) return message.trim();
+    const nestedMessage = (payload as { error?: { message?: unknown } }).error?.message;
+    if (typeof nestedMessage === 'string' && nestedMessage.trim().length > 0) return nestedMessage.trim();
+    return null;
+};
+
+const extractServerCode = (payload: unknown): string | null => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    const directCode = (payload as { code?: unknown }).code;
+    if (typeof directCode === 'string' && directCode.trim().length > 0) return directCode.trim();
+    const nestedCode = (payload as { error?: { code?: unknown } }).error?.code;
+    if (typeof nestedCode === 'string' && nestedCode.trim().length > 0) return nestedCode.trim();
     return null;
 };
 
@@ -69,7 +80,7 @@ export const toApiError = (error: unknown): ApiErrorNormalized => {
             status,
             message,
             details: error.response?.data ?? error.toJSON?.(),
-            code: error.code,
+            code: extractServerCode(error.response?.data) ?? error.code,
         };
     }
 

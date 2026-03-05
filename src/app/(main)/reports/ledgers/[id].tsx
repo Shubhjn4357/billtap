@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
@@ -36,7 +36,7 @@ export default function LedgerDetailScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/reports/ledgers');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['reports-ledger-detail', id],
         queryFn: () => accountingApi.getLedger(id!, { limit: 300 }),
         enabled: Boolean(id),
@@ -91,6 +91,15 @@ export default function LedgerDetailScreen() {
                 <FlatList
                     data={filteredEntries}
                     keyExtractor={(item) => item.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <>

@@ -3,6 +3,7 @@ import {
     ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../../hooks/useSmartBack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loanApi } from '../../../../../api/endpoints';
@@ -58,7 +59,7 @@ export default function LoanPaymentEntryScreen() {
                 onBackPress={smartBack}
                 rightAction={(
                     <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => mutate()} disabled={isPending}>
-                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />}
                     </Pressable>
                 )}
             />

@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
-import { Platform, View, useColorScheme } from 'react-native';
+import { AppState, Platform, View, useColorScheme } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { getColors, setThemePreference } from '../constants/theme';
+import { getColors, loadThemePreference, setThemePreference } from '../constants/theme';
 import AnimatedSplashOverlay from '../components/AnimatedSplashOverlay';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
@@ -28,6 +28,7 @@ import {
   requestNotificationPermissions,
 } from '../services/notificationService';
 import { DialogProvider } from '../components/providers/DialogProvider';
+import { getLocalPreferences } from '../services/localPreferences';
 
 const PENDING_SETUP_KEY_PREFIX = 'vahi_pending_setup_';
 
@@ -52,75 +53,83 @@ export default function RootLayout() {
 
     // Restore session and start offline stack
     (async () => {
-      setRoleAccessOverrides({ actionOverrides: {}, moduleOverrides: {} });
-      await restoreCachedSession();
-      const token = await getStoredToken();
-      if (token) {
-        await refreshUser();
+      try {
+        setRoleAccessOverrides({ actionOverrides: {}, moduleOverrides: {} });
+        await loadThemePreference();
+        const localPrefs = await getLocalPreferences();
+        setThemePreference(localPrefs.themeMode);
+        await restoreCachedSession();
+        const token = await getStoredToken();
+        if (token) {
+          await refreshUser();
 
-        const activeBusinessId = await getStoredBusinessId();
-        if (activeBusinessId) {
-          const pendingKey = `${PENDING_SETUP_KEY_PREFIX}${activeBusinessId}`;
-          const pendingPayload = await SecureStore.getItemAsync(pendingKey);
-          if (pendingPayload) {
-            try {
-              const parsed = JSON.parse(pendingPayload) as Record<string, unknown>;
-              await settingsApi.update('GENERAL', { data: parsed });
-              await SecureStore.deleteItemAsync(pendingKey);
-            } catch {
-              // Keep pending setup for next successful online sync attempt.
+          const activeBusinessId = await getStoredBusinessId();
+          if (activeBusinessId) {
+            const pendingKey = `${PENDING_SETUP_KEY_PREFIX}${activeBusinessId}`;
+            const pendingPayload = await SecureStore.getItemAsync(pendingKey);
+            if (pendingPayload) {
+              try {
+                const parsed = JSON.parse(pendingPayload) as Record<string, unknown>;
+                await settingsApi.update('GENERAL', { data: parsed });
+                await SecureStore.deleteItemAsync(pendingKey);
+              } catch {
+                // Keep pending setup for next successful online sync attempt.
+              }
             }
           }
+
+          try {
+            const securitySettings = await settingsApi.get('SECURITY');
+            const security = (securitySettings.data ?? {}) as Record<string, unknown>;
+            setRoleAccessOverrides({
+              actionOverrides: parseRoleActionOverrides(security[ROLE_ACTION_OVERRIDES_KEY]),
+              moduleOverrides: parseRoleModuleOverrides(security[ROLE_MODULE_OVERRIDES_KEY]),
+            });
+          } catch {
+            setRoleAccessOverrides({ actionOverrides: {}, moduleOverrides: {} });
+          }
+
+          void offlineSyncService.flushQueue();
+          offlineSyncService.startAutoSync();
+          startForegroundSync(60_000);
+          void registerBackgroundSync();
+        } else {
+          markBootstrapped();
         }
 
-        try {
-          const generalSettings = await settingsApi.get('GENERAL');
-          const mode = (generalSettings.data as Record<string, unknown> | undefined)?.theme_mode;
-          setThemePreference(typeof mode === 'string' ? mode : 'SYSTEM');
-        } catch {
-          // Keep system theme when GENERAL settings are not yet available.
+        if (Platform.OS !== 'web') {
+          const granted = await requestNotificationPermissions();
+          if (granted) {
+            await registerAndroidChannels();
+          }
+          cleanupNotifications = registerNotificationListeners();
         }
-
-        try {
-          const securitySettings = await settingsApi.get('SECURITY');
-          const security = (securitySettings.data ?? {}) as Record<string, unknown>;
-          setRoleAccessOverrides({
-            actionOverrides: parseRoleActionOverrides(security[ROLE_ACTION_OVERRIDES_KEY]),
-            moduleOverrides: parseRoleModuleOverrides(security[ROLE_MODULE_OVERRIDES_KEY]),
-          });
-        } catch {
-          setRoleAccessOverrides({ actionOverrides: {}, moduleOverrides: {} });
-        }
-
-        void offlineSyncService.flushQueue();
-        offlineSyncService.startAutoSync();
-        startForegroundSync(60_000);
-        void registerBackgroundSync();
-      } else {
+      } catch (error) {
+        console.error('Root bootstrap failed', error);
         markBootstrapped();
-      }
-
-      if (Platform.OS !== 'web') {
-        const granted = await requestNotificationPermissions();
-        if (granted) {
-          await registerAndroidChannels();
+      } finally {
+        if (active) {
+          setReady(true);
         }
-        cleanupNotifications = registerNotificationListeners();
       }
 
-      if (active) {
-        setReady(true);
-      }
     })();
 
     const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
       const isOnline = Boolean(state.isConnected) && state.isInternetReachable !== false;
       offlineSyncService.onNetworkStateChange(isOnline);
     });
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void refreshUser();
+        void offlineSyncService.flushQueue();
+      }
+    });
 
     return () => {
       active = false;
       unsubscribeNetInfo();
+      appStateSubscription.remove();
       cleanupNotifications();
       offlineSyncService.stopAutoSync();
       stopForegroundSync();

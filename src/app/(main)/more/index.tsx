@@ -73,6 +73,7 @@ export default function MoreScreen() {
             title: 'Business',
             items: [
                 { label: 'Settings', route: '/(main)/more/settings', visible: canAccessModule(role, 'settings', subscription) },
+                { label: 'App Preferences', route: '/(main)/more/app-preferences', visible: true },
                 { label: 'Item Masters', route: '/(main)/more/item-masters', visible: canAccessModule(role, 'inventory', subscription) },
                 { label: 'Thermal Printer Profiles', route: '/(main)/more/thermal-printers', visible: canAccessModule(role, 'settings', subscription) },
                 { label: 'Subscription', route: '/(main)/more/subscription', visible: true },

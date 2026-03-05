@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { itemApi } from '../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
-import { useScannerMode } from '../../hooks/useScannerMode';
-import { useAuthStore } from '../../store/authStore';
-import type { Item } from '../../types/domain';
-import { canPerformAction } from '../../utils/accessControl';
-import { AppTopBar } from '../../components/ui/AppTopBar';
-import { AppSearchBar } from '../../components/ui/AppSearchBar';
-import { useAppDialog } from '../../components/providers/DialogProvider';
-import { useHaptics } from '../../hooks/useHaptics';
+import { itemApi } from '../../../api/endpoints';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useScannerMode } from '../../../hooks/useScannerMode';
+import { useAuthStore } from '../../../store/authStore';
+import type { Item } from '../../../types/domain';
+import { canPerformAction } from '../../../utils/accessControl';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { useAppDialog } from '../../../components/providers/DialogProvider';
+import { useHaptics } from '../../../hooks/useHaptics';
 
 type FilterType = 'all' | 'in' | 'low' | 'out';
 const EMPTY_ITEMS: Item[] = [];
@@ -306,9 +307,7 @@ export default function InventoryScreen() {
             ) : null}
 
             {isLoading ? (
-                <View style={s.centered}>
-                    <ActivityIndicator color={colors.primary} />
-                </View>
+                <ListSkeleton rows={7} />
             ) : (
                 <FlatList
                     data={filteredItems}
@@ -584,3 +583,4 @@ const rowStyles = StyleSheet.create({
     statValue: { fontSize: 16, fontWeight: '800' },
     statLabel: { fontSize: 10, marginTop: 2, fontWeight: '600' },
 });
+

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoiceApi, itemApi, type InvoiceCreateInput } from '../../api/endpoints';
 import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
-import { GST_SLABS } from '../../constants/gstRates';
+import { GST_SLABS, INDIAN_STATE_LIST } from '../../constants/gstRates';
 import { InvoiceType, PaymentMode } from '../../constants/enums';
 import { useAuthStore } from '../../store/authStore';
 import { useInvoiceBuilderStore, useInvoiceTotals } from '../../store/invoiceBuilderStore';
@@ -138,6 +138,10 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
             })),
         [itemCatalog]
     );
+    const stateOptions: SelectOption[] = useMemo(
+        () => INDIAN_STATE_LIST.map((entry) => ({ label: entry.name, value: entry.name, description: entry.label })),
+        []
+    );
     const itemById = useMemo(() => {
         const map: Record<string, Item> = {};
         itemCatalog.forEach((item) => {
@@ -245,7 +249,11 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
             )}
             />
 
-            <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={s.scrollContent}>
+            <KeyboardAvoidingView
+                style={s.flex}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            >
+                <ScrollView style={s.flex} keyboardShouldPersistTaps="handled" contentContainerStyle={s.scrollContent}>
                 {config.helperText ? (
                     <View style={[s.helperCard, { backgroundColor: colors.surfaceVariant }]}>
                         <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{config.helperText}</Text>
@@ -298,11 +306,15 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                     {gstEnabled ? (
                         <>
                             <Text style={s.inputLabel}>Place Of Supply</Text>
-                            <AppInput
-                                inputType="text"
-                                value={state.placeOfSupply}
-                                onChangeText={setPlaceOfSupply}
-                                placeholder="State / UT"
+                            <SelectField
+                                value={state.placeOfSupply || null}
+                                onChange={setPlaceOfSupply}
+                                options={stateOptions}
+                                placeholder="Select state / UT"
+                                title="Place Of Supply"
+                                searchable
+                                allowClear
+                                onClear={() => setPlaceOfSupply('')}
                             />
 
                             <Text style={s.inputLabel}>E-Way Bill Number (optional)</Text>
@@ -435,7 +447,8 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                         numberOfLines={3}
                     />
                 </View>
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
@@ -561,6 +574,7 @@ function TotalRow({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
+        flex: { flex: 1 },
         saveBtn: {
             width: 38,
             height: 38,

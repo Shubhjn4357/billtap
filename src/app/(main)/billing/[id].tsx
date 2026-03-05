@@ -4,6 +4,7 @@ import {
     Text,
     ScrollView,
     Pressable,
+    RefreshControl,
     StyleSheet,
     useColorScheme,
     ActivityIndicator,
@@ -41,18 +42,18 @@ export default function InvoiceDetailScreen() {
         dialog.alert(title, message);
     };
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching: invoiceRefetching, refetch: refetchInvoice } = useQuery({
         queryKey: ['invoice', id],
         queryFn: () => invoiceApi.get(id!),
         enabled: !!id,
     });
 
-    const { data: generalSettings } = useQuery({
+    const { data: generalSettings, isRefetching: generalRefetching, refetch: refetchGeneralSettings } = useQuery({
         queryKey: ['settings-section', 'GENERAL'],
         queryFn: () => settingsApi.get('GENERAL'),
         staleTime: 5 * 60_000,
     });
-    const { data: invoicePrintSettings } = useQuery({
+    const { data: invoicePrintSettings, isRefetching: printRefetching, refetch: refetchPrintSettings } = useQuery({
         queryKey: ['settings-section', 'INVOICE_PRINT'],
         queryFn: () => settingsApi.get('INVOICE_PRINT'),
         staleTime: 5 * 60_000,
@@ -222,7 +223,18 @@ export default function InvoiceDetailScreen() {
                 )}
             />
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={invoiceRefetching || generalRefetching || printRefetching}
+                        onRefresh={() => {
+                            void Promise.all([refetchInvoice(), refetchGeneralSettings(), refetchPrintSettings()]);
+                        }}
+                    />
+                )}
+            >
                 <View style={[s.statusBanner, { backgroundColor: withAlpha(statusColor, '22') }]}>
                     <View>
                         <Text style={[s.invNum, { color: colors.text }]}>{invoice.invoiceNumber}</Text>

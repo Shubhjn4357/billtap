@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { accountingApi } from '../../../../api/endpoints';
@@ -48,7 +49,7 @@ export default function AddCashBankAccountScreen() {
     const [name, setName] = useState(buildDefaultName('CASH'));
     const [code, setCode] = useState('');
 
-    const { data: accountsRes, isLoading: accountsLoading } = useQuery({
+    const { data: accountsRes, isLoading: accountsLoading, isRefetching, refetch } = useQuery({
         queryKey: ['accounting-accounts'],
         queryFn: () => accountingApi.getAccounts(),
         staleTime: 60_000,
@@ -133,12 +134,23 @@ export default function AddCashBankAccountScreen() {
                 onBackPress={smartBack}
                 rightAction={(
                     <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => mutate()} disabled={isPending}>
-                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />}
                     </Pressable>
                 )}
             />
 
-            <View style={s.content}>
+            <ScrollView
+                contentContainerStyle={s.content}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefetching}
+                        onRefresh={() => {
+                            refetch();
+                        }}
+                    />
+                )}
+            >
                 <Text style={[s.label, { color: colors.textSecondary }]}>Account Kind</Text>
                 <View style={s.kindsRow}>
                     {(['CASH', 'BANK', 'CHEQUE', 'OTHER'] as AccountKind[]).map((entry) => {
@@ -186,7 +198,7 @@ export default function AddCashBankAccountScreen() {
                 <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={() => mutate()} disabled={isPending}>
                     {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>{isEdit ? 'Update Account' : 'Create Account'}</Text>}
                 </Pressable>
-            </View>
+            </ScrollView>
         </SafeAreaView>
     );
 }

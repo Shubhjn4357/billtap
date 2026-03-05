@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,6 +15,8 @@ import { useAppDialog } from '@/components/providers/DialogProvider';
 type QueueEntry = {
     id: string;
     type: string;
+    status?: string;
+    lastErrorCode?: string;
     createdAt: string;
     attemptCount: number;
     lastAttemptAt?: string;
@@ -44,7 +46,7 @@ export default function SyncDiagnosticsScreen() {
 
     const [intervalInput, setIntervalInput] = useState('60');
 
-    const { data: queueData, isLoading: queueLoading, refetch } = useQuery({
+    const { data: queueData, isLoading: queueLoading, isRefetching: queueRefetching, refetch } = useQuery({
         queryKey: ['offline-sync-queue'],
         queryFn: async () => {
             const [queue, stats] = await Promise.all([
@@ -56,11 +58,12 @@ export default function SyncDiagnosticsScreen() {
         staleTime: 15_000,
     });
 
-    const { data: generalSettings } = useQuery({
+    const { data: generalSettings, isRefetching: settingsRefetching, refetch: refetchSettings } = useQuery({
         queryKey: ['settings-section', 'GENERAL'],
         queryFn: () => settingsApi.get('GENERAL'),
         staleTime: 30_000,
     });
+    const isRefreshing = queueRefetching || settingsRefetching;
 
     const settingsData = (generalSettings?.data ?? {}) as Record<string, unknown>;
     const conflictPolicy = typeof settingsData.sync_conflict_policy === 'string'
@@ -68,9 +71,20 @@ export default function SyncDiagnosticsScreen() {
         : 'LAST_WRITE_WINS';
 
     const queue = queueData?.queue ?? [];
-    const stats = queueData?.stats ?? { pendingCount: 0, oldestCreatedAt: null as string | null };
+    const stats = queueData?.stats ?? { pendingCount: 0, blockedCount: 0, oldestCreatedAt: null as string | null };
+    const [upgradeHintShown, setUpgradeHintShown] = useState(false);
 
     const storageBackend = useMemo(() => offlineSyncService.getStorageBackend(), []);
+
+    useEffect(() => {
+        if (upgradeHintShown) return;
+        if (stats.blockedCount <= 0) return;
+        setUpgradeHintShown(true);
+        dialog.alert(
+            'Upgrade required',
+            'Some cloud sync items are blocked by current plan. Data is saved locally. Upgrade plan to sync these items.'
+        );
+    }, [dialog, stats.blockedCount, upgradeHintShown]);
 
     const { mutate: flushNow, isPending: flushing } = useMutation({
         mutationFn: () => offlineSyncService.flushQueue(),
@@ -125,12 +139,22 @@ export default function SyncDiagnosticsScreen() {
                 onBackPress={smartBack}
             />
 
-            {queueLoading ? (
-                <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
-            ) : (
-                <FlatList
+            <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                {queueLoading ? (
+                    <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
+                ) : (
+                    <FlatList
                     data={queue}
                     keyExtractor={(item) => item.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefreshing}
+                            onRefresh={() => {
+                                void Promise.all([refetch(), refetchSettings()]);
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <>
@@ -138,6 +162,7 @@ export default function SyncDiagnosticsScreen() {
                                 <Text style={s.cardTitle}>Queue Overview</Text>
                                 <Text style={s.cardLine}>Storage: {storageBackend}</Text>
                                 <Text style={s.cardLine}>Pending: {stats.pendingCount}</Text>
+                                <Text style={s.cardLine}>Blocked (upgrade): {stats.blockedCount}</Text>
                                 <Text style={s.cardLine}>Oldest: {formatDate(stats.oldestCreatedAt ?? undefined)}</Text>
                                 <View style={s.actionRow}>
                                     <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => flushNow()} disabled={flushing}>
@@ -189,15 +214,18 @@ export default function SyncDiagnosticsScreen() {
                     renderItem={({ item }) => (
                         <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}> 
                             <Text style={s.rowType}>{item.type}</Text>
+                            <Text style={s.rowMeta}>Status: {item.status ?? 'pending'}</Text>
                             <Text style={s.rowMeta}>Created: {formatDate(item.createdAt)}</Text>
                             <Text style={s.rowMeta}>Attempts: {item.attemptCount}</Text>
                             <Text style={s.rowMeta}>Next retry: {formatRetryAt(item.nextRetryAt)}</Text>
+                            {item.lastErrorCode ? <Text style={s.rowMeta}>Code: {item.lastErrorCode}</Text> : null}
                             {item.lastError ? <Text style={s.rowError}>Error: {item.lastError}</Text> : null}
                         </View>
                     )}
                     ListEmptyComponent={<Text style={{ color: colors.textSecondary }}>Queue is empty.</Text>}
                 />
-            )}
+                )}
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
@@ -205,6 +233,7 @@ export default function SyncDiagnosticsScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
+        flex: { flex: 1 },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         card: {
             borderWidth: 1,

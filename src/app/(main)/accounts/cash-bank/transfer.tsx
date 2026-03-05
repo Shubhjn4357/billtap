@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { cashBankApi } from '../../../../api/endpoints';
@@ -33,7 +34,7 @@ export default function TransferScreen() {
     const [description, setDescription] = useState('');
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
-    const { data: accountsData } = useQuery({ queryKey: ['cash-bank-balances'], queryFn: () => cashBankApi.getBalances() });
+    const { data: accountsData, isRefetching, refetch } = useQuery({ queryKey: ['cash-bank-balances'], queryFn: () => cashBankApi.getBalances() });
     const accounts = useMemo(() => (accountsData?.data ?? []) as Account[], [accountsData?.data]);
 
     const accountOptions = useMemo<SelectOption[]>(
@@ -86,12 +87,24 @@ export default function TransferScreen() {
                 onBackPress={smartBack}
                 rightAction={(
                     <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={onSave} disabled={isPending}>
-                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                        {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />}
                     </Pressable>
                 )}
             />
 
-            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
+            <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={s.content}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefetching}
+                        onRefresh={() => {
+                            refetch();
+                        }}
+                    />
+                )}
+            >
                 <View style={[s.heroCard, { backgroundColor: colors.primaryVariant }]}>
                     <Text style={s.heroLabel}>TRANSFER AMOUNT</Text>
                     <AppInput

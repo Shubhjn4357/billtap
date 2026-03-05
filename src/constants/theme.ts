@@ -1,4 +1,5 @@
 import { Platform, type ColorSchemeName } from 'react-native';
+import { offlineKeyValueStore } from '../offline/db/offlineKeyValueStore';
 
 export const Colors = {
     light: {
@@ -109,6 +110,7 @@ export const withAlpha = (color: string, alpha: number | string): string => {
 };
 
 let themePreference: ThemePreference = 'system';
+const THEME_PREFERENCE_STORAGE_KEY = 'vahi_theme_preference_v1';
 
 const normalizeThemePreference = (value: unknown): ThemePreference => {
     const candidate = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -123,6 +125,19 @@ export const setThemePreference = (value: unknown) => {
 };
 
 export const getThemePreference = (): ThemePreference => themePreference;
+
+export const loadThemePreference = async (): Promise<ThemePreference> => {
+    const stored = await offlineKeyValueStore.getItem(THEME_PREFERENCE_STORAGE_KEY);
+    setThemePreference(stored ?? 'system');
+    return getThemePreference();
+};
+
+export const saveThemePreference = async (value: unknown): Promise<ThemePreference> => {
+    setThemePreference(value);
+    const normalized = getThemePreference();
+    await offlineKeyValueStore.setItem(THEME_PREFERENCE_STORAGE_KEY, normalized);
+    return normalized;
+};
 
 export function getColors(scheme: ColorSchemeName | null | undefined): ColorPalette {
     const mode: ThemeMode =

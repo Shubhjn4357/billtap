@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -72,7 +72,7 @@ export default function PnLReportScreen() {
     const { selection } = useHaptics();
     const range = RANGES[rangeIndex];
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['pnl-report', range.from, range.to],
         queryFn: () => reportApi.getSummary({ from: range.from, to: range.to }),
         staleTime: 120_000,
@@ -110,7 +110,18 @@ export default function PnLReportScreen() {
                 })}
             </ScrollView>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefetching}
+                        onRefresh={() => {
+                            refetch();
+                        }}
+                    />
+                )}
+            >
                 <View style={[s.heroCard, { backgroundColor: isProfitable ? colors.success : colors.error }]}>
                     <Text style={s.heroLabel}>NET PROFIT / LOSS</Text>
                     {isLoading ? (

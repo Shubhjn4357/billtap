@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../../hooks/useSmartBack';
@@ -42,7 +42,7 @@ export default function Gstr1ReportScreen() {
     const [month, setMonth] = useState(DEFAULT_MONTH);
     const [year] = useState(DEFAULT_YEAR);
 
-    const { data, isLoading, isFetching } = useQuery({
+    const { data, isLoading, isFetching, refetch } = useQuery({
         queryKey: ['report-gstr1', month, year],
         queryFn: () => reportApi.getGstr1({ month, year }),
         staleTime: 60_000,
@@ -109,6 +109,15 @@ export default function Gstr1ReportScreen() {
                 <FlatList
                     data={rows}
                     keyExtractor={(item, index) => `${item.gstRate ?? index}`}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isFetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListEmptyComponent={(
                         <View style={s.centered}>

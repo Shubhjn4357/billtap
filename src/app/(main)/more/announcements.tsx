@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -15,7 +15,7 @@ export default function AnnouncementsScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['active-offers'],
         queryFn: () => offerApi.getActive(),
         staleTime: 60_000,
@@ -37,6 +37,15 @@ export default function AnnouncementsScreen() {
                 <FlatList
                     data={offers}
                     keyExtractor={(item) => item.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     ListEmptyComponent={<View style={s.centered}><Text style={{ color: colors.textSecondary }}>No active announcements.</Text></View>}
                     renderItem={({ item }) => (
                         <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 

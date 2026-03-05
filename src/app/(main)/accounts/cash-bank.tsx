@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -27,7 +27,7 @@ export default function CashBankScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['cash-bank-balances'],
         queryFn: () => cashBankApi.getBalances(),
         staleTime: 30_000,
@@ -104,6 +104,15 @@ export default function CashBankScreen() {
                 <FlatList
                     data={accounts}
                     keyExtractor={(account) => account.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     renderItem={({ item: account }) => (
                         <Pressable
                             style={[s.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}

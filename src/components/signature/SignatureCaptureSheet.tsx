@@ -310,7 +310,7 @@ const styles = (colors: ReturnType<typeof getColors>) =>
             paddingBottom: Spacing.lg,
             backgroundColor: colors.background,
             gap: Spacing.sm,
-            minHeight: 420,
+            minHeight: '96%',
         },
         title: {
             color: colors.text,

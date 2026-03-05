@@ -1,4 +1,4 @@
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -15,7 +15,7 @@ export default function LoansScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['loans'],
         queryFn: () => loanApi.list(),
         staleTime: 60_000,
@@ -68,6 +68,15 @@ export default function LoansScreen() {
                 <FlatList
                     data={loans}
                     keyExtractor={(entry) => entry.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     renderItem={({ item: loan }) => <LoanRow loan={loan} colors={colors} />}
                     ListEmptyComponent={
                         <View style={s.centered}>

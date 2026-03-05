@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
@@ -17,17 +17,18 @@ export default function LoanDetailScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
 
-    const { data: loanData, isLoading } = useQuery({
+    const { data: loanData, isLoading, isRefetching: loanRefetching, refetch: refetchLoan } = useQuery({
         queryKey: ['loan', id],
         queryFn: () => loanApi.get(id!),
         enabled: !!id,
     });
 
-    const { data: txnData } = useQuery({
+    const { data: txnData, isRefetching: txnRefetching, refetch: refetchTransactions } = useQuery({
         queryKey: ['loan-transactions', id],
         queryFn: () => loanApi.getTransactions(id!),
         enabled: !!id,
     });
+    const isRefreshing = loanRefetching || txnRefetching;
 
     const loan = loanData?.data;
     const transactions = (txnData?.data ?? []) as LoanTransaction[];
@@ -59,7 +60,18 @@ export default function LoanDetailScreen() {
                 onBackPress={smartBack}
             />
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefreshing}
+                        onRefresh={() => {
+                            void Promise.all([refetchLoan(), refetchTransactions()]);
+                        }}
+                    />
+                )}
+            >
                 <View style={[s.summaryCard, { backgroundColor: color }]}>
                     <Text style={s.sumType}>{isLent ? 'Given' : 'Borrowed'}</Text>
                     <Text style={s.sumName}>{loan.lenderBorrowerName}</Text>

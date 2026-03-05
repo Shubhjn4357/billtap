@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -31,6 +31,7 @@ type PlanLike = {
 };
 
 type MockCheckoutOutcome = 'succeeded' | 'pending' | 'failed';
+type BillingCycleTab = 'MONTHLY' | 'YEARLY' | 'THREE_YEAR';
 
 const formatPlanPrice = (plan: PlanLike) => {
     const value = Number(plan.pricePerCycle ?? plan.monthlyPrice ?? 0);
@@ -69,20 +70,22 @@ export default function SubscriptionScreen() {
     const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
     const [lastCheckoutIntentId, setLastCheckoutIntentId] = useState<string | null>(null);
     const [mockOutcome, setMockOutcome] = useState<MockCheckoutOutcome>('succeeded');
+    const [activeCycleTab, setActiveCycleTab] = useState<BillingCycleTab>('MONTHLY');
 
     const livePaymentsEnabled = process.env.EXPO_PUBLIC_ENABLE_LIVE_PAYMENTS === 'true';
 
-    const { data: plansRes, isLoading: loadingPlans, refetch: refetchPlans } = useQuery({
+    const { data: plansRes, isLoading: loadingPlans, isRefetching: plansRefetching, refetch: refetchPlans } = useQuery({
         queryKey: ['subscription-plans'],
         queryFn: () => subscriptionApi.getPlans(),
         staleTime: 60_000,
     });
 
-    const { data: offersRes } = useQuery({
+    const { data: offersRes, isRefetching: offersRefetching, refetch: refetchOffers } = useQuery({
         queryKey: ['subscription-offers-active'],
         queryFn: () => subscriptionApi.getActiveOffers(),
         staleTime: 60_000,
     });
+    const isRefreshing = plansRefetching || offersRefetching;
 
     const plans = useMemo(() => {
         const raw = (plansRes?.plans ?? []) as PlanLike[];
@@ -93,6 +96,10 @@ export default function SubscriptionScreen() {
             return nameA.localeCompare(nameB);
         });
     }, [plansRes]);
+    const visiblePlans = useMemo(
+        () => plans.filter((entry) => (entry.billingCycle ?? 'MONTHLY') === activeCycleTab),
+        [activeCycleTab, plans]
+    );
 
     const { mutate: validateDiscount, isPending: validatingDiscount } = useMutation({
         mutationFn: (planId?: string) =>
@@ -214,7 +221,20 @@ export default function SubscriptionScreen() {
                 onBackPress={smartBack}
             />
 
-            <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+            <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                <ScrollView
+                contentContainerStyle={s.content}
+                showsVerticalScrollIndicator={false}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefreshing}
+                        onRefresh={() => {
+                            void Promise.all([refetchPlans(), refetchOffers()]);
+                        }}
+                    />
+                )}
+            >
                 <View style={[s.modeCard, { backgroundColor: colors.surfaceVariant }]}>
                     <Text style={[s.modeTitle, { color: colors.text }]}>
                         Payment mode: {livePaymentsEnabled ? 'Live checkout' : 'Mock checkout'}
@@ -289,17 +309,39 @@ export default function SubscriptionScreen() {
                         )}
                     </Pressable>
                 </View>
+                <View style={s.cycleTabs}>
+                    {(['MONTHLY', 'YEARLY', 'THREE_YEAR'] as BillingCycleTab[]).map((entry) => {
+                        const selected = activeCycleTab === entry;
+                        return (
+                            <Pressable
+                                key={entry}
+                                style={[
+                                    s.cycleTab,
+                                    {
+                                        borderColor: selected ? colors.primary : colors.border,
+                                        backgroundColor: selected ? withAlpha(colors.primary, '20') : colors.card,
+                                    },
+                                ]}
+                                onPress={() => setActiveCycleTab(entry)}
+                            >
+                                <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 12, fontWeight: '700' }}>
+                                    {entry === 'THREE_YEAR' ? '3 YEAR' : entry}
+                                </Text>
+                            </Pressable>
+                        );
+                    })}
+                </View>
 
                 {loadingPlans ? (
                     <View style={s.centered}>
                         <ActivityIndicator color={colors.primary} />
                     </View>
-                ) : plans.length === 0 ? (
+                ) : visiblePlans.length === 0 ? (
                     <View style={s.centered}>
-                        <Text style={{ color: colors.textSecondary }}>No plans found.</Text>
+                        <Text style={{ color: colors.textSecondary }}>No plans found for selected cycle.</Text>
                     </View>
                 ) : (
-                    plans.map((plan) => {
+                    visiblePlans.map((plan) => {
                         const isCurrent = Boolean(currentTier && plan.tier === currentTier);
                         const isBusy = checkoutPending && selectedPlanId === plan.id;
                         const featureList = (plan.enabledFeatures ?? plan.features ?? []).slice(0, 6);
@@ -361,7 +403,8 @@ export default function SubscriptionScreen() {
                 {lastCheckoutIntentId ? (
                     <Text style={[s.intentMeta, { color: colors.textSecondary }]}>Last intent: {lastCheckoutIntentId}</Text>
                 ) : null}
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
@@ -369,6 +412,7 @@ export default function SubscriptionScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
+        flex: { flex: 1 },
         content: { paddingHorizontal: Spacing.lg, paddingBottom: 80, gap: Spacing.md },
         modeCard: { borderRadius: Radius.card, padding: Spacing.md, marginTop: Spacing.sm },
         modeTitle: { fontSize: 14, fontWeight: '700' },
@@ -381,6 +425,13 @@ const styles = (colors: ColorPalette) =>
         offerCard: { borderWidth: 1, borderRadius: Radius.card, padding: Spacing.md },
         offerTitle: { fontSize: 14, fontWeight: '700' },
         offerMessage: { fontSize: 12, marginTop: 4 },
+        cycleTabs: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+        cycleTab: {
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: 6,
+        },
         discountRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
         discountInputWrap: { flex: 1 },
         validateBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, minWidth: 72, alignItems: 'center' },

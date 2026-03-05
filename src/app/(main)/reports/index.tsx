@@ -3,10 +3,10 @@ import { Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
-import { AppTopBar } from '../../components/ui/AppTopBar';
-import { AppSearchBar } from '../../components/ui/AppSearchBar';
-import { useHaptics } from '../../hooks/useHaptics';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { useHaptics } from '../../../hooks/useHaptics';
 
 type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
 type ReportCard = {
@@ -226,3 +226,4 @@ const styles = (colors: ColorPalette) =>
         emptyTitle: { fontSize: Typography.body.size, fontWeight: '700' },
         emptySubtitle: { fontSize: Typography.caption.size },
     });
+

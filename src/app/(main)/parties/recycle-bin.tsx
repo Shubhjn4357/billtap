@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-    ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,7 +21,7 @@ export default function PartyRecycleBinScreen() {
     const queryClient = useQueryClient();
     const [processingId, setProcessingId] = useState<string | null>(null);
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['parties-recycle-bin'],
         queryFn: () => partyApi.recycleBin({ limit: 250 }),
         staleTime: 15_000,
@@ -98,6 +98,15 @@ export default function PartyRecycleBinScreen() {
                 <FlatList
                     data={rows}
                     keyExtractor={(item) => item.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     renderItem={({ item }) => {
                         const busy = processingId === item.id;

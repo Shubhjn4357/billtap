@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import {
-    ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
@@ -43,13 +43,13 @@ export default function CashBankAccountDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const qc = useQueryClient();
 
-    const { data: balancesRes, isLoading: balancesLoading } = useQuery({
+    const { data: balancesRes, isLoading: balancesLoading, isRefetching: balancesRefetching, refetch: refetchBalances } = useQuery({
         queryKey: ['cash-bank-balances'],
         queryFn: () => cashBankApi.getBalances(),
         staleTime: 30_000,
     });
 
-    const { data: ledgerRes, isLoading: ledgerLoading } = useQuery({
+    const { data: ledgerRes, isLoading: ledgerLoading, isRefetching: ledgerRefetching, refetch: refetchLedger } = useQuery({
         queryKey: ['cash-bank-ledger', id],
         queryFn: () => cashBankApi.getLedger(id!, { limit: 200 }),
         enabled: Boolean(id),
@@ -83,6 +83,7 @@ export default function CashBankAccountDetailScreen() {
     });
 
     const isLoading = balancesLoading || ledgerLoading;
+    const isRefreshing = balancesRefetching || ledgerRefetching;
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -108,6 +109,15 @@ export default function CashBankAccountDetailScreen() {
                 <FlatList
                     data={entries}
                     keyExtractor={(item, index) => String(item.id ?? `${index}`)}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefreshing}
+                            onRefresh={() => {
+                                void Promise.all([refetchBalances(), refetchLedger()]);
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <>

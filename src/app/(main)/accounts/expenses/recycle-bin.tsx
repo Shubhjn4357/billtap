@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-    ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -22,7 +22,7 @@ export default function ExpenseRecycleBinScreen() {
     const qc = useQueryClient();
     const [processingId, setProcessingId] = useState<string | null>(null);
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['expenses-recycle-bin'],
         queryFn: () => expenseApi.recycleBin({ limit: 200 }),
         staleTime: 15_000,
@@ -99,6 +99,15 @@ export default function ExpenseRecycleBinScreen() {
                 <FlatList
                     data={entries}
                     keyExtractor={(item) => item.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     ListEmptyComponent={
                         <View style={s.centered}>
                             <Text style={{ color: colors.textSecondary }}>Recycle bin is empty.</Text>

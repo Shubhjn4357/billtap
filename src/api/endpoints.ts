@@ -37,7 +37,7 @@ import type {
     OperationApprovalStatus,
     OperationsAuditLog,
 } from '../types/domain';
-import { isOfflineLikeError, offlineSyncService } from '../services/offlineSyncService';
+import { offlineSyncService } from '../services/offlineSyncService';
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -1290,6 +1290,19 @@ export const offerApi = {
 
 const nowIso = () => new Date().toISOString();
 
+const queueAndAttemptSync = async (
+    mutation: Parameters<typeof offlineSyncService.enqueueMutation>[0],
+    successMessage: string
+) => {
+    await offlineSyncService.enqueueMutation(mutation);
+    void offlineSyncService.flushQueue();
+    return {
+        ok: true,
+        message: successMessage,
+        syncQueued: true,
+    };
+};
+
 const toItemSyncPayload = (item: Item): Record<string, unknown> & { id: string } => ({
     id: item.id,
     name: item.name,
@@ -1639,10 +1652,6 @@ const originalCashBankApi = {
     transfer: cashBankApi.transfer,
 };
 
-const originalPosApi = {
-    createSale: posApi.createSale,
-};
-
 itemApi.list = async (params) => {
     try {
         const response = await originalItemApi.list(params);
@@ -1678,16 +1687,13 @@ itemApi.create = async (data) => {
     const localId = offlineSyncService.createLocalId('item');
     const localItem = buildLocalItem({ id: localId, input: { ...data, name: data.name } });
     await offlineSyncService.upsertCachedItem(localItem);
-    try {
-        return await originalItemApi.upsert({ ...data, id: localId });
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'upsert_item',
             payload: toItemSyncPayload(localItem),
-        });
-        return { ok: true, message: 'Saved offline and queued for sync.' };
-    }
+        },
+        'Saved locally. Sync pending.'
+    );
 };
 
 itemApi.update = async (id, data) => {
@@ -1703,30 +1709,24 @@ itemApi.update = async (id, data) => {
         base,
     });
     await offlineSyncService.upsertCachedItem(localItem);
-    try {
-        return await originalItemApi.update(id, data);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'upsert_item',
             payload: toItemSyncPayload(localItem),
-        });
-        return { ok: true, message: 'Updated offline and queued for sync.' };
-    }
+        },
+        'Updated locally. Sync pending.'
+    );
 };
 
 itemApi.delete = async (id) => {
     await offlineSyncService.removeCachedItem(id);
-    try {
-        return await originalItemApi.delete(id);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'delete_item',
             payload: { id },
-        });
-        return { ok: true, message: 'Delete queued for sync.' };
-    }
+        },
+        'Delete saved locally. Sync pending.'
+    );
 };
 
 itemApi.adjustStock = async (id, data) => {
@@ -1744,21 +1744,28 @@ itemApi.adjustStock = async (id, data) => {
         };
         await offlineSyncService.upsertCachedItem(updated);
     }
-    try {
-        return await originalItemApi.adjustStock(id, data);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        if (existing) {
-            const latest = (await offlineSyncService.getCachedItems()).find((entry) => entry.id === id);
-            if (latest) {
-                await offlineSyncService.enqueueMutation({
-                    type: 'upsert_item',
-                    payload: toItemSyncPayload(latest),
-                });
-            }
-        }
-        return { ok: true, message: 'Stock change saved offline and queued for sync.' };
+    if (!existing) {
+        return queueAndAttemptSync(
+            {
+                type: 'upsert_item',
+                payload: {
+                    id,
+                    name: 'Item',
+                    stock: data.quantity,
+                },
+            },
+            'Stock adjustment saved locally. Sync pending.'
+        );
     }
+
+    const latest = (await offlineSyncService.getCachedItems()).find((entry) => entry.id === id) ?? existing;
+    return queueAndAttemptSync(
+        {
+            type: 'upsert_item',
+            payload: toItemSyncPayload(latest),
+        },
+        'Stock adjustment saved locally. Sync pending.'
+    );
 };
 
 partyApi.list = async (params) => {
@@ -1798,20 +1805,14 @@ partyApi.create = async (data) => {
         input: { ...data, type: data.type, name: data.name },
     });
     await offlineSyncService.upsertCachedParty(localParty);
-    try {
-        const response = await originalPartyApi.create(data);
-        if (response.data) {
-            await offlineSyncService.upsertCachedParty(response.data);
-        }
-        return response;
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    await queueAndAttemptSync(
+        {
             type: 'upsert_party',
             payload: toPartySyncPayload(localParty),
-        });
-        return { ok: true, data: localParty, message: 'Saved offline and queued for sync.' };
-    }
+        },
+        'Party saved locally. Sync pending.'
+    );
+    return { ok: true, data: localParty, message: 'Party saved locally. Sync pending.' };
 };
 
 partyApi.update = async (id, data) => {
@@ -1828,34 +1829,25 @@ partyApi.update = async (id, data) => {
         base,
     });
     await offlineSyncService.upsertCachedParty(localParty);
-    try {
-        const response = await originalPartyApi.update(id, data);
-        if (response.data) {
-            await offlineSyncService.upsertCachedParty(response.data);
-        }
-        return response;
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    await queueAndAttemptSync(
+        {
             type: 'upsert_party',
             payload: toPartySyncPayload(localParty),
-        });
-        return { ok: true, data: localParty, message: 'Update queued for sync.' };
-    }
+        },
+        'Party updated locally. Sync pending.'
+    );
+    return { ok: true, data: localParty, message: 'Party updated locally. Sync pending.' };
 };
 
 partyApi.delete = async (id) => {
     await offlineSyncService.archiveCachedParty(id);
-    try {
-        return await originalPartyApi.delete(id);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'archive_party',
             payload: { id },
-        });
-        return { ok: true, message: 'Delete queued for sync.' };
-    }
+        },
+        'Party archived locally. Sync pending.'
+    );
 };
 
 invoiceApi.list = async (params) => {
@@ -1895,38 +1887,26 @@ invoiceApi.create = async (data) => {
     const localInvoice = buildLocalInvoiceFromBuilder(data);
     const syncPayload = mapBuilderToServerCreatePayload(data);
     await offlineSyncService.upsertCachedInvoice(localInvoice);
-    try {
-        const response = await originalInvoiceApi.create(data);
-        if (response.data) {
-            await offlineSyncService.upsertCachedInvoice(response.data);
-            if (response.data.id !== localInvoice.id) {
-                await offlineSyncService.removeCachedInvoice(localInvoice.id);
-            }
-        }
-        return response;
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    await queueAndAttemptSync(
+        {
             type: 'create_invoice',
             payload: { ...syncPayload, localId: localInvoice.id },
-        });
-        return {
-            ok: true,
-            data: localInvoice,
-            message: 'Invoice saved offline and queued for sync.',
-        };
-    }
+        },
+        'Invoice saved locally. Sync pending.'
+    );
+    return {
+        ok: true,
+        data: localInvoice,
+        message: 'Invoice saved locally. Sync pending.',
+    };
 };
 
 invoiceApi.recordPayment = async (id, data) => {
     await offlineSyncService.updateCachedInvoicePayment(id, {
         paidAmount: data.paidAmount,
     });
-    try {
-        return await originalInvoiceApi.recordPayment(id, data);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'record_invoice_payment',
             payload: {
                 invoiceId: id,
@@ -1934,23 +1914,20 @@ invoiceApi.recordPayment = async (id, data) => {
                 paymentMode: data.paymentMode,
                 date: data.date,
             },
-        });
-        return { ok: true, message: 'Payment update queued for sync.' };
-    }
+        },
+        'Payment saved locally. Sync pending.'
+    );
 };
 
 invoiceApi.delete = async (id) => {
     await offlineSyncService.archiveCachedInvoice(id);
-    try {
-        return await originalInvoiceApi.delete(id);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'delete_invoice',
             payload: { id },
-        });
-        return { ok: true, message: 'Invoice delete queued for sync.' };
-    }
+        },
+        'Invoice delete saved locally. Sync pending.'
+    );
 };
 
 settingsApi.getAll = async () => {
@@ -1996,20 +1973,18 @@ settingsApi.getSection = settingsApi.get;
 settingsApi.update = async (section, body) => {
     const normalizedSection = section.toUpperCase();
     await offlineSyncService.setCachedSettingsSection(normalizedSection, body.data);
-    try {
-        return await originalSettingsApi.update(normalizedSection, body);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    await queueAndAttemptSync(
+        {
             type: 'update_settings_section',
             payload: { section: normalizedSection, data: body.data },
-        });
-        return {
-            ok: true,
-            data: body.data,
-            message: 'Settings saved offline and queued for sync.',
-        };
-    }
+        },
+        'Settings saved locally. Sync pending.'
+    );
+    return {
+        ok: true,
+        data: body.data,
+        message: 'Settings saved locally. Sync pending.',
+    };
 };
 
 settingsApi.updateSection = async (section, data) =>
@@ -2032,30 +2007,18 @@ expenseApi.list = async (params) => {
 expenseApi.create = async (payload) => {
     const localExpense = buildLocalExpense(payload);
     await offlineSyncService.upsertCachedExpense(localExpense);
-    try {
-        const response = await originalExpenseApi.create(payload);
-        if (response.data) {
-            await offlineSyncService.upsertCachedExpense(response.data);
-            if (response.data.id !== localExpense.id) {
-                const remaining = (await offlineSyncService.getCachedExpenses()).filter(
-                    (entry) => entry.id !== localExpense.id
-                );
-                await offlineSyncService.setCachedExpenses(remaining);
-            }
-        }
-        return response;
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    await queueAndAttemptSync(
+        {
             type: 'create_expense',
             payload: { ...payload, localId: localExpense.id },
-        });
-        return {
-            ok: true,
-            data: localExpense,
-            message: 'Expense saved offline and queued for sync.',
-        };
-    }
+        },
+        'Expense saved locally. Sync pending.'
+    );
+    return {
+        ok: true,
+        data: localExpense,
+        message: 'Expense saved locally. Sync pending.',
+    };
 };
 
 loanApi.list = async () => {
@@ -2092,24 +2055,18 @@ loanApi.get = async (id) => {
 loanApi.create = async (payload) => {
     const localLoan = buildLocalLoan(payload);
     await offlineSyncService.upsertCachedLoan(localLoan);
-    try {
-        const response = await originalLoanApi.create(payload);
-        if (response.data) {
-            await offlineSyncService.upsertCachedLoan(response.data);
-        }
-        return response;
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    await queueAndAttemptSync(
+        {
             type: 'create_loan',
             payload: { ...payload, localId: localLoan.id },
-        });
-        return {
-            ok: true,
-            data: localLoan,
-            message: 'Loan saved offline and queued for sync.',
-        };
-    }
+        },
+        'Loan saved locally. Sync pending.'
+    );
+    return {
+        ok: true,
+        data: localLoan,
+        message: 'Loan saved locally. Sync pending.',
+    };
 };
 
 godownApi.list = async () => {
@@ -2129,41 +2086,29 @@ godownApi.list = async () => {
 godownApi.create = async (payload) => {
     const localGodown = buildLocalGodown(payload);
     await offlineSyncService.upsertCachedGodown(localGodown);
-    try {
-        const response = await originalGodownApi.create(payload);
-        if (response.data) {
-            await offlineSyncService.upsertCachedGodown(response.data);
-            if (response.data.id !== localGodown.id) {
-                await offlineSyncService.removeCachedGodown(localGodown.id);
-            }
-        }
-        return response;
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    await queueAndAttemptSync(
+        {
             type: 'create_godown',
             payload: { ...payload, localId: localGodown.id },
-        });
-        return {
-            ok: true,
-            data: localGodown,
-            message: 'Godown saved offline and queued for sync.',
-        };
-    }
+        },
+        'Godown saved locally. Sync pending.'
+    );
+    return {
+        ok: true,
+        data: localGodown,
+        message: 'Godown saved locally. Sync pending.',
+    };
 };
 
 godownApi.delete = async (id) => {
     await offlineSyncService.removeCachedGodown(id);
-    try {
-        return await originalGodownApi.delete(id);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'delete_godown',
             payload: { id },
-        });
-        return { ok: true, message: 'Delete queued for sync.' };
-    }
+        },
+        'Delete saved locally. Sync pending.'
+    );
 };
 
 cashBankApi.getBalances = async () => {
@@ -2181,42 +2126,33 @@ cashBankApi.getBalances = async () => {
 };
 
 cashBankApi.deposit = async (payload) => {
-    try {
-        return await originalCashBankApi.deposit(payload);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'cash_bank_deposit',
             payload,
-        });
-        return { ok: true, message: 'Deposit queued for sync.' };
-    }
+        },
+        'Deposit saved locally. Sync pending.'
+    );
 };
 
 cashBankApi.withdraw = async (payload) => {
-    try {
-        return await originalCashBankApi.withdraw(payload);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'cash_bank_withdraw',
             payload,
-        });
-        return { ok: true, message: 'Withdraw queued for sync.' };
-    }
+        },
+        'Withdrawal saved locally. Sync pending.'
+    );
 };
 
 cashBankApi.transfer = async (payload) => {
-    try {
-        return await originalCashBankApi.transfer(payload);
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    return queueAndAttemptSync(
+        {
             type: 'cash_bank_transfer',
             payload,
-        });
-        return { ok: true, message: 'Transfer queued for sync.' };
-    }
+        },
+        'Transfer saved locally. Sync pending.'
+    );
 };
 
 posApi.createSale = async (payload) => {
@@ -2250,25 +2186,16 @@ posApi.createSale = async (payload) => {
         roundOffAmount: payload.roundOffAmount ?? 0,
     });
     await offlineSyncService.upsertCachedInvoice(local);
-    try {
-        const response = await originalPosApi.createSale(payload);
-        if (response.data) {
-            await offlineSyncService.upsertCachedInvoice(response.data);
-            if (response.data.id !== local.id) {
-                await offlineSyncService.removeCachedInvoice(local.id);
-            }
-        }
-        return response;
-    } catch (error) {
-        if (!isOfflineLikeError(error)) throw error;
-        await offlineSyncService.enqueueMutation({
+    await queueAndAttemptSync(
+        {
             type: 'create_pos_sale',
             payload,
-        });
-        return {
-            ok: true,
-            data: local,
-            message: 'POS bill saved offline and queued for sync.',
-        };
-    }
+        },
+        'POS bill saved locally. Sync pending.'
+    );
+    return {
+        ok: true,
+        data: local,
+        message: 'POS bill saved locally. Sync pending.',
+    };
 };

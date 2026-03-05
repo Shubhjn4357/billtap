@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -20,13 +20,13 @@ export default function PartyDetailScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/parties');
 
-    const { data: partyData, isLoading } = useQuery({
+    const { data: partyData, isLoading, isRefetching: partyRefetching, refetch: refetchParty } = useQuery({
         queryKey: ['party', id],
         queryFn: () => partyApi.get(id!),
         enabled: !!id,
     });
 
-    const { data: invoicesData } = useQuery({
+    const { data: invoicesData, isRefetching: invoicesRefetching, refetch: refetchInvoices } = useQuery({
         queryKey: ['party-invoices', id],
         queryFn: () => invoiceApi.list({ limit: 20 }),
         enabled: !!id,
@@ -61,7 +61,18 @@ export default function PartyDetailScreen() {
                 )}
             />
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={partyRefetching || invoicesRefetching}
+                        onRefresh={() => {
+                            void Promise.all([refetchParty(), refetchInvoices()]);
+                        }}
+                    />
+                )}
+            >
                 <View style={[s.summaryCard, { backgroundColor: colors.primary }]}>
                     <View style={s.avatarLg}>
                         <Text style={s.avatarText}>{party.name.charAt(0).toUpperCase()}</Text>

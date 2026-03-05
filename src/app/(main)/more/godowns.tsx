@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -18,7 +18,7 @@ export default function GodownsScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['godowns'],
         queryFn: () => godownApi.list(),
         staleTime: 60_000,
@@ -70,6 +70,15 @@ export default function GodownsScreen() {
                 <FlatList
                     data={godowns}
                     keyExtractor={(item) => item.id}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingBottom: 120 }}
                     renderItem={({ item }) => (
                         <Pressable

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -136,7 +136,7 @@ export default function RoleAccessScreen() {
     const [selectedRole, setSelectedRole] = useState<OrganizationRole>('owner');
     const [search, setSearch] = useState('');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['settings-section', 'SECURITY'],
         queryFn: () => settingsApi.get('SECURITY'),
     });
@@ -232,10 +232,7 @@ export default function RoleAccessScreen() {
                         {saving ? (
                             <ActivityIndicator color={colors.onPrimary} size="small" />
                         ) : (
-                            <>
-                                <MaterialCommunityIcons name="content-save-outline" size={15} color={colors.onPrimary} />
-                                <Text style={s.saveBtnText}>Save</Text>
-                            </>
+                            <MaterialCommunityIcons name="content-save-outline" size={16} color={colors.onPrimary} />
                         )}
                     </Pressable>
                 )}
@@ -249,7 +246,18 @@ export default function RoleAccessScreen() {
                 </View>
             ) : null}
 
-            <ScrollView contentContainerStyle={s.content}>
+            <ScrollView
+                contentContainerStyle={s.content}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefetching}
+                        onRefresh={() => {
+                            refetch();
+                        }}
+                    />
+                )}
+            >
                 <AppSearchBar
                     value={search}
                     onChangeText={setSearch}
@@ -373,14 +381,11 @@ const styles = (colors: ColorPalette) =>
         saveBtn: {
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
-            paddingVertical: 6,
-            flexDirection: 'row',
+            paddingVertical: 7,
             alignItems: 'center',
-            gap: 4,
-            minWidth: 76,
+            minWidth: 44,
             justifyContent: 'center',
         },
-        saveBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
         readOnlyBanner: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
         readOnlyText: { fontSize: 12 },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.md },

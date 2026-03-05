@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -36,7 +36,7 @@ export default function SettingsRootScreen() {
     const { selection } = useHaptics();
     const [search, setSearch] = useState('');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['settings-schema'],
         queryFn: () => settingsApi.getSchema(),
         staleTime: 30 * 60_000,
@@ -77,12 +77,46 @@ export default function SettingsRootScreen() {
                     <ActivityIndicator color={colors.primary} />
                 </View>
             ) : (
-                <ScrollView contentContainerStyle={s.content}>
+                <ScrollView
+                    contentContainerStyle={s.content}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
+                >
                     <AppSearchBar
                         value={search}
                         onChangeText={setSearch}
                         placeholder="Search settings sections..."
                     />
+
+                    <Pressable
+                        style={({ pressed }) => [
+                            s.card,
+                            { backgroundColor: colors.card, borderColor: colors.border },
+                            pressed && { opacity: 0.8 },
+                        ]}
+                        onPress={() => {
+                            void selection();
+                            router.push('/(main)/more/app-preferences');
+                        }}
+                    >
+                        <View style={s.cardLeft}>
+                            <View style={[s.iconWrap, { backgroundColor: withAlpha(colors.primary, '16') }]}>
+                                <MaterialCommunityIcons name="tune-variant" size={18} color={colors.primary} />
+                            </View>
+                            <View>
+                                <Text style={[s.cardTitle, { color: colors.text }]}>App Preferences</Text>
+                                <Text style={[s.cardMeta, { color: colors.textSecondary }]}>Theme and device-local behavior</Text>
+                            </View>
+                        </View>
+                        <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
+                    </Pressable>
 
                     <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>SETTINGS OVERVIEW</Text>

@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
@@ -21,7 +21,7 @@ export default function TrialBalanceScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/reports');
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['reports-trial-balance'],
         queryFn: () => accountingApi.getTrialBalance(),
         staleTime: 60_000,
@@ -43,6 +43,15 @@ export default function TrialBalanceScreen() {
                 <FlatList
                     data={rows}
                     keyExtractor={(item) => item.accountId}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>

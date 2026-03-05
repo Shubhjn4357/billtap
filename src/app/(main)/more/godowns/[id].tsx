@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
@@ -19,7 +19,7 @@ export default function GodownDetailScreen() {
 
     const godownId = useMemo(() => (Array.isArray(id) ? id[0] : id), [id]);
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['godown-stock', godownId],
         queryFn: () => godownApi.getStock(godownId as string),
         enabled: Boolean(godownId),
@@ -44,6 +44,15 @@ export default function GodownDetailScreen() {
                 <FlatList
                     data={stock}
                     keyExtractor={(item) => item.itemId}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={isRefetching}
+                            onRefresh={() => {
+                                refetch();
+                            }}
+                        />
+                    )}
                     contentContainerStyle={{ paddingBottom: 120 }}
                     ListEmptyComponent={(
                         <View style={s.centered}>

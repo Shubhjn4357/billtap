@@ -1,12 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator,
+    Image,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    useColorScheme,
+    View,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../../../../api/endpoints';
 import { getSettingsSectionLabel } from '../../../../constants/settingsSchema';
-import { getColors, Radius, setThemePreference, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import type { SettingsFieldDefinition } from '../../../../types/api';
 import { extractUpiIdFromPayload } from '../../../../utils/upi';
 import { SignatureCaptureSheet } from '../../../../components/signature/SignatureCaptureSheet';
@@ -14,6 +27,8 @@ import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { AppSearchBar } from '../../../../components/ui/AppSearchBar';
+import { DateField } from '../../../../components/ui/DateField';
+import { SelectField } from '../../../../components/ui/SelectField';
 import {
     parseRoleActionOverrides,
     parseRoleModuleOverrides,
@@ -22,6 +37,7 @@ import {
     setRoleAccessOverrides,
 } from '../../../../utils/accessControl';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { toUserMessage } from '../../../../api/client';
 
 const coerceValue = (field: SettingsFieldDefinition, input: unknown) => {
     if ((input === null || input === undefined) && field.nullable) return null;
@@ -87,17 +103,18 @@ export default function SettingsSectionEditorScreen() {
     const [signatureCaptureVisible, setSignatureCaptureVisible] = useState(false);
     const handledUpiPayloadRef = useRef<string>('');
 
-    const { data: schemaResponse, isLoading: schemaLoading } = useQuery({
+    const { data: schemaResponse, isLoading: schemaLoading, isRefetching: schemaRefetching, refetch: refetchSchema } = useQuery({
         queryKey: ['settings-schema'],
         queryFn: () => settingsApi.getSchema(),
         staleTime: 30 * 60_000,
     });
 
-    const { data: sectionData, isLoading: sectionLoading } = useQuery({
+    const { data: sectionData, isLoading: sectionLoading, isRefetching: sectionRefetching, refetch: refetchSection } = useQuery({
         queryKey: ['settings-section', section],
         queryFn: () => settingsApi.get(section),
         enabled: Boolean(section),
     });
+    const isRefreshing = schemaRefetching || sectionRefetching;
 
     const fields = useMemo(() => {
         if (!schemaResponse?.schema || !section) return [];
@@ -139,12 +156,6 @@ export default function SettingsSectionEditorScreen() {
     }, [dialog, scanAt, section, upiPayload]);
 
     useEffect(() => {
-        if (section !== 'GENERAL') return;
-        const mode = draft.theme_mode;
-        setThemePreference(typeof mode === 'string' ? mode : 'SYSTEM');
-    }, [draft.theme_mode, section]);
-
-    useEffect(() => {
         if (section !== 'SECURITY') return;
         setRoleAccessOverrides({
             actionOverrides: parseRoleActionOverrides(draft[ROLE_ACTION_OVERRIDES_KEY]),
@@ -153,10 +164,13 @@ export default function SettingsSectionEditorScreen() {
     }, [draft, section]);
 
     const filteredFields = useMemo(() => {
+        const fieldsForSection = section === 'GENERAL'
+            ? fields.filter((field) => field.key !== 'theme_mode')
+            : fields;
         const needle = fieldSearch.trim().toLowerCase();
-        if (!needle) return fields;
-        return fields.filter((field) => `${field.label} ${field.key}`.toLowerCase().includes(needle));
-    }, [fieldSearch, fields]);
+        if (!needle) return fieldsForSection;
+        return fieldsForSection.filter((field) => `${field.label} ${field.key}`.toLowerCase().includes(needle));
+    }, [fieldSearch, fields, section]);
     const changedCount = useMemo(() => {
         return fields.reduce((count, field) => {
             const prev = baselineDraft[field.key];
@@ -165,6 +179,32 @@ export default function SettingsSectionEditorScreen() {
         }, 0);
     }, [baselineDraft, draft, fields]);
 
+    const invoicePrintPreview = useMemo(() => {
+        if (section !== 'INVOICE_PRINT') return null;
+        const printLayoutType = String(draft.print_layout_type ?? 'REGULAR');
+        const textSizePreset = String(draft.print_text_size ?? 'MEDIUM');
+        const pageSize = String(draft.page_size ?? 'A4 (210 x 297 mm)');
+        const orientation = String(draft.orientation ?? 'PORTRAIT');
+        const showCompanyName = Boolean(draft.print_company_name ?? true);
+        const showAddress = Boolean(draft.print_address_email_phone ?? true);
+        const showTaxBreakup = Boolean(draft.print_tax_details_breakup ?? true);
+        const showSignature = Boolean(draft.print_signature_image ?? false);
+        const showTerms = Boolean(draft.print_terms_and_conditions ?? false);
+        const sampleTextSize = textSizePreset === 'SMALL' ? 11 : textSizePreset === 'LARGE' ? 15 : 13;
+        return {
+            printLayoutType,
+            textSizePreset,
+            pageSize,
+            orientation,
+            showCompanyName,
+            showAddress,
+            showTaxBreakup,
+            showSignature,
+            showTerms,
+            sampleTextSize,
+        };
+    }, [draft, section]);
+
     const { mutate: saveSettings, isPending } = useMutation({
         mutationFn: () => settingsApi.update(section, { data: draft }),
         onSuccess: () => {
@@ -172,7 +212,7 @@ export default function SettingsSectionEditorScreen() {
             dialog.alert('Saved', 'Settings updated successfully.');
         },
         onError: (error) => {
-            dialog.alert('Error', error instanceof Error ? error.message : 'Failed to save settings.');
+            dialog.alert('Error', toUserMessage(error, 'Failed to save settings.'));
         },
     });
 
@@ -196,149 +236,236 @@ export default function SettingsSectionEditorScreen() {
                 onBackPress={smartBack}
                 rightAction={(
                     <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => saveSettings()} disabled={isPending}>
-                        {isPending ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.saveText, { color: colors.primary }]}>Save</Text>}
+                        {isPending ? (
+                            <ActivityIndicator color={colors.primary} />
+                        ) : (
+                            <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />
+                        )}
                     </Pressable>
                 )}
             />
 
-            {isLoading ? (
-                <View style={s.centered}>
-                    <ActivityIndicator color={colors.primary} />
-                </View>
-            ) : (
-                <ScrollView contentContainerStyle={s.content}>
-                    <AppSearchBar
-                        value={fieldSearch}
-                        onChangeText={setFieldSearch}
-                        placeholder="Search fields..."
-                    />
-                    <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>SECTION STATUS</Text>
-                        <Text style={s.summaryValue}>{filteredFields.length}</Text>
-                        <Text style={[s.summaryMeta, { color: colors.textSecondary }]}>
-                            {fieldSearch.trim().length > 0 ? `Filtered from ${fields.length} fields` : `${changedCount} unsaved changes`}
-                        </Text>
+            <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                {isLoading ? (
+                    <View style={s.centered}>
+                        <ActivityIndicator color={colors.primary} />
                     </View>
+                ) : (
+                    <ScrollView
+                        contentContainerStyle={s.content}
+                        keyboardShouldPersistTaps="handled"
+                        refreshControl={(
+                            <RefreshControl
+                                tintColor={colors.primary}
+                                refreshing={isRefreshing}
+                                onRefresh={() => {
+                                    void Promise.all([refetchSchema(), refetchSection()]);
+                                }}
+                            />
+                        )}
+                    >
+                        <AppSearchBar
+                            value={fieldSearch}
+                            onChangeText={setFieldSearch}
+                            placeholder="Search fields..."
+                        />
+                        <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>SECTION STATUS</Text>
+                            <Text style={s.summaryValue}>{filteredFields.length}</Text>
+                            <Text style={[s.summaryMeta, { color: colors.textSecondary }]}>
+                                {fieldSearch.trim().length > 0 ? `Filtered from ${fields.length} fields` : `${changedCount} unsaved changes`}
+                            </Text>
+                        </View>
 
-                    {filteredFields.map((field) => {
-                        const value = draft[field.key];
-                        return (
-                            <View key={field.key} style={[s.fieldCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <Text style={[s.fieldLabel, { color: colors.text }]}>{field.label}</Text>
-                                {field.type === 'boolean' ? (
-                                    <Switch
-                                        value={Boolean(value)}
-                                        onValueChange={(next) => setDraft((prev) => ({ ...prev, [field.key]: next }))}
-                                        trackColor={{ true: colors.primary }}
-                                    />
-                                ) : field.type === 'enum' ? (
-                                    <View style={s.enumWrap}>
-                                        {(field.enumValues ?? []).map((option) => {
-                                            const selected = value === option;
-                                            return (
-                                                <Pressable
-                                                    key={option}
-                                                    style={[
-                                                        s.enumChip,
-                                                        { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' },
-                                                    ]}
-                                                    onPress={() => setDraft((prev) => ({ ...prev, [field.key]: option }))}
-                                                >
-                                                    <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 12, fontWeight: '600' }}>
-                                                        {option}
-                                                    </Text>
-                                                </Pressable>
-                                            );
-                                        })}
-                                    </View>
-                                ) : field.type === 'array_of_VoucherType' ? (
-                                    <View style={s.enumWrap}>
-                                        {(field.enumValues ?? []).map((option) => {
-                                            const selectedValues = Array.isArray(value) ? value.map(String) : [];
-                                            const selected = selectedValues.includes(option);
-                                            return (
-                                                <Pressable
-                                                    key={option}
-                                                    style={[
-                                                        s.enumChip,
-                                                        { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' },
-                                                    ]}
-                                                    onPress={() => {
-                                                        const next = selected
-                                                            ? selectedValues.filter((entry) => entry !== option)
-                                                            : [...selectedValues, option];
-                                                        setDraft((prev) => ({ ...prev, [field.key]: next }));
-                                                    }}
-                                                >
-                                                    <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '600' }}>
-                                                        {option}
-                                                    </Text>
-                                                </Pressable>
-                                            );
-                                        })}
-                                    </View>
-                                ) : (
-                                    <>
-                                        <AppInput
-                                            inputType={inputTypeForField(field)}
-                                            value={value == null ? '' : String(value)}
-                                            onChangeText={(text) => setDraft((prev) => ({ ...prev, [field.key]: coerceValue(field, text) }))}
+                        {filteredFields.map((field) => {
+                            const value = draft[field.key];
+                            const resolvedInputType = inputTypeForField(field);
+                            return (
+                                <View key={field.key} style={[s.fieldCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                    <Text style={[s.fieldLabel, { color: colors.text }]}>{field.label}</Text>
+                                    {field.type === 'boolean' ? (
+                                        <Switch
+                                            value={Boolean(value)}
+                                            onValueChange={(next) => setDraft((prev) => ({ ...prev, [field.key]: next }))}
+                                            trackColor={{ true: colors.primary }}
                                         />
-                                        {section === 'GENERAL' && field.key === 'payment_upi_id' ? (
-                                            <Pressable
-                                                style={[s.inlineAction, { borderColor: colors.border }]}
-                                                onPress={() => router.push({
-                                                    pathname: '/scan',
-                                                    params: {
-                                                        target: 'upi',
-                                                        returnPath: `/(main)/more/settings/${section}`,
-                                                    },
-                                                })}
-                                            >
-                                                <Text style={[s.inlineActionText, { color: colors.primary }]}>Scan UPI QR</Text>
-                                            </Pressable>
-                                        ) : null}
-                                        {section === 'GENERAL' && field.key === 'signature_url' ? (
-                                            <View style={s.signatureRow}>
+                                    ) : field.type === 'enum' ? (
+                                        <View style={s.enumWrap}>
+                                            {(field.enumValues ?? []).map((option) => {
+                                                const selected = value === option;
+                                                return (
+                                                    <Pressable
+                                                        key={option}
+                                                        style={[
+                                                            s.enumChip,
+                                                            { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' },
+                                                        ]}
+                                                        onPress={() => setDraft((prev) => ({ ...prev, [field.key]: option }))}
+                                                    >
+                                                        <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 12, fontWeight: '600' }}>
+                                                            {option}
+                                                        </Text>
+                                                    </Pressable>
+                                                );
+                                            })}
+                                        </View>
+                                    ) : field.type === 'array_of_VoucherType' ? (
+                                        <View style={s.enumWrap}>
+                                            {(field.enumValues ?? []).map((option) => {
+                                                const selectedValues = Array.isArray(value) ? value.map(String) : [];
+                                                const selected = selectedValues.includes(option);
+                                                return (
+                                                    <Pressable
+                                                        key={option}
+                                                        style={[
+                                                            s.enumChip,
+                                                            { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' },
+                                                        ]}
+                                                        onPress={() => {
+                                                            const next = selected
+                                                                ? selectedValues.filter((entry) => entry !== option)
+                                                                : [...selectedValues, option];
+                                                            setDraft((prev) => ({ ...prev, [field.key]: next }));
+                                                        }}
+                                                    >
+                                                        <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '600' }}>
+                                                            {option}
+                                                        </Text>
+                                                    </Pressable>
+                                                );
+                                            })}
+                                        </View>
+                                    ) : resolvedInputType === 'date' ? (
+                                        <DateField
+                                            value={value == null ? null : String(value)}
+                                            onChange={(next) => setDraft((prev) => ({ ...prev, [field.key]: coerceValue(field, next) }))}
+                                        />
+                                    ) : Array.isArray(field.allowed) && field.allowed.length > 0 ? (
+                                        <SelectField
+                                            value={value == null ? '' : String(value)}
+                                            onChange={(next) => setDraft((prev) => ({ ...prev, [field.key]: coerceValue(field, next) }))}
+                                            options={field.allowed.map((option) => ({
+                                                label: option,
+                                                value: option,
+                                                description: option,
+                                            }))}
+                                            allowClear={field.nullable ?? false}
+                                            onClear={() => setDraft((prev) => ({ ...prev, [field.key]: null }))}
+                                        />
+                                    ) : (
+                                        <>
+                                            <AppInput
+                                                inputType={resolvedInputType}
+                                                value={value == null ? '' : String(value)}
+                                                onChangeText={(text) => setDraft((prev) => ({ ...prev, [field.key]: coerceValue(field, text) }))}
+                                            />
+                                            {section === 'GENERAL' && field.key === 'payment_upi_id' ? (
                                                 <Pressable
                                                     style={[s.inlineAction, { borderColor: colors.border }]}
-                                                    onPress={() => setSignatureCaptureVisible(true)}
+                                                    onPress={() => router.push({
+                                                        pathname: '/scan',
+                                                        params: {
+                                                            target: 'upi',
+                                                            returnPath: `/(main)/more/settings/${section}`,
+                                                        },
+                                                    })}
                                                 >
-                                                    <Text style={[s.inlineActionText, { color: colors.primary }]}>Draw Signature</Text>
+                                                    <Text style={[s.inlineActionText, { color: colors.primary }]}>Scan UPI QR</Text>
                                                 </Pressable>
-                                                {value ? (
+                                            ) : null}
+                                            {section === 'GENERAL' && field.key === 'signature_url' ? (
+                                                <View style={s.signatureRow}>
                                                     <Pressable
                                                         style={[s.inlineAction, { borderColor: colors.border }]}
-                                                        onPress={() => setDraft((prev) => ({ ...prev, [field.key]: '' }))}
+                                                        onPress={() => setSignatureCaptureVisible(true)}
                                                     >
-                                                        <Text style={[s.inlineActionText, { color: colors.error }]}>Clear</Text>
+                                                        <Text style={[s.inlineActionText, { color: colors.primary }]}>Draw Signature</Text>
                                                     </Pressable>
-                                                ) : null}
-                                                {value ? (
-                                                    <View style={[s.signaturePreviewWrap, { borderColor: colors.border }]}>
-                                                        <Image
-                                                            source={{ uri: String(value) }}
-                                                            style={s.signaturePreview}
-                                                            resizeMode="contain"
-                                                        />
-                                                    </View>
-                                                ) : null}
-                                            </View>
-                                        ) : null}
-                                    </>
-                                )}
+                                                    {value ? (
+                                                        <Pressable
+                                                            style={[s.inlineAction, { borderColor: colors.border }]}
+                                                            onPress={() => setDraft((prev) => ({ ...prev, [field.key]: '' }))}
+                                                        >
+                                                            <Text style={[s.inlineActionText, { color: colors.error }]}>Clear</Text>
+                                                        </Pressable>
+                                                    ) : null}
+                                                    {value ? (
+                                                        <View style={[s.signaturePreviewWrap, { borderColor: colors.border }]}>
+                                                            <Image
+                                                                source={{ uri: String(value) }}
+                                                                style={s.signaturePreview}
+                                                                resizeMode="contain"
+                                                            />
+                                                        </View>
+                                                    ) : null}
+                                                </View>
+                                            ) : null}
+                                        </>
+                                    )}
+                                </View>
+                            );
+                        })}
+
+                        {invoicePrintPreview ? (
+                            <View style={[s.previewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <Text style={[s.previewTitle, { color: colors.text }]}>Live Print Preview</Text>
+                                <Text style={[s.previewMeta, { color: colors.textSecondary }]}>
+                                    {invoicePrintPreview.printLayoutType} | {invoicePrintPreview.pageSize} | {invoicePrintPreview.orientation}
+                                </Text>
+                                <View style={[s.previewPaper, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                                    {invoicePrintPreview.showCompanyName ? (
+                                        <Text style={[s.previewCompany, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize + 1 }]}>
+                                            VAHI TRADERS
+                                        </Text>
+                                    ) : null}
+                                    {invoicePrintPreview.showAddress ? (
+                                        <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
+                                            Indore, MP | GSTIN 23ABCDE1234F1Z5
+                                        </Text>
+                                    ) : null}
+                                    <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
+                                        Invoice # INV-2026-001 | 05 Mar 2026
+                                    </Text>
+                                    <Text style={[s.previewDivider, { color: colors.textSecondary }]}>-----------------------------------</Text>
+                                    <Text style={[s.previewLineText, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize }]}>
+                                        Item A x 2      Rs 240.00
+                                    </Text>
+                                    <Text style={[s.previewLineText, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize }]}>
+                                        Item B x 1      Rs  60.00
+                                    </Text>
+                                    {invoicePrintPreview.showTaxBreakup ? (
+                                        <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 1 }]}>
+                                            GST (18%): Rs 45.76
+                                        </Text>
+                                    ) : null}
+                                    <Text style={[s.previewDivider, { color: colors.textSecondary }]}>-----------------------------------</Text>
+                                    <Text style={[s.previewTotal, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize + 1 }]}>
+                                        TOTAL         Rs 300.00
+                                    </Text>
+                                    {invoicePrintPreview.showTerms ? (
+                                        <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
+                                            Terms: Goods once sold will not be taken back.
+                                        </Text>
+                                    ) : null}
+                                    {invoicePrintPreview.showSignature ? (
+                                        <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
+                                            Authorized Signatory
+                                        </Text>
+                                    ) : null}
+                                </View>
                             </View>
-                        );
-                    })}
-                    {filteredFields.length === 0 ? (
-                        <View style={[s.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <Text style={[s.emptyTitle, { color: colors.text }]}>No fields found</Text>
-                            <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Try another search term.</Text>
-                        </View>
-                    ) : null}
-                    <View style={{ height: 80 }} />
-                </ScrollView>
-            )}
+                        ) : null}
+
+                        {filteredFields.length === 0 ? (
+                            <View style={[s.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <Text style={[s.emptyTitle, { color: colors.text }]}>No fields found</Text>
+                                <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Try another search term.</Text>
+                            </View>
+                        ) : null}
+                        <View style={{ height: 80 }} />
+                    </ScrollView>
+                )}
+            </KeyboardAvoidingView>
             <SignatureCaptureSheet
                 visible={signatureCaptureVisible}
                 onClose={() => setSignatureCaptureVisible(false)}
@@ -353,6 +480,7 @@ export default function SettingsSectionEditorScreen() {
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
+    flex: { flex: 1 },
     saveBtn: {
         minHeight: 34,
         minWidth: 56,
@@ -362,7 +490,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    saveText: { fontSize: 12, fontWeight: '700' },
     centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
     summaryCard: {
@@ -413,6 +540,42 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     signaturePreview: {
         width: '100%',
         height: 110,
+    },
+    previewCard: {
+        borderWidth: 1,
+        borderRadius: Radius.card,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.md,
+        gap: Spacing.xs,
+    },
+    previewTitle: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+    },
+    previewMeta: {
+        fontSize: Typography.caption.size,
+        marginBottom: Spacing.xs,
+    },
+    previewPaper: {
+        borderWidth: 1,
+        borderRadius: Radius.md,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.sm,
+        gap: 2,
+    },
+    previewCompany: {
+        textAlign: 'center',
+        fontWeight: '800',
+        marginBottom: 2,
+    },
+    previewLineText: {
+        fontVariant: ['tabular-nums'],
+    },
+    previewDivider: {
+        textAlign: 'center',
+    },
+    previewTotal: {
+        fontWeight: '800',
     },
     emptyState: {
         borderWidth: 1,

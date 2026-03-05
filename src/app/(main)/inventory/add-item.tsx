@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import {
-    View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Switch } from 'react-native';
+    View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator, Switch, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -90,13 +90,13 @@ export default function AddItemScreen() {
         },
     });
 
-    const { data: editItemData, isLoading: editItemLoading } = useQuery({
+    const { data: editItemData, isLoading: editItemLoading, isRefetching: editItemRefetching, refetch: refetchEditItem } = useQuery({
         queryKey: ['item', editId],
         queryFn: () => itemApi.get(editId!),
         enabled: Boolean(editId),
     });
 
-    const { data: itemSettingsRes } = useQuery({
+    const { data: itemSettingsRes, isRefetching: settingsRefetching, refetch: refetchItemSettings } = useQuery({
         queryKey: ['settings-section', 'ITEM_SETTINGS'],
         queryFn: () => settingsApi.get('ITEM_SETTINGS'),
     });
@@ -281,7 +281,22 @@ export default function AddItemScreen() {
                 </View>
             ) : null}
 
-            <ScrollView keyboardShouldPersistTaps="handled">
+            <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                <ScrollView
+                keyboardShouldPersistTaps="handled"
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={editItemRefetching || settingsRefetching}
+                        onRefresh={() => {
+                            void Promise.all([
+                                editId ? refetchEditItem() : Promise.resolve(),
+                                refetchItemSettings(),
+                            ]);
+                        }}
+                    />
+                )}
+            >
                 {scanner.isUsbScannerMode ? (
                     <View style={s.helperWrap}>
                         <Text style={{ color: colors.textSecondary, fontSize: 11 }}>
@@ -598,7 +613,8 @@ export default function AddItemScreen() {
                 </View>
 
                 <View style={{ height: 80 }} />
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
@@ -626,6 +642,7 @@ function Field({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
+        flex: { flex: 1 },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         helperWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         permissionHintWrap: {

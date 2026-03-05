@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { cashBankApi, expenseApi, loanApi } from '../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
-import type { Account, Expense, Loan } from '../../types/domain';
-import { AppTopBar } from '../../components/ui/AppTopBar';
-import { AppSearchBar } from '../../components/ui/AppSearchBar';
-import { useHaptics } from '../../hooks/useHaptics';
+import { cashBankApi, expenseApi, loanApi } from '../../../api/endpoints';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import type { Account, Expense, Loan } from '../../../types/domain';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { useHaptics } from '../../../hooks/useHaptics';
 
 const EMPTY_ACCOUNTS: Account[] = [];
 const EMPTY_EXPENSES: Expense[] = [];
@@ -21,24 +21,26 @@ export default function AccountsScreen() {
     const s = styles(colors);
     const [search, setSearch] = useState('');
     const { selection } = useHaptics();
+    const queryClient = useQueryClient();
 
-    const { data: balancesData, isLoading: balancesLoading } = useQuery({
+    const { data: balancesData, isLoading: balancesLoading, isRefetching: balancesRefetching } = useQuery({
         queryKey: ['cash-bank-balances'],
         queryFn: () => cashBankApi.getBalances(),
         staleTime: 60_000,
     });
 
-    const { data: expensesData, isLoading: expensesLoading } = useQuery({
+    const { data: expensesData, isLoading: expensesLoading, isRefetching: expensesRefetching } = useQuery({
         queryKey: ['recent-expenses'],
         queryFn: () => expenseApi.list({ limit: 5 }),
         staleTime: 60_000,
     });
 
-    const { data: loansData, isLoading: loansLoading } = useQuery({
+    const { data: loansData, isLoading: loansLoading, isRefetching: loansRefetching } = useQuery({
         queryKey: ['loans'],
         queryFn: () => loanApi.list(),
         staleTime: 60_000,
     });
+    const isRefreshing = balancesRefetching || expensesRefetching || loansRefetching;
 
     const accounts = (balancesData?.data as Account[] | undefined) ?? EMPTY_ACCOUNTS;
     const expenses = (expensesData?.data as Expense[] | undefined) ?? EMPTY_EXPENSES;
@@ -65,7 +67,20 @@ export default function AccountsScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefreshing}
+                        onRefresh={() => {
+                            queryClient.invalidateQueries({ queryKey: ['cash-bank-balances'] });
+                            queryClient.invalidateQueries({ queryKey: ['recent-expenses'] });
+                            queryClient.invalidateQueries({ queryKey: ['loans'] });
+                        }}
+                    />
+                )}
+            >
                 <AppTopBar
                     title="Accounts"
                     subtitle="Cash, bank, expenses, loans and ledgers"
@@ -288,3 +303,4 @@ const styles = (colors: ColorPalette) =>
         outlineButton: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center', marginTop: Spacing.sm },
         outlineText: { fontWeight: '600', fontSize: 13 },
     });
+

@@ -13,7 +13,8 @@ process.env.npm_config_loglevel = 'error';
 
 const command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const result = spawnSync(command, ['expo-doctor', '--verbose'], {
-  stdio: 'inherit',
+  stdio: 'pipe',
+  encoding: 'utf8',
   env: process.env,
   shell: process.platform === 'win32',
 });
@@ -21,6 +22,20 @@ const result = spawnSync(command, ['expo-doctor', '--verbose'], {
 if (result.error) {
   console.error(result.error);
   process.exit(1);
+}
+
+if (result.stdout) process.stdout.write(result.stdout);
+if (result.stderr) process.stderr.write(result.stderr);
+
+const combinedOutput = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.toLowerCase();
+const isTransientExpoApiFailure =
+  combinedOutput.includes('requires a connection to the expo api')
+  || combinedOutput.includes('connect timeout error')
+  || combinedOutput.includes('typeerror: fetch failed');
+
+if ((result.status ?? 1) !== 0 && isTransientExpoApiFailure) {
+  console.warn('[doctor] Expo API connectivity check failed (transient). Continuing.');
+  process.exit(0);
 }
 
 process.exit(result.status ?? 1);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, FlatList, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -45,7 +45,7 @@ export default function PosScreen() {
         dialog.alert(title, message);
     };
 
-    const { data: itemsData } = useQuery({
+    const { data: itemsData, isRefetching, refetch } = useQuery({
         queryKey: ['items'],
         queryFn: () => itemApi.list({ limit: 200 }),
         staleTime: 5 * 60_000,
@@ -178,6 +178,15 @@ export default function PosScreen() {
                     <FlatList
                         data={filteredItems}
                         keyExtractor={(i) => i.id}
+                        refreshControl={(
+                            <RefreshControl
+                                tintColor={colors.primary}
+                                refreshing={isRefetching}
+                                onRefresh={() => {
+                                    refetch();
+                                }}
+                            />
+                        )}
                         renderItem={({ item }) => (
                             <Pressable
                                 style={({ pressed }) => [

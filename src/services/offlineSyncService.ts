@@ -24,6 +24,8 @@ type QueueMutationBase = {
     id: string;
     createdAt: string;
     attemptCount: number;
+    status?: 'pending' | 'retrying' | 'blocked_upgrade' | 'conflict_manual';
+    lastErrorCode?: string;
     nextRetryAt?: number;
     lastAttemptAt?: string;
     lastError?: string;
@@ -121,7 +123,14 @@ const shouldDropMutation = (error: unknown): boolean => {
     const axiosError = asAxiosError(error);
     if (!axiosError?.response) return false;
     const status = axiosError.response.status;
-    return status === 400 || status === 404 || status === 422;
+    if (status === 404 || status === 422) return true;
+    if (status !== 400) return false;
+    const payload = axiosError.response.data as { code?: string; error?: { code?: string } } | undefined;
+    const code = String(payload?.code ?? payload?.error?.code ?? '').toUpperCase();
+    if (code === 'SUBSCRIPTION_WRITE_BLOCKED' || code === 'PLAN_LIMIT_EXCEEDED' || code === 'MULTI_BUSINESS_NOT_ALLOWED') {
+        return false;
+    }
+    return true;
 };
 
 const shouldStopFlush = (error: unknown): boolean => {
@@ -135,6 +144,31 @@ const isConflictMutationError = (error: unknown): boolean => {
     return status === 409 || status === 412;
 };
 
+const isUpgradeBlockedMutationError = (error: unknown): boolean => {
+    const axiosError = asAxiosError(error);
+    if (!axiosError?.response) return false;
+    const status = axiosError.response.status;
+    const payload = axiosError.response.data as {
+        code?: string;
+        error?: { code?: string; message?: string };
+        message?: string;
+    } | undefined;
+    const code = String(payload?.code ?? payload?.error?.code ?? '').toUpperCase();
+    const message = String(payload?.message ?? payload?.error?.message ?? '').toLowerCase();
+    if (code === 'SUBSCRIPTION_WRITE_BLOCKED' || code === 'PLAN_LIMIT_EXCEEDED' || code === 'MULTI_BUSINESS_NOT_ALLOWED') {
+        return true;
+    }
+    return status === 403 || (status === 409 && message.includes('plan'));
+};
+
+const extractMutationErrorCode = (error: unknown): string | undefined => {
+    const axiosError = asAxiosError(error);
+    if (!axiosError?.response) return undefined;
+    const payload = axiosError.response.data as { code?: string; error?: { code?: string } } | undefined;
+    const code = payload?.error?.code ?? payload?.code;
+    return typeof code === 'string' && code.trim() !== '' ? code.trim() : undefined;
+};
+
 const getRetryDelayMs = (attemptCount: number): number => {
     const delay = RETRY_BASE_DELAY_MS * Math.pow(2, Math.min(attemptCount - 1, 5));
     return Math.min(delay, RETRY_MAX_DELAY_MS);
@@ -146,6 +180,7 @@ const generateLocalId = (prefix: string): string =>
 const normalizeQueueMutation = (raw: QueueMutation): QueueMutation => ({
     ...raw,
     attemptCount: raw.attemptCount ?? 0,
+    status: raw.status ?? 'pending',
 });
 
 const asUpsertItemMutation = (
@@ -400,10 +435,11 @@ class OfflineSyncService {
         scheduleFlushSoon();
     }
 
-    async getQueueStats(): Promise<{ pendingCount: number; oldestCreatedAt: string | null }> {
+    async getQueueStats(): Promise<{ pendingCount: number; blockedCount: number; oldestCreatedAt: string | null }> {
         const queue = await this.getQueue();
         const oldestCreatedAt = queue.length > 0 ? queue[0].createdAt : null;
-        return { pendingCount: queue.length, oldestCreatedAt };
+        const blockedCount = queue.filter((entry) => entry.status === 'blocked_upgrade').length;
+        return { pendingCount: queue.length, blockedCount, oldestCreatedAt };
     }
 
     async flushQueue(): Promise<{ processed: number; remaining: number }> {
@@ -439,6 +475,20 @@ class OfflineSyncService {
                     await applyMutation(mutation);
                     processed += 1;
                 } catch (error) {
+                    if (isUpgradeBlockedMutationError(error)) {
+                        const attemptCount = (mutation.attemptCount ?? 0) + 1;
+                        nextQueue.push({
+                            ...mutation,
+                            status: 'blocked_upgrade',
+                            attemptCount,
+                            lastAttemptAt: new Date().toISOString(),
+                            lastErrorCode: extractMutationErrorCode(error),
+                            lastError: toErrorMessage(error),
+                            nextRetryAt: Date.now() + RETRY_MAX_DELAY_MS,
+                        });
+                        continue;
+                    }
+
                     if (isConflictMutationError(error)) {
                         const resolved = await resolveConflict(mutation);
                         if (resolved) {
@@ -460,8 +510,10 @@ class OfflineSyncService {
 
                     nextQueue.push({
                         ...mutation,
+                        status: 'retrying',
                         attemptCount,
                         lastAttemptAt: new Date().toISOString(),
+                        lastErrorCode: extractMutationErrorCode(error),
                         lastError: toErrorMessage(error),
                         nextRetryAt: Date.now() + getRetryDelayMs(attemptCount),
                     });

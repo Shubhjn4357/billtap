@@ -13,6 +13,11 @@ export default {
     icon: "./assets/images/icon.png",
     scheme: "vahi",
     userInterfaceStyle: "automatic",
+    splash: {
+      image: "./assets/images/splash-icon.png",
+      resizeMode: "contain",
+      backgroundColor: "#007B83"
+    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.blockbucket.vahi",
@@ -45,20 +50,13 @@ export default {
       [
         "expo-splash-screen",
         {
-          backgroundColor: "#208AEF",
-          android: {
+          image: "./assets/images/splash-icon.png",
+          imageWidth: 220,
+          resizeMode: "contain",
+          backgroundColor: "#007B83",
+          dark: {
             image: "./assets/images/splash-icon.png",
-            resizeMode: "contain",
-            backgroundColor: "#ffffff",
-            radius: 8,
-            borderless: true
-          },
-          ios: {
-            image: "./assets/images/splash-icon.png",
-            resizeMode: "contain",
-            backgroundColor: "#ffffff",
-            radius: 8,
-            borderless: true
+            backgroundColor: "#005A60"
           }
         }
       ],

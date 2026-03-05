@@ -43,4 +43,3 @@ Last updated: February 28, 2026
 - This policy can be updated as features and legal obligations evolve.
 - Updated policy date will be shown in the app.
 - Continued use indicates acknowledgement of updated policy.
-

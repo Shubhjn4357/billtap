@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
     FlatList,
     Modal,
     Pressable,
@@ -15,15 +14,16 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { invoiceApi } from '../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
-import { PaymentStatus } from '../../constants/enums';
-import type { Invoice } from '../../types/domain';
-import { canUsePos } from '../../utils/accessControl';
-import { useAuthStore } from '../../store/authStore';
-import { AppTopBar } from '../../components/ui/AppTopBar';
-import { AppSearchBar } from '../../components/ui/AppSearchBar';
-import { useHaptics } from '../../hooks/useHaptics';
+import { invoiceApi } from '../../../api/endpoints';
+import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { PaymentStatus } from '../../../constants/enums';
+import type { Invoice } from '../../../types/domain';
+import { canUsePos } from '../../../utils/accessControl';
+import { useAuthStore } from '../../../store/authStore';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { useHaptics } from '../../../hooks/useHaptics';
 
 type BillingTab = 'sales' | 'purchases' | 'orders';
 
@@ -179,9 +179,7 @@ export default function BillingScreen() {
                 contentContainerStyle={{ paddingBottom: 100 }}
                 ListEmptyComponent={
                     isLoading ? (
-                        <View style={s.centered}>
-                            <ActivityIndicator color={colors.primary} />
-                        </View>
+                        <ListSkeleton rows={6} />
                     ) : (
                         <View style={s.centered}>
                             <Text style={{ color: colors.textSecondary }}>No transactions yet.</Text>
@@ -426,3 +424,4 @@ const rowStyles = StyleSheet.create({
     statusText: { fontSize: 10, fontWeight: '700' },
     chevron: { marginTop: 6 },
 });
+

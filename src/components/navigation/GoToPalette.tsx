@@ -69,6 +69,11 @@ const ROUTES: RouteEntry[] = [
     { label: 'Stock Scanner', route: '/scan?target=stock', description: 'Barcode scanner', module: 'inventory' },
 ];
 
+const listeners = new Set<() => void>();
+export const openGoToPalette = () => {
+    listeners.forEach((listener) => listener());
+};
+
 export function GoToPalette() {
     const scheme = useColorScheme() ?? 'light';
     const colors = getColors(scheme);
@@ -205,6 +210,14 @@ export function GoToPalette() {
     }, [normalizedQuery, role, subscription]);
 
     useEffect(() => {
+        const opener = () => setVisible(true);
+        listeners.add(opener);
+        return () => {
+            listeners.delete(opener);
+        };
+    }, []);
+
+    useEffect(() => {
         if (Platform.OS !== 'web') return;
 
         const win = globalThis as unknown as {
@@ -233,41 +246,24 @@ export function GoToPalette() {
     };
 
     return (
-        <>
-            <Pressable
-                style={[
-                    s.trigger,
-                    {
-                        top: Math.max(insets.top + 6, 10),
-                        backgroundColor: colors.surface,
-                        borderColor: colors.border,
-                    },
-                ]}
-                onPress={() => setVisible(true)}
-                accessibilityRole="button"
-                accessibilityLabel="Open Go To palette"
-            >
-                <Text style={[s.triggerText, { color: colors.text }]}>Go</Text>
-            </Pressable>
-
-            <Modal
-                visible={visible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setVisible(false)}
-            >
-                <View style={s.modalRoot}>
-                    <Pressable style={s.backdrop} onPress={() => setVisible(false)} />
-                    <View
-                        style={[
-                            s.sheet,
-                            {
-                                backgroundColor: colors.surface,
-                                borderColor: colors.border,
-                                paddingBottom: Math.max(insets.bottom + Spacing.lg, Spacing.xl),
-                            },
-                        ]}
-                    >
+        <Modal
+            visible={visible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setVisible(false)}
+        >
+            <View style={s.modalRoot}>
+                <Pressable style={s.backdrop} onPress={() => setVisible(false)} />
+                <View
+                    style={[
+                        s.sheet,
+                        {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.border,
+                            paddingBottom: Math.max(insets.bottom + Spacing.lg, Spacing.xl),
+                        },
+                    ]}
+                >
                         <View style={s.sheetHeader}>
                             <Text style={[s.sheetTitle, { color: colors.text }]}>Go To</Text>
                             <Pressable onPress={() => setVisible(false)}>
@@ -339,27 +335,13 @@ export function GoToPalette() {
                                 </View>
                             ) : null}
                         </ScrollView>
-                    </View>
                 </View>
-            </Modal>
-        </>
+            </View>
+        </Modal>
     );
 }
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
-    trigger: {
-        position: 'absolute',
-        right: Spacing.lg,
-        zIndex: 1000,
-        borderWidth: 1,
-        borderRadius: Radius.pill,
-        paddingHorizontal: Spacing.md,
-        paddingVertical: 6,
-    },
-    triggerText: {
-        fontSize: Typography.caption.size,
-        fontWeight: '700',
-    },
     modalRoot: {
         flex: 1,
         justifyContent: 'flex-end',
@@ -376,7 +358,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         paddingHorizontal: Spacing.lg,
         paddingTop: Spacing.md,
         gap: Spacing.sm,
-        maxHeight: '88%',
+        minHeight: '96%',
     },
     sheetHeader: {
         flexDirection: 'row',
@@ -442,3 +424,5 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         paddingVertical: Spacing.xl,
     },
 });
+
+

@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { partyApi } from '../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette, withAlpha } from '../../constants/theme';
-import type { Party } from '../../types/domain';
-import { AppTopBar } from '../../components/ui/AppTopBar';
-import { AppSearchBar } from '../../components/ui/AppSearchBar';
-import { useAppDialog } from '../../components/providers/DialogProvider';
-import { useHaptics } from '../../hooks/useHaptics';
+import { partyApi } from '../../../api/endpoints';
+import { getColors, Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
+import type { Party } from '../../../types/domain';
+import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { useAppDialog } from '../../../components/providers/DialogProvider';
+import { useHaptics } from '../../../hooks/useHaptics';
 
 const toggleId = (list: string[], id: string) =>
     list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
@@ -185,7 +186,7 @@ export default function PartiesScreen() {
             ) : null}
 
             {isLoading ? (
-                <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
+                <ListSkeleton rows={6} compact />
             ) : (
                 <FlatList
                     data={parties}
@@ -345,3 +346,4 @@ const rowStyles = StyleSheet.create({
     phone: { fontSize: 12, marginTop: 2 },
     balance: { fontWeight: '700', fontSize: 14 },
 });
+

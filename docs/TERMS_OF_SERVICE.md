@@ -49,4 +49,3 @@ Last updated: February 28, 2026
 - We may update these terms from time to time.
 - Continued use after updates means acceptance of revised terms.
 - Material changes are reflected in the in-app legal pages with updated date.
-

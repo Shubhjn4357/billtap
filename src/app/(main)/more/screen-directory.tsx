@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
     Pressable,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -148,41 +149,42 @@ export default function ScreenDirectoryScreen() {
     const subscription = useAuthStore((state) => state.subscription);
     const normalizedSearch = search.trim().toLowerCase();
 
-    const { data: invoiceList } = useQuery({
+    const { data: invoiceList, isRefetching: invoiceRefetching, refetch: refetchInvoice } = useQuery({
         queryKey: ['screen-directory', 'latest-invoice'],
         queryFn: () => invoiceApi.list({ limit: 1 }),
         staleTime: 60_000,
     });
 
-    const { data: partyList } = useQuery({
+    const { data: partyList, isRefetching: partyRefetching, refetch: refetchParty } = useQuery({
         queryKey: ['screen-directory', 'latest-party'],
         queryFn: () => partyApi.list({ limit: 1 }),
         staleTime: 60_000,
     });
 
-    const { data: itemList } = useQuery({
+    const { data: itemList, isRefetching: itemRefetching, refetch: refetchItem } = useQuery({
         queryKey: ['screen-directory', 'latest-item'],
         queryFn: () => itemApi.list({ limit: 1 }),
         staleTime: 60_000,
     });
 
-    const { data: loanList } = useQuery({
+    const { data: loanList, isRefetching: loanRefetching, refetch: refetchLoan } = useQuery({
         queryKey: ['screen-directory', 'latest-loan'],
         queryFn: () => loanApi.list(),
         staleTime: 60_000,
     });
 
-    const { data: accountList } = useQuery({
+    const { data: accountList, isRefetching: accountRefetching, refetch: refetchAccount } = useQuery({
         queryKey: ['screen-directory', 'latest-cash-bank'],
         queryFn: () => cashBankApi.getBalances(),
         staleTime: 60_000,
     });
 
-    const { data: ledgerList } = useQuery({
+    const { data: ledgerList, isRefetching: ledgerRefetching, refetch: refetchLedger } = useQuery({
         queryKey: ['screen-directory', 'latest-ledger'],
         queryFn: () => accountingApi.getLedgers(),
         staleTime: 60_000,
     });
+    const isRefreshing = invoiceRefetching || partyRefetching || itemRefetching || loanRefetching || accountRefetching || ledgerRefetching;
 
     const smartLinks = useMemo(() => {
         const latestInvoice = invoiceList?.data?.[0];
@@ -306,7 +308,26 @@ export default function ScreenDirectoryScreen() {
                 />
             </View>
 
-            <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={s.content}
+                showsVerticalScrollIndicator={false}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefreshing}
+                        onRefresh={() => {
+                            void Promise.all([
+                                refetchInvoice(),
+                                refetchParty(),
+                                refetchItem(),
+                                refetchLoan(),
+                                refetchAccount(),
+                                refetchLedger(),
+                            ]);
+                        }}
+                    />
+                )}
+            >
                 <View style={s.section}>
                     <Text style={s.sectionTitle}>{'SMART DEEP LINKS'}</Text>
                     <View style={[s.group, { backgroundColor: colors.card }]}>
@@ -405,3 +426,5 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     },
     emptyText: { color: colors.textSecondary, fontSize: Typography.body.size },
 });
+
+

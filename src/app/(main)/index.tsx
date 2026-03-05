@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -6,10 +7,12 @@ import { endOfMonth, format, startOfMonth } from 'date-fns';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
-import { reportApi } from '../../api/endpoints';
+import { offerApi, reportApi } from '../../api/endpoints';
+import { offlineSyncService } from '../../services/offlineSyncService';
 import { canAccessModule, canUsePos, type AppModule } from '../../utils/accessControl';
 import { AppTopBar } from '../../components/ui/AppTopBar';
 import { useHaptics } from '../../hooks/useHaptics';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 
 const TODAY = new Date();
 const MONTH_START = format(startOfMonth(TODAY), 'yyyy-MM-dd');
@@ -42,18 +45,48 @@ export default function HomeScreen() {
     const subscription = useAuthStore((state) => state.subscription);
     const role = useAuthStore((state) => state.organizationRole);
     const { selection } = useHaptics();
+    const dialog = useAppDialog();
+    const [upgradePromptShown, setUpgradePromptShown] = useState(false);
 
     const { data: summary, isLoading, isRefetching, refetch } = useQuery({
         queryKey: ['report-summary', MONTH_START, MONTH_END],
         queryFn: () => reportApi.getSummary({ from: MONTH_START, to: MONTH_END }),
         staleTime: 5 * 60 * 1000,
     });
+    const { data: offerResponse } = useQuery({
+        queryKey: ['dashboard-offers'],
+        queryFn: () => offerApi.getActive(),
+        staleTime: 60_000,
+    });
+    const { data: queueStats, refetch: refetchQueueStats } = useQuery({
+        queryKey: ['offline-sync-stats-home'],
+        queryFn: () => offlineSyncService.getQueueStats(),
+        staleTime: 20_000,
+    });
 
     const stats = summary?.data as Record<string, number> | undefined;
+    const offers = offerResponse?.data ?? [];
+    const blockedCount = queueStats?.blockedCount ?? 0;
     const quickActions = QUICK_ACTIONS.filter((action) => {
         if (action.requiresPos && !canUsePos(subscription)) return false;
         return canAccessModule(role, action.module, subscription);
     });
+
+    useEffect(() => {
+        if (upgradePromptShown || blockedCount <= 0) return;
+        setUpgradePromptShown(true);
+        dialog.alert(
+            'Upgrade needed for cloud sync',
+            `${blockedCount} queued change(s) are saved locally but blocked for cloud sync by current plan.`,
+            [
+                { text: 'Later', style: 'cancel' },
+                {
+                    text: 'Upgrade',
+                    onPress: () => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0]),
+                },
+            ]
+        );
+    }, [blockedCount, dialog, upgradePromptShown]);
 
     return (
         <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
@@ -74,6 +107,7 @@ export default function HomeScreen() {
                         refreshing={isRefetching && !isLoading}
                         onRefresh={() => {
                             void refetch();
+                            void refetchQueueStats();
                         }}
                         tintColor={colors.primary}
                     />
@@ -110,6 +144,34 @@ export default function HomeScreen() {
                 </View>
 
                 <View style={s.section}>
+                    {blockedCount > 0 ? (
+                        <Pressable
+                            style={[s.blockedBanner, { borderColor: colors.warning, backgroundColor: `${colors.warning}18` }]}
+                            onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
+                        >
+                            <View style={s.blockedBannerHead}>
+                                <MaterialCommunityIcons name="cloud-alert-outline" size={16} color={colors.warning} />
+                                <Text style={[s.blockedBannerTitle, { color: colors.warning }]}>Cloud Sync Upgrade Required</Text>
+                            </View>
+                            <Text style={[s.blockedBannerText, { color: colors.text }]}>
+                                {blockedCount} change(s) are saved locally and queued. Upgrade plan to sync them online.
+                            </Text>
+                        </Pressable>
+                    ) : null}
+                    {offers.slice(0, 2).map((offer) => (
+                        <Pressable
+                            key={offer.id}
+                            style={[s.offerCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                            onPress={() => {
+                                if (offer.ctaRoute) {
+                                    router.push(offer.ctaRoute as Parameters<typeof router.push>[0]);
+                                }
+                            }}
+                        >
+                            <Text style={[s.offerTitle, { color: colors.primary }]}>{offer.title}</Text>
+                            <Text style={[s.offerMessage, { color: colors.textSecondary }]}>{offer.message}</Text>
+                        </Pressable>
+                    ))}
                     <Text style={s.sectionTitle}>Quick Create</Text>
                     <View style={s.quickGrid}>
                         {quickActions.map((qa) => (
@@ -241,6 +303,35 @@ const styles = (colors: ColorPalette) =>
         statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
         row: { flexDirection: 'row', gap: Spacing.sm },
         quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+        offerCard: {
+            borderWidth: 1,
+            borderRadius: Radius.card,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.md,
+            marginBottom: Spacing.sm,
+        },
+        offerTitle: { fontSize: Typography.body.size, fontWeight: '700' },
+        offerMessage: { fontSize: Typography.caption.size, marginTop: 2 },
+        blockedBanner: {
+            borderWidth: 1,
+            borderRadius: Radius.card,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.md,
+            marginBottom: Spacing.sm,
+            gap: 4,
+        },
+        blockedBannerHead: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+        },
+        blockedBannerTitle: {
+            fontSize: Typography.body.size,
+            fontWeight: '700',
+        },
+        blockedBannerText: {
+            fontSize: Typography.caption.size,
+        },
         quickCard: {
             backgroundColor: colors.card,
             borderRadius: Radius.card,
