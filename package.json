@@ -2,6 +2,7 @@
   "name": "vahi-backend",
   "private": true,
   "version": "2.1.0",
+  "packageManager": "pnpm@10.11.1",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
