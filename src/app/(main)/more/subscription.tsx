@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -8,7 +9,8 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
 import { toUserMessage } from '../../../api/client';
 import { subscriptionApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { useAuthStore } from '../../../store/authStore';
 import type { Subscription } from '../../../types/domain';
 import { canPerformAction } from '../../../utils/accessControl';
@@ -56,8 +58,7 @@ const computeRenewalDate = (billingCycle: PlanLike['billingCycle']) => {
 
 export default function SubscriptionScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = getColors(scheme ?? 'light');
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
     const subscription = useAuthStore((state) => state.subscription);
@@ -300,7 +301,7 @@ export default function SubscriptionScreen() {
                     <Pressable
                         style={[s.validateBtn, { backgroundColor: colors.primary }]}
                         disabled={validatingDiscount || !discountCode.trim()}
-                        onPress={() => validateDiscount(selectedPlanId ?? undefined)}
+                        onPress={() => validateDiscount(selectedPlanId ?? "")}
                     >
                         {validatingDiscount ? (
                             <ActivityIndicator color={colors.onPrimary} size="small" />

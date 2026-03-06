@@ -1,14 +1,14 @@
-import { Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../hooks/useSmartBack';
 import Constants from 'expo-constants';
-import { getColors, Radius, Spacing, type ColorPalette } from '../../constants/theme';
+import { Radius, Spacing, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { AppTopBar } from '../../components/ui/AppTopBar';
 
 export default function AboutScreen() {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/legal');
     const version = Constants.expoConfig?.version ?? '0.0.0';

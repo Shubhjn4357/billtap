@@ -1,5 +1,6 @@
-import { Modal, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
-import { getColors, Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 
 export type AppDialogAction = {
     label: string;
@@ -23,8 +24,7 @@ export function AppDialog({
     actions = [{ label: 'OK' }],
     onClose,
 }: AppDialogProps) {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
 
     const resolveActionStyle = (variant: AppDialogAction['variant']) => {
@@ -94,7 +94,7 @@ export function AppDialog({
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         root: {
             flex: 1,

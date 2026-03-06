@@ -68,6 +68,7 @@ type EnqueueMutation =
     | { type: 'create_pos_sale'; payload: Record<string, unknown> };
 
 let flushInFlight: Promise<{ processed: number; remaining: number }> | null = null;
+let enqueueMutex: Promise<void> = Promise.resolve();
 let autoSyncHandle: ReturnType<typeof setInterval> | null = null;
 let queuedFlushTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -398,7 +399,38 @@ const resolveConflict = async (mutation: QueueMutation): Promise<boolean> => {
                 });
                 return true;
             }
-            case 'create_invoice':
+            case 'create_invoice': {
+                // Handle duplicate billNumber (409) by suffixing
+                const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                const newBillNumber = `${mutation.payload.billNumber || 'INV'}-${suffix}`;
+                const payload = { ...mutation.payload, billNumber: newBillNumber };
+                delete payload.localId;
+                await api.post('/api/transactions', payload);
+                return true;
+            }
+            case 'create_godown': {
+                const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                const newName = `${mutation.payload.name || 'Godown'}-${suffix}`;
+                const payload = { ...mutation.payload, name: newName };
+                delete payload.localId;
+                await api.post('/api/godowns', payload);
+                return true;
+            }
+            case 'create_expense': {
+                const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                const newRef = `${mutation.payload.referenceId || 'EXP'}-${suffix}`;
+                const payload = { ...mutation.payload, referenceId: newRef };
+                delete payload.localId;
+                await api.post('/api/expenses', payload);
+                return true;
+            }
+            case 'create_loan': {
+                const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                const payload = { ...mutation.payload, notes: `${mutation.payload.notes || ''} [Conflict ${suffix}]` };
+                delete payload.localId;
+                await api.post('/api/loans', payload);
+                return true;
+            }
             case 'create_pos_sale':
             case 'delete_item':
             case 'archive_party':
@@ -429,10 +461,21 @@ class OfflineSyncService {
     }
 
     async enqueueMutation(mutation: EnqueueMutation): Promise<void> {
-        const queue = await this.getQueue();
-        const next = compactQueueForEnqueue(queue, mutation);
-        await writeJson(OFFLINE_QUEUE_KEY, next);
-        scheduleFlushSoon();
+        return new Promise<void>((resolve, reject) => {
+            const runner = async () => {
+                try {
+                    const queue = await this.getQueue();
+                    const next = compactQueueForEnqueue(queue, mutation);
+                    await writeJson(OFFLINE_QUEUE_KEY, next);
+                    scheduleFlushSoon();
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
+            };
+
+            enqueueMutex = enqueueMutex.then(runner, runner);
+        });
     }
 
     async getQueueStats(): Promise<{ pendingCount: number; blockedCount: number; oldestCreatedAt: string | null }> {

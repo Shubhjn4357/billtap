@@ -10,16 +10,17 @@ import {
     StyleSheet,
     Switch,
     Text,
-    useColorScheme,
     View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { settingsApi } from '../../../../api/endpoints';
 import { getSettingsSectionLabel } from '../../../../constants/settingsSchema';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { useAppColors } from '../../../../hooks/useAppColors';
+import { useSettingsSection } from '../../../../hooks/useSettingsSection';
 import type { SettingsFieldDefinition } from '../../../../types/api';
 import { extractUpiIdFromPayload } from '../../../../utils/upi';
 import { SignatureCaptureSheet } from '../../../../components/signature/SignatureCaptureSheet';
@@ -38,6 +39,7 @@ import {
 } from '../../../../utils/accessControl';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { toUserMessage } from '../../../../api/client';
+import { useAuthStore } from '../../../../store/authStore';
 
 const coerceValue = (field: SettingsFieldDefinition, input: unknown) => {
     if ((input === null || input === undefined) && field.nullable) return null;
@@ -93,36 +95,30 @@ export default function SettingsSectionEditorScreen() {
         scanAt?: string | string[];
     }>();
     const section = (rawSection ?? '').toUpperCase();
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
-    const queryClient = useQueryClient();
     const smartBack = useSmartBack('/(main)/more/settings');
+    const business = useAuthStore((s) => s.business);
     const [draft, setDraft] = useState<Record<string, unknown>>({});
     const [fieldSearch, setFieldSearch] = useState('');
     const [signatureCaptureVisible, setSignatureCaptureVisible] = useState(false);
+    // -- useSettingsSection: schema + section data + offline detection, all in one --
+    const {
+        sectionFields,
+        sectionData: rawSectionData,
+        isLoading,
+        isRefreshing,
+        isOffline,
+        refetch,
+    } = useSettingsSection(section);
+    // Cast sectionFields to the typed SettingsFieldDefinition[] for field rendering
+    const fields = sectionFields as SettingsFieldDefinition[];
+
+
     const handledUpiPayloadRef = useRef<string>('');
 
-    const { data: schemaResponse, isLoading: schemaLoading, isRefetching: schemaRefetching, refetch: refetchSchema } = useQuery({
-        queryKey: ['settings-schema'],
-        queryFn: () => settingsApi.getSchema(),
-        staleTime: 30 * 60_000,
-    });
-
-    const { data: sectionData, isLoading: sectionLoading, isRefetching: sectionRefetching, refetch: refetchSection } = useQuery({
-        queryKey: ['settings-section', section],
-        queryFn: () => settingsApi.get(section),
-        enabled: Boolean(section),
-    });
-    const isRefreshing = schemaRefetching || sectionRefetching;
-
-    const fields = useMemo(() => {
-        if (!schemaResponse?.schema || !section) return [];
-        return (schemaResponse.schema[section] ?? []) as SettingsFieldDefinition[];
-    }, [schemaResponse, section]);
-
     const baselineDraft = useMemo(() => {
-        const incoming = (sectionData?.data ?? {}) as Record<string, unknown>;
+        const incoming = rawSectionData;
         const normalized: Record<string, unknown> = {};
         for (const field of fields) {
             const value = Object.prototype.hasOwnProperty.call(incoming, field.key)
@@ -131,11 +127,8 @@ export default function SettingsSectionEditorScreen() {
             normalized[field.key] = coerceValue(field, value);
         }
         return normalized;
-    }, [fields, sectionData?.data]);
+    }, [fields, rawSectionData]);
 
-    useEffect(() => {
-        setDraft(baselineDraft);
-    }, [baselineDraft]);
 
     useEffect(() => {
         if (section !== 'GENERAL') return;
@@ -208,7 +201,7 @@ export default function SettingsSectionEditorScreen() {
     const { mutate: saveSettings, isPending } = useMutation({
         mutationFn: () => settingsApi.update(section, { data: draft }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['settings-section', section] });
+            void refetch();
             dialog.alert('Saved', 'Settings updated successfully.');
         },
         onError: (error) => {
@@ -225,8 +218,6 @@ export default function SettingsSectionEditorScreen() {
             </SafeAreaView>
         );
     }
-
-    const isLoading = schemaLoading || sectionLoading;
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -246,6 +237,12 @@ export default function SettingsSectionEditorScreen() {
             />
 
             <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                {isOffline ? (
+                    <View style={[s.offlineBanner, { backgroundColor: colors.warning }]}>
+                        <MaterialCommunityIcons name="cloud-off-outline" size={13} color={colors.onPrimary} />
+                        <Text style={s.offlineBannerText}>Offline — showing cached. Changes cannot be saved.</Text>
+                    </View>
+                ) : null}
                 {isLoading ? (
                     <View style={s.centered}>
                         <ActivityIndicator color={colors.primary} />
@@ -259,7 +256,7 @@ export default function SettingsSectionEditorScreen() {
                                 tintColor={colors.primary}
                                 refreshing={isRefreshing}
                                 onRefresh={() => {
-                                    void Promise.all([refetchSchema(), refetchSection()]);
+                                    void refetch();
                                 }}
                             />
                         )}
@@ -415,12 +412,12 @@ export default function SettingsSectionEditorScreen() {
                                 <View style={[s.previewPaper, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                                     {invoicePrintPreview.showCompanyName ? (
                                         <Text style={[s.previewCompany, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize + 1 }]}>
-                                            VAHI TRADERS
+                                                {business?.name ?? 'Your Business'}
                                         </Text>
                                     ) : null}
                                     {invoicePrintPreview.showAddress ? (
                                         <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
-                                            Indore, MP | GSTIN 23ABCDE1234F1Z5
+                                                {business?.address ?? 'Business Address'} | GSTIN {business?.gstin ?? 'N/A'}
                                         </Text>
                                     ) : null}
                                     <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
@@ -586,6 +583,14 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     },
     emptyTitle: { fontSize: Typography.body.size, fontWeight: '700' },
     emptySubtitle: { fontSize: Typography.caption.size },
+    offlineBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.xs,
+        paddingHorizontal: Spacing.lg,
+        paddingVertical: Spacing.sm,
+    },
+    offlineBannerText: { color: colors.onPrimary, fontSize: 12, fontWeight: '600', flex: 1 },
 });
 
 

@@ -6,12 +6,12 @@ import {
     Text,
     TextInput,
     type TextInputProps,
-    useColorScheme,
     View,
     type ViewStyle,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getColors, Radius, Spacing, Typography } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export type AppInputType =
@@ -142,8 +142,7 @@ export const AppInput = memo(function AppInput({
     onBlur,
     ...props
 }: AppInputProps) {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const { selection } = useHaptics();
     const resolvedType = inputType ?? inferInputType(typeof label === 'string' ? label : undefined, placeholder);
@@ -188,7 +187,7 @@ export const AppInput = memo(function AppInput({
     );
 });
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         label: {
             color: colors.textSecondary,

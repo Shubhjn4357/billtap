@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ComponentProps } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, CameraView, type BarcodeScanningResult } from 'expo-camera';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../hooks/useSmartBack';
-import { getColors, Radius, Spacing } from '../constants/theme';
+import { Radius, Spacing, type ColorPalette } from '../constants/theme';
+import { useAppColors } from '../hooks/useAppColors';
 import { AppTopBar } from '../components/ui/AppTopBar';
 
 type ScanTarget = 'stock' | 'billing' | 'item_detail' | 'upi' | 'upi_profile';
@@ -37,8 +38,7 @@ const pushWithReturnPath = (destination: string, params: Record<string, string>)
 };
 
 export default function ScanScreen() {
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = getColors(scheme ?? 'light');
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more/settings/GENERAL');
     const params = useLocalSearchParams<{ target?: string | string[]; returnPath?: string | string[]; scanField?: string | string[] }>();
@@ -148,7 +148,7 @@ export default function ScanScreen() {
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         title: { fontWeight: '700', fontSize: 18 },

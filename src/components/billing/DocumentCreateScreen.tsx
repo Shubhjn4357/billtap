@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoiceApi, itemApi, type InvoiceCreateInput } from '../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { GST_SLABS, INDIAN_STATE_LIST } from '../../constants/gstRates';
 import { InvoiceType, PaymentMode } from '../../constants/enums';
 import { useAuthStore } from '../../store/authStore';
@@ -90,8 +92,7 @@ const withNoGst = (line: InvoiceLineItem): InvoiceLineItem => {
 
 export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig }) {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const queryClient = useQueryClient();
     const smartBack = useSmartBack('/(main)/billing');
@@ -386,9 +387,20 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                             gstEnabled={gstEnabled}
                         />
                     ))}
-                    <Pressable style={[s.addLineBtn, { borderColor: colors.primary }]} onPress={addLine}>
-                        <Text style={[s.addLineBtnText, { color: colors.primary }]}>+ Add Item</Text>
-                    </Pressable>
+                        <View style={s.addItemRow}>
+                            <Pressable style={[s.addLineBtn, { borderColor: colors.primary, flex: 1 }]} onPress={addLine}>
+                                <Text style={[s.addLineBtnText, { color: colors.primary }]}>+ Add Line</Text>
+                            </Pressable>
+                            <Pressable
+                                style={[s.addLineBtn, { borderColor: colors.border, flex: 1 }]}
+                                onPress={() => router.push({
+                                    pathname: '/(main)/inventory/add-item',
+                                    params: { returnContext: 'invoice' },
+                                })}
+                            >
+                                <Text style={[s.addLineBtnText, { color: colors.textSecondary }]}>+ Create Item</Text>
+                            </Pressable>
+                        </View>
                 </View>
 
                 <View style={[s.card, { backgroundColor: colors.card }]}>
@@ -650,6 +662,7 @@ const styles = (colors: ColorPalette) =>
         sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
         addLineBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center', marginTop: Spacing.sm },
         addLineBtnText: { fontWeight: '600', fontSize: 13 },
+        addItemRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
         chip: {
             borderWidth: 1,
             borderRadius: Radius.pill,

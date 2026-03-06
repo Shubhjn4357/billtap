@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { reportApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -19,8 +20,7 @@ type GstRow = {
 };
 
 export default function GstSummaryScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/reports');
     const { selection } = useHaptics();

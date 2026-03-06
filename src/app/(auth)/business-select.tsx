@@ -10,7 +10,6 @@ import {
     StyleSheet,
     Text,
     View,
-    useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -20,7 +19,8 @@ import * as SecureStore from 'expo-secure-store';
 import { storeBusinessId, toApiError, toUserMessage } from '../../api/client';
 import { businessApi, settingsApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { extractUpiIdFromPayload, isValidUpiId, sanitizeUpiId } from '../../utils/upi';
 import { SignatureCaptureSheet } from '../../components/signature/SignatureCaptureSheet';
 import { AppTopBar } from '../../components/ui/AppTopBar';
@@ -136,8 +136,7 @@ const isCloudWriteRestriction = (error: unknown): boolean => {
 };
 
 export default function BusinessSelectScreen() {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
+    const colors = useAppColors();
     const s = styles(colors);
     const dialog = useAppDialog();
     const queryClient = useQueryClient();

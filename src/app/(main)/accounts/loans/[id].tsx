@@ -1,18 +1,18 @@
-import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useQuery } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { loanApi } from '../../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { useAppColors } from '../../../../hooks/useAppColors';
 import { format, parseISO } from 'date-fns';
 import type { LoanTransaction } from '../../../../types/domain';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 
 export default function LoanDetailScreen() {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const { id } = useLocalSearchParams<{ id: string }>();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');

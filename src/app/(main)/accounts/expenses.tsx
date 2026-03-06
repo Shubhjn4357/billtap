@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -7,7 +7,8 @@ import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { expenseApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Spacing, Radius, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { ExpenseCategory } from '../../../constants/enums';
 import type { Expense } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -20,8 +21,7 @@ const toggleId = (list: string[], id: string) =>
 
 export default function ExpensesScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const [cat, setCat] = useState<string>('ALL');
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);

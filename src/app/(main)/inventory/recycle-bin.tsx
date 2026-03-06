@@ -1,21 +1,21 @@
 import { useState } from 'react';
 import {
-    ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { itemApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette } from '../../../constants/theme';
+import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import type { Item } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 
 export default function ItemRecycleBinScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+        const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/inventory');
     const queryClient = useQueryClient();

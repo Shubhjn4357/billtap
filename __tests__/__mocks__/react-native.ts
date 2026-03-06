@@ -1,0 +1,20 @@
+// Minimal React Native mock for unit tests
+export const Platform = { OS: 'android', select: (obj: Record<string, unknown>) => obj.android ?? obj.default };
+export const StyleSheet = { create: <T>(s: T) => s };
+export const Appearance = { getColorScheme: () => 'light' };
+export const useColorScheme = () => 'light';
+export const View = 'View';
+export const Text = 'Text';
+export const Pressable = 'Pressable';
+export const TextInput = 'TextInput';
+export const FlatList = 'FlatList';
+export const ScrollView = 'ScrollView';
+export const Switch = 'Switch';
+export const TouchableOpacity = 'TouchableOpacity';
+export const ActivityIndicator = 'ActivityIndicator';
+export const RefreshControl = 'RefreshControl';
+export const Modal = 'Modal';
+export const SafeAreaView = 'SafeAreaView';
+export const Alert = { alert: () => {} };
+export const Keyboard = { dismiss: () => {} };
+export const Dimensions = { get: () => ({ width: 390, height: 844 }) };

@@ -1,10 +1,9 @@
 import { Stack } from 'expo-router';
-import { useColorScheme } from 'react-native';
-import { getColors } from '../../constants/theme';
+import { } from 'react-native';
+import { useAppColors } from '../../hooks/useAppColors';
 
 export default function AuthLayout() {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     return (
         <Stack
             screenOptions={{

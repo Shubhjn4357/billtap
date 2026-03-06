@@ -1,7 +1,8 @@
 import { Stack } from 'expo-router';
-import { AppState, Platform, View, useColorScheme } from 'react-native';
+import { AppState, Platform, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { getColors, loadThemePreference, setThemePreference } from '../constants/theme';
+import { loadThemePreference, setThemePreference } from '../constants/theme';
+import { useAppColors } from '../hooks/useAppColors';
 import AnimatedSplashOverlay from '../components/AnimatedSplashOverlay';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
@@ -29,6 +30,7 @@ import {
 } from '../services/notificationService';
 import { DialogProvider } from '../components/providers/DialogProvider';
 import { getLocalPreferences } from '../services/localPreferences';
+import { useThemeStore } from '../store/themeStore';
 
 const PENDING_SETUP_KEY_PREFIX = 'vahi_pending_setup_';
 
@@ -42,8 +44,8 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
-  const scheme = useColorScheme();
-  const colors = getColors(scheme);
+  const hydrateTheme = useThemeStore((s) => s.hydrate);
+  const colors = useAppColors();
   const { refreshUser, restoreCachedSession, markBootstrapped } = useAuthStore();
   const [ready, setReady] = useState(false);
 
@@ -58,6 +60,7 @@ export default function RootLayout() {
         await loadThemePreference();
         const localPrefs = await getLocalPreferences();
         setThemePreference(localPrefs.themeMode);
+        hydrateTheme(localPrefs);
         await restoreCachedSession();
         const token = await getStoredToken();
         if (token) {
@@ -134,7 +137,7 @@ export default function RootLayout() {
       offlineSyncService.stopAutoSync();
       stopForegroundSync();
     };
-  }, [markBootstrapped, refreshUser, restoreCachedSession]);
+  }, [hydrateTheme, markBootstrapped, refreshUser, restoreCachedSession]);
 
   if (!ready) {
     return (
@@ -172,6 +175,5 @@ export default function RootLayout() {
       </QueryClientProvider>
     );
 }
-
 
 

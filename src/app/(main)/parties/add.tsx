@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -11,7 +12,8 @@ import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toUserMessage } from '../../../api/client';
 import { partyApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { useAuthStore } from '../../../store/authStore';
 import { canPerformAction } from '../../../utils/accessControl';
 import {
@@ -45,8 +47,7 @@ type PartyForm = z.output<typeof partySchema>;
 
 export default function AddPartyScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const { type: defaultType, id: editId } = useLocalSearchParams<{ type?: string; id?: string }>();
     const qc = useQueryClient();
     const s = styles(colors);

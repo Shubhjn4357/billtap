@@ -6,7 +6,6 @@ import {
     Pressable,
     RefreshControl,
     StyleSheet,
-    useColorScheme,
     ActivityIndicator,
     Share,
     Image,
@@ -21,7 +20,8 @@ import { printToFileAsync } from 'expo-print';
 import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import { format, parseISO } from 'date-fns';
 import { invoiceApi, settingsApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { buildUpiPaymentUri, buildUpiQrImageUrl, isValidUpiId, sanitizeUpiId } from '../../../utils/upi';
 import { useAuthStore } from '../../../store/authStore';
 import { generateInvoiceHtml, type InvoicePrintConfig } from '../../../utils/invoiceHtml';
@@ -29,8 +29,7 @@ import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { useAppDialog } from '../../../components/providers/DialogProvider';
 
 export default function InvoiceDetailScreen() {
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const { id } = useLocalSearchParams<{ id: string }>();
     const qc = useQueryClient();
     const s = styles(colors);

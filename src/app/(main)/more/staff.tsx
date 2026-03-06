@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import {
-    ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { staffApi } from '../../../api/endpoints';
 import { toApiError, toUserMessage } from '../../../api/client';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { useAuthStore } from '../../../store/authStore';
 import type { StaffInvite, StaffMember } from '../../../types/domain';
 import { canPerformAction } from '../../../utils/accessControl';
@@ -34,11 +35,11 @@ const getStaffInviteMessage = (error: unknown) => {
 
 export default function StaffScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const qc = useQueryClient();
     const [phoneNumber, setPhoneNumber] = useState('');
+    const [inviteRole, setInviteRole] = useState<'staff' | 'salesman' | 'manager'>('staff');
     const [search, setSearch] = useState('');
     const smartBack = useSmartBack('/(main)/more');
     const { selection } = useHaptics();
@@ -54,7 +55,7 @@ export default function StaffScreen() {
     });
 
     const { mutateAsync: inviteStaff, isPending: inviting } = useMutation({
-        mutationFn: (phone: string) => staffApi.invite({ phoneNumber: phone, role: 'staff' }),
+        mutationFn: (phone: string) => staffApi.invite({ phoneNumber: phone, role: inviteRole }),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['staff'] }),
     });
 
@@ -181,7 +182,22 @@ export default function StaffScreen() {
                     <Text style={[s.accessHint, { color: colors.textSecondary }]}>
                         Your role does not have permission to invite staff.
                     </Text>
-                ) : null}
+                    ) : (
+                        <View style={s.roleRow}>
+                            {(['staff', 'salesman', 'manager'] as const).map((r) => {
+                                const selected = inviteRole === r;
+                                return (
+                                    <Pressable
+                                        key={r}
+                                        style={[s.roleChip, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.surfaceVariant : 'transparent' }]}
+                                        onPress={() => setInviteRole(r)}
+                                    >
+                                        <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontWeight: '700', fontSize: 11 }}>{r.toUpperCase()}</Text>
+                                    </Pressable>
+                                );
+                            })}
+                        </View>
+                    )}
                 <View style={s.inviteRow}>
                     <AppInput
                         inputType="phone"
@@ -345,4 +361,6 @@ const styles = (colors: ColorPalette) =>
         meta: { fontSize: 12, marginTop: 2 },
         inlineBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
         emptyText: { fontSize: 13 },
+        roleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.xs },
+        roleChip: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
     });

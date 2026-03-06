@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loanApi } from '../../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
+import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
+import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { SelectField } from '../../../../components/ui/SelectField';
@@ -23,8 +24,7 @@ const toAmount = (value: string) => {
 
 export default function AddLoanScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = getColors(scheme);
+        const colors = useAppColors();
     const qc = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');

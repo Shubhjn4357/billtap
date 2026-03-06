@@ -1,7 +1,8 @@
 import { memo } from 'react';
-import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getColors, Radius, Spacing, Typography } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
 import { useAppDrawer } from '../layout/AppDrawerLayout';
 import { openGoToPalette } from '../navigation/GoToPalette';
@@ -25,8 +26,7 @@ export const AppTopBar = memo(function AppTopBar({
     leftMode = 'auto',
     showSearch = true,
 }: AppTopBarProps) {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const { impact, selection } = useHaptics();
     const drawer = useAppDrawer();
@@ -92,7 +92,7 @@ export const AppTopBar = memo(function AppTopBar({
     );
 });
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         wrap: {
             minHeight: 56,

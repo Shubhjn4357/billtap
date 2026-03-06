@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toUserMessage } from '../../../api/client';
 import { settingsApi } from '../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { useAuthStore } from '../../../store/authStore';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
@@ -121,8 +122,7 @@ const isOverrideActive = (value: boolean, defaultValue: boolean) => value !== de
 
 export default function RoleAccessScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const queryClient = useQueryClient();
     const smartBack = useSmartBack('/(main)/more');

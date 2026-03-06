@@ -8,13 +8,13 @@ import {
     StyleSheet,
     Text,
     View,
-    useColorScheme,
 } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getColors, Radius, Spacing, Typography, withAlpha } from '../constants/theme';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../constants/theme';
+import { useAppColors } from '../hooks/useAppColors';
 import type { AppAction, AppModule } from '../utils/accessControl';
 import { canAccessModule, canPerformAction, canUsePos } from '../utils/accessControl';
 import { useAuthStore } from '../store/authStore';
@@ -52,8 +52,7 @@ const QUICK_ACTIONS: QuickAction[] = [
 ];
 
 export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
+    const colors = useAppColors();
     const s = useMemo(() => styles(colors), [colors]);
     const insets = useSafeAreaInsets();
     const role = useAuthStore((value) => value.organizationRole);
@@ -363,7 +362,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         barShell: {
             paddingHorizontal: Spacing.lg,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,7 +9,8 @@ import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
 import { settingsApi } from '../../../api/endpoints';
 import { offlineSyncService } from '../../../services/offlineSyncService';
-import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 
 type QueueEntry = {
@@ -38,8 +39,7 @@ const formatRetryAt = (value?: number) => {
 
 export default function SyncDiagnosticsScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
     const qc = useQueryClient();

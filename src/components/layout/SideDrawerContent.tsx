@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getColors, Radius, Spacing, Typography } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { useAuthStore } from '../../store/authStore';
 import { canAccessModule, canUsePos } from '../../utils/accessControl';
 import { AppSearchBar } from '../ui/AppSearchBar';
@@ -38,8 +39,7 @@ type SideDrawerContentProps = {
 };
 
 export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const insets = useSafeAreaInsets();
     const { selection } = useHaptics();
@@ -107,7 +107,7 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         root: {
             flex: 1,

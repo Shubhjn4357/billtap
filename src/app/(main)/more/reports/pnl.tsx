@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { reportApi } from '../../../../api/endpoints';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { useHaptics } from '../../../../hooks/useHaptics';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
@@ -64,8 +65,7 @@ const getMetricColor = (colors: ColorPalette, tone: MetricTone) => {
 };
 
 export default function PnLReportScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+        const colors = useAppColors();
     const s = styles(colors);
     const [rangeIndex, setRangeIndex] = useState(0);
     const smartBack = useSmartBack('/(main)/reports');

@@ -1,15 +1,12 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import React from 'react';
-import { useColorScheme } from 'react-native';
-
-import { Colors } from '@/constants/theme';
+import { useAppColors } from '../hooks/useAppColors';
 
 const HOME_TAB_ICON = require('../../assets/images/icon.png');
 const EXPLORE_TAB_ICON = require('../../assets/images/icon.png');
 
 export default function AppTabs() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
+  const colors = useAppColors();
 
   return (
     <NativeTabs

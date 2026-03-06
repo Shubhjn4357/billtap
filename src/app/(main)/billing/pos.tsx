@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, FlatList, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, FlatList, Pressable, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -8,7 +8,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { usePosStore } from '../../../store/posStore';
 import { posApi, itemApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { GST_SLABS } from '../../../constants/gstRates';
 import { useScannerMode } from '../../../hooks/useScannerMode';
 import type { Item } from '../../../types/domain';
@@ -27,8 +28,7 @@ const normalizeGstRate = (value: number) => {
 };
 
 export default function PosScreen() {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const store = usePosStore();
     const params = useLocalSearchParams<{ search?: string | string[]; scanAt?: string | string[] }>();
     const subtotal = store.getSubtotal();

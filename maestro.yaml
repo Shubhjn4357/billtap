@@ -1,0 +1,271 @@
+appId: com.vahi.billing
+name: Vahi Billing App — Full E2E Flow Suite
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# 0. Boot & Auth
+# ─────────────────────────────────────────────────────────────────────────────
+- clearState: true
+- launchApp: true
+
+- extendedWaitUntil:
+    visible: "Log In"
+    timeout: 10000
+- tapOn: "Log In using Google"
+- extendedWaitUntil:
+    visible: "Allow Vahi to access"
+    timeout: 12000
+- tapOn: "Continue"
+
+# Select existing first business or create one
+- extendedWaitUntil:
+    visible: "Select Business"
+    timeout: 8000
+- tapOn:
+    id: "business-card-0"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Dashboard Assertions
+# ─────────────────────────────────────────────────────────────────────────────
+- extendedWaitUntil:
+    visible: "THIS MONTH"
+    timeout: 8000
+- assertVisible: "Sales"
+- assertVisible: "Purchases"
+- assertVisible: "INVOICES — THIS MONTH"
+- assertVisible: "OUTSTANDING"
+- assertVisible: "QUICK CREATE"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Parties Screen — Customer Tab
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab-parties"
+- extendedWaitUntil:
+    visible: "Customers"
+    timeout: 5000
+
+# Add a customer
+- tapOn:
+    id: "btn-add-party"
+- extendedWaitUntil:
+    visible: "Party Name"
+    timeout: 4000
+- inputText: "Test Customer E2E"
+- tapOn: "Phone"
+- inputText: "9876543210"
+- tapOn: "Save"
+- assertVisible: "Test Customer E2E"
+
+# Switch to Supplier tab
+- tapOn: "Suppliers"
+- assertVisible: "Suppliers"
+- tapOn: "Customers"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Inventory — Add Item
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab-inventory"
+- extendedWaitUntil:
+    visible: "Items"
+    timeout: 5000
+
+# Add new item via FAB
+- tapOn:
+    id: "fab-add-item"
+- extendedWaitUntil:
+    visible: "Item Name"
+    timeout: 4000
+- inputText: "E2E Test Widget"
+- tapOn: "Sale Price"
+- inputText: "250"
+- tapOn: "Cost Price"
+- inputText: "180"
+- tapOn: "GST Rate %"
+- tapOn: "18%"
+- tapOn: "Opening Stock"
+- inputText: "100"
+- tapOn:
+    id: "btn-save-item"
+- assertVisible: "E2E Test Widget"
+
+# Verify category filter chip visible
+- assertVisible: "All"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Billing — Create Tax Invoice
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab-billing"
+- extendedWaitUntil:
+    visible: "Billing"
+    timeout: 5000
+
+- tapOn:
+    id: "fab-create-invoice"
+- extendedWaitUntil:
+    visible: "Document Details"
+    timeout: 5000
+
+# Confirm type is TAX INVOICE by default
+- assertVisible: "Tax Invoice"
+
+# Select party
+- tapOn: "+ Select Party"
+- inputText: "Test Customer E2E"
+- tapOn: "Test Customer E2E"
+
+# Add item
+- scrollUntilVisible:
+    element: "+ Add Item"
+    direction: DOWN
+- tapOn: "+ Add Item"
+- inputText: "E2E Test Widget"
+- tapOn: "E2E Test Widget"
+- tapOn: "Done"
+
+# Verify totals visible
+- assertVisible: "Total"
+- assertVisible: "GST"
+
+# Mark as paid
+- scrollUntilVisible:
+    element: "Paid"
+    direction: DOWN
+- tapOn: "Paid"
+
+# Save
+- tapOn:
+    id: "btn-save-invoice"
+- extendedWaitUntil:
+    visible: "Invoice saved"
+    timeout: 6000
+
+# Go back to list — verify invoice appears
+- assertVisible: "Test Customer E2E"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Billing — Purchase Bill
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "fab-create-invoice"
+- extendedWaitUntil:
+    visible: "Document Details"
+    timeout: 5000
+- tapOn: "Purchase Bill"
+- assertVisible: "Purchase Bill"
+- tapOn: "+ Select Party"
+- inputText: "Test Supplier"
+- tapOn:
+    id: "btn-create-new-party"
+- inputText: "Test Supplier E2E"
+- tapOn: "Save"
+- tapOn:
+    id: "btn-back"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Accounts — Cash / Bank Entry
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab-more"
+- tapOn: "Accounts"
+- tapOn: "Cash & Bank"
+- extendedWaitUntil:
+    visible: "Add Entry"
+    timeout: 4000
+- tapOn: "Add Entry"
+- tapOn: "Amount"
+- inputText: "5000"
+- tapOn: "Note"
+- inputText: "E2E test deposit"
+- tapOn: "Save"
+- assertVisible: "5,000"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Reports — Ledger View
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn: "Reports"
+- tapOn: "Ledger"
+- extendedWaitUntil:
+    visible: "Ledgers"
+    timeout: 5000
+
+# Verify type filter chips visible
+- assertVisible: "Income"
+- assertVisible: "Expense"
+- tapOn: "Income"
+- assertVisible: "Sales"
+- tapOn: "All"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Settings — Unified Tab Hub
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn: "Settings"
+- extendedWaitUntil:
+    visible: "App"
+    timeout: 4000
+
+# App tab — theme & haptics visible
+- tapOn: "App"
+- assertVisible: "Theme"
+- assertVisible: "Haptics"
+
+# Invoicing tab
+- tapOn: "Invoicing"
+- assertVisible: "Invoicing"
+
+# Business tab
+- tapOn: "Business"
+- assertVisible: "Business"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Settings — Section Editor (Taxes)
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn: "Taxes & GST"
+- extendedWaitUntil:
+    visible: "Taxes"
+    timeout: 4000
+- assertVisible: "SECTION STATUS"
+
+# Search within section
+- tapOn: "Search fields..."
+- inputText: "GST"
+- assertVisible: "GST"
+- clearText
+- tapOn:
+    id: "btn-back"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. Screen Directory
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn: "Open Screen Directory"
+- extendedWaitUntil:
+    visible: "Screen Directory"
+    timeout: 4000
+- assertVisible: "Billing"
+- assertVisible: "Inventory"
+- assertVisible: "Reports"
+- tapOn:
+    id: "btn-back"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. Offline Banner Assertion (toggle airplane mode)
+# ─────────────────────────────────────────────────────────────────────────────
+- setAirplaneMode: true
+- wait: 1000
+- tapOn:
+    id: "tab-billing"
+- assertVisible: "change(s) queued offline"
+- setAirplaneMode: false
+- wait: 1500
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. Final Dashboard Check — dashboard reflects new invoice
+# ─────────────────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab-home"
+- extendedWaitUntil:
+    visible: "THIS MONTH"
+    timeout: 6000
+- assertVisible: "INVOICES — THIS MONTH"
+- assertVisible: "OUTSTANDING"

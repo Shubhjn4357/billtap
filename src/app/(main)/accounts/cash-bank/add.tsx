@@ -1,16 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
-    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+    ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { accountingApi } from '../../../../api/endpoints';
-import { getColors, Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 
 type AccountKind = 'CASH' | 'BANK' | 'CHEQUE' | 'OTHER';
 
@@ -35,19 +40,40 @@ const inferKind = (name: string): AccountKind => {
     return 'OTHER';
 };
 
+const accountSchema = z.object({
+    kind: z.enum(['CASH', 'BANK', 'CHEQUE', 'OTHER']),
+    name: z.string().min(1, 'Account name is required.'),
+    code: z.string().optional(),
+});
+
+type AccountFormInput = z.input<typeof accountSchema>;
+type AccountForm = z.output<typeof accountSchema>;
+
 export default function AddCashBankAccountScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
     const qc = useQueryClient();
     const { id } = useLocalSearchParams<{ id?: string }>();
     const isEdit = Boolean(id);
 
-    const [kind, setKind] = useState<AccountKind>('CASH');
-    const [name, setName] = useState(buildDefaultName('CASH'));
-    const [code, setCode] = useState('');
+    const {
+        control,
+        handleSubmit,
+        formState: { errors },
+        watch,
+        setValue,
+    } = useForm<AccountFormInput, unknown, AccountForm>({
+        resolver: zodResolver(accountSchema),
+        defaultValues: {
+            kind: 'CASH',
+            name: buildDefaultName('CASH'),
+            code: '',
+        },
+    });
+
+    const currentKind = watch('kind');
 
     const { data: accountsRes, isLoading: accountsLoading, isRefetching, refetch } = useQuery({
         queryKey: ['accounting-accounts'],
@@ -62,17 +88,16 @@ export default function AddCashBankAccountScreen() {
 
     useEffect(() => {
         if (!account) return;
-        setName(account.name);
-        setCode(account.code);
-        setKind(inferKind(account.name));
-    }, [account]);
+        setValue('name', account.name);
+        setValue('code', account.code);
+        setValue('kind', inferKind(account.name));
+    }, [account, setValue]);
 
     const { mutate, isPending } = useMutation({
-        mutationFn: async () => {
-            const finalName = name.trim();
-            if (!finalName) throw new Error('Account name is required.');
+        mutationFn: async (data: AccountForm) => {
+            const finalName = data.name.trim();
+            const generatedCode = data.code?.trim() || `1${Date.now().toString().slice(-5)}`;
 
-            const generatedCode = code.trim() || `1${Date.now().toString().slice(-5)}`;
             if (isEdit && id) {
                 return accountingApi.updateAccount(id, {
                     name: finalName,
@@ -112,9 +137,10 @@ export default function AddCashBankAccountScreen() {
     });
 
     const onKindSelect = (nextKind: AccountKind) => {
-        setKind(nextKind);
-        if (!name.trim() || name === buildDefaultName(kind)) {
-            setName(buildDefaultName(nextKind));
+        setValue('kind', nextKind);
+        const currentName = watch('name');
+        if (!currentName.trim() || currentName === buildDefaultName(currentKind)) {
+            setValue('name', buildDefaultName(nextKind));
         }
     };
 
@@ -133,7 +159,7 @@ export default function AddCashBankAccountScreen() {
                 subtitle="Cash and bank setup"
                 onBackPress={smartBack}
                 rightAction={(
-                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => mutate()} disabled={isPending}>
+                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={handleSubmit((data) => mutate(data))} disabled={isPending}>
                         {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />}
                     </Pressable>
                 )}
@@ -154,7 +180,7 @@ export default function AddCashBankAccountScreen() {
                 <Text style={[s.label, { color: colors.textSecondary }]}>Account Kind</Text>
                 <View style={s.kindsRow}>
                     {(['CASH', 'BANK', 'CHEQUE', 'OTHER'] as AccountKind[]).map((entry) => {
-                        const selected = entry === kind;
+                        const selected = entry === currentKind;
                         return (
                             <Pressable
                                 key={entry}
@@ -173,29 +199,47 @@ export default function AddCashBankAccountScreen() {
                     })}
                 </View>
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Account Name</Text>
-                <AppInput
-                    inputType="text"
-                    leadingIcon="bank-outline"
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="Account name"
+                <Controller
+                    control={control}
+                    name="name"
+                    render={({ field: { onChange, value } }) => (
+                        <>
+                            <Text style={[s.label, { color: colors.textSecondary }]}>Account Name</Text>
+                            <AppInput
+                                inputType="text"
+                                leadingIcon="bank-outline"
+                                value={value}
+                                onChangeText={onChange}
+                                placeholder="Account name"
+                                error={errors.name?.message}
+                            />
+                        </>
+                    )}
                 />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Account Code (optional)</Text>
-                <AppInput
-                    inputType="text"
-                    leadingIcon="pound"
-                    value={code}
-                    onChangeText={setCode}
-                    placeholder="Auto-generated if empty"
+                <Controller
+                    control={control}
+                    name="code"
+                    render={({ field: { onChange, value } }) => (
+                        <>
+                            <Text style={[s.label, { color: colors.textSecondary }]}>Account Code (optional)</Text>
+                            <AppInput
+                                inputType="text"
+                                leadingIcon="pound"
+                                value={value || ''}
+                                onChangeText={onChange}
+                                placeholder="Auto-generated if empty"
+                                error={errors.code?.message}
+                            />
+                        </>
+                    )}
                 />
 
                 <View style={[s.noteBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
                     <Text style={[s.note, { color: colors.textSecondary }]}>Account is maintained under Assets and appears in Cash and Bank balances.</Text>
                 </View>
 
-                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={() => mutate()} disabled={isPending}>
+                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={handleSubmit((data) => mutate(data))} disabled={isPending}>
                     {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>{isEdit ? 'Update Account' : 'Create Account'}</Text>}
                 </Pressable>
             </ScrollView>

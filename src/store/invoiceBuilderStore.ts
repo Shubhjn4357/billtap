@@ -70,6 +70,7 @@ interface InvoiceBuilderStore {
     setParty: (id: string | null, snapshot?: InvoiceBuilderState['partySnapshot']) => void;
     setPlaceOfSupply: (s: string) => void;
     addLine: () => void;
+    addLineFromItem: (item: import('../types/domain').Item) => void;
     updateLine: (key: string, updates: Partial<InvoiceLineItem>) => void;
     removeLine: (key: string) => void;
     moveLine: (from: number, to: number) => void;
@@ -145,6 +146,31 @@ export const useInvoiceBuilderStore = create<InvoiceBuilderStore>()(
 
             addLine: () => set((store) => {
                 store.state.items.push(EMPTY_LINE());
+                store.totals = syncTotals(store.state);
+            }),
+
+            addLineFromItem: (item) => set((store) => {
+                const newLine: InvoiceLineItem = {
+                    _key: Math.random().toString(36).slice(2),
+                    itemId: item.id,
+                    description: item.name,
+                    quantity: 1,
+                    unit: item.unit ?? 'pcs',
+                    rate: item.salePrice,
+                    discountPercent: 0,
+                    gstRate: Number(item.gstRate ?? 0),
+                    isInterState: false,
+                    discountAmount: 0,
+                    taxableValue: 0,
+                    cgstRate: 0,
+                    cgstAmount: 0,
+                    sgstRate: 0,
+                    sgstAmount: 0,
+                    igstRate: 0,
+                    igstAmount: 0,
+                    total: 0,
+                };
+                store.state.items.push(computeLine(newLine));
                 store.totals = syncTotals(store.state);
             }),
 

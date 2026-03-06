@@ -1,6 +1,7 @@
 import { useMemo, type ComponentType } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
-import { getColors, Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 
 type SignatureCaptureSheetProps = {
@@ -206,8 +207,7 @@ const buildSignatureHtml = (
 
 export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCaptureSheetProps) {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+  const colors = useAppColors();
     const s = styles(colors);
 
     const signatureHtml = useMemo(
@@ -295,7 +295,7 @@ export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCap
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         overlay: {
             flex: 1,

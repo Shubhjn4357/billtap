@@ -9,10 +9,10 @@ import {
     View,
     type StyleProp,
     type ViewStyle,
-    useColorScheme,
 } from 'react-native';
 import { SafeAreaView, type Edge, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getColors, Radius, Spacing, Typography } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 
 type ScreenWrapperProps = {
     title?: string;
@@ -37,8 +37,7 @@ export function ScreenWrapper({
     keyboardAware = true,
     rightAction,
 }: ScreenWrapperProps) {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const insets = useSafeAreaInsets();
     const s = styles(colors);
 
@@ -100,7 +99,7 @@ export function ScreenWrapper({
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: {
             flex: 1,

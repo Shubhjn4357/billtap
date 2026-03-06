@@ -6,10 +6,10 @@ import {
     Pressable,
     StyleSheet,
     View,
-    useColorScheme,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getColors, Radius, Spacing } from '../../constants/theme';
+import { Radius, Spacing, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
 import { SideDrawerContent } from './SideDrawerContent';
 
@@ -30,8 +30,7 @@ type AppDrawerLayoutProps = {
 };
 
 export function AppDrawerLayout({ children }: AppDrawerLayoutProps) {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = useMemo(() => styles(colors), [colors]);
     const insets = useSafeAreaInsets();
     const { selection } = useHaptics();
@@ -132,7 +131,7 @@ export function AppDrawerLayout({ children }: AppDrawerLayoutProps) {
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         root: {
             flex: 1,

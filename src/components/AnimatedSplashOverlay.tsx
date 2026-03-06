@@ -177,7 +177,7 @@ export default function AnimatedSplashOverlay({
 
 const styles = StyleSheet.create({
     overlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         zIndex: 999,
     },
     content: {

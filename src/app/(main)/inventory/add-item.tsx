@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import {
-    View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, useColorScheme, ActivityIndicator, Switch, KeyboardAvoidingView, Platform } from 'react-native';
+    View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, ActivityIndicator, Switch, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
@@ -11,7 +11,8 @@ import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toUserMessage } from '../../../api/client';
 import { itemApi, settingsApi } from '../../../api/endpoints';
-import { getColors, Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
 import { GST_SLABS } from '../../../constants/gstRates';
 import { useScannerMode } from '../../../hooks/useScannerMode';
 import { useAuthStore } from '../../../store/authStore';
@@ -23,6 +24,7 @@ import { AppInput } from '../../../components/ui/AppInput';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useInvoiceBuilderStore } from '../../../store/invoiceBuilderStore';
 
 const GST_RATES = [...GST_SLABS];
 
@@ -50,16 +52,17 @@ type ItemForm = z.output<typeof itemSchema>;
 
 export default function AddItemScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme() as 'light' | 'dark' | null;
-    const colors = getColors(scheme);
+        const colors = useAppColors();
     const params = useLocalSearchParams<{
         id?: string;
         barcode?: string | string[];
         scanned?: string | string[];
         scanAt?: string | string[];
         scanField?: string | string[];
+        returnContext?: string;
     }>();
     const editId = params.id;
+    const returnContext = Array.isArray(params.returnContext) ? params.returnContext[0] : params.returnContext;
     const qc = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/inventory');
@@ -67,6 +70,7 @@ export default function AddItemScreen() {
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
     const { selection } = useHaptics();
+    const addLineFromItem = useInvoiceBuilderStore((s) => s.addLineFromItem);
 
     const {
         control,
@@ -164,8 +168,15 @@ export default function AddItemScreen() {
 
             return itemApi.create(payload);
         },
-        onSuccess: async () => {
+        onSuccess: async (result) => {
             await qc.invalidateQueries({ queryKey: ['items'] });
+            await qc.invalidateQueries({ queryKey: ['billing-item-catalog'] });
+            if (returnContext === 'invoice') {
+                const raw = (result as unknown) as Record<string, unknown>;
+                if (raw?.item && typeof raw.item === 'object') {
+                    addLineFromItem(raw.item as import('../../../types/domain').Item);
+                }
+            }
             router.back();
         },
         onError: (error) => dialog.alert('Error', toUserMessage(error, 'Failed to save item.')),

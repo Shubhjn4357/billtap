@@ -6,11 +6,11 @@ import {
     StyleSheet,
     Text,
     View,
-    useColorScheme,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getColors, Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { AppInput } from './AppInput';
+import { useAppColors } from '../../hooks/useAppColors';
 
 export type SelectOption = {
     label: string;
@@ -43,8 +43,7 @@ export function SelectField({
     allowClear = false,
     onClear,
 }: SelectFieldProps) {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -170,7 +169,7 @@ export function SelectField({
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         input: {
             minHeight: 44,

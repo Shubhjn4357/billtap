@@ -1,22 +1,21 @@
-import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, useColorScheme } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { endOfMonth, format, startOfMonth } from 'date-fns';
+import { endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useAuthStore } from '../../store/authStore';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
 import { offerApi, reportApi } from '../../api/endpoints';
 import { offlineSyncService } from '../../services/offlineSyncService';
 import { canAccessModule, canUsePos, type AppModule } from '../../utils/accessControl';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { AppTopBar } from '../../components/ui/AppTopBar';
 import { useHaptics } from '../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-
-const TODAY = new Date();
-const MONTH_START = format(startOfMonth(TODAY), 'yyyy-MM-dd');
-const MONTH_END = format(endOfMonth(TODAY), 'yyyy-MM-dd');
+import { useAppColors } from '../../hooks/useAppColors';
+import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
+import { useInvoices } from '../../hooks/useInvoices';
+import { useParties } from '../../hooks/useParties';
 
 type QuickAction = {
     icon: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -36,28 +35,52 @@ const QUICK_ACTIONS: QuickAction[] = [
 ];
 
 export default function HomeScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
-    const user = useAuthStore((state) => state.user);
-    const business = useAuthStore((state) => state.business);
-    const tier = useAuthStore((state) => state.subscription?.tier ?? 'FREE');
-    const subscription = useAuthStore((state) => state.subscription);
-    const role = useAuthStore((state) => state.organizationRole);
+    const { user, business, tierLabel, subscription, role, refresh } = useCurrentBusiness();
     const { selection } = useHaptics();
     const dialog = useAppDialog();
     const [upgradePromptShown, setUpgradePromptShown] = useState(false);
 
-    const { data: summary, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['report-summary', MONTH_START, MONTH_END],
-        queryFn: () => reportApi.getSummary({ from: MONTH_START, to: MONTH_END }),
-        staleTime: 5 * 60 * 1000,
+    // Compute month range once per mount
+    const today = new Date();
+    const monthStart = format(startOfMonth(today), 'yyyy-MM-dd');
+    const monthEnd = format(endOfMonth(today), 'yyyy-MM-dd');
+    const prevMonthStart = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
+    const prevMonthEnd = format(endOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
+
+    // Refresh subscription/user on mount to prevent stale FREE-plan display
+    useEffect(() => { void refresh(); }, [refresh]);
+
+    // -- Report summary (server aggregated) --
+    const { data: summary, isLoading: summaryLoading, isRefetching: summaryRefetching, refetch: refetchSummary } = useQuery({
+        queryKey: ['report-summary', monthStart, monthEnd],
+        queryFn: () => reportApi.getSummary({ from: monthStart, to: monthEnd }),
+        staleTime: 5 * 60_000,
     });
+    const { data: prevSummary } = useQuery({
+        queryKey: ['report-summary', prevMonthStart, prevMonthEnd],
+        queryFn: () => reportApi.getSummary({ from: prevMonthStart, to: prevMonthEnd }),
+        staleTime: 20 * 60_000,
+    });
+
+    // -- Live invoice stats for this month (from hook) --
+    const { summary: invoiceSummary, isLoading: invoicesLoading, refetch: refetchInvoices } = useInvoices({
+        dateRange: 'month',
+    });
+
+    // -- Live party balance stats (per type) --
+    const { stats: customerStats, isLoading: customerLoading, refetch: refetchCustomers } = useParties({ type: 'CUSTOMER' });
+    const { stats: supplierStats, isLoading: supplierLoading, refetch: refetchSuppliers } = useParties({ type: 'SUPPLIER' });
+
+    // -- Offers banner --
     const { data: offerResponse } = useQuery({
         queryKey: ['dashboard-offers'],
         queryFn: () => offerApi.getActive(),
         staleTime: 60_000,
     });
+
+    // -- Offline sync --
     const { data: queueStats, refetch: refetchQueueStats } = useQuery({
         queryKey: ['offline-sync-stats-home'],
         queryFn: () => offlineSyncService.getQueueStats(),
@@ -65,13 +88,18 @@ export default function HomeScreen() {
     });
 
     const stats = summary?.data as Record<string, number> | undefined;
+    const prevStats = prevSummary?.data as Record<string, number> | undefined;
     const offers = offerResponse?.data ?? [];
     const blockedCount = queueStats?.blockedCount ?? 0;
+    const isLoading = summaryLoading;
+    const isRefetching = summaryRefetching;
+
     const quickActions = QUICK_ACTIONS.filter((action) => {
         if (action.requiresPos && !canUsePos(subscription)) return false;
         return canAccessModule(role, action.module, subscription);
     });
 
+    const tierDisplay = tierLabel;
     useEffect(() => {
         if (upgradePromptShown || blockedCount <= 0) return;
         setUpgradePromptShown(true);
@@ -80,288 +108,268 @@ export default function HomeScreen() {
             `${blockedCount} queued change(s) are saved locally but blocked for cloud sync by current plan.`,
             [
                 { text: 'Later', style: 'cancel' },
-                {
-                    text: 'Upgrade',
-                    onPress: () => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0]),
-                },
+                { text: 'Upgrade', onPress: () => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0]) },
             ]
         );
     }, [blockedCount, dialog, upgradePromptShown]);
 
+    const doRefresh = () => {
+        void refetchSummary();
+        void refetchQueueStats();
+        void refetchInvoices();
+        void refetchCustomers();
+        void refetchSuppliers();
+    };
+
     return (
-        <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+        <SafeAreaView style={s.safe} edges={['top']}>
             <AppTopBar
                 title={business?.name ?? 'Dashboard'}
-                subtitle={`Hello, ${user?.name?.split(' ')[0] ?? 'there'}`}
+                subtitle={`Hello, ${user?.name?.split(' ')[0] ?? 'there'} 👋`}
                 rightAction={(
-                    <Pressable style={s.tierBadge} onPress={() => router.push('/(main)/more')}>
-                        <Text style={s.tierText}>{tier}</Text>
+                    <Pressable style={[s.tierBadge, { backgroundColor: withAlpha(colors.primary, '22'), borderColor: colors.primary }]} onPress={() => router.push('/(main)/more')}>
+                        <Text style={[s.tierText, { color: colors.primary }]}>{tierDisplay}</Text>
                     </Pressable>
                 )}
             />
+
             <ScrollView
-                style={s.scroll}
                 showsVerticalScrollIndicator={false}
-                refreshControl={(
-                    <RefreshControl
-                        refreshing={isRefetching && !isLoading}
-                        onRefresh={() => {
-                            void refetch();
-                            void refetchQueueStats();
-                        }}
-                        tintColor={colors.primary}
-                    />
-                )}
+                refreshControl={<RefreshControl refreshing={isRefetching && !isLoading} onRefresh={doRefresh} tintColor={colors.primary} />}
             >
+                {/* ── Offline / blocked banner ── */}
+                {blockedCount > 0 ? (
+                    <Pressable
+                        style={[s.banner, { borderColor: colors.warning, backgroundColor: withAlpha(colors.warning, '14') }]}
+                        onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
+                    >
+                        <MaterialCommunityIcons name="cloud-alert-outline" size={15} color={colors.warning} />
+                        <Text style={[s.bannerText, { color: colors.warning }]}>
+                            {blockedCount} change(s) queued offline — upgrade to sync
+                        </Text>
+                    </Pressable>
+                ) : null}
+
+                {/* ── This Month metrics ── */}
                 <View style={s.section}>
-                    <Text style={s.sectionTitle}>This Month</Text>
+                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>THIS MONTH</Text>
                     <View style={s.statsGrid}>
-                        <StatCard label="Sales" value={stats?.totalSales} prefix="Rs " loading={isLoading} color={colors.success} />
-                        <StatCard label="Purchases" value={stats?.totalPurchases} prefix="Rs " loading={isLoading} color={colors.warning} />
-                        <StatCard label="Expenses" value={stats?.totalExpenses} prefix="Rs " loading={isLoading} color={colors.error} />
-                        <StatCard label="Net Profit" value={stats?.netProfit} prefix="Rs " loading={isLoading} color={colors.primary} />
+                        <StatCard label="Sales" value={stats?.totalSales} prev={prevStats?.totalSales} prefix="Rs " loading={isLoading} color={colors.success} colors={colors} />
+                        <StatCard label="Purchases" value={stats?.totalPurchases} prev={prevStats?.totalPurchases} prefix="Rs " loading={isLoading} color={colors.warning} colors={colors} />
+                        <StatCard label="Expenses" value={stats?.totalExpenses} prev={prevStats?.totalExpenses} prefix="Rs " loading={isLoading} color={colors.error} colors={colors} />
+                        <StatCard label="Net Profit" value={stats?.netProfit} prev={prevStats?.netProfit} prefix="Rs " loading={isLoading} color={colors.primary} colors={colors} />
                     </View>
                 </View>
 
+                {/* ── Invoice activity summary (live via useInvoices) ── */}
+                {!invoicesLoading && invoiceSummary ? (
+                    <View style={s.section}>
+                        <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>INVOICES — THIS MONTH</Text>
+                        <View style={s.invoiceRow}>
+                            <InvoiceChip label="Total" value={invoiceSummary.total} color={colors.primary} colors={colors} />
+                            <InvoiceChip label="Paid" value={invoiceSummary.paid} color={colors.success} colors={colors} />
+                            <InvoiceChip label="Overdue" value={invoiceSummary.overdue} color={colors.error} colors={colors} />
+                            <InvoiceChip
+                                label="Outstanding"
+                                value={invoiceSummary.outstanding}
+                                prefix="₹"
+                                color={invoiceSummary.outstanding > 0 ? colors.warning : colors.textSecondary}
+                                colors={colors}
+                            />
+                        </View>
+                    </View>
+                ) : null}
+
+                {/* ── Receivables / Payables ── */}
                 <View style={s.section}>
-                    <Text style={s.sectionTitle}>Outstanding</Text>
+                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>OUTSTANDING</Text>
                     <View style={s.row}>
                         <OutstandingCard
                             label="Receivables"
-                            value={stats?.outstandingReceivables}
-                            loading={isLoading}
+                            value={customerStats?.totalReceivable ?? stats?.outstandingReceivables}
+                            loading={customerLoading || isLoading}
                             color={colors.success}
-                            onPress={() => router.push('/(main)/parties?tab=customer')}
+                            count={customerStats?.totalCustomers}
+                            colors={colors}
+                            onPress={() => router.push('/(main)/parties?tab=customer' as Parameters<typeof router.push>[0])}
                         />
                         <OutstandingCard
                             label="Payables"
-                            value={stats?.outstandingPayables}
-                            loading={isLoading}
+                            value={supplierStats?.totalPayable ?? stats?.outstandingPayables}
+                            loading={supplierLoading || isLoading}
                             color={colors.error}
-                            onPress={() => router.push('/(main)/parties?tab=supplier')}
+                            count={supplierStats?.totalSuppliers}
+                            colors={colors}
+                            onPress={() => router.push('/(main)/parties?tab=supplier' as Parameters<typeof router.push>[0])}
                         />
                     </View>
                 </View>
 
+                {/* ── Offers ── */}
+                {offers.length > 0 ? (
+                    <View style={s.section}>
+                        {offers.slice(0, 2).map((offer) => (
+                            <Pressable
+                                key={offer.id}
+                                style={[s.offerCard, { backgroundColor: withAlpha(colors.primary, '10'), borderColor: withAlpha(colors.primary, '30') }]}
+                                onPress={() => { if (offer.ctaRoute) router.push(offer.ctaRoute as Parameters<typeof router.push>[0]); }}
+                            >
+                                <MaterialCommunityIcons name="star-four-points-outline" size={14} color={colors.primary} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[s.offerTitle, { color: colors.primary }]}>{offer.title}</Text>
+                                    <Text style={[s.offerMessage, { color: colors.textSecondary }]}>{offer.message}</Text>
+                                </View>
+                                <MaterialCommunityIcons name="chevron-right" size={16} color={colors.primary} />
+                            </Pressable>
+                        ))}
+                    </View>
+                ) : null}
+
+                {/* ── Quick Create ── */}
                 <View style={s.section}>
-                    {blockedCount > 0 ? (
-                        <Pressable
-                            style={[s.blockedBanner, { borderColor: colors.warning, backgroundColor: `${colors.warning}18` }]}
-                            onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
-                        >
-                            <View style={s.blockedBannerHead}>
-                                <MaterialCommunityIcons name="cloud-alert-outline" size={16} color={colors.warning} />
-                                <Text style={[s.blockedBannerTitle, { color: colors.warning }]}>Cloud Sync Upgrade Required</Text>
-                            </View>
-                            <Text style={[s.blockedBannerText, { color: colors.text }]}>
-                                {blockedCount} change(s) are saved locally and queued. Upgrade plan to sync them online.
-                            </Text>
-                        </Pressable>
-                    ) : null}
-                    {offers.slice(0, 2).map((offer) => (
-                        <Pressable
-                            key={offer.id}
-                            style={[s.offerCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                            onPress={() => {
-                                if (offer.ctaRoute) {
-                                    router.push(offer.ctaRoute as Parameters<typeof router.push>[0]);
-                                }
-                            }}
-                        >
-                            <Text style={[s.offerTitle, { color: colors.primary }]}>{offer.title}</Text>
-                            <Text style={[s.offerMessage, { color: colors.textSecondary }]}>{offer.message}</Text>
-                        </Pressable>
-                    ))}
-                    <Text style={s.sectionTitle}>Quick Create</Text>
+                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>QUICK CREATE</Text>
                     <View style={s.quickGrid}>
                         {quickActions.map((qa) => (
                             <Pressable
                                 key={qa.label}
-                                style={({ pressed }) => [s.quickCard, pressed && { opacity: 0.7 }]}
-                                onPress={() => {
-                                    void selection();
-                                    router.push(qa.route as Parameters<typeof router.push>[0]);
-                                }}
+                                style={({ pressed }) => [s.quickCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
+                                onPress={() => { void selection(); router.push(qa.route as Parameters<typeof router.push>[0]); }}
                                 accessibilityRole="button"
                                 accessibilityLabel={qa.label}
                             >
-                                <MaterialCommunityIcons name={qa.icon} size={18} color={colors.primary} />
-                                <Text style={s.quickLabel}>{qa.label}</Text>
+                                <View style={[s.quickIcon, { backgroundColor: withAlpha(colors.primary, '18') }]}>
+                                    <MaterialCommunityIcons name={qa.icon} size={18} color={colors.primary} />
+                                </View>
+                                <Text style={[s.quickLabel, { color: colors.text }]}>{qa.label}</Text>
                             </Pressable>
                         ))}
                     </View>
+                </View>
+
+                {/* ── Screen Directory shortcut ── */}
+                <View style={s.section}>
                     <Pressable
-                        style={({ pressed }) => [
-                            s.directoryButton,
-                            { backgroundColor: colors.card, borderColor: colors.border },
-                            pressed && { opacity: 0.85 },
-                        ]}
+                        style={({ pressed }) => [s.directoryButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.85 : 1 }]}
                         onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}
                     >
-                        <Text style={[s.directoryButtonTitle, { color: colors.text }]}>Open Screen Directory</Text>
-                        <Text style={[s.directoryButtonSub, { color: colors.textSecondary }]}>
-                            Jump to billing, inventory, reports, settings, legal, and utilities.
-                        </Text>
+                        <MaterialCommunityIcons name="compass-outline" size={16} color={colors.primary} />
+                        <View style={{ flex: 1 }}>
+                            <Text style={[s.directoryTitle, { color: colors.text }]}>Open Screen Directory</Text>
+                            <Text style={[s.directorySub, { color: colors.textSecondary }]}>Jump to billing, inventory, reports, settings, legal</Text>
+                        </View>
+                        <MaterialCommunityIcons name="chevron-right" size={16} color={colors.textSecondary} />
                     </Pressable>
                 </View>
+
+                <View style={{ height: 100 }} />
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-function StatCard({
-    label,
-    value,
-    prefix = '',
-    loading,
-    color,
-}: {
-    label: string;
-    value?: number;
-    prefix?: string;
-    loading: boolean;
-    color: string;
+// ── Sub-components ──────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, prev, prefix = '', loading, color, colors }: {
+    label: string; value?: number; prev?: number; prefix?: string; loading: boolean; color: string; colors: ColorPalette;
 }) {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const pct = useMemo(() => {
+        if (!prev || prev === 0 || value === undefined) return null;
+        const p = ((value - prev) / prev) * 100;
+        return { p: Math.abs(p).toFixed(1), up: value >= prev };
+    }, [value, prev]);
 
     return (
-        <View style={[statCardStyles.card, { backgroundColor: colors.card }]}>
-            <Text style={[statCardStyles.label, { color: colors.textSecondary }]}>{label}</Text>
+        <View style={[cardStyles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[cardStyles.label, { color: colors.textSecondary }]}>{label}</Text>
             {loading ? (
-                <View style={[statCardStyles.skeletonVal, { backgroundColor: colors.skeleton }]} />
+                <View style={[cardStyles.skeleton, { backgroundColor: colors.skeleton }]} />
             ) : (
-                <Text style={[statCardStyles.value, { color }]}>
-                    {prefix}
-                    {(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    <Text style={[cardStyles.value, { color }]}>
+                        {prefix}{(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </Text>
             )}
+            {pct ? (
+                <View style={cardStyles.trendRow}>
+                    <MaterialCommunityIcons name={pct.up ? 'trending-up' : 'trending-down'} size={11} color={pct.up ? colors.success : colors.error} />
+                    <Text style={[cardStyles.trendText, { color: pct.up ? colors.success : colors.error }]}>{pct.p}%</Text>
+                </View>
+            ) : null}
         </View>
     );
 }
 
-function OutstandingCard({
-    label,
-    value,
-    loading,
-    color,
-    onPress,
-}: {
-    label: string;
-    value?: number;
-    loading: boolean;
-    color: string;
-    onPress: () => void;
+function InvoiceChip({ label, value, prefix, color, colors }: {
+    label: string; value: number; prefix?: string; color: string; colors: ColorPalette;
 }) {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
-
     return (
-        <Pressable style={({ pressed }) => [outStyles.card, { backgroundColor: colors.card, opacity: pressed ? 0.8 : 1 }]} onPress={onPress}>
+        <View style={[chipStyles.chip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[chipStyles.chipVal, { color }]}>{prefix ?? ''}{value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+            <Text style={[chipStyles.chipLabel, { color: colors.textSecondary }]}>{label}</Text>
+        </View>
+    );
+}
+
+function OutstandingCard({ label, value, loading, color, count, colors, onPress }: {
+    label: string; value?: number; loading: boolean; color: string; count?: number; colors: ColorPalette; onPress: () => void;
+}) {
+    return (
+        <Pressable style={({ pressed }) => [outStyles.card, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={onPress}>
             <Text style={[outStyles.label, { color: colors.textSecondary }]}>{label}</Text>
             {loading ? (
                 <View style={[outStyles.skeleton, { backgroundColor: colors.skeleton }]} />
             ) : (
-                <Text style={[outStyles.value, { color }]}>
-                    Rs {(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </Text>
+                    <Text style={[outStyles.value, { color }]}>Rs {(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
             )}
+            {count !== undefined ? <Text style={[outStyles.count, { color: colors.textSecondary }]}>{count} parties</Text> : null}
+            <MaterialCommunityIcons name="chevron-right" size={14} color={colors.textSecondary} style={{ alignSelf: 'flex-end', marginTop: 4 }} />
         </Pressable>
     );
 }
 
-const styles = (colors: ColorPalette) =>
-    StyleSheet.create({
-        safe: { flex: 1, backgroundColor: colors.background },
-        scroll: { flex: 1 },
-        header: {
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            paddingHorizontal: Spacing.lg,
-            paddingTop: Spacing.lg,
-            paddingBottom: Spacing.md,
-        },
-        greeting: { fontSize: 13, color: colors.textSecondary },
-        bizName: { fontSize: 20, fontWeight: '700', color: colors.text },
-        tierBadge: {
-            backgroundColor: colors.primary,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: 4,
-            borderRadius: Radius.pill,
-        },
-        tierText: { color: colors.onPrimary, fontWeight: '600', fontSize: 12 },
-        section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
-        sectionTitle: {
-            fontSize: Typography.label.size,
-            fontWeight: '600',
-            color: colors.textSecondary,
-            letterSpacing: 0.5,
-            textTransform: 'uppercase',
-            marginBottom: Spacing.sm,
-        },
-        statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-        row: { flexDirection: 'row', gap: Spacing.sm },
-        quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-        offerCard: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.md,
-            marginBottom: Spacing.sm,
-        },
-        offerTitle: { fontSize: Typography.body.size, fontWeight: '700' },
-        offerMessage: { fontSize: Typography.caption.size, marginTop: 2 },
-        blockedBanner: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.md,
-            marginBottom: Spacing.sm,
-            gap: 4,
-        },
-        blockedBannerHead: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-        },
-        blockedBannerTitle: {
-            fontSize: Typography.body.size,
-            fontWeight: '700',
-        },
-        blockedBannerText: {
-            fontSize: Typography.caption.size,
-        },
-        quickCard: {
-            backgroundColor: colors.card,
-            borderRadius: Radius.card,
-            padding: Spacing.md,
-            alignItems: 'center',
-            width: '30%',
-            gap: Spacing.xs,
-        },
-        quickLabel: { fontSize: 11, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
-        directoryButton: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.md,
-            marginTop: Spacing.sm,
-        },
-        directoryButtonTitle: { fontSize: Typography.body.size, fontWeight: '700' },
-        directoryButtonSub: { fontSize: Typography.caption.size, marginTop: 2 },
-    });
+// ── Styles ──────────────────────────────────────────────────────────────────────
 
-const statCardStyles = StyleSheet.create({
-    card: { borderRadius: Radius.card, padding: Spacing.md, width: '47%', minHeight: 72 },
-    label: { fontSize: 12, marginBottom: 4 },
-    value: { fontSize: 20, fontWeight: '700' },
-    skeletonVal: { height: 24, borderRadius: 4, marginTop: 4 },
+const styles = (colors: ColorPalette) => StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.background },
+    tierBadge: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 4 },
+    tierText: { fontWeight: '800', fontSize: 11 },
+    banner: { marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.sm, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
+    bannerText: { fontSize: 12, fontWeight: '600', flex: 1 },
+    section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+    sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
+    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+    invoiceRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
+    row: { flexDirection: 'row', gap: Spacing.sm },
+    offerCard: { borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
+    offerTitle: { fontWeight: '700', fontSize: 13 },
+    offerMessage: { fontSize: 11, marginTop: 1 },
+    quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+    quickCard: { width: '30%', borderWidth: 1, borderRadius: Radius.card, paddingVertical: Spacing.md, alignItems: 'center', gap: 6 },
+    quickIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+    quickLabel: { fontSize: 11, fontWeight: '600' },
+    directoryButton: { borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    directoryTitle: { fontWeight: '700', fontSize: 13 },
+    directorySub: { fontSize: 11, marginTop: 1 },
+});
+
+const cardStyles = StyleSheet.create({
+    card: { flex: 1, minWidth: '45%', borderWidth: 1, borderRadius: Radius.card, padding: Spacing.sm, gap: 2 },
+    label: { fontSize: 11, fontWeight: '600' },
+    skeleton: { height: 18, borderRadius: 4, marginTop: 4 },
+    value: { fontSize: Typography.title.size, fontWeight: '800' },
+    trendRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
+    trendText: { fontSize: 10, fontWeight: '700' },
+});
+
+const chipStyles = StyleSheet.create({
+    chip: { flex: 1, borderWidth: 1, borderRadius: Radius.card, padding: Spacing.sm, alignItems: 'center', gap: 2 },
+    chipVal: { fontWeight: '800', fontSize: 16 },
+    chipLabel: { fontSize: 10, fontWeight: '600' },
 });
 
 const outStyles = StyleSheet.create({
-    card: { borderRadius: Radius.card, padding: Spacing.md, flex: 1, minHeight: 72 },
-    label: { fontSize: 12, marginBottom: 4 },
-    value: { fontSize: 20, fontWeight: '700' },
-    skeleton: { height: 24, borderRadius: 4, marginTop: 4 },
+    card: { flex: 1, borderWidth: 1, borderRadius: Radius.card, padding: Spacing.md, gap: 2 },
+    label: { fontSize: 11, fontWeight: '600' },
+    skeleton: { height: 20, borderRadius: 4, marginTop: 4 },
+    value: { fontSize: 18, fontWeight: '800', marginTop: 4 },
+    count: { fontSize: 10, fontWeight: '600' },
 });

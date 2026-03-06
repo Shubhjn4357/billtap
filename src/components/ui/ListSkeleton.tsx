@@ -1,6 +1,7 @@
 import { memo } from 'react';
-import { StyleSheet, View, useColorScheme } from 'react-native';
-import { getColors, Radius, Spacing, withAlpha } from '../../constants/theme';
+import { StyleSheet, View } from 'react-native';
+import { Radius, Spacing, withAlpha, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 
 type ListSkeletonProps = {
     rows?: number;
@@ -8,8 +9,7 @@ type ListSkeletonProps = {
 };
 
 export const ListSkeleton = memo(function ListSkeleton({ rows = 5, compact = false }: ListSkeletonProps) {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors, compact);
 
     return (
@@ -29,7 +29,7 @@ export const ListSkeleton = memo(function ListSkeleton({ rows = 5, compact = fal
     );
 });
 
-const styles = (colors: ReturnType<typeof getColors>, compact: boolean) =>
+const styles = (colors: ColorPalette, compact: boolean) =>
     StyleSheet.create({
         wrap: {
             paddingHorizontal: Spacing.lg,

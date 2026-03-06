@@ -1,21 +1,21 @@
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../../../store/authStore';
 import { FeatureFlag } from '../../../constants/enums';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { canAccessModule, getEffectiveFeatureFlags } from '../../../utils/accessControl';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useAppColors } from '../../../hooks/useAppColors';
 
 export default function MoreScreen() {
     const dialog = useAppDialog();
-    const scheme = useColorScheme();
-    const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
+    const colors = useAppColors();
     const s = styles(colors);
 
     const user = useAuthStore((state) => state.user);
@@ -23,8 +23,15 @@ export default function MoreScreen() {
     const subscription = useAuthStore((state) => state.subscription);
     const role = useAuthStore((state) => state.organizationRole);
     const signOut = useAuthStore((state) => state.signOut);
+    const refreshUser = useAuthStore((state) => state.refreshUser);
     const [search, setSearch] = useState('');
     const { selection } = useHaptics();
+
+    // Refresh on mount to catch stale subscription tier
+    useEffect(() => {
+        void refreshUser();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const featureFlags = getEffectiveFeatureFlags(subscription);
     const roleLabel = (role ?? 'staff').toUpperCase();
@@ -61,8 +68,6 @@ export default function MoreScreen() {
         {
             title: 'Control',
             items: [
-                { label: 'Staff and Roles', route: '/(main)/more/staff', visible: true },
-                { label: 'Role Access Control', route: '/(main)/more/role-access', visible: role === 'owner' && canAccessModule(role, 'settings', subscription) },
                 { label: 'Operations', route: '/(main)/more/operations', visible: canAccessModule(role, 'operations', subscription) },
                 { label: 'Announcements', route: '/(main)/more/announcements', visible: canAccessModule(role, 'operations', subscription) },
                 { label: 'Godowns', route: '/(main)/more/godowns', visible: featureFlags.includes(FeatureFlag.MULTI_GODOWN) },
@@ -72,20 +77,8 @@ export default function MoreScreen() {
         {
             title: 'Business',
             items: [
+                { label: 'Switch Business', route: '/(auth)/business-select', visible: true },
                 { label: 'Settings', route: '/(main)/more/settings', visible: canAccessModule(role, 'settings', subscription) },
-                { label: 'App Preferences', route: '/(main)/more/app-preferences', visible: true },
-                { label: 'Item Masters', route: '/(main)/more/item-masters', visible: canAccessModule(role, 'inventory', subscription) },
-                { label: 'Thermal Printer Profiles', route: '/(main)/more/thermal-printers', visible: canAccessModule(role, 'settings', subscription) },
-                { label: 'Subscription', route: '/(main)/more/subscription', visible: true },
-            ],
-        },
-        {
-            title: 'Legal',
-            items: [
-                { label: 'Legal Center', route: '/legal', visible: true },
-                { label: 'Terms of Service', route: '/legal/terms', visible: true },
-                { label: 'Privacy Policy', route: '/legal/privacy', visible: true },
-                { label: 'Version and Changelog', route: '/legal/changelog', visible: true },
             ],
         },
     ], [featureFlags, role, subscription]);

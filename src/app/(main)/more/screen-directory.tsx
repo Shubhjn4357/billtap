@@ -5,7 +5,6 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    useColorScheme,
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +13,8 @@ import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useQuery } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FeatureFlag } from '../../../constants/enums';
-import { getColors, Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { useAppColors } from '../../../hooks/useAppColors';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
 import { accountingApi, cashBankApi, invoiceApi, itemApi, loanApi, partyApi } from '../../../api/endpoints';
 import { useAuthStore } from '../../../store/authStore';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -122,7 +122,8 @@ const SCREEN_SECTIONS: ScreenSection[] = [
             { label: 'Operations', route: '/(main)/more/operations', description: 'Utility tools', module: 'operations' },
             { label: 'Announcements', route: '/(main)/more/announcements', description: 'Business notifications', module: 'operations' },
             { label: 'Sync Diagnostics', route: '/(main)/more/sync', description: 'Offline sync queue and status' },
-            { label: 'Thermal Printers', route: '/(main)/more/thermal-printers', description: 'Printer profiles', module: 'settings' },
+            { label: 'Printing & Templates', route: '/(main)/more/printing', description: 'Thermal and PDF print profiles', module: 'settings' },
+            { label: 'App Preferences', route: '/(main)/more/settings', description: 'Theme, haptics, and device preferences', module: 'settings' },
             { label: 'Subscription', route: '/(main)/more/subscription', description: 'Plan and limits' },
         ],
     },
@@ -139,8 +140,7 @@ const SCREEN_SECTIONS: ScreenSection[] = [
 ];
 
 export default function ScreenDirectoryScreen() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
 

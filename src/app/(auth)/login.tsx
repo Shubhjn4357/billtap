@@ -5,7 +5,6 @@ import {
     StyleSheet,
     Pressable,
     Image,
-    useColorScheme,
     ActivityIndicator,
     Platform,
 } from 'react-native';
@@ -19,14 +18,14 @@ import {
     signInWithNativeGoogle,
 } from '../../utils/googleNativeSignIn';
 import { getApiBaseUrl, toUserMessage } from '../../api/client';
-import { getColors, Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { useAppDialog } from '../../components/providers/DialogProvider';
 
 const APP_LOGO = require('../../../assets/images/icon.png');
 
 export default function LoginScreen() {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme === 'dark' ? 'dark' : 'light');
+    const colors = useAppColors();
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
     const setAuth = useAuthStore((state) => state.setAuth);
 

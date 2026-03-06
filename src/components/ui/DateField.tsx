@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getColors, Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 
 type DateFieldProps = {
     value?: string | null;
@@ -47,8 +48,7 @@ export function DateField({
     allowClear = true,
     includeTime = false,
 }: DateFieldProps) {
-    const scheme = useColorScheme();
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const s = styles(colors);
     const [open, setOpen] = useState(false);
     const [draft, setDraft] = useState<Date>(() => parseDate(value) ?? new Date());
@@ -140,7 +140,7 @@ export function DateField({
     );
 }
 
-const styles = (colors: ReturnType<typeof getColors>) =>
+const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         input: {
             minHeight: 44,

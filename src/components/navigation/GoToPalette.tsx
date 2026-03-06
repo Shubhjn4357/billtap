@@ -7,14 +7,14 @@ import {
     StyleSheet,
     Text,
     TextInput,
-    useColorScheme,
     View,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FeatureFlag } from '../../constants/enums';
-import { getColors, Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
+import { useAppColors } from '../../hooks/useAppColors';
 import { accountingApi, cashBankApi, invoiceApi, itemApi, loanApi, partyApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -75,8 +75,7 @@ export const openGoToPalette = () => {
 };
 
 export function GoToPalette() {
-    const scheme = useColorScheme() ?? 'light';
-    const colors = getColors(scheme);
+    const colors = useAppColors();
     const insets = useSafeAreaInsets();
     const s = styles(colors);
 
