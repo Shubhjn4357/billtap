@@ -125,7 +125,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --env dev --minify
+          command: deploy --config wrangler.jsonc --env dev --minify
 
   deploy_production:
     name: Deploy Production Worker
@@ -191,4 +191,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --minify
+          command: deploy --config wrangler.jsonc --minify

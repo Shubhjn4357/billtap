@@ -5,9 +5,9 @@
   "packageManager": "pnpm@10.11.1",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "start": "wrangler dev",
-    "deploy": "wrangler deploy --minify",
+    "dev": "wrangler dev --config wrangler.jsonc",
+    "start": "wrangler dev --config wrangler.jsonc",
+    "deploy": "wrangler deploy --config wrangler.jsonc --minify",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "verify:ci": "npm run typecheck && npm run test:accounting-invariants && npm run verify:runtime",

@@ -31,7 +31,7 @@ pnpm deploy
 ```
 
 For Cloudflare Git-integrated builds that execute deploy from repository root,
-use the root `wrangler.jsonc` (already included) or set Worker project root directory to `backend`.
+use `server/wrangler.jsonc` (already included) or set Worker project root directory to `server`.
 
 ## CI/CD Deploy (GitHub Actions)
 
@@ -104,7 +104,7 @@ These routes are served directly by the Worker (no client build required):
 
 ## Cron
 
-Configured in `wrangler.json` to run daily at `02:00 UTC` and invoke `/api/jobs/run-all`.
+Configured in `wrangler.jsonc` to run daily at `02:00 UTC` and invoke `/api/jobs/run-all`.
 
 ## Commands
 
