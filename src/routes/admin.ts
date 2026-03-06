@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, SQL } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { DEFAULT_PLAN_SEEDS } from '../constants/defaultPlans';
@@ -33,6 +33,7 @@ const ADMIN_SETTINGS_ROW_ID = '__system_admin_settings__';
 
 const SUBSCRIPTION_TIERS = ['FREE', 'STARTER', 'GROWTH', 'ENTERPRISE'] as const;
 const BILLING_CYCLES = ['MONTHLY', 'YEARLY', 'THREE_YEAR'] as const;
+const SUBSCRIPTION_STATUSES = ['ACTIVE', 'EXPIRED', 'TRIAL', 'CANCELLED', 'GRACE'] as const;
 const DISCOUNT_TYPES = ['PERCENTAGE', 'FIXED_AMOUNT'] as const;
 const DISCOUNT_SCOPES = ['PLAN', 'TIER', 'GLOBAL'] as const;
 const NOTIFICATION_CHANNELS = ['IN_APP', 'PUSH', 'EMAIL', 'SMS', 'WHATSAPP'] as const;
@@ -61,6 +62,34 @@ const FEATURE_FLAGS = [
     'LOYALTY_POINTS',
     'SMS_NOTIFICATIONS',
     'WHATSAPP_NOTIFICATIONS',
+] as const;
+
+const DEFAULT_ITEM_CATEGORY_PRESETS = [
+    'Electronics',
+    'Grocery',
+    'Fashion',
+    'Pharmacy',
+    'Stationery',
+    'Home & Kitchen',
+    'Automotive',
+    'Industrial',
+    'Services',
+] as const;
+
+const DEFAULT_UNIT_PRESETS = [
+    'pcs',
+    'box',
+    'kg',
+    'g',
+    'ltr',
+    'ml',
+    'm',
+    'cm',
+    'dozen',
+    'set',
+    'pair',
+    'hour',
+    'day',
 ] as const;
 
 const adminSettingsSchema = z.object({
@@ -191,6 +220,11 @@ const notificationTemplateSchema = z.object({
 
 const notificationTemplatePatchSchema = notificationTemplateSchema.partial();
 
+const notificationTemplateBulkSchema = z.object({
+    ids: z.array(z.string().trim().min(1)).min(1).max(500),
+    action: z.enum(['ACTIVATE', 'DEACTIVATE', 'DELETE']),
+});
+
 const campaignSchema = z.object({
     title: z.string().trim().min(1),
     templateId: z.string().trim().nullable().optional(),
@@ -203,10 +237,137 @@ const campaignSchema = z.object({
 
 const campaignPatchSchema = campaignSchema.partial();
 
+const campaignBulkSchema = z.object({
+    ids: z.array(z.string().trim().min(1)).min(1).max(500),
+    action: z.enum(['TRIGGER', 'CANCEL', 'DELETE']),
+});
+
 const businessFeatureFlagPatchSchema = z.object({
     appModuleAccess: z.record(z.string(), z.boolean()).optional(),
     moduleVisibility: z.record(z.string(), z.boolean()).optional(),
     featureFlagsEnabled: z.array(z.enum(FEATURE_FLAGS)).optional(),
+});
+
+const businessQuotaPatchSchema = z.object({
+    maxInvoicesTotal: z.number().int().positive().nullable().optional(),
+    maxStaffUsers: z.number().int().positive().nullable().optional(),
+    storageLimitMb: z.number().int().positive().nullable().optional(),
+});
+
+const inventoryAdminListQuerySchema = z.object({
+    businessId: z.string().trim().min(1).optional(),
+    q: z.string().trim().min(1).optional(),
+    includeInactive: z.coerce.boolean().default(false),
+    limit: z.coerce.number().int().min(1).max(2000).default(500),
+});
+
+const inventoryAdminPatchSchema = z.object({
+    name: z.string().trim().min(1).max(200).optional(),
+    category: z.string().trim().nullable().optional(),
+    unit: z.string().trim().nullable().optional(),
+    salePrice: z.number().nonnegative().optional(),
+    purchasePrice: z.number().nonnegative().optional(),
+    mrp: z.number().nonnegative().optional(),
+    reorderLevel: z.number().nonnegative().optional(),
+    stock: z.number().optional(),
+    isActive: z.boolean().optional(),
+}).refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided.',
+});
+
+const inventoryAdminAdjustSchema = z.object({
+    delta: z.number().refine((value) => value !== 0, { message: 'Delta cannot be zero.' }),
+    reason: z.string().trim().max(255).optional(),
+});
+
+const staffInviteListQuerySchema = z.object({
+    businessId: z.string().trim().min(1).optional(),
+    status: z.enum(['pending', 'accepted', 'cancelled', 'expired']).optional(),
+    limit: z.coerce.number().int().min(1).max(2000).default(500),
+});
+
+const staffInviteCreateSchema = z.object({
+    businessId: z.string().trim().min(1),
+    phoneNumber: z.string().trim().min(6).max(24),
+    role: z.enum(['OWNER', 'STAFF']).default('STAFF'),
+    expiresInDays: z.number().int().min(1).max(60).default(7),
+});
+
+const staffMemberListQuerySchema = z.object({
+    businessId: z.string().trim().min(1).optional(),
+    role: z.enum(['OWNER', 'STAFF']).optional(),
+    isActive: z.coerce.boolean().optional(),
+    limit: z.coerce.number().int().min(1).max(2000).default(500),
+});
+
+const staffMemberPatchSchema = z.object({
+    role: z.enum(['OWNER', 'STAFF']).optional(),
+    isActive: z.boolean().optional(),
+}).refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided.',
+});
+
+const transactionListQuerySchema = z.object({
+    businessId: z.string().trim().min(1).optional(),
+    paymentStatus: z.enum(['PAID', 'PARTIAL', 'PENDING']).optional(),
+    q: z.string().trim().min(1).optional(),
+    includeDeleted: z.coerce.boolean().default(false),
+    limit: z.coerce.number().int().min(1).max(2000).default(500),
+});
+
+const transactionPatchSchema = z.object({
+    paymentStatus: z.enum(['PAID', 'PARTIAL', 'PENDING']).optional(),
+    paidAmount: z.number().nonnegative().optional(),
+    dueDate: z.coerce.date().nullable().optional(),
+    notes: z.string().trim().nullable().optional(),
+    isDeleted: z.boolean().optional(),
+}).refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided.',
+});
+
+const subscriptionListQuerySchema = z.object({
+    status: z.enum(SUBSCRIPTION_STATUSES).optional(),
+    tier: z.enum(SUBSCRIPTION_TIERS).optional(),
+    billingCycle: z.enum(BILLING_CYCLES).optional(),
+    businessId: z.string().trim().min(1).optional(),
+    search: z.string().trim().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(1000).default(300),
+});
+
+const subscriptionAssignSchema = z.object({
+    planId: z.string().trim().min(1),
+    status: z.enum(SUBSCRIPTION_STATUSES).default('ACTIVE'),
+    durationDays: z.number().int().positive().max(3650).default(30),
+});
+
+const subscriptionChangePlanSchema = z.object({
+    planId: z.string().trim().min(1),
+    status: z.enum(SUBSCRIPTION_STATUSES).default('ACTIVE'),
+    durationDays: z.number().int().positive().max(3650).default(30),
+});
+
+const subscriptionPatchSchema = z.object({
+    status: z.enum(SUBSCRIPTION_STATUSES).optional(),
+    endDate: z.coerce.date().nullable().optional(),
+    nextRenewalDate: z.coerce.date().nullable().optional(),
+    graceEndDate: z.coerce.date().nullable().optional(),
+    maxBillsTotal: z.number().int().nullable().optional(),
+    maxBillsPerMonth: z.number().int().nullable().optional(),
+    maxStaffUsers: z.number().int().nullable().optional(),
+    maxBusinesses: z.number().int().nullable().optional(),
+    maxDevices: z.number().int().nullable().optional(),
+    maxStorageMb: z.number().int().nullable().optional(),
+    offlineOnly: z.boolean().optional(),
+    cloudSyncAllowed: z.boolean().optional(),
+    webDashboardAllowed: z.boolean().optional(),
+    featureFlagsEnabled: z.array(z.string()).optional(),
+}).refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided.',
+});
+
+const masterDataConfigSchema = z.object({
+    categories: z.array(z.string().trim().min(1).max(80)).max(1000).optional(),
+    units: z.array(z.string().trim().min(1).max(40)).max(1000).optional(),
 });
 
 type PlanRow = typeof plans.$inferSelect;
@@ -215,6 +376,23 @@ type SubscriptionRow = typeof subscriptions.$inferSelect;
 const asRecord = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     return value as Record<string, unknown>;
+};
+
+const mapAuditLogEntry = (entry: typeof adminAuditLogs.$inferSelect) => {
+    const metadata = asRecord(entry.metadataJson);
+    const derivedStatus = String(metadata.status ?? 'SUCCESS').toUpperCase();
+    return {
+        id: entry.id,
+        time: entry.createdAt.toISOString(),
+        actor: entry.adminEmail,
+        actorRole: entry.adminRole,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        entity: entry.entityType ? `${entry.entityType}${entry.entityId ? `:${entry.entityId}` : ''}` : 'system',
+        status: derivedStatus,
+        metadata,
+    };
 };
 
 const parseBoolean = (value: string | undefined, fallback = false) => {
@@ -295,6 +473,12 @@ const mapInvoicePaymentStatus = (status: typeof invoices.$inferSelect['paymentSt
     if (status === 'PAID') return 'PAID';
     if (status === 'PARTIALLY_PAID') return 'PARTIAL';
     return 'PENDING';
+};
+
+const mapLegacyToInvoicePaymentStatus = (status: 'PAID' | 'PARTIAL' | 'PENDING'): typeof invoices.$inferSelect['paymentStatus'] => {
+    if (status === 'PAID') return 'PAID';
+    if (status === 'PARTIAL') return 'PARTIALLY_PAID';
+    return 'UNPAID';
 };
 
 const assertWriteAccess = (c: Parameters<typeof requireAdmin>[0]) => {
@@ -548,13 +732,15 @@ adminRoute.get('/analytics/extended', async (c) => {
     await ensurePlansSeeded(db);
 
     const now = new Date();
-    const days30 = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-    const days60 = new Date(now.getTime() - (60 * 24 * 60 * 60 * 1000));
+    const requestedWindow = Number(c.req.query('windowDays') ?? 30);
+    const windowDays = Number.isFinite(requestedWindow) ? clamp(Math.round(requestedWindow), 7, 120) : 30;
+    const currentWindowStart = new Date(now.getTime() - (windowDays * 24 * 60 * 60 * 1000));
+    const previousWindowStart = new Date(now.getTime() - ((windowDays * 2) * 24 * 60 * 60 * 1000));
 
     const [userCountRows, recentUsersCurrentRows, recentUsersPreviousRows, activeSubs, planRows, pendingInviteRows, failedPaymentRows] = await Promise.all([
         db.select({ count: sql<number>`count(*)` }).from(users),
-        db.select({ count: sql<number>`count(*)` }).from(users).where(gte(users.createdAt, days30)),
-        db.select({ count: sql<number>`count(*)` }).from(users).where(and(gte(users.createdAt, days60), lte(users.createdAt, days30))),
+        db.select({ count: sql<number>`count(*)` }).from(users).where(gte(users.createdAt, currentWindowStart)),
+        db.select({ count: sql<number>`count(*)` }).from(users).where(and(gte(users.createdAt, previousWindowStart), lte(users.createdAt, currentWindowStart))),
         db.select().from(subscriptions).where(inArray(subscriptions.status, ['ACTIVE', 'TRIAL'])),
         db.select().from(plans),
         db.select({ count: sql<number>`count(*)` }).from(staffInvites).where(eq(staffInvites.status, 'pending')),
@@ -573,7 +759,7 @@ adminRoute.get('/analytics/extended', async (c) => {
         if (!plan) continue;
         const mrr = Number(toMonthlyAmount(Number(plan.pricePerCycle), plan.billingCycle));
         monthlyRevenue += mrr;
-        if (sub.createdAt <= days30) previousRevenue += mrr;
+        if (sub.createdAt <= currentWindowStart) previousRevenue += mrr;
     }
 
     const totalUsers = Number(userCountRows[0]?.count ?? 0);
@@ -593,6 +779,7 @@ adminRoute.get('/analytics/extended', async (c) => {
             systemHealth,
             userGrowth: growth(usersCurrent, usersPrevious),
             revenueGrowth: growth(monthlyRevenue, previousRevenue),
+            windowDays,
         },
     });
 });
@@ -682,22 +869,7 @@ adminRoute.get('/audit-logs', async (c) => {
         ? await db.select().from(adminAuditLogs).where(and(...whereFilters)).orderBy(desc(adminAuditLogs.createdAt)).limit(limit)
         : await db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(limit);
 
-    let logs = rows.map((entry) => {
-        const metadata = asRecord(entry.metadataJson);
-        const derivedStatus = String(metadata.status ?? 'SUCCESS').toUpperCase();
-        return {
-            id: entry.id,
-            time: entry.createdAt.toISOString(),
-            actor: entry.adminEmail,
-            actorRole: entry.adminRole,
-            action: entry.action,
-            entityType: entry.entityType,
-            entityId: entry.entityId,
-            entity: entry.entityType ? `${entry.entityType}${entry.entityId ? `:${entry.entityId}` : ''}` : 'system',
-            status: derivedStatus,
-            metadata,
-        };
-    });
+    let logs = rows.map(mapAuditLogEntry);
 
     if (status) {
         logs = logs.filter((entry) => entry.status === status);
@@ -721,6 +893,34 @@ adminRoute.get('/audit-logs', async (c) => {
     return c.json({
         ok: true,
         logs,
+    });
+});
+
+adminRoute.get('/audit-logs/:id', async (c) => {
+    const db = c.get('db');
+    const id = c.req.param('id');
+    const relatedLimit = Math.min(Math.max(Number(c.req.query('relatedLimit') ?? 20), 1), 100);
+
+    const targetRows = await db.select().from(adminAuditLogs).where(eq(adminAuditLogs.id, id)).limit(1);
+    const target = targetRows[0];
+    if (!target) return c.json({ ok: false, message: 'Audit log not found.' }, 404);
+
+    const relatedByEntity = (target.entityType && target.entityId)
+        ? await db.select().from(adminAuditLogs).where(and(
+            eq(adminAuditLogs.entityType, target.entityType),
+            eq(adminAuditLogs.entityId, target.entityId),
+        )).orderBy(desc(adminAuditLogs.createdAt)).limit(relatedLimit)
+        : [];
+
+    const relatedByActor = await db.select().from(adminAuditLogs).where(eq(adminAuditLogs.adminEmail, target.adminEmail))
+        .orderBy(desc(adminAuditLogs.createdAt))
+        .limit(relatedLimit);
+
+    return c.json({
+        ok: true,
+        entry: mapAuditLogEntry(target),
+        relatedByEntity: relatedByEntity.filter((entry) => entry.id !== target.id).map(mapAuditLogEntry),
+        relatedByActor: relatedByActor.filter((entry) => entry.id !== target.id).map(mapAuditLogEntry),
     });
 });
 
@@ -1198,6 +1398,383 @@ adminRoute.post('/organizations/:id/toggle-status', async (c) => {
     }
 });
 
+adminRoute.delete('/organizations/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const existing = await db.select().from(businesses).where(eq(businesses.id, id)).limit(1);
+        const business = existing[0];
+        if (!business) return c.json({ ok: false, message: 'Organization not found.' }, 404);
+
+        const currentSettings = asRecord(business.settings);
+        await db.update(businesses).set({
+            isActive: false,
+            settings: {
+                ...currentSettings,
+                deletedAt: new Date().toISOString(),
+            },
+            updatedAt: new Date(),
+        }).where(eq(businesses.id, id));
+        await db.update(businessMembers).set({
+            isActive: false,
+            updatedAt: new Date(),
+        }).where(eq(businessMembers.businessId, id));
+
+        await appendAuditLog(c, 'ORGANIZATION_SOFT_DELETED', 'business', id);
+        return c.json({ ok: true, softDeleted: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete organization.' }, 400);
+    }
+});
+
+adminRoute.get('/businesses/:id/quotas', async (c) => {
+    const db = c.get('db');
+    const businessId = c.req.param('id');
+    const rows = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+    const business = rows[0];
+    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+    const settings = asRecord(business.settings);
+    const quotas = asRecord(settings.quotas);
+    return c.json({
+        ok: true,
+        quotas: {
+            maxInvoicesTotal: typeof quotas.maxInvoicesTotal === 'number' ? quotas.maxInvoicesTotal : null,
+            maxStaffUsers: typeof quotas.maxStaffUsers === 'number' ? quotas.maxStaffUsers : null,
+            storageLimitMb: typeof quotas.storageLimitMb === 'number' ? quotas.storageLimitMb : null,
+        },
+    });
+});
+
+adminRoute.patch('/businesses/:id/quotas', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const businessId = c.req.param('id');
+        const payload = businessQuotaPatchSchema.parse(await c.req.json());
+
+        const rows = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+        const business = rows[0];
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+        const settings = asRecord(business.settings);
+        const currentQuotas = asRecord(settings.quotas);
+        const nextQuotas = {
+            maxInvoicesTotal: payload.maxInvoicesTotal ?? (typeof currentQuotas.maxInvoicesTotal === 'number' ? currentQuotas.maxInvoicesTotal : null),
+            maxStaffUsers: payload.maxStaffUsers ?? (typeof currentQuotas.maxStaffUsers === 'number' ? currentQuotas.maxStaffUsers : null),
+            storageLimitMb: payload.storageLimitMb ?? (typeof currentQuotas.storageLimitMb === 'number' ? currentQuotas.storageLimitMb : null),
+        };
+
+        await db.update(businesses).set({
+            settings: {
+                ...settings,
+                quotas: nextQuotas,
+            },
+            updatedAt: new Date(),
+        }).where(eq(businesses.id, businessId));
+
+        await appendAuditLog(c, 'BUSINESS_QUOTAS_UPDATED', 'business', businessId, nextQuotas);
+        return c.json({ ok: true, quotas: nextQuotas });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update business quotas.' }, 400);
+    }
+});
+
+adminRoute.get('/subscriptions', async (c) => {
+    const db = c.get('db');
+    const query = subscriptionListQuerySchema.parse({
+        status: c.req.query('status') ?? undefined,
+        tier: c.req.query('tier') ?? undefined,
+        billingCycle: c.req.query('billingCycle') ?? undefined,
+        businessId: c.req.query('businessId') ?? undefined,
+        search: c.req.query('search') ?? undefined,
+        limit: c.req.query('limit') ?? undefined,
+    });
+
+    const whereClauses: SQL[] = [];
+    if (query.status) whereClauses.push(eq(subscriptions.status, query.status));
+    if (query.tier) whereClauses.push(eq(subscriptions.tier, query.tier));
+    if (query.billingCycle) whereClauses.push(eq(subscriptions.billingCycle, query.billingCycle));
+    if (query.businessId) whereClauses.push(eq(subscriptions.businessId, query.businessId));
+
+    const rows = whereClauses.length > 0
+        ? await db.select().from(subscriptions).where(and(...whereClauses)).orderBy(desc(subscriptions.createdAt)).limit(query.limit)
+        : await db.select().from(subscriptions).orderBy(desc(subscriptions.createdAt)).limit(query.limit);
+
+    const businessIds = Array.from(new Set(rows.map((entry) => entry.businessId)));
+    const businessRows = businessIds.length > 0
+        ? await db.select().from(businesses).where(inArray(businesses.id, businessIds))
+        : [];
+    const businessById = new Map(businessRows.map((entry) => [entry.id, entry]));
+
+    const ownerIds = Array.from(new Set(businessRows.map((entry) => entry.ownerUserId)));
+    const ownerRows = ownerIds.length > 0
+        ? await db.select().from(users).where(inArray(users.id, ownerIds))
+        : [];
+    const ownerById = new Map(ownerRows.map((entry) => [entry.id, entry]));
+
+    const planRows = await db.select().from(plans);
+    const planByTierCycle = new Map<string, PlanRow>();
+    for (const plan of planRows) {
+        if (!planByTierCycle.has(tierCycleKey(plan.tier, plan.billingCycle))) {
+            planByTierCycle.set(tierCycleKey(plan.tier, plan.billingCycle), plan);
+        }
+    }
+
+    let mappedRows = rows.map((entry) => {
+        const business = businessById.get(entry.businessId) ?? null;
+        const owner = business ? ownerById.get(business.ownerUserId) ?? null : null;
+        const linkedPlan = planByTierCycle.get(tierCycleKey(entry.tier, entry.billingCycle)) ?? null;
+        const monthlyAmount = linkedPlan
+            ? Number(toMonthlyAmount(Number(linkedPlan.pricePerCycle), linkedPlan.billingCycle))
+            : null;
+
+        return {
+            id: entry.id,
+            businessId: entry.businessId,
+            businessName: business?.name ?? 'Unknown Business',
+            businessCode: business?.code ?? null,
+            businessIsActive: business?.isActive ?? false,
+            ownerUserId: business?.ownerUserId ?? null,
+            ownerName: owner?.name ?? null,
+            ownerEmail: owner?.email ?? null,
+            tier: entry.tier,
+            billingCycle: entry.billingCycle,
+            status: entry.status,
+            startDate: entry.startDate,
+            endDate: entry.endDate,
+            nextRenewalDate: entry.nextRenewalDate,
+            graceEndDate: entry.graceEndDate,
+            maxBillsTotal: entry.maxBillsTotal,
+            maxBillsPerMonth: entry.maxBillsPerMonth,
+            maxStaffUsers: entry.maxStaffUsers,
+            maxBusinesses: entry.maxBusinesses,
+            maxDevices: entry.maxDevices,
+            maxStorageMb: entry.maxStorageMb,
+            offlineOnly: entry.offlineOnly,
+            cloudSyncAllowed: entry.cloudSyncAllowed,
+            webDashboardAllowed: entry.webDashboardAllowed,
+            featureFlagsEnabled: entry.featureFlagsEnabled,
+            planId: linkedPlan?.id ?? null,
+            planDisplayName: linkedPlan?.displayName ?? `${entry.tier} ${entry.billingCycle ?? ''}`.trim(),
+            monthlyAmount,
+            currency: linkedPlan?.currency ?? 'INR',
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+        };
+    });
+
+    if (query.search) {
+        const queryText = query.search.toLowerCase();
+        mappedRows = mappedRows.filter((entry) => (
+            entry.id.toLowerCase().includes(queryText)
+            || entry.businessName.toLowerCase().includes(queryText)
+            || (entry.businessCode?.toLowerCase().includes(queryText) ?? false)
+            || (entry.ownerName?.toLowerCase().includes(queryText) ?? false)
+            || (entry.ownerEmail?.toLowerCase().includes(queryText) ?? false)
+            || entry.tier.toLowerCase().includes(queryText)
+            || (entry.billingCycle?.toLowerCase().includes(queryText) ?? false)
+            || entry.status.toLowerCase().includes(queryText)
+            || (entry.planDisplayName?.toLowerCase().includes(queryText) ?? false)
+        ));
+    }
+
+    const summary = {
+        total: mappedRows.length,
+        byStatus: Object.fromEntries(SUBSCRIPTION_STATUSES.map((entry) => [entry, 0])) as Record<string, number>,
+        byTier: Object.fromEntries(SUBSCRIPTION_TIERS.map((entry) => [entry, 0])) as Record<string, number>,
+        byCycle: {
+            MONTHLY: 0,
+            YEARLY: 0,
+            THREE_YEAR: 0,
+            NONE: 0,
+        } as Record<string, number>,
+    };
+
+    for (const entry of mappedRows) {
+        summary.byStatus[entry.status] = (summary.byStatus[entry.status] ?? 0) + 1;
+        summary.byTier[entry.tier] = (summary.byTier[entry.tier] ?? 0) + 1;
+        if (entry.billingCycle) {
+            summary.byCycle[entry.billingCycle] = (summary.byCycle[entry.billingCycle] ?? 0) + 1;
+        } else {
+            summary.byCycle.NONE += 1;
+        }
+    }
+
+    return c.json({
+        ok: true,
+        subscriptions: mappedRows,
+        summary,
+    });
+});
+
+adminRoute.post('/businesses/:id/subscription', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const businessId = c.req.param('id');
+        const payload = subscriptionAssignSchema.parse(await c.req.json());
+
+        const [businessRows, planRows] = await Promise.all([
+            db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1),
+            db.select().from(plans).where(eq(plans.id, payload.planId)).limit(1),
+        ]);
+        const business = businessRows[0];
+        const plan = planRows[0];
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+        if (!plan) return c.json({ ok: false, message: 'Plan not found.' }, 404);
+
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + payload.durationDays);
+
+        const createdId = `sub_${nanoid(18)}`;
+        await db.insert(subscriptions).values({
+            id: createdId,
+            businessId,
+            tier: plan.tier,
+            billingCycle: plan.billingCycle,
+            status: payload.status,
+            startDate,
+            endDate,
+            nextRenewalDate: payload.status === 'ACTIVE' ? endDate : null,
+            graceEndDate: payload.status === 'GRACE' ? new Date(endDate.getTime() + (7 * 24 * 60 * 60 * 1000)) : null,
+            maxBillsTotal: plan.maxBillsTotal,
+            maxBillsPerMonth: plan.maxBillsPerMonth,
+            maxStaffUsers: plan.maxStaffUsers,
+            maxBusinesses: plan.maxBusinesses,
+            maxDevices: plan.maxDevices,
+            maxStorageMb: plan.maxStorageMb,
+            offlineOnly: plan.offlineOnly,
+            cloudSyncAllowed: plan.cloudSyncAllowed,
+            webDashboardAllowed: plan.webDashboardAllowed,
+            featureFlagsEnabled: plan.enabledFeatures,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
+
+        await appendAuditLog(c, 'BUSINESS_SUBSCRIPTION_ASSIGNED', 'business', businessId, {
+            subscriptionId: createdId,
+            planId: plan.id,
+            status: payload.status,
+            durationDays: payload.durationDays,
+        });
+
+        return c.json({ ok: true, id: createdId });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to assign subscription.' }, 400);
+    }
+});
+
+adminRoute.patch('/subscriptions/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = subscriptionPatchSchema.parse(await c.req.json());
+
+        const updated = await db.update(subscriptions).set({
+            ...(payload.status !== undefined ? { status: payload.status } : {}),
+            ...(payload.endDate !== undefined ? { endDate: payload.endDate } : {}),
+            ...(payload.nextRenewalDate !== undefined ? { nextRenewalDate: payload.nextRenewalDate } : {}),
+            ...(payload.graceEndDate !== undefined ? { graceEndDate: payload.graceEndDate } : {}),
+            ...(payload.maxBillsTotal !== undefined ? { maxBillsTotal: payload.maxBillsTotal } : {}),
+            ...(payload.maxBillsPerMonth !== undefined ? { maxBillsPerMonth: payload.maxBillsPerMonth } : {}),
+            ...(payload.maxStaffUsers !== undefined ? { maxStaffUsers: payload.maxStaffUsers } : {}),
+            ...(payload.maxBusinesses !== undefined ? { maxBusinesses: payload.maxBusinesses } : {}),
+            ...(payload.maxDevices !== undefined ? { maxDevices: payload.maxDevices } : {}),
+            ...(payload.maxStorageMb !== undefined ? { maxStorageMb: payload.maxStorageMb } : {}),
+            ...(payload.offlineOnly !== undefined ? { offlineOnly: payload.offlineOnly } : {}),
+            ...(payload.cloudSyncAllowed !== undefined ? { cloudSyncAllowed: payload.cloudSyncAllowed } : {}),
+            ...(payload.webDashboardAllowed !== undefined ? { webDashboardAllowed: payload.webDashboardAllowed } : {}),
+            ...(payload.featureFlagsEnabled !== undefined ? { featureFlagsEnabled: payload.featureFlagsEnabled } : {}),
+            updatedAt: new Date(),
+        }).where(eq(subscriptions.id, id)).returning({ id: subscriptions.id, businessId: subscriptions.businessId });
+
+        if (!updated[0]) return c.json({ ok: false, message: 'Subscription not found.' }, 404);
+
+        await appendAuditLog(c, 'SUBSCRIPTION_UPDATED', 'subscription', id, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update subscription.' }, 400);
+    }
+});
+
+adminRoute.post('/subscriptions/:id/change-plan', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = subscriptionChangePlanSchema.parse(await c.req.json());
+
+        const [subRows, planRows] = await Promise.all([
+            db.select().from(subscriptions).where(eq(subscriptions.id, id)).limit(1),
+            db.select().from(plans).where(eq(plans.id, payload.planId)).limit(1),
+        ]);
+        const subscription = subRows[0];
+        const plan = planRows[0];
+        if (!subscription) return c.json({ ok: false, message: 'Subscription not found.' }, 404);
+        if (!plan) return c.json({ ok: false, message: 'Plan not found.' }, 404);
+
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + payload.durationDays);
+
+        await db.update(subscriptions).set({
+            tier: plan.tier,
+            billingCycle: plan.billingCycle,
+            status: payload.status,
+            startDate,
+            endDate,
+            nextRenewalDate: payload.status === 'ACTIVE' ? endDate : null,
+            graceEndDate: payload.status === 'GRACE' ? new Date(endDate.getTime() + (7 * 24 * 60 * 60 * 1000)) : null,
+            maxBillsTotal: plan.maxBillsTotal,
+            maxBillsPerMonth: plan.maxBillsPerMonth,
+            maxStaffUsers: plan.maxStaffUsers,
+            maxBusinesses: plan.maxBusinesses,
+            maxDevices: plan.maxDevices,
+            maxStorageMb: plan.maxStorageMb,
+            offlineOnly: plan.offlineOnly,
+            cloudSyncAllowed: plan.cloudSyncAllowed,
+            webDashboardAllowed: plan.webDashboardAllowed,
+            featureFlagsEnabled: plan.enabledFeatures,
+            updatedAt: new Date(),
+        }).where(eq(subscriptions.id, id));
+
+        await appendAuditLog(c, 'SUBSCRIPTION_PLAN_CHANGED', 'subscription', id, {
+            planId: plan.id,
+            status: payload.status,
+            durationDays: payload.durationDays,
+        });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to change subscription plan.' }, 400);
+    }
+});
+
+adminRoute.post('/subscriptions/:id/cancel', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const now = new Date();
+        const updated = await db.update(subscriptions).set({
+            status: 'CANCELLED',
+            endDate: now,
+            nextRenewalDate: null,
+            graceEndDate: null,
+            updatedAt: now,
+        }).where(eq(subscriptions.id, id)).returning({ id: subscriptions.id });
+
+        if (!updated[0]) return c.json({ ok: false, message: 'Subscription not found.' }, 404);
+        await appendAuditLog(c, 'SUBSCRIPTION_CANCELLED', 'subscription', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to cancel subscription.' }, 400);
+    }
+});
+
 adminRoute.get('/plans', async (c) => {
     const db = c.get('db');
     await ensurePlansSeeded(db);
@@ -1637,9 +2214,36 @@ adminRoute.delete('/templates/:id', async (c) => {
 
 adminRoute.get('/transactions', async (c) => {
     const db = c.get('db');
-    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
+    const query = transactionListQuerySchema.parse({
+        businessId: c.req.query('businessId'),
+        paymentStatus: c.req.query('paymentStatus'),
+        q: c.req.query('q'),
+        includeDeleted: c.req.query('includeDeleted') ?? 'false',
+        limit: c.req.query('limit') ?? 500,
+    });
 
-    const invoiceRows = await db.select().from(invoices).orderBy(desc(invoices.createdAt)).limit(limit);
+    const conditions: SQL<unknown>[] = [];
+    if (query.businessId) conditions.push(eq(invoices.businessId, query.businessId));
+    if (!query.includeDeleted) conditions.push(eq(invoices.isDeleted, false));
+    if (query.paymentStatus === 'PAID') {
+        conditions.push(eq(invoices.paymentStatus, 'PAID'));
+    } else if (query.paymentStatus === 'PARTIAL') {
+        conditions.push(eq(invoices.paymentStatus, 'PARTIALLY_PAID'));
+    } else if (query.paymentStatus === 'PENDING') {
+        conditions.push(inArray(invoices.paymentStatus, ['UNPAID', 'OVERDUE']));
+    }
+    if (query.q) {
+        const search = `%${query.q}%`;
+        conditions.push(or(
+            ilike(invoices.id, search),
+            ilike(invoices.invoiceNumber, search),
+            ilike(invoices.notes, search),
+        ) as SQL<unknown>);
+    }
+
+    const invoiceRows = conditions.length > 0
+        ? await db.select().from(invoices).where(and(...conditions)).orderBy(desc(invoices.createdAt)).limit(query.limit)
+        : await db.select().from(invoices).orderBy(desc(invoices.createdAt)).limit(query.limit);
     const businessIds = Array.from(new Set(invoiceRows.map((entry) => entry.businessId)));
     const businessRows = businessIds.length > 0
         ? await db.select().from(businesses).where(inArray(businesses.id, businessIds))
@@ -1650,16 +2254,125 @@ adminRoute.get('/transactions', async (c) => {
         ok: true,
         transactions: invoiceRows.map((entry) => ({
             id: entry.id,
+            businessId: entry.businessId,
             userId: entry.createdByUserId ?? businessById.get(entry.businessId)?.ownerUserId ?? '',
+            invoiceNumber: entry.invoiceNumber,
+            invoiceType: entry.invoiceType,
             type: mapInvoiceTypeToLegacyTransactionType(entry.invoiceType),
             totalAmount: Number(entry.totalInvoiceValue ?? 0),
             paymentStatus: mapInvoicePaymentStatus(entry.paymentStatus),
+            paymentStatusRaw: entry.paymentStatus,
+            paidAmount: Number(entry.paidAmount ?? 0),
             paymentMode: 'CASH',
+            dueDate: entry.dueDate,
+            notes: entry.notes ?? null,
+            isDeleted: entry.isDeleted,
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt,
             organizationName: businessById.get(entry.businessId)?.name ?? 'Unknown',
         })),
     });
+});
+
+adminRoute.patch('/transactions/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = transactionPatchSchema.parse(await c.req.json());
+
+        const rows = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+        const invoice = rows[0];
+        if (!invoice) return c.json({ ok: false, message: 'Transaction not found.' }, 404);
+
+        const nextPaidAmount = payload.paidAmount ?? Number(invoice.paidAmount ?? 0);
+        const nextStatus = payload.paymentStatus
+            ? mapLegacyToInvoicePaymentStatus(payload.paymentStatus)
+            : payload.paidAmount !== undefined
+                ? (nextPaidAmount >= Number(invoice.totalInvoiceValue ?? 0)
+                    ? 'PAID'
+                    : nextPaidAmount > 0
+                        ? 'PARTIALLY_PAID'
+                        : 'UNPAID')
+                : invoice.paymentStatus;
+
+        await db.update(invoices).set({
+            ...(payload.paidAmount !== undefined ? { paidAmount: payload.paidAmount } : {}),
+            ...(payload.paymentStatus !== undefined || payload.paidAmount !== undefined ? { paymentStatus: nextStatus } : {}),
+            ...(payload.dueDate !== undefined ? { dueDate: payload.dueDate } : {}),
+            ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
+            ...(payload.isDeleted !== undefined ? { isDeleted: payload.isDeleted } : {}),
+            updatedAt: new Date(),
+        }).where(eq(invoices.id, id));
+
+        await appendAuditLog(c, 'TRANSACTION_UPDATED', 'invoice', id, payload as Record<string, unknown>);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update transaction.' }, 400);
+    }
+});
+
+adminRoute.post('/transactions/:id/mark-paid', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+        const invoice = rows[0];
+        if (!invoice) return c.json({ ok: false, message: 'Transaction not found.' }, 404);
+
+        await db.update(invoices).set({
+            paymentStatus: 'PAID',
+            paidAmount: Number(invoice.totalInvoiceValue ?? 0),
+            isDeleted: false,
+            updatedAt: new Date(),
+        }).where(eq(invoices.id, id));
+
+        await appendAuditLog(c, 'TRANSACTION_MARKED_PAID', 'invoice', id, {
+            paidAmount: Number(invoice.totalInvoiceValue ?? 0),
+        });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to mark transaction paid.' }, 400);
+    }
+});
+
+adminRoute.delete('/transactions/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+        if (!rows[0]) return c.json({ ok: false, message: 'Transaction not found.' }, 404);
+
+        await db.update(invoices).set({
+            isDeleted: true,
+            updatedAt: new Date(),
+        }).where(eq(invoices.id, id));
+        await appendAuditLog(c, 'TRANSACTION_SOFT_DELETED', 'invoice', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete transaction.' }, 400);
+    }
+});
+
+adminRoute.post('/transactions/:id/restore', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+        if (!rows[0]) return c.json({ ok: false, message: 'Transaction not found.' }, 404);
+
+        await db.update(invoices).set({
+            isDeleted: false,
+            updatedAt: new Date(),
+        }).where(eq(invoices.id, id));
+        await appendAuditLog(c, 'TRANSACTION_RESTORED', 'invoice', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to restore transaction.' }, 400);
+    }
 });
 
 adminRoute.get('/expenses/analytics', async (c) => {
@@ -1780,13 +2493,248 @@ adminRoute.get('/inventory/overview', async (c) => {
         },
         items: itemRows.map((entry) => ({
             id: entry.id,
+            businessId: entry.businessId,
             name: entry.name,
             category: entry.category ?? 'Uncategorized',
+            unit: entry.unit ?? 'pcs',
             stock: Number(entry.stock ?? 0),
             price: Number(entry.salePrice ?? 0),
+            isActive: entry.isActive,
             organizationName: businessById.get(entry.businessId)?.name ?? 'Unknown',
         })),
     });
+});
+
+adminRoute.get('/inventory/items', async (c) => {
+    const db = c.get('db');
+    const query = inventoryAdminListQuerySchema.parse({
+        businessId: c.req.query('businessId'),
+        q: c.req.query('q'),
+        includeInactive: c.req.query('includeInactive') ?? 'false',
+        limit: c.req.query('limit') ?? 500,
+    });
+
+    const conditions: SQL<unknown>[] = [];
+    if (query.businessId) conditions.push(eq(items.businessId, query.businessId));
+    if (!query.includeInactive) conditions.push(eq(items.isActive, true));
+    if (query.q) {
+        const searchTerm = `%${query.q}%`;
+        conditions.push(or(
+            ilike(items.name, searchTerm),
+            ilike(items.nameLowercase, `%${query.q.toLowerCase()}%`),
+            ilike(items.category, searchTerm),
+            ilike(items.unit, searchTerm),
+            ilike(items.barcode, searchTerm),
+            ilike(items.sku, searchTerm),
+        ) as SQL<unknown>);
+    }
+
+    const rows = conditions.length > 0
+        ? await db.select().from(items).where(and(...conditions)).orderBy(desc(items.updatedAt)).limit(query.limit)
+        : await db.select().from(items).orderBy(desc(items.updatedAt)).limit(query.limit);
+
+    const businessIds = Array.from(new Set(rows.map((entry) => entry.businessId)));
+    const businessRows = businessIds.length > 0
+        ? await db.select({ id: businesses.id, name: businesses.name }).from(businesses).where(inArray(businesses.id, businessIds))
+        : [];
+    const businessById = new Map(businessRows.map((entry) => [entry.id, entry.name]));
+
+    return c.json({
+        ok: true,
+        items: rows.map((entry) => ({
+            id: entry.id,
+            businessId: entry.businessId,
+            businessName: businessById.get(entry.businessId) ?? 'Unknown',
+            name: entry.name,
+            sku: entry.sku,
+            barcode: entry.barcode,
+            category: entry.category ?? 'Uncategorized',
+            unit: entry.unit ?? 'pcs',
+            stock: Number(entry.stock ?? 0),
+            salePrice: Number(entry.salePrice ?? 0),
+            purchasePrice: Number(entry.purchasePrice ?? 0),
+            mrp: Number(entry.mrp ?? 0),
+            reorderLevel: Number(entry.reorderLevel ?? 0),
+            isActive: entry.isActive,
+            updatedAt: entry.updatedAt,
+            createdAt: entry.createdAt,
+        })),
+    });
+});
+
+adminRoute.patch('/inventory/items/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        const id = c.req.param('id');
+        const payload = inventoryAdminPatchSchema.parse(await c.req.json());
+
+        const existingRows = await db.select().from(items).where(eq(items.id, id)).limit(1);
+        const existing = existingRows[0];
+        if (!existing) return c.json({ ok: false, message: 'Item not found.' }, 404);
+
+        const now = new Date();
+        const patch: Partial<typeof items.$inferInsert> = { updatedAt: now };
+        if (payload.name !== undefined) {
+            patch.name = payload.name;
+            patch.nameLowercase = payload.name.toLowerCase();
+        }
+        if (payload.category !== undefined) patch.category = payload.category ?? null;
+        if (payload.unit !== undefined) patch.unit = payload.unit ?? null;
+        if (payload.salePrice !== undefined) patch.salePrice = payload.salePrice;
+        if (payload.purchasePrice !== undefined) patch.purchasePrice = payload.purchasePrice;
+        if (payload.mrp !== undefined) patch.mrp = payload.mrp;
+        if (payload.reorderLevel !== undefined) patch.reorderLevel = payload.reorderLevel;
+        if (payload.isActive !== undefined) patch.isActive = payload.isActive;
+        if (payload.stock !== undefined) patch.stock = payload.stock;
+
+        await db.update(items).set(patch).where(eq(items.id, id));
+
+        if (payload.stock !== undefined) {
+            const currentStock = Number(existing.stock ?? 0);
+            const delta = payload.stock - currentStock;
+            if (delta !== 0) {
+                await db.insert(inventoryMovements).values({
+                    id: `mov_${nanoid(16)}`,
+                    businessId: existing.businessId,
+                    itemId: existing.id,
+                    movementType: 'ADMIN_SET',
+                    quantity: delta,
+                    balanceAfter: payload.stock,
+                    reason: 'Stock set by admin panel',
+                    createdByUserId: authUser?.id ?? null,
+                    createdAt: now,
+                });
+            }
+        }
+
+        await appendAuditLog(c, 'INVENTORY_ITEM_UPDATED', 'item', id, {
+            businessId: existing.businessId,
+            changedFields: Object.keys(payload),
+        });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update inventory item.' }, 400);
+    }
+});
+
+adminRoute.post('/inventory/items/:id/adjust', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        const id = c.req.param('id');
+        const payload = inventoryAdminAdjustSchema.parse(await c.req.json());
+
+        const rows = await db.select().from(items).where(eq(items.id, id)).limit(1);
+        const item = rows[0];
+        if (!item) return c.json({ ok: false, message: 'Item not found.' }, 404);
+
+        const now = new Date();
+        const currentStock = Number(item.stock ?? 0);
+        const nextStock = currentStock + payload.delta;
+
+        await db.update(items).set({
+            stock: nextStock,
+            updatedAt: now,
+        }).where(eq(items.id, id));
+
+        await db.insert(inventoryMovements).values({
+            id: `mov_${nanoid(16)}`,
+            businessId: item.businessId,
+            itemId: item.id,
+            movementType: payload.delta >= 0 ? 'ADMIN_ADJUST_IN' : 'ADMIN_ADJUST_OUT',
+            quantity: payload.delta,
+            balanceAfter: nextStock,
+            reason: payload.reason ?? 'Adjusted from admin panel',
+            createdByUserId: authUser?.id ?? null,
+            createdAt: now,
+        });
+
+        await appendAuditLog(c, 'INVENTORY_STOCK_ADJUSTED', 'item', id, {
+            businessId: item.businessId,
+            delta: payload.delta,
+            nextStock,
+        });
+
+        return c.json({ ok: true, stock: nextStock });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to adjust stock.' }, 400);
+    }
+});
+
+adminRoute.post('/inventory/items/:id/restore', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+
+        const rows = await db.select().from(items).where(eq(items.id, id)).limit(1);
+        const item = rows[0];
+        if (!item) return c.json({ ok: false, message: 'Item not found.' }, 404);
+
+        await db.update(items).set({
+            isActive: true,
+            updatedAt: new Date(),
+        }).where(eq(items.id, id));
+
+        await appendAuditLog(c, 'INVENTORY_ITEM_RESTORED', 'item', id, {
+            businessId: item.businessId,
+        });
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to restore item.' }, 400);
+    }
+});
+
+adminRoute.delete('/inventory/items/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(items).where(eq(items.id, id)).limit(1);
+        const item = rows[0];
+        if (!item) return c.json({ ok: false, message: 'Item not found.' }, 404);
+
+        await db.update(items).set({
+            isActive: false,
+            updatedAt: new Date(),
+        }).where(eq(items.id, id));
+
+        await appendAuditLog(c, 'INVENTORY_ITEM_DEACTIVATED', 'item', id, {
+            businessId: item.businessId,
+        });
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to deactivate item.' }, 400);
+    }
+});
+
+adminRoute.delete('/inventory/items/:id/permanent', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(items).where(eq(items.id, id)).limit(1);
+        const item = rows[0];
+        if (!item) return c.json({ ok: false, message: 'Item not found.' }, 404);
+        if (item.isActive) {
+            return c.json({ ok: false, message: 'Deactivate item before permanent delete.' }, 409);
+        }
+
+        await db.delete(items).where(eq(items.id, id));
+
+        await appendAuditLog(c, 'INVENTORY_ITEM_PERMANENT_DELETE', 'item', id, {
+            businessId: item.businessId,
+        });
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to permanently delete item.' }, 400);
+    }
 });
 
 adminRoute.get('/staff/overview', async (c) => {
@@ -1841,6 +2789,222 @@ adminRoute.get('/staff/overview', async (c) => {
         }),
     });
 });
+
+adminRoute.get('/staff/invites', async (c) => {
+    const db = c.get('db');
+    const query = staffInviteListQuerySchema.parse({
+        businessId: c.req.query('businessId'),
+        status: c.req.query('status'),
+        limit: c.req.query('limit') ?? 500,
+    });
+
+    const whereConditions: SQL<unknown>[] = [];
+    if (query.businessId) whereConditions.push(eq(staffInvites.businessId, query.businessId));
+    if (query.status) whereConditions.push(eq(staffInvites.status, query.status));
+
+    const inviteRows = whereConditions.length > 0
+        ? await db.select().from(staffInvites).where(and(...whereConditions)).orderBy(desc(staffInvites.createdAt)).limit(query.limit)
+        : await db.select().from(staffInvites).orderBy(desc(staffInvites.createdAt)).limit(query.limit);
+
+    const businessIds = Array.from(new Set(inviteRows.map((entry) => entry.businessId)));
+    const ownerIds = Array.from(new Set(inviteRows.map((entry) => entry.ownerUserId)));
+
+    const [businessRows, ownerRows] = await Promise.all([
+        businessIds.length > 0
+            ? db.select({ id: businesses.id, name: businesses.name }).from(businesses).where(inArray(businesses.id, businessIds))
+            : Promise.resolve([]),
+        ownerIds.length > 0
+            ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, ownerIds))
+            : Promise.resolve([]),
+    ]);
+    const businessById = new Map(businessRows.map((entry) => [entry.id, entry.name]));
+    const ownerById = new Map(ownerRows.map((entry) => [entry.id, entry]));
+
+    return c.json({
+        ok: true,
+        invites: inviteRows.map((entry) => {
+            const owner = ownerById.get(entry.ownerUserId);
+            return {
+                id: entry.id,
+                businessId: entry.businessId,
+                businessName: businessById.get(entry.businessId) ?? 'Unknown',
+                ownerUserId: entry.ownerUserId,
+                ownerName: owner?.name ?? null,
+                ownerEmail: owner?.email ?? null,
+                phoneNumber: entry.phoneNumber,
+                role: entry.role,
+                status: entry.status,
+                code: entry.code,
+                expiresAt: entry.expiresAt,
+                createdAt: entry.createdAt,
+            };
+        }),
+    });
+});
+
+adminRoute.post('/staff/invites', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const payload = staffInviteCreateSchema.parse(await c.req.json());
+        const businessRows = await db.select().from(businesses).where(eq(businesses.id, payload.businessId)).limit(1);
+        const business = businessRows[0];
+        if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+        const id = `siv_${nanoid(16)}`;
+        const code = nanoid(8).toUpperCase();
+        const now = new Date();
+        const expiresAt = new Date(Date.now() + (payload.expiresInDays * 24 * 60 * 60 * 1000));
+
+        await db.insert(staffInvites).values({
+            id,
+            businessId: payload.businessId,
+            ownerUserId: business.ownerUserId,
+            phoneNumber: payload.phoneNumber,
+            role: payload.role,
+            status: 'pending',
+            code,
+            expiresAt,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await appendAuditLog(c, 'STAFF_INVITE_CREATED', 'staff_invite', id, {
+            businessId: payload.businessId,
+            role: payload.role,
+        });
+
+        return c.json({ ok: true, id, code, expiresAt });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create staff invite.' }, 400);
+    }
+});
+
+adminRoute.delete('/staff/invites/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(staffInvites).where(eq(staffInvites.id, id)).limit(1);
+        const invite = rows[0];
+        if (!invite) return c.json({ ok: false, message: 'Invite not found.' }, 404);
+
+        await db.delete(staffInvites).where(eq(staffInvites.id, id));
+        await appendAuditLog(c, 'STAFF_INVITE_DELETED', 'staff_invite', id, {
+            businessId: invite.businessId,
+            phoneNumber: invite.phoneNumber,
+        });
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete staff invite.' }, 400);
+    }
+});
+
+adminRoute.get('/staff/members', async (c) => {
+    const db = c.get('db');
+    const query = staffMemberListQuerySchema.parse({
+        businessId: c.req.query('businessId'),
+        role: c.req.query('role'),
+        isActive: c.req.query('isActive'),
+        limit: c.req.query('limit') ?? 500,
+    });
+
+    const whereConditions: SQL<unknown>[] = [];
+    if (query.businessId) whereConditions.push(eq(businessMembers.businessId, query.businessId));
+    if (query.role) whereConditions.push(eq(businessMembers.role, query.role));
+    if (query.isActive !== undefined) whereConditions.push(eq(businessMembers.isActive, query.isActive));
+
+    const members = whereConditions.length > 0
+        ? await db.select().from(businessMembers).where(and(...whereConditions)).orderBy(desc(businessMembers.updatedAt)).limit(query.limit)
+        : await db.select().from(businessMembers).orderBy(desc(businessMembers.updatedAt)).limit(query.limit);
+
+    const businessIds = Array.from(new Set(members.map((entry) => entry.businessId)));
+    const userIds = Array.from(new Set(members.map((entry) => entry.userId)));
+    const [businessRows, userRows] = await Promise.all([
+        businessIds.length > 0
+            ? db.select({ id: businesses.id, name: businesses.name }).from(businesses).where(inArray(businesses.id, businessIds))
+            : Promise.resolve([]),
+        userIds.length > 0
+            ? db.select({ id: users.id, name: users.name, email: users.email, phone: users.phone }).from(users).where(inArray(users.id, userIds))
+            : Promise.resolve([]),
+    ]);
+
+    const businessById = new Map(businessRows.map((entry) => [entry.id, entry.name]));
+    const userById = new Map(userRows.map((entry) => [entry.id, entry]));
+
+    return c.json({
+        ok: true,
+        members: members.map((entry) => {
+            const user = userById.get(entry.userId);
+            return {
+                id: entry.id,
+                businessId: entry.businessId,
+                businessName: businessById.get(entry.businessId) ?? 'Unknown',
+                userId: entry.userId,
+                userName: user?.name ?? 'Unknown',
+                userEmail: user?.email ?? null,
+                userPhone: user?.phone ?? null,
+                role: entry.role,
+                isActive: entry.isActive,
+                joinedAt: entry.joinedAt,
+                updatedAt: entry.updatedAt,
+            };
+        }),
+    });
+});
+
+adminRoute.patch('/staff/members/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = staffMemberPatchSchema.parse(await c.req.json());
+
+        const rows = await db.select().from(businessMembers).where(eq(businessMembers.id, id)).limit(1);
+        const member = rows[0];
+        if (!member) return c.json({ ok: false, message: 'Member not found.' }, 404);
+
+        await db.update(businessMembers).set({
+            ...(payload.role !== undefined ? { role: payload.role } : {}),
+            ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+            updatedAt: new Date(),
+        }).where(eq(businessMembers.id, id));
+
+        await appendAuditLog(c, 'STAFF_MEMBER_UPDATED', 'business_member', id, {
+            businessId: member.businessId,
+            changedFields: Object.keys(payload),
+        });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update staff member.' }, 400);
+    }
+});
+
+adminRoute.delete('/staff/members/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(businessMembers).where(eq(businessMembers.id, id)).limit(1);
+        const member = rows[0];
+        if (!member) return c.json({ ok: false, message: 'Member not found.' }, 404);
+
+        await db.update(businessMembers).set({
+            isActive: false,
+            updatedAt: new Date(),
+        }).where(eq(businessMembers.id, id));
+
+        await appendAuditLog(c, 'STAFF_MEMBER_DEACTIVATED', 'business_member', id, {
+            businessId: member.businessId,
+            userId: member.userId,
+        });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to remove staff member.' }, 400);
+    }
+});
+
 adminRoute.get('/discounts', async (c) => {
     const db = c.get('db');
     const includeInactive = parseBoolean(c.req.query('includeInactive'), true);
@@ -2006,6 +3170,55 @@ adminRoute.patch('/notifications/templates/:id', async (c) => {
     }
 });
 
+adminRoute.delete('/notifications/templates/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const deleted = await db.delete(notificationTemplates)
+            .where(eq(notificationTemplates.id, id))
+            .returning({ id: notificationTemplates.id });
+        if (!deleted[0]) return c.json({ ok: false, message: 'Notification template not found.' }, 404);
+        await appendAuditLog(c, 'NOTIFICATION_TEMPLATE_DELETED', 'notification_template', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete notification template.' }, 400);
+    }
+});
+
+adminRoute.post('/notifications/templates/bulk', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const payload = notificationTemplateBulkSchema.parse(await c.req.json());
+        const ids = [...new Set(payload.ids)];
+        if (ids.length === 0) return c.json({ ok: true, affected: 0 });
+
+        let affected = 0;
+        if (payload.action === 'DELETE') {
+            const deleted = await db.delete(notificationTemplates)
+                .where(inArray(notificationTemplates.id, ids))
+                .returning({ id: notificationTemplates.id });
+            affected = deleted.length;
+        } else {
+            const updated = await db.update(notificationTemplates).set({
+                isActive: payload.action === 'ACTIVATE',
+                updatedAt: new Date(),
+            }).where(inArray(notificationTemplates.id, ids)).returning({ id: notificationTemplates.id });
+            affected = updated.length;
+        }
+
+        await appendAuditLog(c, 'NOTIFICATION_TEMPLATE_BULK', 'notification_template', null, {
+            action: payload.action,
+            requested: ids.length,
+            affected,
+        });
+        return c.json({ ok: true, affected });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed bulk template operation.' }, 400);
+    }
+});
+
 adminRoute.get('/notifications/campaigns', async (c) => {
     const db = c.get('db');
     const status = c.req.query('status')?.trim();
@@ -2066,6 +3279,23 @@ adminRoute.patch('/notifications/campaigns/:id', async (c) => {
         return c.json({ ok: true });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update campaign.' }, 400);
+    }
+});
+
+adminRoute.delete('/notifications/campaigns/:id', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        await db.delete(notificationDeliveries).where(eq(notificationDeliveries.campaignId, id));
+        const deleted = await db.delete(notificationCampaigns)
+            .where(eq(notificationCampaigns.id, id))
+            .returning({ id: notificationCampaigns.id });
+        if (!deleted[0]) return c.json({ ok: false, message: 'Campaign not found.' }, 404);
+        await appendAuditLog(c, 'NOTIFICATION_CAMPAIGN_DELETED', 'notification_campaign', id);
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to delete campaign.' }, 400);
     }
 });
 
@@ -2131,6 +3361,85 @@ adminRoute.post('/notifications/campaigns/:id/cancel', async (c) => {
         return c.json({ ok: true });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to cancel campaign.' }, 400);
+    }
+});
+
+adminRoute.post('/notifications/campaigns/bulk', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const payload = campaignBulkSchema.parse(await c.req.json());
+        const ids = [...new Set(payload.ids)];
+        if (ids.length === 0) return c.json({ ok: true, affected: 0, deliveriesQueued: 0 });
+
+        const campaignRows = await db.select().from(notificationCampaigns).where(inArray(notificationCampaigns.id, ids));
+        if (campaignRows.length === 0) return c.json({ ok: true, affected: 0, deliveriesQueued: 0 });
+        const campaignIdSet = new Set(campaignRows.map((entry) => entry.id));
+        let affected = 0;
+        let deliveriesQueued = 0;
+
+        if (payload.action === 'DELETE') {
+            await db.delete(notificationDeliveries).where(inArray(notificationDeliveries.campaignId, [...campaignIdSet]));
+            const deleted = await db.delete(notificationCampaigns).where(inArray(notificationCampaigns.id, [...campaignIdSet]))
+                .returning({ id: notificationCampaigns.id });
+            affected = deleted.length;
+        } else if (payload.action === 'CANCEL') {
+            const updated = await db.update(notificationCampaigns).set({
+                status: 'CANCELLED',
+                updatedAt: new Date(),
+            }).where(inArray(notificationCampaigns.id, [...campaignIdSet])).returning({ id: notificationCampaigns.id });
+            affected = updated.length;
+        } else {
+            const now = new Date();
+            const activeBusinesses = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.isActive, true));
+
+            for (const campaign of campaignRows) {
+                await db.update(notificationCampaigns).set({
+                    status: 'RUNNING',
+                    startedAt: now,
+                    updatedAt: now,
+                }).where(eq(notificationCampaigns.id, campaign.id));
+
+                if (activeBusinesses.length > 0) {
+                    const rows = activeBusinesses.map((business) => ({
+                        id: `ntf_del_${nanoid(16)}`,
+                        campaignId: campaign.id,
+                        templateId: campaign.templateId ?? null,
+                        businessId: business.id,
+                        userId: null,
+                        channel: campaign.channel,
+                        status: 'QUEUED',
+                        errorMessage: null,
+                        metadata: {
+                            source: 'ADMIN_BULK_TRIGGER',
+                            campaignTitle: campaign.title,
+                        },
+                        sentAt: null,
+                        createdAt: now,
+                    }));
+                    await db.insert(notificationDeliveries).values(rows);
+                    deliveriesQueued += rows.length;
+                }
+
+                await db.update(notificationCampaigns).set({
+                    status: 'COMPLETED',
+                    completedAt: new Date(),
+                    updatedAt: new Date(),
+                }).where(eq(notificationCampaigns.id, campaign.id));
+                affected += 1;
+            }
+        }
+
+        await appendAuditLog(c, 'NOTIFICATION_CAMPAIGN_BULK', 'notification_campaign', null, {
+            action: payload.action,
+            requested: ids.length,
+            matched: campaignRows.length,
+            affected,
+            deliveriesQueued,
+        });
+        return c.json({ ok: true, affected, deliveriesQueued });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed bulk campaign operation.' }, 400);
     }
 });
 
@@ -2201,6 +3510,243 @@ adminRoute.get('/notifications/deliveries', async (c) => {
     const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 2000);
     const rows = await db.select().from(notificationDeliveries).orderBy(desc(notificationDeliveries.createdAt)).limit(limit);
     return c.json({ ok: true, deliveries: rows });
+});
+
+adminRoute.get('/master-data', async (c) => {
+    const db = c.get('db');
+    const [itemRows, templateRows, settingsRows] = await Promise.all([
+        db.select({
+            category: items.category,
+            unit: items.unit,
+        }).from(items).limit(5000),
+        db.select({
+            id: templates.id,
+            name: templates.name,
+            type: templates.type,
+            businessId: templates.businessId,
+            isDefault: templates.isDefault,
+            isActive: templates.isActive,
+            updatedAt: templates.updatedAt,
+        }).from(templates).orderBy(desc(templates.updatedAt)).limit(1000),
+        db.select().from(adminSettings).where(eq(adminSettings.id, ADMIN_SETTINGS_ROW_ID)).limit(1),
+    ]);
+
+    const itemCategorySet = new Set<string>();
+    const unitSet = new Set<string>();
+    for (const row of itemRows) {
+        if (typeof row.category === 'string' && row.category.trim()) itemCategorySet.add(row.category.trim());
+        if (typeof row.unit === 'string' && row.unit.trim()) unitSet.add(row.unit.trim());
+    }
+
+    const adminConfig = asRecord(settingsRows[0]?.settings);
+    const adminMasterData = asRecord(adminConfig.masterData);
+    const configCategories = Array.isArray(adminMasterData.categories)
+        ? adminMasterData.categories.map((entry) => String(entry).trim()).filter(Boolean)
+        : [];
+    const configUnits = Array.isArray(adminMasterData.units)
+        ? adminMasterData.units.map((entry) => String(entry).trim()).filter(Boolean)
+        : [];
+
+    const defaultCategories = [...DEFAULT_ITEM_CATEGORY_PRESETS];
+    const defaultUnits = [...DEFAULT_UNIT_PRESETS];
+
+    return c.json({
+        ok: true,
+        categories: {
+            defaults: defaultCategories,
+            configured: configCategories,
+            discovered: [...itemCategorySet],
+            all: [...new Set([...defaultCategories, ...configCategories, ...itemCategorySet])],
+        },
+        units: {
+            defaults: defaultUnits,
+            configured: configUnits,
+            discovered: [...unitSet],
+            all: [...new Set([...defaultUnits, ...configUnits, ...unitSet])],
+        },
+        templates: templateRows,
+    });
+});
+
+adminRoute.patch('/master-data', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const payload = masterDataConfigSchema.parse(await c.req.json());
+        const now = new Date();
+
+        const settingsRows = await db.select().from(adminSettings).where(eq(adminSettings.id, ADMIN_SETTINGS_ROW_ID)).limit(1);
+        const currentSettings = asRecord(settingsRows[0]?.settings);
+        const currentMasterData = asRecord(currentSettings.masterData);
+
+        const currentCategories = Array.isArray(currentMasterData.categories)
+            ? currentMasterData.categories.map((entry) => String(entry).trim()).filter(Boolean)
+            : [];
+        const currentUnits = Array.isArray(currentMasterData.units)
+            ? currentMasterData.units.map((entry) => String(entry).trim()).filter(Boolean)
+            : [];
+
+        const nextCategories = payload.categories
+            ? [...new Set(payload.categories.map((entry) => entry.trim()).filter(Boolean))]
+            : currentCategories;
+        const nextUnits = payload.units
+            ? [...new Set(payload.units.map((entry) => entry.trim()).filter(Boolean))]
+            : currentUnits;
+
+        await db.insert(adminSettings).values({
+            id: ADMIN_SETTINGS_ROW_ID,
+            settings: {
+                ...currentSettings,
+                masterData: {
+                    categories: nextCategories,
+                    units: nextUnits,
+                },
+            },
+            updatedAt: now,
+        }).onConflictDoUpdate({
+            target: adminSettings.id,
+            set: {
+                settings: {
+                    ...currentSettings,
+                    masterData: {
+                        categories: nextCategories,
+                        units: nextUnits,
+                    },
+                },
+                updatedAt: now,
+            },
+        });
+
+        await appendAuditLog(c, 'MASTER_DATA_UPDATED', 'admin_settings', ADMIN_SETTINGS_ROW_ID, {
+            categories: nextCategories.length,
+            units: nextUnits.length,
+        });
+
+        return c.json({
+            ok: true,
+            categories: nextCategories,
+            units: nextUnits,
+        });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update master data.' }, 400);
+    }
+});
+
+adminRoute.post('/master-data/seed-defaults', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const now = new Date();
+
+        const settingsRows = await db.select().from(adminSettings).where(eq(adminSettings.id, ADMIN_SETTINGS_ROW_ID)).limit(1);
+        const currentSettings = asRecord(settingsRows[0]?.settings);
+        const currentMasterData = asRecord(currentSettings.masterData);
+
+        const nextMasterData = {
+            categories: [...new Set([
+                ...(Array.isArray(currentMasterData.categories) ? currentMasterData.categories.map((entry) => String(entry).trim()).filter(Boolean) : []),
+                ...DEFAULT_ITEM_CATEGORY_PRESETS,
+            ])],
+            units: [...new Set([
+                ...(Array.isArray(currentMasterData.units) ? currentMasterData.units.map((entry) => String(entry).trim()).filter(Boolean) : []),
+                ...DEFAULT_UNIT_PRESETS,
+            ])],
+        };
+
+        await db.insert(adminSettings).values({
+            id: ADMIN_SETTINGS_ROW_ID,
+            settings: {
+                ...currentSettings,
+                masterData: nextMasterData,
+            },
+            updatedAt: now,
+        }).onConflictDoUpdate({
+            target: adminSettings.id,
+            set: {
+                settings: {
+                    ...currentSettings,
+                    masterData: nextMasterData,
+                },
+                updatedAt: now,
+            },
+        });
+
+        const templateSeeds = [
+            {
+                id: `tpl_${nanoid(14)}`,
+                businessId: null,
+                name: 'Standard GST Invoice',
+                type: 'invoice',
+                content: {
+                    layout: 'standard',
+                    showGstin: true,
+                    showHsn: true,
+                    showQr: true,
+                },
+                isDefault: true,
+                thumbnailUrl: null,
+                isActive: true,
+            },
+            {
+                id: `tpl_${nanoid(14)}`,
+                businessId: null,
+                name: 'Retail Thermal Invoice',
+                type: 'invoice',
+                content: {
+                    layout: 'thermal',
+                    paperWidthMm: 80,
+                    compact: true,
+                    showQr: true,
+                },
+                isDefault: false,
+                thumbnailUrl: null,
+                isActive: true,
+            },
+            {
+                id: `tpl_${nanoid(14)}`,
+                businessId: null,
+                name: 'Executive Business Card',
+                type: 'card',
+                content: {
+                    layout: 'horizontal',
+                    showLogo: true,
+                    showQr: true,
+                },
+                isDefault: true,
+                thumbnailUrl: null,
+                isActive: true,
+            },
+        ];
+
+        const existingGlobalTemplates = await db.select({
+            name: templates.name,
+            type: templates.type,
+        }).from(templates).where(isNull(templates.businessId));
+        const existingKey = new Set(existingGlobalTemplates.map((entry) => `${entry.type}:${entry.name}`));
+        const toInsert = templateSeeds.filter((entry) => !existingKey.has(`${entry.type}:${entry.name}`));
+        if (toInsert.length > 0) {
+            await db.insert(templates).values(toInsert.map((entry) => ({
+                ...entry,
+                createdAt: now,
+                updatedAt: now,
+            })));
+        }
+
+        await appendAuditLog(c, 'MASTER_DATA_DEFAULTS_SEEDED', 'admin_settings', ADMIN_SETTINGS_ROW_ID, {
+            templateCountAdded: toInsert.length,
+            categoryCount: nextMasterData.categories.length,
+            unitCount: nextMasterData.units.length,
+        });
+
+        return c.json({
+            ok: true,
+            seededTemplates: toInsert.length,
+            categories: nextMasterData.categories,
+            units: nextMasterData.units,
+        });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to seed master defaults.' }, 400);
+    }
 });
 
 adminRoute.get('/businesses/:id/feature-flags', async (c) => {
@@ -2322,6 +3868,15 @@ adminRoute.get('/live/snapshot', async (c) => {
 adminRoute.get('/live/events', async (c) => {
     const db = c.get('db');
     const payload = await getLiveSnapshot(db);
+
+    const streamMode = c.req.query('stream') === '1' || c.req.query('format') === 'sse';
+    if (!streamMode) {
+        return c.json({
+            ok: true,
+            latest: payload,
+            events: [payload],
+        });
+    }
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
