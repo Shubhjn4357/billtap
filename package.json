@@ -35,6 +35,7 @@
     "secrets:push:dry": "node ./scripts/push-gh-secrets.js --dry-run"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@hookform/resolvers": "^5.2.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "^8.6.0",
@@ -85,7 +86,6 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
-    "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^13.3.3",
     "@types/lodash.debounce": "^4.0.9",
     "@types/react": "~19.2.2",
