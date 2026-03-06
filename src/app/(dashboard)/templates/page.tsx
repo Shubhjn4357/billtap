@@ -2,13 +2,19 @@
 
 import React, { useMemo, useState } from "react";
 import Image from "next/image";
-import { CreditCard, Edit, FileText, Plus, Star, Trash2 } from "lucide-react";
+import { CreditCard, Edit, FileText, Plus, Star, Trash2, Database } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useTemplates } from "@/hooks/useTemplates";
 import { Template } from "@/types";
 import { TemplateDrawer } from "@/components/templates/TemplateDrawer";
 import { getErrorMessage } from "@/lib/api-error";
+
+const PREMADE_TEMPLATES = [
+    { name: "Standard GST Invoice", type: "invoice" as const, content: { layout: "classic", showGst: true }, isDefault: true, isActive: true },
+    { name: "Modern Bill of Supply", type: "invoice" as const, content: { layout: "modern", showGst: false }, isDefault: false, isActive: true },
+    { name: "Executive Business Card", type: "card" as const, content: { layout: "horizontal", theme: "dark" }, isDefault: true, isActive: true }
+];
 
 export default function TemplatesPage() {
     const { data: templates, isLoading, createTemplate, updateTemplate, deleteTemplate, refetch } = useTemplates();
@@ -25,6 +31,8 @@ export default function TemplatesPage() {
         [templates]
     );
 
+    const [seeding, setSeeding] = useState(false);
+
     const saving = createTemplate.isPending || updateTemplate.isPending;
 
     const openCreate = () => {
@@ -35,6 +43,21 @@ export default function TemplatesPage() {
     const openEdit = (template: Template) => {
         setSelectedTemplate(template);
         setIsDrawerOpen(true);
+    };
+
+    const handleSeed = async () => {
+        setSeeding(true);
+        try {
+            for (const t of PREMADE_TEMPLATES) {
+                await createTemplate.mutateAsync(t);
+            }
+            toast({ title: "Templates Seeded", description: "Successfully injected premade template data.", type: "success" });
+            await refetch();
+        } catch (error) {
+            toast({ title: "Seed Failed", description: getErrorMessage(error, "Failed to inject templates."), type: "error" });
+        } finally {
+            setSeeding(false);
+        }
     };
 
     const handleDelete = async (template: Template) => {
@@ -173,10 +196,16 @@ export default function TemplatesPage() {
                     <h2 className="text-3xl font-bold tracking-tight">Templates</h2>
                     <p className="text-muted-foreground">Manage invoice designs and business cards.</p>
                 </div>
-                <Button onClick={openCreate}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create New
-                </Button>
+                <div className="flex gap-2">
+                    <Button variant="outline" onClick={handleSeed} disabled={seeding}>
+                        <Database className="mr-2 h-4 w-4" />
+                        {seeding ? "Injecting..." : "Seed Default Templates"}
+                    </Button>
+                    <Button onClick={openCreate}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Create New
+                    </Button>
+                </div>
             </div>
 
             {renderTemplateSection("Invoices", <FileText className="w-5 h-5" />, billTemplates)}

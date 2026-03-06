@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, RefreshCw, UserPlus, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
 import { type LiveSnapshot } from "@/services/notificationService";
 import { api } from "@/lib/api";
@@ -15,8 +16,13 @@ export default function LiveUpdatesPage() {
     const [history, setHistory] = useState<LiveSnapshot[]>([]);
     const [connected, setConnected] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [pollSeconds, setPollSeconds] = useState(15);
+    const [isPaused, setIsPaused] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+    const [consecutiveErrors, setConsecutiveErrors] = useState(0);
 
-    const loadSnapshot = async () => {
+    const loadSnapshot = async (force = false) => {
+        if (isPaused && !force) return;
         setLoading(true);
         try {
             const { data: payload } = await api.get<{ ok?: boolean; snapshot?: LiveSnapshot }>("/admin/live/snapshot");
@@ -24,9 +30,12 @@ export default function LiveUpdatesPage() {
                 setSnapshot(payload.snapshot);
                 setHistory((prev) => [payload.snapshot!, ...prev].slice(0, 15));
                 setConnected(true);
+                setConsecutiveErrors(0);
+                setLastUpdated(new Date().toISOString());
             }
         } catch (error) {
             setConnected(false);
+            setConsecutiveErrors((prev) => prev + 1);
             toast({
                 title: "Live snapshot unavailable",
                 description: getErrorMessage(error, "Unable to fetch live snapshot."),
@@ -40,15 +49,16 @@ export default function LiveUpdatesPage() {
     useEffect(() => {
         void loadSnapshot();
         const timer = setInterval(() => {
-            void loadSnapshot();
-        }, 15_000);
+            if (document.visibilityState === "hidden") return;
+            void loadSnapshot(true);
+        }, pollSeconds * 1000);
 
         return () => {
             clearInterval(timer);
             setConnected(false);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [pollSeconds, isPaused]);
 
     const cards = useMemo(() => {
         if (!snapshot) return [];
@@ -71,14 +81,34 @@ export default function LiveUpdatesPage() {
                 </div>
                 <div className="flex items-center gap-3">
                     <span className={connected ? "text-xs font-semibold text-green-600" : "text-xs font-semibold text-amber-600"}>
-                        {connected ? "SSE CONNECTED" : "SSE DISCONNECTED"}
+                        {connected ? "LIVE CONNECTED" : "LIVE DISCONNECTED"}
                     </span>
-                    <Button variant="outline" onClick={() => void loadSnapshot()} disabled={loading}>
+                    <Select value={String(pollSeconds)} onChange={(event) => setPollSeconds(Number(event.target.value))}>
+                        <option value="10">10s polling</option>
+                        <option value="15">15s polling</option>
+                        <option value="30">30s polling</option>
+                        <option value="60">60s polling</option>
+                    </Select>
+                    <Button variant="outline" onClick={() => setIsPaused((prev) => !prev)}>
+                        {isPaused ? "Resume" : "Pause"}
+                    </Button>
+                    <Button variant="outline" onClick={() => void loadSnapshot(true)} disabled={loading}>
                         <RefreshCw className="h-4 w-4 mr-2" />
                         Refresh
                     </Button>
                 </div>
             </div>
+
+            <Card>
+                <CardContent className="pt-6 text-sm text-muted-foreground">
+                    <div className="flex flex-wrap gap-4">
+                        <span>Polling: every {pollSeconds}s</span>
+                        <span>Paused: {isPaused ? "Yes" : "No"}</span>
+                        <span>Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleString() : "-"}</span>
+                        <span>Consecutive errors: {consecutiveErrors}</span>
+                    </div>
+                </CardContent>
+            </Card>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {cards.map((card) => (

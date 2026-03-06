@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "verify:ci": "npm run lint && npm run typecheck"
+    "verify:api-contract": "node ./scripts/verify-api-contract.mjs",
+    "verify:ci": "npm run lint && npm run typecheck && npm run verify:api-contract"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

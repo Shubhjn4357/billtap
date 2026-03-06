@@ -1,17 +1,6 @@
 import { api } from "@/lib/api";
-
-export interface Plan {
-    id: string;
-    name: string;
-    description: string;
-    monthlyPrice: number;
-    currency: string;
-    isActive: boolean;
-    displayOrder: number;
-    features: string[];
-    createdAt: string;
-    updatedAt: string;
-}
+import type { Plan } from "@/types";
+export type { Plan } from "@/types";
 
 export const planService = {
     getAll: async (includeInactive = true) => {

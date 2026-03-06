@@ -6,24 +6,29 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSession } from "next-auth/react";
 import {
-    Users,
-    CreditCard,
-    LayoutDashboard,
-    ChevronLeft,
-    X,
-    Store,
-    Box,
-    FileSpreadsheet,
-    Megaphone,
-    BarChart3,
-    History,
-    Settings,
-    UserCircle,
-    Flag,
-    BellRing,
     Activity,
-    Wallet,
+    BellRing,
+    BookOpenCheck,
+    Box,
+    BriefcaseBusiness,
+    ChevronLeft,
+    ClipboardList,
+    Users,
+    Database,
+    FileBarChart2,
+    FileSpreadsheet,
+    Flag,
+    Landmark,
+    LayoutDashboard,
+    Megaphone,
     ReceiptText,
+    Settings,
+    ShieldCheck,
+    Store,
+    UserCircle,
+    CreditCard,
+    Warehouse,
+    X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/providers/SidebarProvider";
@@ -46,16 +51,28 @@ const navCategories: NavCategory[] = [
         label: "Core",
         items: [
             { href: "/dashboard", label: "Overview", icon: LayoutDashboard, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/live", label: "Live Monitor", icon: Activity, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/audit-logs", label: "Audit Logs", icon: BookOpenCheck, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+        ]
+    },
+    {
+        label: "Business",
+        items: [
             { href: "/organizations", label: "Organizations", icon: Store, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/users", label: "Users", icon: Users, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/staff", label: "Staff", icon: ShieldCheck, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/feature-flags", label: "Feature Flags", icon: Flag, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/subscriptions", label: "Subscriptions", icon: CreditCard, roles: ["SUPER_ADMIN"] },
+            { href: "/plans", label: "Plans Hub", icon: Box, roles: ["SUPER_ADMIN"] },
         ]
     },
     {
         label: "Operations",
         items: [
-            { href: "/transactions", label: "Transactions", icon: FileSpreadsheet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
-            { href: "/inventory", label: "Inventory", icon: Box, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/transactions", label: "Transactions", icon: ReceiptText, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/inventory", label: "Inventory", icon: Warehouse, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/treasury", label: "Treasury", icon: Landmark, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/payroll", label: "Payroll", icon: BriefcaseBusiness, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
             { href: "/banners", label: "Offers", icon: Megaphone, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/discounts", label: "Discounts", icon: CreditCard, roles: ["SUPER_ADMIN"] },
             { href: "/notifications/templates", label: "Notif Templates", icon: BellRing, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
@@ -64,16 +81,18 @@ const navCategories: NavCategory[] = [
         ]
     },
     {
+        label: "Insights",
+        items: [
+            { href: "/analytics", label: "Analytics", icon: FileBarChart2, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/analytics/expenses", label: "Expense Analytics", icon: ClipboardList, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+        ]
+    },
+    {
         label: "System",
         items: [
-            { href: "/analytics", label: "Analytics", icon: BarChart3, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
-            { href: "/live", label: "Live", icon: Activity, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
-            { href: "/audit-logs", label: "Audit Logs", icon: History, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
             { href: "/templates", label: "Templates", icon: FileSpreadsheet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
-            { href: "/feature-flags", label: "Feature Flags", icon: Flag, roles: ["SUPER_ADMIN"] },
+            { href: "/master-data", label: "Master Data", icon: Database, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
-            { href: "/treasury", label: "Treasury", icon: Wallet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
-            { href: "/payroll", label: "Payroll", icon: ReceiptText, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
         ]
     }
 ];

@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { User } from "@/types";
-import { useUpdateUserRole, useManualSubscription } from "@/hooks/useUsers";
+import { useUpdateUserRole, useManualSubscription, useDeleteUser } from "@/hooks/useUsers";
 import { usePlans } from "@/hooks/usePlans";
 import { useEffect } from "react";
 import { useToast } from "@/components/ui/Toast";
 import { getErrorMessage } from "@/lib/api-error";
+import { Trash2 } from "lucide-react";
 
 interface UserActionDialogProps {
     isOpen: boolean;
@@ -21,6 +22,8 @@ interface UserActionDialogProps {
 export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProps) {
     const updateUserRole = useUpdateUserRole();
     const manualSubscription = useManualSubscription();
+    const deleteUser = useDeleteUser();
+
     const { data: plans } = usePlans(true);
     const { toast } = useToast();
 
@@ -158,7 +161,33 @@ export function UserActionDialog({ isOpen, onClose, user }: UserActionDialogProp
                     </p>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-2">
+                <div className="space-y-2 border-t pt-4">
+                    <h3 className="text-sm font-semibold">Administrative Actions</h3>
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={async () => {
+                                if (!user) return;
+                                if (!window.confirm(`Delete user ${user.displayName || user.email || user.uid}?`)) return;
+                                try {
+                                    await deleteUser.mutateAsync(user.uid);
+                                    toast({ title: "Deleted", description: "User was deactivated successfully.", type: "success" });
+                                    onClose();
+                                } catch (e) {
+                                    toast({ title: "Error", description: getErrorMessage(e, "Failed to delete user"), type: "error" });
+                                }
+                            }}
+                            isLoading={deleteUser.isPending}
+                        >
+                            <Trash2 className="w-4 h-4 mr-2" /> Delete User
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t">
                     <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
                     <Button type="submit" isLoading={updateUserRole.isPending || manualSubscription.isPending}>
                         Save Changes

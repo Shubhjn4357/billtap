@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { DataTable } from "@/components/ui/DataTable";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Plus, Store, CheckCircle2, XCircle, Power } from "lucide-react";
+import { Plus, Store, CheckCircle2, XCircle, Power, Trash2 } from "lucide-react";
 import { Organization, organizationService } from "@/services/organizationService";
 import { useToast } from "@/components/ui/Toast";
 import { OrganizationDrawer } from "@/components/organizations/OrganizationDrawer";
@@ -72,6 +72,27 @@ export default function OrganizationsPage() {
         }
     };
 
+    const handleDelete = async (organization: Organization) => {
+        if (!window.confirm(`Delete organization "${organization.name}"? This operation is irreversible.`)) {
+            return;
+        }
+        try {
+            await organizationService.remove(organization.id);
+            toast({
+                title: "Deleted",
+                description: "Organization removed successfully.",
+                type: "success",
+            });
+            await fetchOrganizations();
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: getErrorMessage(error, "Failed to delete organization."),
+                type: "error",
+            });
+        }
+    };
+
     const columns = [
         {
             header: "Organization",
@@ -130,6 +151,17 @@ export default function OrganizationsPage() {
                         void handleToggleStatus(org);
                     }}>
                         <Power className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDelete(org);
+                        }}
+                    >
+                        <Trash2 className="h-4 w-4" />
                     </Button>
                 </div>
             )

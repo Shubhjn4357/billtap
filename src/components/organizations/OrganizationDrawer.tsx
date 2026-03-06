@@ -8,6 +8,7 @@ import { Organization, organizationService } from "@/services/organizationServic
 import { useToast } from "@/components/ui/Toast";
 import { Switch } from "@/components/ui/Switch";
 import { getErrorMessage } from "@/lib/api-error";
+import { QuotasTab } from "./QuotasTab";
 
 interface OrganizationDrawerProps {
     isOpen: boolean;
@@ -28,6 +29,7 @@ export function OrganizationDrawer({ isOpen, onClose, organization, onSuccess }:
         isActive: true,
     });
     const [isLoading, setIsLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<"details" | "quotas">("details");
     const { toast } = useToast();
 
     useEffect(() => {
@@ -91,13 +93,33 @@ export function OrganizationDrawer({ isOpen, onClose, organization, onSuccess }:
                     <Button variant="ghost" onClick={onClose} disabled={isLoading}>
                         Cancel
                     </Button>
-                    <Button onClick={handleSubmit} isLoading={isLoading}>
-                        {organization ? "Save Changes" : "Create Organization"}
-                    </Button>
+                    {activeTab === "details" && (
+                        <Button onClick={handleSubmit} isLoading={isLoading}>
+                            {organization ? "Save Changes" : "Create Organization"}
+                        </Button>
+                    )}
                 </div>
             }
         >
-            <form onSubmit={handleSubmit} className="space-y-6">
+            {organization && (
+                <div className="flex border-b mb-6">
+                    <button
+                        onClick={() => setActiveTab("details")}
+                        className={`pb-2 px-4 text-sm font-semibold border-b-2 ${activeTab === 'details' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'}`}
+                    >
+                        Business Details
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("quotas")}
+                        className={`pb-2 px-4 text-sm font-semibold border-b-2 ${activeTab === 'quotas' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'}`}
+                    >
+                        Usage Quotas
+                    </button>
+                </div>
+            )}
+
+            {activeTab === "details" ? (
+                <form id="org-form" onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-4">
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Business Name</label>
@@ -170,6 +192,9 @@ export function OrganizationDrawer({ isOpen, onClose, organization, onSuccess }:
                     />
                 </div>
             </form>
+            ) : (
+                organization && <QuotasTab organizationId={organization.id} />
+            )}
         </Sheet>
     );
 }

@@ -56,6 +56,30 @@ export interface LiveSnapshot {
     queueSpikes: number;
 }
 
+export interface MasterDataPayload {
+    categories: {
+        defaults: string[];
+        configured: string[];
+        discovered: string[];
+        all: string[];
+    };
+    units: {
+        defaults: string[];
+        configured: string[];
+        discovered: string[];
+        all: string[];
+    };
+    templates: Array<{
+        id: string;
+        name: string;
+        type: string;
+        businessId: string | null;
+        isDefault: boolean;
+        isActive: boolean;
+        updatedAt: string;
+    }>;
+}
+
 export const notificationService = {
     getTemplates: async (includeInactive = true) => {
         const { data } = await api.get<{ ok: boolean; templates: NotificationTemplate[] }>("/admin/notifications/templates", {
@@ -85,6 +109,17 @@ export const notificationService = {
         isActive: boolean;
     }>) => {
         const { data } = await api.patch<{ ok: boolean }>(`/admin/notifications/templates/${id}`, payload);
+        return data;
+    },
+    deleteTemplate: async (id: string) => {
+        const { data } = await api.delete<{ ok: boolean }>(`/admin/notifications/templates/${id}`);
+        return data;
+    },
+    bulkTemplateAction: async (payload: {
+        ids: string[];
+        action: "ACTIVATE" | "DEACTIVATE" | "DELETE";
+    }) => {
+        const { data } = await api.post<{ ok: boolean; affected: number }>("/admin/notifications/templates/bulk", payload);
         return data;
     },
     getCampaigns: async (status?: string) => {
@@ -117,6 +152,17 @@ export const notificationService = {
         const { data } = await api.patch<{ ok: boolean }>(`/admin/notifications/campaigns/${id}`, payload);
         return data;
     },
+    deleteCampaign: async (id: string) => {
+        const { data } = await api.delete<{ ok: boolean }>(`/admin/notifications/campaigns/${id}`);
+        return data;
+    },
+    bulkCampaignAction: async (payload: {
+        ids: string[];
+        action: "TRIGGER" | "CANCEL" | "DELETE";
+    }) => {
+        const { data } = await api.post<{ ok: boolean; affected: number; deliveriesQueued: number }>("/admin/notifications/campaigns/bulk", payload);
+        return data;
+    },
     triggerCampaign: async (id: string) => {
         const { data } = await api.post<{ ok: boolean; deliveriesQueued: number }>(`/admin/notifications/campaigns/${id}/trigger`, {});
         return data;
@@ -139,5 +185,28 @@ export const notificationService = {
         const { data } = await api.get<{ ok: boolean; snapshot?: LiveSnapshot }>("/admin/live/snapshot");
         return data.snapshot ?? null;
     },
+    getMasterData: async () => {
+        const { data } = await api.get<{ ok: boolean } & MasterDataPayload>("/admin/master-data");
+        return data;
+    },
+    updateMasterData: async (payload: {
+        categories?: string[];
+        units?: string[];
+    }) => {
+        const { data } = await api.patch<{
+            ok: boolean;
+            categories: string[];
+            units: string[];
+        }>("/admin/master-data", payload);
+        return data;
+    },
+    seedMasterDataDefaults: async () => {
+        const { data } = await api.post<{
+            ok: boolean;
+            seededTemplates: number;
+            categories: string[];
+            units: string[];
+        }>("/admin/master-data/seed-defaults", {});
+        return data;
+    },
 };
-

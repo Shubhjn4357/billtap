@@ -65,3 +65,16 @@ export function useManualSubscription() {
         },
     });
 }
+
+export function useDeleteUser() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (uid: string) => {
+            const { data } = await api.delete<ApiResponse<null>>(`/admin/users/${uid}`);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["users"] });
+        },
+    });
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { BellRing, Save, Plus } from "lucide-react";
+import { BellRing, Save, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
@@ -47,6 +47,9 @@ export default function NotificationTemplatesPage() {
     const [search, setSearch] = useState("");
     const [form, setForm] = useState<TemplateFormState>(DEFAULT_FORM);
     const [isSaving, setIsSaving] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [bulkAction, setBulkAction] = useState<"ACTIVATE" | "DEACTIVATE" | "DELETE">("ACTIVATE");
+    const [isBulkRunning, setIsBulkRunning] = useState(false);
 
     const loadTemplates = async () => {
         setIsLoading(true);
@@ -79,6 +82,8 @@ export default function NotificationTemplatesPage() {
                 .includes(q)
         );
     }, [search, templates]);
+
+    const allFilteredIds = useMemo(() => filtered.map((entry) => entry.id), [filtered]);
 
     const resetForm = () => setForm(DEFAULT_FORM);
 
@@ -138,7 +143,78 @@ export default function NotificationTemplatesPage() {
         }
     };
 
+    const deleteTemplate = async (id: string) => {
+        if (!canManage) {
+            toast({ title: "Read-only", description: "Only SUPER_ADMIN can delete templates.", type: "info" });
+            return;
+        }
+        if (!window.confirm("Delete this template?")) return;
+        try {
+            await notificationService.deleteTemplate(id);
+            toast({ title: "Deleted", description: "Template deleted successfully.", type: "success" });
+            await loadTemplates();
+            if (form.id === id) resetForm();
+        } catch (error) {
+            toast({
+                title: "Delete failed",
+                description: getErrorMessage(error, "Unable to delete template."),
+                type: "error",
+            });
+        }
+    };
+
+    const toggleSelected = (id: string) => {
+        setSelectedIds((prev) => (prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]));
+    };
+
+    const runBulkAction = async () => {
+        if (!canManage) {
+            toast({ title: "Read-only", description: "Only SUPER_ADMIN can run bulk actions.", type: "info" });
+            return;
+        }
+        if (selectedIds.length === 0) {
+            toast({ title: "No selection", description: "Select at least one template.", type: "error" });
+            return;
+        }
+        if (bulkAction === "DELETE" && !window.confirm(`Delete ${selectedIds.length} template(s)?`)) return;
+
+        setIsBulkRunning(true);
+        try {
+            const result = await notificationService.bulkTemplateAction({
+                ids: selectedIds,
+                action: bulkAction,
+            });
+            toast({
+                title: "Bulk action completed",
+                description: `${bulkAction} applied. ${result.affected} record(s) affected.`,
+                type: "success",
+            });
+            setSelectedIds([]);
+            await loadTemplates();
+        } catch (error) {
+            toast({
+                title: "Bulk action failed",
+                description: getErrorMessage(error, "Unable to apply bulk action."),
+                type: "error",
+            });
+        } finally {
+            setIsBulkRunning(false);
+        }
+    };
+
     const columns = [
+        {
+            header: "Select",
+            accessorKey: "id",
+            cell: (row: NotificationTemplate) => (
+                <input
+                    type="checkbox"
+                    checked={selectedIds.includes(row.id)}
+                    onChange={() => toggleSelected(row.id)}
+                    onClick={(event) => event.stopPropagation()}
+                />
+            ),
+        },
         { header: "Name", accessorKey: "name" },
         { header: "Event Key", accessorKey: "eventKey" },
         { header: "Channel", accessorKey: "channel" },
@@ -156,6 +232,25 @@ export default function NotificationTemplatesPage() {
             accessorKey: "updatedAt",
             cell: (row: NotificationTemplate) => new Date(row.updatedAt).toLocaleString(),
         },
+        {
+            header: "Actions",
+            accessorKey: "id",
+            className: "text-right",
+            cell: (row: NotificationTemplate) => (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    disabled={!canManage}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        void deleteTemplate(row.id);
+                    }}
+                >
+                    <Trash2 className="h-4 w-4" />
+                </Button>
+            ),
+        },
     ];
 
     return (
@@ -168,10 +263,28 @@ export default function NotificationTemplatesPage() {
             <div className="grid gap-6 lg:grid-cols-5">
                 <Card className="lg:col-span-3">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <BellRing className="h-5 w-5 text-primary" />
-                            Template List
-                        </CardTitle>
+                        <div className="flex items-center justify-between gap-2">
+                            <CardTitle className="flex items-center gap-2">
+                                <BellRing className="h-5 w-5 text-primary" />
+                                Template List
+                            </CardTitle>
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setSelectedIds(allFilteredIds)}>
+                                    Select Filtered
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => setSelectedIds([])}>
+                                    Clear
+                                </Button>
+                                <Select value={bulkAction} onChange={(event) => setBulkAction(event.target.value as "ACTIVATE" | "DEACTIVATE" | "DELETE")}>
+                                    <option value="ACTIVATE">Bulk Activate</option>
+                                    <option value="DEACTIVATE">Bulk Deactivate</option>
+                                    <option value="DELETE">Bulk Delete</option>
+                                </Select>
+                                <Button onClick={() => { void runBulkAction(); }} disabled={!canManage || isBulkRunning || selectedIds.length === 0}>
+                                    {isBulkRunning ? "Applying..." : `Apply (${selectedIds.length})`}
+                                </Button>
+                            </div>
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <DataTable

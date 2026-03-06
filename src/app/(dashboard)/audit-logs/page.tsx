@@ -21,6 +21,13 @@ type AuditLog = {
     metadata: Record<string, unknown>;
 };
 
+type AuditLogDetailResponse = {
+    ok: boolean;
+    entry: AuditLog;
+    relatedByEntity: AuditLog[];
+    relatedByActor: AuditLog[];
+};
+
 type Filters = {
     q: string;
     actor: string;
@@ -47,6 +54,8 @@ export default function AuditLogsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+    const [selectedDetail, setSelectedDetail] = useState<AuditLogDetailResponse | null>(null);
+    const [detailLoading, setDetailLoading] = useState(false);
     const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
 
     const loadLogs = async (nextFilters = filters) => {
@@ -70,6 +79,22 @@ export default function AuditLogsPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const openDetails = async (log: AuditLog) => {
+        setSelectedLog(log);
+        setDetailLoading(true);
+        try {
+            const res = await api.get<AuditLogDetailResponse>(`/admin/audit-logs/${log.id}`, {
+                params: { relatedLimit: 25 },
+            });
+            setSelectedDetail(res.data);
+        } catch (error) {
+            console.error("Failed to load audit details", error);
+            setSelectedDetail(null);
+        } finally {
+            setDetailLoading(false);
+        }
+    };
+
     const columns = [
         { header: "Timestamp", accessorKey: "time", cell: (row: AuditLog) => new Date(row.time).toLocaleString() },
         { header: "Actor", accessorKey: "actor" },
@@ -88,17 +113,17 @@ export default function AuditLogsPage() {
         {
             header: "Details",
             accessorKey: "id",
-            className: "text-right",
-            cell: (row: AuditLog) => (
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        setSelectedLog(row);
-                    }}
-                >
-                    View
+                    className: "text-right",
+                    cell: (row: AuditLog) => (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                void openDetails(row);
+                            }}
+                        >
+                            View
                 </Button>
             ),
         },
@@ -174,13 +199,21 @@ export default function AuditLogsPage() {
                         columns={columns}
                         data={logs}
                         isLoading={isLoading}
-                        onRowClick={(row) => setSelectedLog(row)}
+                        onRowClick={(row) => { void openDetails(row); }}
                         searchPlaceholder="Search loaded logs..."
                     />
                 </CardContent>
             </Card>
 
-            <Modal isOpen={Boolean(selectedLog)} onClose={() => setSelectedLog(null)} title={`Audit Entry ${selectedLog?.id ?? ""}`} className="max-w-3xl">
+            <Modal
+                isOpen={Boolean(selectedLog)}
+                onClose={() => {
+                    setSelectedLog(null);
+                    setSelectedDetail(null);
+                }}
+                title={`Audit Entry ${selectedLog?.id ?? ""}`}
+                className="max-w-4xl"
+            >
                 <div className="space-y-3 text-sm">
                     <div className="grid gap-2 md:grid-cols-2">
                         <div><span className="font-semibold">Time:</span> {selectedLog ? new Date(selectedLog.time).toLocaleString() : "-"}</div>
@@ -190,9 +223,56 @@ export default function AuditLogsPage() {
                         <div><span className="font-semibold">Action:</span> {selectedLog?.action}</div>
                         <div><span className="font-semibold">Entity:</span> {selectedLog?.entity}</div>
                     </div>
+                    {detailLoading ? (
+                        <div className="text-sm text-muted-foreground">Loading drill-down...</div>
+                    ) : null}
                     <pre className="overflow-auto rounded-lg border bg-muted/40 p-3 text-xs">
-                        {JSON.stringify(selectedLog?.metadata ?? {}, null, 2)}
+                        {JSON.stringify(selectedDetail?.entry.metadata ?? selectedLog?.metadata ?? {}, null, 2)}
                     </pre>
+                    {!detailLoading && selectedDetail ? (
+                        <div className="grid gap-3 md:grid-cols-2">
+                            <div className="rounded-lg border p-3">
+                                <div className="font-semibold mb-2">Related by entity</div>
+                                <div className="space-y-2 max-h-52 overflow-auto">
+                                    {selectedDetail.relatedByEntity.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground">No related entity logs.</p>
+                                    ) : (
+                                        selectedDetail.relatedByEntity.map((entry) => (
+                                            <button
+                                                type="button"
+                                                key={entry.id}
+                                                className="w-full rounded border px-2 py-1 text-left text-xs hover:bg-muted"
+                                                onClick={() => { void openDetails(entry); }}
+                                            >
+                                                <div className="font-semibold">{entry.action}</div>
+                                                <div className="text-muted-foreground">{new Date(entry.time).toLocaleString()}</div>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                            <div className="rounded-lg border p-3">
+                                <div className="font-semibold mb-2">Related by actor</div>
+                                <div className="space-y-2 max-h-52 overflow-auto">
+                                    {selectedDetail.relatedByActor.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground">No related actor logs.</p>
+                                    ) : (
+                                        selectedDetail.relatedByActor.map((entry) => (
+                                            <button
+                                                type="button"
+                                                key={entry.id}
+                                                className="w-full rounded border px-2 py-1 text-left text-xs hover:bg-muted"
+                                                onClick={() => { void openDetails(entry); }}
+                                            >
+                                                <div className="font-semibold">{entry.action}</div>
+                                                <div className="text-muted-foreground">{new Date(entry.time).toLocaleString()}</div>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
             </Modal>
         </div>
@@ -211,4 +291,3 @@ function Metric({ label, value, tone = "text-foreground" }: { label: string; val
         </Card>
     );
 }
-

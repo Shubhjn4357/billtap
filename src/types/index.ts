@@ -1,12 +1,29 @@
 export interface Plan {
     id: string;
     name: string;
+    displayName?: string;
     description: string;
     monthlyPrice: number;
+    pricePerCycle?: number;
     currency: string;
     isActive: boolean;
+    isVisible?: boolean;
     displayOrder: number;
     features: string[];
+    enabledFeatures?: string[];
+    disabledFeatures?: string[];
+    tier?: "FREE" | "STARTER" | "GROWTH" | "ENTERPRISE";
+    billingCycle?: "MONTHLY" | "YEARLY" | "THREE_YEAR" | null;
+    effectiveDiscountVsMonthlyPercent?: number | null;
+    maxBillsTotal?: number | null;
+    maxBillsPerMonth?: number | null;
+    maxStaffUsers?: number | null;
+    maxBusinesses?: number | null;
+    maxDevices?: number | null;
+    maxStorageMb?: number | null;
+    offlineOnly?: boolean;
+    cloudSyncAllowed?: boolean;
+    webDashboardAllowed?: boolean;
     createdAt?: string;
     updatedAt?: string;
 }

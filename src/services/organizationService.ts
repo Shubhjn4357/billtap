@@ -15,6 +15,12 @@ export interface Organization {
     updatedAt: string;
 }
 
+export interface BusinessQuotas {
+    maxInvoicesTotal: number | null;
+    maxStaffUsers: number | null;
+    storageLimitMb: number | null;
+}
+
 export const organizationService = {
     getAll: async () => {
         const response = await api.get<{ ok: boolean; organizations?: Organization[]; message?: string }>("/admin/organizations");
@@ -46,6 +52,21 @@ export const organizationService = {
     },
     toggleStatus: async (id: string) => {
         const response = await api.post<{ ok: boolean }>(`/admin/organizations/${id}/toggle-status`);
+        return response.data;
+    },
+    remove: async (id: string) => {
+        const response = await api.delete<{ ok: boolean; message?: string }>(`/admin/organizations/${id}`);
+        if (!response.data?.ok) {
+            throw new Error(response.data?.message || "Failed to delete organization.");
+        }
+        return response.data;
+    },
+    getQuotas: async (id: string) => {
+        const response = await api.get<{ ok: boolean; quotas: BusinessQuotas }>(`/admin/businesses/${id}/quotas`);
+        return response.data.quotas;
+    },
+    updateQuotas: async (id: string, data: Partial<BusinessQuotas>) => {
+        const response = await api.patch<{ ok: boolean }>(`/admin/businesses/${id}/quotas`, data);
         return response.data;
     }
 };

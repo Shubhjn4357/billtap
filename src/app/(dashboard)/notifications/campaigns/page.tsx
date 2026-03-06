@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Play, Square, CalendarClock, RefreshCw } from "lucide-react";
+import { Play, Square, CalendarClock, RefreshCw, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
@@ -46,6 +46,9 @@ export default function NotificationCampaignsPage() {
     const [form, setForm] = useState<CampaignFormState>(DEFAULT_FORM);
     const [isSaving, setIsSaving] = useState(false);
     const [runningScheduled, setRunningScheduled] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [bulkAction, setBulkAction] = useState<"TRIGGER" | "CANCEL" | "DELETE">("TRIGGER");
+    const [isBulkRunning, setIsBulkRunning] = useState(false);
 
     const loadData = async () => {
         setIsLoading(true);
@@ -84,6 +87,8 @@ export default function NotificationCampaignsPage() {
                 .includes(q)
         );
     }, [campaigns, search, templateById]);
+
+    const allFilteredIds = useMemo(() => filtered.map((entry) => entry.id), [filtered]);
 
     const resetForm = () => setForm(DEFAULT_FORM);
 
@@ -185,7 +190,68 @@ export default function NotificationCampaignsPage() {
         }
     };
 
+    const deleteCampaign = async (id: string) => {
+        if (!canManage) return;
+        if (!window.confirm("Delete this campaign and related deliveries?")) return;
+        try {
+            await notificationService.deleteCampaign(id);
+            toast({ title: "Deleted", description: "Campaign deleted.", type: "success" });
+            await loadData();
+            if (form.id === id) resetForm();
+        } catch (error) {
+            toast({ title: "Delete failed", description: getErrorMessage(error, "Unable to delete."), type: "error" });
+        }
+    };
+
+    const toggleSelected = (id: string) => {
+        setSelectedIds((prev) => (prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]));
+    };
+
+    const runBulkAction = async () => {
+        if (!canManage) return;
+        if (selectedIds.length === 0) {
+            toast({ title: "No selection", description: "Select at least one campaign.", type: "error" });
+            return;
+        }
+        if (bulkAction === "DELETE" && !window.confirm(`Delete ${selectedIds.length} campaign(s)?`)) return;
+
+        setIsBulkRunning(true);
+        try {
+            const result = await notificationService.bulkCampaignAction({
+                ids: selectedIds,
+                action: bulkAction,
+            });
+            toast({
+                title: "Bulk action completed",
+                description: `${bulkAction} applied to ${result.affected} campaign(s). Deliveries queued: ${result.deliveriesQueued}.`,
+                type: "success",
+            });
+            setSelectedIds([]);
+            await loadData();
+        } catch (error) {
+            toast({
+                title: "Bulk action failed",
+                description: getErrorMessage(error, "Unable to apply bulk action."),
+                type: "error",
+            });
+        } finally {
+            setIsBulkRunning(false);
+        }
+    };
+
     const columns = [
+        {
+            header: "Select",
+            accessorKey: "id",
+            cell: (row: NotificationCampaign) => (
+                <input
+                    type="checkbox"
+                    checked={selectedIds.includes(row.id)}
+                    onChange={() => toggleSelected(row.id)}
+                    onClick={(event) => event.stopPropagation()}
+                />
+            ),
+        },
         { header: "Title", accessorKey: "title" },
         {
             header: "Template",
@@ -229,6 +295,19 @@ export default function NotificationCampaignsPage() {
                         <Square className="h-4 w-4 mr-1" />
                         Cancel
                     </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            void deleteCampaign(row.id);
+                        }}
+                        disabled={!canManage}
+                    >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                    </Button>
                 </div>
             ),
         },
@@ -250,7 +329,25 @@ export default function NotificationCampaignsPage() {
             <div className="grid gap-6 lg:grid-cols-5">
                 <Card className="lg:col-span-3">
                     <CardHeader>
-                        <CardTitle>Campaign List</CardTitle>
+                        <div className="flex items-center justify-between gap-2">
+                            <CardTitle>Campaign List</CardTitle>
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setSelectedIds(allFilteredIds)}>
+                                    Select Filtered
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => setSelectedIds([])}>
+                                    Clear
+                                </Button>
+                                <Select value={bulkAction} onChange={(event) => setBulkAction(event.target.value as "TRIGGER" | "CANCEL" | "DELETE")}>
+                                    <option value="TRIGGER">Bulk Trigger</option>
+                                    <option value="CANCEL">Bulk Cancel</option>
+                                    <option value="DELETE">Bulk Delete</option>
+                                </Select>
+                                <Button onClick={() => { void runBulkAction(); }} disabled={!canManage || isBulkRunning || selectedIds.length === 0}>
+                                    {isBulkRunning ? "Applying..." : `Apply (${selectedIds.length})`}
+                                </Button>
+                            </div>
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <DataTable

@@ -7,6 +7,7 @@ export interface SystemMetrics {
     systemHealth: number;
     userGrowth: number;
     revenueGrowth: number;
+    windowDays?: number;
 }
 
 export interface AdminSettings {
@@ -17,8 +18,10 @@ export interface AdminSettings {
 }
 
 export const adminService = {
-    getAnalyticsExtended: async () => {
-        const response = await api.get<{ ok: boolean; metrics: SystemMetrics }>("/admin/analytics/extended");
+    getAnalyticsExtended: async (windowDays = 30) => {
+        const response = await api.get<{ ok: boolean; metrics: SystemMetrics }>("/admin/analytics/extended", {
+            params: { windowDays },
+        });
         return response.data;
     },
     getSettings: async () => {

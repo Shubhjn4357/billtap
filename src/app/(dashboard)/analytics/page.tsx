@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Activity, RefreshCw, TrendingUp, Users, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/utils";
 import { adminService, SystemMetrics } from "@/services/adminService";
 import { useToast } from "@/components/ui/Toast";
@@ -21,12 +22,13 @@ const EMPTY_METRICS: SystemMetrics = {
 export default function AnalyticsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [metrics, setMetrics] = useState<SystemMetrics>(EMPTY_METRICS);
+    const [windowDays, setWindowDays] = useState<number>(30);
     const { toast } = useToast();
 
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const response = await adminService.getAnalyticsExtended();
+            const response = await adminService.getAnalyticsExtended(windowDays);
             setMetrics(response.metrics ?? EMPTY_METRICS);
         } catch (error) {
             toast({
@@ -42,7 +44,7 @@ export default function AnalyticsPage() {
     useEffect(() => {
         void loadData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [windowDays]);
 
     const metricCards = [
         {
@@ -80,10 +82,18 @@ export default function AnalyticsPage() {
                     <h1 className="text-3xl font-bold tracking-tight">System Analytics</h1>
                     <p className="text-muted-foreground text-lg">Database-backed growth and health metrics.</p>
                 </div>
-                <Button variant="outline" onClick={() => { void loadData(); }} disabled={isLoading}>
-                    <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
-                    Refresh
-                </Button>
+                <div className="flex gap-2">
+                    <Select value={String(windowDays)} onChange={(event) => setWindowDays(Number(event.target.value))}>
+                        <option value="14">Last 14 days</option>
+                        <option value="30">Last 30 days</option>
+                        <option value="60">Last 60 days</option>
+                        <option value="90">Last 90 days</option>
+                    </Select>
+                    <Button variant="outline" onClick={() => { void loadData(); }} disabled={isLoading}>
+                        <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -106,6 +116,7 @@ export default function AnalyticsPage() {
                     <CardTitle className="text-lg font-bold">Metric Definitions</CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground space-y-2">
+                    <p>Active analysis window: {metrics.windowDays ?? windowDays} days.</p>
                     <p>Total Users: total rows in the users table.</p>
                     <p>Active Subscriptions: users where subscription status is active.</p>
                     <p>Monthly Revenue: sum of active users&apos; monthly subscription amount.</p>

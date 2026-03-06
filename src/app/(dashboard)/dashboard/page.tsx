@@ -1,7 +1,7 @@
 "use client";
 
 import { useAnalytics } from "@/hooks/useAnalytics";
-import { Users, CreditCard, DollarSign, TrendingUp } from "lucide-react";
+import { Users, CreditCard, DollarSign, TrendingUp, Warehouse, BellRing } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card"; 
 import Link from "next/link";
 
@@ -83,7 +83,7 @@ export default function DashboardPage() {
                             ))}
                         </div>
                         <div className="mt-4">
-                            <Link href="/dashboard/users" className="text-sm text-primary hover:underline">
+                            <Link href="/users" className="text-sm text-primary hover:underline">
                                 View all users
                             </Link>
                         </div>
@@ -95,19 +95,33 @@ export default function DashboardPage() {
                         <CardTitle>Quick Actions</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                        <Link href="/dashboard/subscriptions" className="block p-3 border rounded-lg hover:bg-muted transition-colors">
+                        <Link href="/plans" className="block p-3 border rounded-lg hover:bg-muted transition-colors">
                             <div className="flex items-center gap-2">
                                 <TrendingUp className="h-4 w-4" />
                                 <span className="font-medium text-sm">Manage Plans</span>
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">Update pricing or features</p>
                         </Link>
-                        <Link href="/dashboard/users" className="block p-3 border rounded-lg hover:bg-muted transition-colors">
+                        <Link href="/users" className="block p-3 border rounded-lg hover:bg-muted transition-colors">
                             <div className="flex items-center gap-2">
                                 <Users className="h-4 w-4" />
                                 <span className="font-medium text-sm">Manage Users</span>
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">Check subscriptions & roles</p>
+                        </Link>
+                        <Link href="/inventory" className="block p-3 border rounded-lg hover:bg-muted transition-colors">
+                            <div className="flex items-center gap-2">
+                                <Warehouse className="h-4 w-4" />
+                                <span className="font-medium text-sm">Inventory Review</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">Track stock alerts and value changes</p>
+                        </Link>
+                        <Link href="/notifications/campaigns" className="block p-3 border rounded-lg hover:bg-muted transition-colors">
+                            <div className="flex items-center gap-2">
+                                <BellRing className="h-4 w-4" />
+                                <span className="font-medium text-sm">Run Campaigns</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">Launch announcements and reminders</p>
                         </Link>
                     </CardContent>
                 </Card>
