@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql, SQL } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { DEFAULT_PLAN_SEEDS } from '../constants/defaultPlans';
@@ -660,7 +660,7 @@ adminRoute.get('/audit-logs', async (c) => {
     const toRaw = c.req.query('to');
     const q = c.req.query('q')?.trim().toLowerCase();
 
-    const whereFilters: any[] = [];
+    const whereFilters: SQL[] = [];
     if (actor) whereFilters.push(ilike(adminAuditLogs.adminEmail, `%${actor}%`));
     if (action) whereFilters.push(ilike(adminAuditLogs.action, `%${action}%`));
     if (entityType) whereFilters.push(ilike(adminAuditLogs.entityType, `%${entityType}%`));
