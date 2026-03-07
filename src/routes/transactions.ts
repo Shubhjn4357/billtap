@@ -88,7 +88,9 @@ const createTransactionSchema = z.object({
 
 const patchPaymentSchema = z.object({
     paidAmount: z.number().nonnegative().optional(),
+    paymentMode: z.enum(['CASH', 'BANK', 'UPI', 'CARD', 'CREDIT']).optional(),
     paymentStatus: z.enum(['PAID', 'PARTIAL', 'PENDING']).optional(),
+    date: z.coerce.date().optional(),
     reminderEnabled: z.boolean().optional(),
     reminderFrequencyDays: z.number().int().positive().optional(),
     nextReminderAt: z.coerce.date().optional().nullable(),
@@ -515,6 +517,7 @@ transactionsRoute.get('/', async (c) => {
             tdsAmount: Number(metadata.tdsAmount ?? 0),
             compositeScheme: Boolean(metadata.compositeSchemeEnabled ?? false),
             paymentMode: typeof metadata.paymentMode === 'string' ? metadata.paymentMode : 'CASH',
+            paymentDate: typeof metadata.paymentDate === 'string' ? metadata.paymentDate : null,
         };
     });
     const filtered = transactions.filter((entry) => {
@@ -841,6 +844,7 @@ transactionsRoute.get('/:id', async (c) => {
         .select()
         .from(invoiceItems)
         .where(eq(invoiceItems.invoiceId, id));
+    const metadata = asMetadataRecord(rows[0].gstRateBreakupJson);
 
     return c.json({
         ok: true,
@@ -855,6 +859,8 @@ transactionsRoute.get('/:id', async (c) => {
             totalAmount: Number(rows[0].totalInvoiceValue ?? 0),
             taxAmount: Number(rows[0].totalTaxAmount ?? 0),
             paidAmount: Number(rows[0].paidAmount ?? 0),
+            paymentMode: typeof metadata.paymentMode === 'string' ? metadata.paymentMode : 'CASH',
+            paymentDate: typeof metadata.paymentDate === 'string' ? metadata.paymentDate : null,
             paymentStatus: toLegacyPaymentStatus(rows[0].paymentStatus),
             placeOfSupply: rows[0].placeOfSupply,
             reverseCharge: Boolean(rows[0].reverseCharge),
@@ -912,11 +918,17 @@ transactionsRoute.patch('/:id/payment', async (c) => {
             else if (nextPaid > 0) status = 'PARTIAL';
             else status = 'PENDING';
         }
+        const nextMetadata = {
+            ...asMetadataRecord(current.gstRateBreakupJson),
+            ...(payload.paymentMode ? { paymentMode: payload.paymentMode } : {}),
+            ...(payload.date ? { paymentDate: payload.date.toISOString() } : {}),
+        };
 
         await db.update(invoices).set({
             paidAmount: nextPaid,
             paymentStatus: toCanonicalPaymentStatus(status),
             dueDate: payload.nextReminderAt ?? current.dueDate,
+            gstRateBreakupJson: nextMetadata,
             updatedAt: new Date(),
         }).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
 

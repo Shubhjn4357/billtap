@@ -16,6 +16,7 @@ const contraSchema = z.object({
     amount: z.number().positive(),
     date: z.string().datetime().optional(),
     narration: z.string().max(500).optional(),
+    description: z.string().max(500).optional(),
 });
 
 const depositSchema = z.object({
@@ -25,6 +26,7 @@ const depositSchema = z.object({
     paymentMode: z.enum(['CASH', 'BANK', 'UPI', 'CHEQUE', 'CARD']).default('CASH'),
     date: z.string().datetime().optional(),
     narration: z.string().max(500).optional(),
+    description: z.string().max(500).optional(),
 });
 
 const withdrawSchema = z.object({
@@ -34,6 +36,7 @@ const withdrawSchema = z.object({
     paymentMode: z.enum(['CASH', 'BANK', 'UPI', 'CHEQUE', 'CARD']).default('CASH'),
     date: z.string().datetime().optional(),
     narration: z.string().max(500).optional(),
+    description: z.string().max(500).optional(),
 });
 
 const chequeReceiveSchema = z.object({
@@ -68,6 +71,11 @@ const resolveCashBankKind = (accountName: string) => {
     if (normalized.includes('cheque')) return 'CHEQUE';
     return 'OTHER';
 };
+
+const resolveNarration = (
+    body: { narration?: string; description?: string },
+    fallback: string
+) => body.narration?.trim() || body.description?.trim() || fallback;
 
 const assertAuthBusiness = async (c: Parameters<typeof requireAuth>[0], capability?: string) => {
     const db = c.get('db');
@@ -300,7 +308,7 @@ cashBankRoute.post('/contra', async (c) => {
             voucherNumberPrefix: 'CON',
             date: body.date,
             amount: body.amount,
-            narration: body.narration ?? `Transfer from ${fromAcc.name} to ${toAcc.name}`,
+            narration: resolveNarration(body, `Transfer from ${fromAcc.name} to ${toAcc.name}`),
             lines: [
                 { accountId: body.toAccountId, debit: body.amount, credit: 0 },
                 { accountId: body.fromAccountId, debit: 0, credit: body.amount },
@@ -344,7 +352,7 @@ cashBankRoute.post('/transfer', async (c) => {
             voucherNumberPrefix: 'CON',
             date: body.date,
             amount: body.amount,
-            narration: body.narration ?? `Transfer from ${fromAcc.name} to ${toAcc.name}`,
+            narration: resolveNarration(body, `Transfer from ${fromAcc.name} to ${toAcc.name}`),
             lines: [
                 { accountId: body.toAccountId, debit: body.amount, credit: 0 },
                 { accountId: body.fromAccountId, debit: 0, credit: body.amount },
@@ -387,7 +395,7 @@ cashBankRoute.post('/deposit', async (c) => {
             date: body.date,
             partyId: body.partyId,
             amount: body.amount,
-            narration: body.narration ?? `Deposit via ${body.paymentMode}`,
+            narration: resolveNarration(body, `Deposit via ${body.paymentMode}`),
             lines: [
                 { accountId: body.accountId, debit: body.amount, credit: 0 },
                 { accountId: clearingAccount.id, debit: 0, credit: body.amount },
@@ -429,7 +437,7 @@ cashBankRoute.post('/withdraw', async (c) => {
             date: body.date,
             partyId: body.partyId,
             amount: body.amount,
-            narration: body.narration ?? `Withdrawal via ${body.paymentMode}`,
+            narration: resolveNarration(body, `Withdrawal via ${body.paymentMode}`),
             lines: [
                 { accountId: clearingAccount.id, debit: body.amount, credit: 0 },
                 { accountId: body.accountId, debit: 0, credit: body.amount },

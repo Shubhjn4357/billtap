@@ -45,6 +45,10 @@ app.use('*', async (c, next) => {
             'Authorization',
             'X-Organization-Id',
             'x-organization-id',
+            'X-Client-Platform',
+            'x-client-platform',
+            'X-Client-Version',
+            'x-client-version',
             'X-Requested-With',
         ],
     });
