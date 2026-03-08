@@ -29,6 +29,7 @@ import {
 const accountingRoute = new Hono<AppEnv>();
 
 const accountSchema = z.object({
+    id: z.string().trim().min(1).optional(),
     code: z.string().trim().min(1),
     name: z.string().trim().min(1),
     type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
@@ -250,7 +251,7 @@ accountingRoute.post('/accounts', async (c) => {
     const payload = accountSchema.parse(await c.req.json());
 
         const now = new Date();
-        const id = `acc_${nanoid(18)}`;
+        const id = payload.id?.trim() || `acc_${nanoid(18)}`;
         await db.insert(accounts).values({
             id,
             businessId: business.id,

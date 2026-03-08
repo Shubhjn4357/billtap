@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, gte, inArray, lte, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import {
@@ -8,6 +8,8 @@ import {
     invoices,
     inventoryMovements,
     items,
+    godownStock,
+    godowns,
     notificationDeliveries,
     parties,
 } from '../db/schema';
@@ -33,6 +35,7 @@ const transactionsRoute = new Hono<AppEnv>();
 
 const transactionItemSchema = z.object({
     id: z.string().optional(),
+    godownId: z.string().optional(),
     name: z.string().trim().min(1),
     quantity: z.number().positive(),
     price: z.number().nonnegative(),
@@ -41,6 +44,7 @@ const transactionItemSchema = z.object({
 });
 
 const createTransactionSchema = z.object({
+    id: z.string().trim().optional(),
     type: z.enum(['SALE', 'PURCHASE', 'RETURN_INWARD', 'RETURN_OUTWARD']).default('SALE'),
     documentKind: z.string().trim().optional(),
     invoiceType: z.enum([
@@ -71,6 +75,7 @@ const createTransactionSchema = z.object({
     billMode: z.enum(['GST', 'ESTIMATE']).optional(),
     affectsGst: z.boolean().optional(),
     placeOfSupply: z.string().trim().optional(),
+    godownId: z.string().trim().optional(),
     reverseCharge: z.boolean().optional(),
     tcsAmount: z.number().nonnegative().optional(),
     tdsAmount: z.number().nonnegative().optional(),
@@ -239,6 +244,22 @@ transactionsRoute.post('/', async (c) => {
         }
         await assertBillCreationAllowed(db, business.id, subscription, payload.billDate);
         const now = new Date();
+        const requestedGodownIds = Array.from(new Set([
+            payload.godownId?.trim(),
+            ...payload.items.map((entry) => entry.godownId?.trim()),
+        ].filter((entry): entry is string => Boolean(entry))));
+        const godownRows = requestedGodownIds.length > 0
+            ? await db.select().from(godowns).where(and(
+                eq(godowns.businessId, business.id),
+                inArray(godowns.id, requestedGodownIds),
+                eq(godowns.isActive, true),
+            ))
+            : [];
+        const godownById = new Map(godownRows.map((entry) => [entry.id, entry]));
+        if (godownRows.length !== requestedGodownIds.length) {
+            return c.json({ ok: false, message: 'One or more selected godowns are invalid.' }, 400);
+        }
+        const defaultGodownId = payload.godownId?.trim() || null;
 
         let partyId = payload.partyId ?? null;
         if (!partyId && payload.partyName) {
@@ -263,7 +284,7 @@ transactionsRoute.post('/', async (c) => {
             partyId = newPartyId;
         }
 
-        const invoiceId = `inv_${nanoid(18)}`;
+        const invoiceId = payload.id?.trim() || `inv_${nanoid(18)}`;
         const invoiceNumber = payload.billNumber?.trim() || generateInvoiceNumber();
         const billDate = payload.billDate ?? now;
         const placeOfSupply = payload.placeOfSupply?.trim() || business.state || null;
@@ -299,9 +320,14 @@ transactionsRoute.post('/', async (c) => {
             tcsAmount,
             tdsEnabled,
             tdsAmount,
+            defaultGodownId,
             paymentMode: payload.paymentMode ?? 'CASH',
             reverseCharge: Boolean(payload.reverseCharge ?? false),
             compositeSchemeEnabled: compositeEnabled || Boolean(payload.compositeScheme ?? false),
+        };
+        const transportDetails: Record<string, unknown> = {
+            defaultGodownId,
+            lineGodowns: {},
         };
 
         await db.insert(invoices).values({
@@ -327,6 +353,7 @@ transactionsRoute.post('/', async (c) => {
             paidAmount: payload.paidAmount ?? 0,
             dueDate: payload.dueDate ?? null,
             notes: payload.remark ?? null,
+            transportDetails,
             isDeleted: false,
             createdByUserId: authUser.id,
             createdAt: now,
@@ -335,6 +362,7 @@ transactionsRoute.post('/', async (c) => {
 
         const delta = resolveTypeDelta(payload.type);
 
+        const lineGodowns: Record<string, string> = {};
         for (const entry of payload.items) {
             assertAllowedGstRate(entry.tax);
             const lineTaxableValue = entry.price * entry.quantity;
@@ -345,9 +373,11 @@ transactionsRoute.post('/', async (c) => {
             const cgstAmount = isInterStateSupply ? 0 : lineTaxAmount / 2;
             const sgstAmount = isInterStateSupply ? 0 : lineTaxAmount / 2;
             const igstAmount = isInterStateSupply ? lineTaxAmount : 0;
+            const lineItemId = `invi_${nanoid(16)}`;
+            const postingGodownId = entry.godownId?.trim() || defaultGodownId;
 
             await db.insert(invoiceItems).values({
-                id: `invi_${nanoid(16)}`,
+                id: lineItemId,
                 invoiceId,
                 itemId: entry.id ?? null,
                 description: entry.name,
@@ -365,6 +395,9 @@ transactionsRoute.post('/', async (c) => {
                 cessRate: 0,
                 cessAmount: 0,
             });
+            if (postingGodownId) {
+                lineGodowns[lineItemId] = postingGodownId;
+            }
 
             if (entry.id && !isNonPostingDoc) {
                 const itemRows = await db
@@ -395,9 +428,35 @@ transactionsRoute.post('/', async (c) => {
                         createdByUserId: authUser.id,
                         createdAt: now,
                     });
+
+                    if (postingGodownId && godownById.has(postingGodownId)) {
+                        await db.insert(godownStock).values({
+                            id: `gstk_${nanoid(16)}`,
+                            businessId: business.id,
+                            godownId: postingGodownId,
+                            itemId: entry.id,
+                            quantity: delta * entry.quantity,
+                            createdAt: now,
+                            updatedAt: now,
+                        }).onConflictDoUpdate({
+                            target: [godownStock.godownId, godownStock.itemId],
+                            set: {
+                                quantity: sql`${godownStock.quantity} + ${delta * entry.quantity}`,
+                                updatedAt: now,
+                            },
+                        });
+                    }
                 }
             }
         }
+
+        await db.update(invoices).set({
+            transportDetails: {
+                defaultGodownId,
+                lineGodowns,
+            },
+            updatedAt: now,
+        }).where(and(eq(invoices.id, invoiceId), eq(invoices.businessId, business.id)));
 
         await bumpMonthlyBillUsage(db, business.id, subscription, billDate);
 
@@ -428,11 +487,13 @@ transactionsRoute.get('/', async (c) => {
     const includeDeleted = (c.req.query('includeDeleted') ?? '').trim().toLowerCase() === 'true';
     const typeQuery = (c.req.query('type') ?? '').trim().toUpperCase();
     const statusQuery = (c.req.query('status') ?? '').trim().toUpperCase();
+    const partyIdQuery = (c.req.query('partyId') ?? '').trim();
 
     const whereFilters = [eq(invoices.businessId, business.id)];
     if (!includeDeleted) whereFilters.push(eq(invoices.isDeleted, false));
     if (start) whereFilters.push(gte(invoices.invoiceDate, new Date(start)));
     if (end) whereFilters.push(lte(invoices.invoiceDate, new Date(end)));
+    if (partyIdQuery) whereFilters.push(eq(invoices.partyId, partyIdQuery));
 
     const invoiceRows = await db
         .select()
@@ -468,10 +529,16 @@ transactionsRoute.get('/', async (c) => {
     const transactions = invoiceRows.map((entry) => {
         const party = entry.partyId ? partyById.get(entry.partyId) : null;
         const metadata = asMetadataRecord(entry.gstRateBreakupJson);
+        const transportDetails = asMetadataRecord(entry.transportDetails);
+        const lineGodowns = asMetadataRecord(transportDetails.lineGodowns);
+        const defaultGodownId = typeof transportDetails.defaultGodownId === 'string'
+            ? transportDetails.defaultGodownId
+            : null;
         const transactionType = deriveTransactionType(entry);
         const documentKind = deriveDocumentKind(entry);
         const mappedLines = (linesByInvoiceId.get(entry.id) ?? []).map((line) => ({
             id: line.itemId ?? `line_${line.id}`,
+            godownId: typeof lineGodowns[line.id] === 'string' ? String(lineGodowns[line.id]) : defaultGodownId,
             name: line.description,
             quantity: Number(line.quantity ?? 0),
             price: Number(line.rate ?? 0),
@@ -512,6 +579,7 @@ transactionsRoute.get('/', async (c) => {
             businessAddress: business.address,
             gstNumber: business.gstin,
             placeOfSupply: entry.placeOfSupply,
+            godownId: defaultGodownId,
             reverseCharge: Boolean(entry.reverseCharge),
             tcsAmount: Number(metadata.tcsAmount ?? 0),
             tdsAmount: Number(metadata.tdsAmount ?? 0),
@@ -845,6 +913,11 @@ transactionsRoute.get('/:id', async (c) => {
         .from(invoiceItems)
         .where(eq(invoiceItems.invoiceId, id));
     const metadata = asMetadataRecord(rows[0].gstRateBreakupJson);
+    const transportDetails = asMetadataRecord(rows[0].transportDetails);
+    const lineGodowns = asMetadataRecord(transportDetails.lineGodowns);
+    const defaultGodownId = typeof transportDetails.defaultGodownId === 'string'
+        ? transportDetails.defaultGodownId
+        : null;
 
     return c.json({
         ok: true,
@@ -863,9 +936,11 @@ transactionsRoute.get('/:id', async (c) => {
             paymentDate: typeof metadata.paymentDate === 'string' ? metadata.paymentDate : null,
             paymentStatus: toLegacyPaymentStatus(rows[0].paymentStatus),
             placeOfSupply: rows[0].placeOfSupply,
+            godownId: defaultGodownId,
             reverseCharge: Boolean(rows[0].reverseCharge),
             items: lines.map((line) => ({
                 id: line.itemId ?? `line_${line.id}`,
+                godownId: typeof lineGodowns[line.id] === 'string' ? String(lineGodowns[line.id]) : defaultGodownId,
                 name: line.description,
                 quantity: Number(line.quantity ?? 0),
                 price: Number(line.rate ?? 0),

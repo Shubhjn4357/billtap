@@ -24,6 +24,7 @@ const controlsSchema = z.object({
 });
 
 const lockPeriodSchema = z.object({
+    id: z.string().trim().min(1).optional(),
     periodStart: z.string().optional(),
     periodEnd: z.string().optional(),
     notes: z.string().optional(),
@@ -170,7 +171,10 @@ const applyApprovalSideEffect = async (params: {
         const end = parseDateInput(typeof payload.periodEnd === 'string' ? payload.periodEnd : undefined) ?? start;
         const periods = getFinancialPeriods(currentSettings);
         const nextPeriod: FinancialPeriod = {
-            id: `period_${nanoid(12)}`,
+            id:
+                typeof payload.id === 'string' && payload.id.trim().length > 0
+                    ? payload.id.trim()
+                    : `period_${nanoid(12)}`,
             periodStart: toIsoDate(start),
             periodEnd: toIsoDate(end),
             status: 'LOCKED',
@@ -347,11 +351,12 @@ operationsRoute.post('/approvals', async (c) => {
             actionType: z.enum(['UPDATE_CONTROLS', 'LOCK_PERIOD', 'CLOSE_PERIOD', 'REOPEN_PERIOD', 'CUSTOM']),
             module: z.string().trim().default('operations'),
             payload: z.record(z.string(), z.unknown()).default({}),
+            approvalId: z.string().trim().min(1).optional(),
         }).parse(await c.req.json());
 
         const settings = (business.settings ?? {}) as Record<string, unknown>;
         const approval: OperationApproval = {
-            id: `opr_apr_${nanoid(12)}`,
+            id: payload.approvalId?.trim() || `opr_apr_${nanoid(12)}`,
             actionType: payload.actionType,
             module: payload.module,
             status: 'PENDING',
@@ -551,7 +556,7 @@ operationsRoute.post('/periods/lock', async (c) => {
         const current = getFinancialPeriods(settings);
         const now = new Date().toISOString();
 
-        const id = `period_${nanoid(12)}`;
+        const id = payload.id?.trim() || `period_${nanoid(12)}`;
         const nextPeriod: FinancialPeriod = {
             id,
             periodStart: toIsoDate(start),

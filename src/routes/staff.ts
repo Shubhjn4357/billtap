@@ -22,8 +22,10 @@ import { toApiErrorPayload } from '../services/apiError';
 const staffRoute = new Hono<AppEnv>();
 
 const inviteSchema = z.object({
+    id: z.string().trim().min(1).optional(),
     phoneNumber: z.string().trim().min(5),
     role: z.string().optional(),
+    code: z.string().trim().min(4).optional(),
 });
 
 const patchSchema = z.object({
@@ -96,8 +98,8 @@ staffRoute.post('/', async (c) => {
         await assertStaffCreationAllowed(db, business.id, subscription);
         const payload = inviteSchema.parse(await c.req.json());
         const now = new Date();
-        const id = `inv_${nanoid(16)}`;
-        const code = nanoid(8).toUpperCase();
+        const id = payload.id?.trim() || `inv_${nanoid(16)}`;
+        const code = payload.code?.trim().toUpperCase() || nanoid(8).toUpperCase();
         const expiresAt = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
 
         await db.insert(staffInvites).values({
