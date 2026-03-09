@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { REPORT_CARDS, type ReportCard } from '../../../constants/reportOptions';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -81,7 +82,7 @@ export default function ReportsScreen() {
                             key={card.title}
                             style={({ pressed }) => [
                                 s.card,
-                                { backgroundColor: colors.card, borderColor: colors.border },
+                                getSurfaceStyle(colors, { elevated: true }),
                                 pressed && { opacity: 0.85 },
                             ]}
                             onPress={() => {
@@ -109,7 +110,7 @@ export default function ReportsScreen() {
                 })}
 
                 {filteredCards.length === 0 ? (
-                    <View style={[s.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={[s.emptyState, getSurfaceStyle(colors, { elevated: true })]}>
                         <MaterialCommunityIcons name="file-search-outline" size={22} color={colors.textSecondary} />
                         <Text style={[s.emptyTitle, { color: colors.text }]}>No reports found</Text>
                         <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Try a different search term.</Text>
@@ -125,7 +126,7 @@ export default function ReportsScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, gap: Spacing.sm },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingTop: Spacing.md, gap: DESIGN_SPACING.cardGap },
         metricRow: {
             flexDirection: 'row',
             flexWrap: 'wrap',
@@ -134,8 +135,6 @@ const styles = (colors: ColorPalette) =>
         card: {
             flexDirection: 'row',
             gap: Spacing.sm,
-            borderWidth: 1,
-            borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,
             alignItems: 'flex-start',
@@ -169,8 +168,6 @@ const styles = (colors: ColorPalette) =>
             overflow: 'hidden',
         },
         emptyState: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
             paddingVertical: Spacing.lg,
             alignItems: 'center',
             gap: 2,

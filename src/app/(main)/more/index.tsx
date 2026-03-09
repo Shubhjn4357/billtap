@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FeatureFlag } from '../../../constants/enums';
 import { MORE_SCREEN_SECTIONS } from '../../../constants/utilityNavigation';
+import { DESIGN_SPACING, getInsetPanelStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { canAccessModule, getEffectiveFeatureFlags } from '../../../utils/accessControl';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -175,34 +176,32 @@ const styles = (colors: ColorPalette) =>
         header: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
         title: { fontSize: Typography.headline.size, fontWeight: '700', color: colors.text },
         searchWrap: {
-            paddingHorizontal: Spacing.lg,
-            marginBottom: Spacing.md,
+            paddingHorizontal: DESIGN_SPACING.screenX,
+            marginBottom: DESIGN_SPACING.sectionGap,
         },
         heroWrap: {
-            paddingHorizontal: Spacing.lg,
-            marginBottom: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
+            marginBottom: DESIGN_SPACING.sectionGap,
         },
         tierChip: {
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
-            borderRadius: Radius.pill,
-            borderWidth: 1,
+            ...getInsetPanelStyle(colors, colors.primary),
         },
         tierChipText: { fontWeight: '800', fontSize: 11 },
         metaChip: {
             flexDirection: 'row',
             alignItems: 'center',
             gap: 6,
-            borderWidth: 1,
-            borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
+            ...getInsetPanelStyle(colors),
         },
         metaChipText: {
             fontSize: Typography.caption.size,
             fontWeight: '600',
         },
-        section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg },
+        section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap },
         signOutBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center' },
         signOutText: { fontWeight: '700', fontSize: 14 },
     });

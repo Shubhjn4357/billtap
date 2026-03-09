@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { INVENTORY_SORT_OPTIONS, INVENTORY_STOCK_FILTER_OPTIONS } from '../../../constants/inventoryOptions';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useScannerMode } from '../../../hooks/useScannerMode';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -16,6 +17,7 @@ import { ChipButton } from '../../../components/ui/ChipBlocks';
 import { HubMetricCard } from '../../../components/ui/HubBlocks';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
 import { EmptyStateCard } from '../../../components/ui/ListBlocks';
+import { SwipeableRow } from '../../../components/ui/SwipeableRow';
 import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useAppDialog } from '../../../components/providers/DialogProvider';
 import { useHaptics } from '../../../hooks/useHaptics';
@@ -362,46 +364,56 @@ function ItemRow({ item, colors, selectionMode, selected, onToggleSelect, onOpen
     const statusColor = health === 'out' ? colors.error : health === 'low' ? colors.warning : colors.success;
 
     return (
-        <Pressable
-            style={({ pressed }) => [
-                rowStyles.row,
-                {
-                    backgroundColor: selected ? withAlpha(colors.primary, '20') : colors.card,
-                    opacity: pressed ? 0.82 : 1,
-                    borderColor: selected ? colors.primary : colors.border,
-                    borderWidth: 1,
-                },
+        <SwipeableRow
+            enabled={!selectionMode}
+            leftActions={[
+                { label: '+1', icon: 'plus', onPress: onQuickIn, tone: 'success' },
             ]}
-            onPress={selectionMode ? onToggleSelect : onOpen}
+            rightActions={[
+                { label: '-1', icon: 'minus', onPress: onQuickOut, tone: 'danger' },
+            ]}
         >
-            {selectionMode ? (
-                <View style={[rowStyles.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' }]}>
-                    <MaterialCommunityIcons name={selected ? 'check-circle' : 'circle-outline'} size={18} color={selected ? colors.primary : colors.textSecondary} />
-                </View>
-            ) : null}
-            <View style={rowStyles.info}>
-                <Text style={[rowStyles.name, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                {item.category ? <Text style={[rowStyles.meta, { color: colors.textSecondary }]}>{item.category}</Text> : null}
-                <Text style={[rowStyles.meta, { color: colors.textSecondary }]}>{item.sku ? `SKU: ${item.sku} - ` : ''}{item.unit || 'unit'}</Text>
-                <View style={[rowStyles.statusBadge, { backgroundColor: withAlpha(statusColor, '18') }]}>
-                    <Text style={[rowStyles.status, { color: statusColor }]}>{statusText}</Text>
-                </View>
-            </View>
-            <View style={rowStyles.right}>
-                <Text style={[rowStyles.price, { color: colors.text }]}>Rs {Number(item.salePrice ?? 0).toLocaleString('en-IN')}</Text>
-                <Text style={[rowStyles.stock, { color: statusColor }]}>{item.stock} {item.unit || ''}</Text>
-                {!selectionMode ? (
-                    <View style={rowStyles.quickRow}>
-                        <Pressable style={[rowStyles.quickBtn, { backgroundColor: colors.success }]} onPress={onQuickIn}>
-                            <Text style={[rowStyles.quickBtnText, { color: colors.onPrimary }]}>+1</Text>
-                        </Pressable>
-                        <Pressable style={[rowStyles.quickBtn, { backgroundColor: colors.error }]} onPress={onQuickOut}>
-                            <Text style={[rowStyles.quickBtnText, { color: colors.onPrimary }]}>-1</Text>
-                        </Pressable>
+            <Pressable
+                style={({ pressed }) => [
+                    rowStyles.row,
+                    {
+                        backgroundColor: selected ? withAlpha(colors.primary, '20') : colors.card,
+                        opacity: pressed ? 0.82 : 1,
+                        borderColor: selected ? colors.primary : colors.border,
+                        borderWidth: 1,
+                    },
+                ]}
+                onPress={selectionMode ? onToggleSelect : onOpen}
+            >
+                {selectionMode ? (
+                    <View style={[rowStyles.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' }]}>
+                        <MaterialCommunityIcons name={selected ? 'check-circle' : 'circle-outline'} size={18} color={selected ? colors.primary : colors.textSecondary} />
                     </View>
                 ) : null}
-            </View>
-        </Pressable>
+                <View style={rowStyles.info}>
+                    <Text style={[rowStyles.name, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                    {item.category ? <Text style={[rowStyles.meta, { color: colors.textSecondary }]}>{item.category}</Text> : null}
+                    <Text style={[rowStyles.meta, { color: colors.textSecondary }]}>{item.sku ? `SKU: ${item.sku} - ` : ''}{item.unit || 'unit'}</Text>
+                    <View style={[rowStyles.statusBadge, { backgroundColor: withAlpha(statusColor, '18') }]}>
+                        <Text style={[rowStyles.status, { color: statusColor }]}>{statusText}</Text>
+                    </View>
+                </View>
+                <View style={rowStyles.right}>
+                    <Text style={[rowStyles.price, { color: colors.text }]}>Rs {Number(item.salePrice ?? 0).toLocaleString('en-IN')}</Text>
+                    <Text style={[rowStyles.stock, { color: statusColor }]}>{item.stock} {item.unit || ''}</Text>
+                    {!selectionMode ? (
+                        <View style={rowStyles.quickRow}>
+                            <Pressable style={[rowStyles.quickBtn, { backgroundColor: colors.success }]} onPress={onQuickIn}>
+                                <Text style={[rowStyles.quickBtnText, { color: colors.onPrimary }]}>+1</Text>
+                            </Pressable>
+                            <Pressable style={[rowStyles.quickBtn, { backgroundColor: colors.error }]} onPress={onQuickOut}>
+                                <Text style={[rowStyles.quickBtnText, { color: colors.onPrimary }]}>-1</Text>
+                            </Pressable>
+                        </View>
+                    ) : null}
+                </View>
+            </Pressable>
+        </SwipeableRow>
     );
 }
 
@@ -411,17 +423,17 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     topIconBtn: { width: 34, height: 34, borderWidth: 1, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
     filterBadge: { position: 'absolute', top: -4, right: -4, width: 14, height: 14, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
     filterBadgeText: { color: colors.onPrimary, fontSize: 9, fontWeight: '800' },
-    heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs, gap: Spacing.sm },
-    searchRow: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs },
+    heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: DESIGN_SPACING.screenX, paddingVertical: Spacing.xs, gap: Spacing.sm },
+    searchRow: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xs },
     filtersScroll: { flexGrow: 0, marginBottom: 2 },
-    filtersRow: { paddingHorizontal: Spacing.lg, gap: Spacing.xs, paddingVertical: 2 },
-    actionRow: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.xs },
-    bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+    filtersRow: { paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.xs, paddingVertical: 2 },
+    actionRow: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.xs },
+    bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
     bulkLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
-    bulkAction: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
+    bulkAction: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5, backgroundColor: colors.surface },
     sortBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: withAlpha(colors.text, '66'), justifyContent: 'flex-end' },
-    sortSheet: { borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, borderWidth: 1, padding: Spacing.lg, gap: Spacing.sm },
+    sortSheet: { borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, padding: Spacing.lg, gap: Spacing.sm, ...getSurfaceStyle(colors, { floating: true, elevated: true }) },
     sortTitle: { fontSize: 15, fontWeight: '800', marginBottom: Spacing.xs },
     sortSectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginTop: Spacing.xs },
     sortRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },

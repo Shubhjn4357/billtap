@@ -6,6 +6,7 @@ import { endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { canAccessModule, canUsePos } from '../../utils/accessControl';
 import { HOME_QUICK_ACTIONS } from '../../constants/navigationOptions';
+import { DESIGN_SPACING, getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { AppTopBar } from '../../components/ui/AppTopBar';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -100,7 +101,7 @@ export default function HomeScreen() {
                 title={business?.name ?? 'Dashboard'}
                 subtitle={`Hello, ${user?.name?.split(' ')[0] ?? 'there'}`}
                 rightAction={(
-                    <Pressable style={[s.tierBadge, { backgroundColor: withAlpha(colors.primary, '22'), borderColor: colors.primary }]} onPress={() => router.push('/(main)/more')}>
+                    <Pressable style={s.tierBadge} onPress={() => router.push('/(main)/more')}>
                         <Text style={[s.tierText, { color: colors.primary }]}>{tierDisplay}</Text>
                     </Pressable>
                 )}
@@ -194,7 +195,7 @@ export default function HomeScreen() {
                         {quickActions.map((qa) => (
                             <Pressable
                                 key={qa.label}
-                                style={({ pressed }) => [s.quickCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
+                                style={({ pressed }) => [s.quickCard, { opacity: pressed ? 0.75 : 1 }]}
                                 onPress={() => { void selection(); router.push(qa.route as Parameters<typeof router.push>[0]); }}
                                 accessibilityRole="button"
                                 accessibilityLabel={qa.label}
@@ -209,7 +210,7 @@ export default function HomeScreen() {
                 </View>
                 <View style={s.section}>
                     <Pressable
-                        style={({ pressed }) => [s.directoryButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.85 : 1 }]}
+                        style={({ pressed }) => [s.directoryButton, { opacity: pressed ? 0.85 : 1 }]}
                         onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}
                     >
                         <MaterialCommunityIcons name="compass-outline" size={16} color={colors.primary} />
@@ -239,7 +240,7 @@ function StatCard({ label, value, prev, prefix = '', loading, color, colors }: {
     }, [value, prev]);
 
     return (
-        <View style={[cardStyles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[cardStyles.card, getSurfaceStyle(colors, { elevated: true })]}>
             <Text style={[cardStyles.label, { color: colors.textSecondary }]}>{label}</Text>
             {loading ? (
                 <View style={[cardStyles.skeleton, { backgroundColor: colors.skeleton }]} />
@@ -262,7 +263,7 @@ function InvoiceChip({ label, value, prefix, color, colors }: {
     label: string; value: number; prefix?: string; color: string; colors: ColorPalette;
 }) {
     return (
-        <View style={[chipStyles.chip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[chipStyles.chip, getSurfaceStyle(colors, { elevated: true })]}>
             <Text style={[chipStyles.chipVal, { color }]}>{prefix ?? ''}{value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
             <Text style={[chipStyles.chipLabel, { color: colors.textSecondary }]}>{label}</Text>
         </View>
@@ -273,7 +274,7 @@ function OutstandingCard({ label, value, loading, color, count, colors, onPress 
     label: string; value?: number; loading: boolean; color: string; count?: number; colors: ColorPalette; onPress: () => void;
 }) {
     return (
-        <Pressable style={({ pressed }) => [outStyles.card, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.85 : 1 }]} onPress={onPress}>
+        <Pressable style={({ pressed }) => [outStyles.card, getSurfaceStyle(colors, { elevated: true }), { opacity: pressed ? 0.85 : 1 }]} onPress={onPress}>
             <Text style={[outStyles.label, { color: colors.textSecondary }]}>{label}</Text>
             {loading ? (
                 <View style={[outStyles.skeleton, { backgroundColor: colors.skeleton }]} />
@@ -290,11 +291,11 @@ function OutstandingCard({ label, value, loading, color, count, colors, onPress 
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    tierBadge: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 4 },
+    tierBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 4, ...getInsetPanelStyle(colors, colors.primary) },
     tierText: { fontWeight: '800', fontSize: 11 },
     banner: { marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.sm, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
     bannerText: { fontSize: 12, fontWeight: '600', flex: 1 },
-    section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+    section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap },
     sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
     statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
     invoiceRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
@@ -303,10 +304,10 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     offerTitle: { fontWeight: '700', fontSize: 13 },
     offerMessage: { fontSize: 11, marginTop: 1 },
     quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    quickCard: { width: '30%', borderWidth: 1, borderRadius: Radius.card, paddingVertical: Spacing.md, alignItems: 'center', gap: 6 },
+    quickCard: { width: '30%', paddingVertical: Spacing.md, alignItems: 'center', gap: 6, ...getSurfaceStyle(colors, { elevated: true }) },
     quickIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
     quickLabel: { fontSize: 11, fontWeight: '600' },
-    directoryButton: { borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    directoryButton: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, ...getSurfaceStyle(colors, { elevated: true }) },
     directoryTitle: { fontWeight: '700', fontSize: 13 },
     directorySub: { fontSize: 11, marginTop: 1 },
 });

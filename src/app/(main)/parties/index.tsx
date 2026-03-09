@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import type { Party } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -18,6 +19,7 @@ import { ChipButton } from '../../../components/ui/ChipBlocks';
 import { HubMetricCard } from '../../../components/ui/HubBlocks';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
 import { EmptyStateCard } from '../../../components/ui/ListBlocks';
+import { SwipeableRow } from '../../../components/ui/SwipeableRow';
 import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useAppDialog } from '../../../components/providers/DialogProvider';
 import { useHaptics } from '../../../hooks/useHaptics';
@@ -236,6 +238,10 @@ export default function PartiesScreen() {
                             selectionMode={selectionMode}
                             selected={selectedIds.includes(item.id)}
                             onToggleSelect={() => setSelectedIds((current) => toggleId(current, item.id))}
+                            onSelectAction={() => {
+                                setSelectionMode(true);
+                                setSelectedIds((current) => toggleId(current, item.id));
+                            }}
                             onOpen={() => router.push(`/(main)/parties/${item.id}` as Parameters<typeof router.push>[0])}
                         />
                     )}
@@ -262,6 +268,7 @@ function PartyRow({
     colors,
     selectionMode,
     selected,
+    onSelectAction,
     onToggleSelect,
     onOpen,
 }: {
@@ -269,6 +276,7 @@ function PartyRow({
     colors: ColorPalette;
     selectionMode: boolean;
     selected: boolean;
+    onSelectAction: () => void;
     onToggleSelect: () => void;
     onOpen: () => void;
 }) {
@@ -276,36 +284,47 @@ function PartyRow({
     const balanceColor = balance > 0 ? colors.success : balance < 0 ? colors.error : colors.textSecondary;
 
     return (
-        <Pressable
-            style={({ pressed }) => [
-                rowS.row,
-                {
-                    backgroundColor: selected ? withAlpha(colors.primary, '16') : colors.card,
-                    borderColor: selected ? colors.primary : colors.border,
-                    opacity: pressed ? 0.83 : 1,
-                },
+        <SwipeableRow
+            enabled={!selectionMode}
+            leftActions={[
+                { label: 'Open', icon: 'arrow-top-right', onPress: onOpen, tone: 'info' },
             ]}
-            onPress={selectionMode ? onToggleSelect : onOpen}
+            rightActions={[
+                { label: 'Select', icon: 'check-circle-outline', onPress: onSelectAction, tone: 'warning' },
+            ]}
         >
-            {selectionMode ? (
-                <View style={[rowS.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' }]}>
-                    <MaterialCommunityIcons name={selected ? 'check' : 'minus'} size={14} color={selected ? colors.primary : colors.textSecondary} />
+            <Pressable
+                style={({ pressed }) => [
+                    rowS.row,
+                    getSurfaceStyle(colors, { elevated: true }),
+                    {
+                        backgroundColor: selected ? withAlpha(colors.primary, '16') : colors.card,
+                        borderColor: selected ? colors.primary : colors.border,
+                        opacity: pressed ? 0.83 : 1,
+                    },
+                ]}
+                onPress={selectionMode ? onToggleSelect : onOpen}
+            >
+                {selectionMode ? (
+                    <View style={[rowS.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' }]}>
+                        <MaterialCommunityIcons name={selected ? 'check' : 'minus'} size={14} color={selected ? colors.primary : colors.textSecondary} />
+                    </View>
+                ) : null}
+                <View style={[rowS.avatar, { backgroundColor: withAlpha(colors.primary, '20') }]}>
+                    <Text style={[rowS.avatarText, { color: colors.primary }]}>{party.name.charAt(0).toUpperCase()}</Text>
                 </View>
-            ) : null}
-            <View style={[rowS.avatar, { backgroundColor: withAlpha(colors.primary, '20') }]}>
-                <Text style={[rowS.avatarText, { color: colors.primary }]}>{party.name.charAt(0).toUpperCase()}</Text>
-            </View>
-            <View style={rowS.info}>
-                <Text style={[rowS.name, { color: colors.text }]} numberOfLines={1}>{party.name}</Text>
-                <Text style={[rowS.phone, { color: colors.textSecondary }]}>{party.phone ?? party.email ?? ''}</Text>
-            </View>
-            {balance !== 0 ? (
-                <View style={rowS.balanceWrap}>
-                    <Text style={[rowS.balance, { color: balanceColor }]}>Rs {Math.abs(balance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-                    <Text style={[rowS.balanceLabel, { color: colors.textSecondary }]}>{balance > 0 ? 'to receive' : 'to pay'}</Text>
+                <View style={rowS.info}>
+                    <Text style={[rowS.name, { color: colors.text }]} numberOfLines={1}>{party.name}</Text>
+                    <Text style={[rowS.phone, { color: colors.textSecondary }]}>{party.phone ?? party.email ?? ''}</Text>
                 </View>
-            ) : null}
-        </Pressable>
+                {balance !== 0 ? (
+                    <View style={rowS.balanceWrap}>
+                        <Text style={[rowS.balance, { color: balanceColor }]}>Rs {Math.abs(balance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                        <Text style={[rowS.balanceLabel, { color: colors.textSecondary }]}>{balance > 0 ? 'to receive' : 'to pay'}</Text>
+                    </View>
+                ) : null}
+            </Pressable>
+        </SwipeableRow>
     );
 }
 
@@ -313,18 +332,18 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     topActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
     topIconBtn: { width: 34, height: 34, borderWidth: 1, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
-    heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    tabBar: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.xs },
-    statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs, gap: Spacing.sm },
-    searchRow: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs },
-    actionBar: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.xs },
-    bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs },
+    heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    tabBar: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.xs },
+    statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: DESIGN_SPACING.screenX, paddingVertical: Spacing.xs, gap: Spacing.sm },
+    searchRow: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xs },
+    actionBar: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.xs },
+    bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xs },
     bulkLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
-    bulkAction: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
+    bulkAction: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6, backgroundColor: colors.surface },
 });
 
 const rowS = StyleSheet.create({
-    row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.xs, borderRadius: Radius.card, gap: Spacing.md, borderWidth: 1 },
+    row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.xs, borderRadius: Radius.card, gap: Spacing.md },
     selector: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
     avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     avatarText: { fontSize: 18, fontWeight: '700' },

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BILLING_CREATE_OPTIONS, BILLING_DATE_FILTER_OPTIONS, BILLING_STATUS_FILTER_OPTIONS, BILLING_TAB_OPTIONS } from '../../../constants/billingOptions';
+import { DESIGN_SPACING, getShadowStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -172,7 +173,7 @@ export default function BillingScreen() {
                                 return (
                                     <Pressable
                                         key={option.label}
-                                        style={({ pressed }) => [s.sheetOption, { backgroundColor: pressed ? withAlpha(colors.primary, '14') : colors.surfaceVariant, borderColor: colors.border }]}
+                                        style={({ pressed }) => [s.sheetOption, { opacity: pressed ? 0.86 : 1 }]}
                                         onPress={() => { void selection(); setCreateSheetOpen(false); router.push(option.route as Parameters<typeof router.push>[0]); }}
                                     >
                                         <View style={[s.sheetOptionIcon, { backgroundColor: withAlpha(colors.primary, '16') }]}>
@@ -206,7 +207,7 @@ function InvoiceRow({ invoice, colors }: { invoice: Invoice; colors: ColorPalett
 
     return (
         <Pressable
-            style={({ pressed }) => [rowStyles.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.85 : 1 }]}
+            style={({ pressed }) => [rowStyles.row, getSurfaceStyle(colors, { elevated: true }), { opacity: pressed ? 0.85 : 1 }]}
             onPress={() => router.push(`/(main)/billing/${invoice.id}` as Parameters<typeof router.push>[0])}
         >
             <View style={rowStyles.left}>
@@ -232,28 +233,28 @@ function InvoiceRow({ invoice, colors }: { invoice: Invoice; colors: ColorPalett
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    tabs: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.sm },
+    searchWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    tabs: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: DESIGN_SPACING.cardGap },
     filtersScroll: { flexGrow: 0, marginBottom: 4 },
-    filtersRow: { paddingHorizontal: Spacing.lg, gap: Spacing.xs },
-    fab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.xl, width: 56, height: 56, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 8 },
+    filtersRow: { paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.xs },
+    fab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.xl, width: 56, height: 56, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center', ...getShadowStyle(colors, 'floating') },
     fabText: { fontSize: 28, lineHeight: 30, fontWeight: '700' },
     modalRoot: { flex: 1, justifyContent: 'flex-end' },
     backdrop: { ...StyleSheet.absoluteFillObject },
-    sheet: { borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, borderWidth: 1, borderBottomWidth: 0, paddingHorizontal: Spacing.lg, paddingBottom: 32, paddingTop: Spacing.sm, maxHeight: '80%' },
+    sheet: { borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, borderBottomWidth: 0, paddingHorizontal: Spacing.lg, paddingBottom: 32, paddingTop: Spacing.sm, maxHeight: '80%', ...getSurfaceStyle(colors, { floating: true, elevated: true }) },
     sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: Spacing.sm },
     sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
     sheetTitle: { fontSize: Typography.title.size, fontWeight: '700' },
     sheetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingBottom: Spacing.md },
-    sheetOption: { width: '48%', borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    sheetOption: { width: '48%', paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, ...getSurfaceStyle(colors, { muted: true, elevated: true }) },
     sheetOptionIcon: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     sheetOptionText: { fontSize: 13, fontWeight: '600', flex: 1 },
 });
 
 const rowStyles = StyleSheet.create({
-    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderRadius: Radius.card, borderWidth: 1 },
+    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderRadius: Radius.card },
     left: { flex: 1 },
     right: { alignItems: 'flex-end' },
     topRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: 2 },

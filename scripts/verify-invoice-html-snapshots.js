@@ -9,30 +9,73 @@ const sourcePath = path.join(projectRoot, 'src', 'utils', 'invoiceHtml.ts');
 const snapshotDir = path.join(projectRoot, 'tests', 'golden');
 const updateSnapshots = process.argv.includes('--update');
 
-function loadInvoiceTemplateModule() {
-    const source = fs.readFileSync(sourcePath, 'utf8');
-    const transpiled = ts.transpileModule(source, {
-        compilerOptions: {
-            target: ts.ScriptTarget.ES2020,
-            module: ts.ModuleKind.CommonJS,
-            esModuleInterop: true,
-        },
-        fileName: sourcePath,
-    }).outputText;
+const TS_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 
-    const module = { exports: {} };
-    const localRequire = (specifier) => {
-        if (specifier.startsWith('.')) {
-            const resolved = path.resolve(path.dirname(sourcePath), specifier);
-            return require(resolved);
+function resolveLocalModule(baseFilePath, specifier) {
+    const absoluteBase = path.resolve(path.dirname(baseFilePath), specifier);
+    const candidates = [
+        absoluteBase,
+        ...TS_EXTENSIONS.map((extension) => `${absoluteBase}${extension}`),
+        ...TS_EXTENSIONS.map((extension) => path.join(absoluteBase, `index${extension}`)),
+    ];
+
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+            return candidate;
         }
-        return require(specifier);
+    }
+
+    throw new Error(`Unable to resolve local module "${specifier}" from ${baseFilePath}`);
+}
+
+function createProjectModuleLoader() {
+    const moduleCache = new Map();
+
+    const loadModule = (filePath) => {
+        const normalizedPath = path.normalize(filePath);
+        if (moduleCache.has(normalizedPath)) {
+            return moduleCache.get(normalizedPath).exports;
+        }
+
+        const module = { exports: {} };
+        moduleCache.set(normalizedPath, module);
+
+        const source = fs.readFileSync(normalizedPath, 'utf8');
+        const transpiled = ts.transpileModule(source, {
+            compilerOptions: {
+                target: ts.ScriptTarget.ES2020,
+                module: ts.ModuleKind.CommonJS,
+                esModuleInterop: true,
+            },
+            fileName: normalizedPath,
+        }).outputText;
+
+        const localRequire = (specifier) => {
+            if (specifier.startsWith('.')) {
+                const resolved = resolveLocalModule(normalizedPath, specifier);
+                return loadModule(resolved);
+            }
+
+            if (specifier.startsWith('@/')) {
+                const resolved = resolveLocalModule(projectRoot, specifier.slice(2));
+                return loadModule(resolved);
+            }
+
+            return require(specifier);
+        };
+
+        // eslint-disable-next-line no-new-func
+        const fn = new Function('require', 'module', 'exports', '__filename', '__dirname', transpiled);
+        fn(localRequire, module, module.exports, normalizedPath, path.dirname(normalizedPath));
+        return module.exports;
     };
 
-    // eslint-disable-next-line no-new-func
-    const fn = new Function('require', 'module', 'exports', transpiled);
-    fn(localRequire, module, module.exports);
-    return module.exports;
+    return loadModule;
+}
+
+function loadInvoiceTemplateModule() {
+    const loadModule = createProjectModuleLoader();
+    return loadModule(sourcePath);
 }
 
 function buildFixtureInvoice() {

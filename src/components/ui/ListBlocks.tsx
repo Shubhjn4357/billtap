@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
@@ -34,9 +35,9 @@ export function EmptyStateCard({
             style={[
                 styles.wrap,
                 {
-                    backgroundColor: colors.card,
                     borderColor: withAlpha(accent, '20'),
                 },
+                getSurfaceStyle(colors, { elevated: true }),
             ]}
         >
             <View style={[styles.iconWrap, { backgroundColor: withAlpha(accent, '12') }]}>
@@ -67,11 +68,6 @@ const styles = StyleSheet.create({
         gap: Spacing.sm,
         marginHorizontal: Spacing.lg,
         marginTop: 56,
-        shadowColor: '#000000',
-        shadowOpacity: 0.05,
-        shadowRadius: 14,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 3,
     },
     iconWrap: {
         width: 56,

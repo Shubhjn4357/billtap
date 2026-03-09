@@ -30,8 +30,12 @@ import { useInvoiceMutations } from '../../hooks/useInvoiceMutations';
 
 type LineItemRowProps = {
     line: InvoiceLineItem;
+    index: number;
+    canMoveUp: boolean;
+    canMoveDown: boolean;
     onUpdate: (key: string, updates: Partial<InvoiceLineItem>) => void;
     onRemove: (key: string) => void;
+    onMove: (from: number, to: number) => void;
     transactionType?: BillingDocumentConfig['transactionType'];
     itemOptions: SelectOption[];
     godownOptions: SelectOption[];
@@ -115,6 +119,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
         setPaymentMode,
         setPaidAmount,
         applyInterState,
+        moveLine,
     } = useInvoiceBuilderStore();
     const totals = useInvoiceTotals();
 
@@ -430,10 +435,14 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
 
                 <View style={s.section}>
                     <FormSectionCard title="Items" description="Select stock items, quantities, rates, and tax values for each line." tone="warning">
-                    {state.items.map((line) => (
+                    {state.items.map((line, index) => (
                         <LineItemRow
                             key={line._key}
+                            index={index}
                             line={line}
+                            canMoveUp={index > 0}
+                            canMoveDown={index < state.items.length - 1}
+                            onMove={moveLine}
                             onUpdate={updateLine}
                             onRemove={removeLine}
                             transactionType={config.transactionType}
@@ -534,7 +543,11 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
 }
 
 function LineItemRow({
+    index,
     line,
+    canMoveUp,
+    canMoveDown,
+    onMove,
     onUpdate,
     onRemove,
     transactionType,
@@ -555,6 +568,28 @@ function LineItemRow({
 
     return (
         <View style={[lineStyles.card, { backgroundColor: colors.surfaceVariant }]}>
+            <View style={lineStyles.controlsRow}>
+                <View style={lineStyles.handleWrap}>
+                    <MaterialCommunityIcons name="drag-vertical" size={18} color={colors.textSecondary} />
+                    <Text style={[lineStyles.handleText, { color: colors.textSecondary }]}>Line {index + 1}</Text>
+                </View>
+                <View style={lineStyles.reorderActions}>
+                    <Pressable
+                        style={[lineStyles.reorderBtn, { borderColor: colors.border, opacity: canMoveUp ? 1 : 0.45 }]}
+                        onPress={() => onMove(index, index - 1)}
+                        disabled={!canMoveUp}
+                    >
+                        <MaterialCommunityIcons name="chevron-up" size={16} color={colors.textSecondary} />
+                    </Pressable>
+                    <Pressable
+                        style={[lineStyles.reorderBtn, { borderColor: colors.border, opacity: canMoveDown ? 1 : 0.45 }]}
+                        onPress={() => onMove(index, index + 1)}
+                        disabled={!canMoveDown}
+                    >
+                        <MaterialCommunityIcons name="chevron-down" size={16} color={colors.textSecondary} />
+                    </Pressable>
+                </View>
+            </View>
             {godownOptions.length > 0 ? (
                 <SelectField
                     value={line.godownId ?? defaultGodownId}
@@ -751,6 +786,11 @@ const styles = (colors: ColorPalette) =>
 
 const lineStyles = StyleSheet.create({
     card: { borderRadius: Radius.md, padding: Spacing.sm, marginBottom: Spacing.sm },
+    controlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm, marginBottom: Spacing.xs },
+    handleWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    handleText: { fontSize: 11, fontWeight: '700' },
+    reorderActions: { flexDirection: 'row', gap: 6 },
+    reorderBtn: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
     stockHint: { fontSize: 11, fontWeight: '500', marginBottom: Spacing.xs },
     row1: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.xs, marginBottom: Spacing.xs },
     flex1: { flex: 1 },

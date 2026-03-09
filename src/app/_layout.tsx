@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { View } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AnimatedSplashOverlay from '../components/AnimatedSplashOverlay';
 import { AppBiometricLockOverlay } from '../components/security/AppBiometricLockOverlay';
 import { DialogProvider } from '../components/providers/DialogProvider';
@@ -59,12 +60,14 @@ function RootNavigator() {
 
 export default function RootLayout() {
     return (
-        <QueryClientProvider client={queryClient}>
-            <DialogProvider>
-                <AppRuntimeProvider>
-                    <RootNavigator />
-                </AppRuntimeProvider>
-            </DialogProvider>
-        </QueryClientProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <QueryClientProvider client={queryClient}>
+                <DialogProvider>
+                    <AppRuntimeProvider>
+                        <RootNavigator />
+                    </AppRuntimeProvider>
+                </DialogProvider>
+            </QueryClientProvider>
+        </GestureHandlerRootView>
     );
 }
