@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { and, asc, desc, eq, ilike, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { inventoryMovements, items } from '../db/schema';
+import { godownStock, godowns, inventoryMovements, items } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     ensurePrimaryBusiness,
@@ -39,6 +40,7 @@ const upsertItemSchema = z.object({
     location: z.string().trim().optional(),
     barcode: z.string().trim().optional(),
     imageUrl: z.string().trim().optional(),
+    godownId: z.string().trim().optional().nullable(),
     isActive: z.boolean().optional(),
     autoDeleteEnabled: z.boolean().optional(),
     autoDeleteAt: z.coerce.date().optional().nullable(),
@@ -53,7 +55,14 @@ const adjustStockSchema = z.object({
     type: z.enum(['IN', 'OUT', 'ADJUST']),
     quantity: z.number().positive(),
     reason: z.string().trim().optional(),
+    godownId: z.string().trim().optional().nullable(),
 });
+
+const normalizeGodownId = (value: string | null | undefined): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+};
 
 const toClientItem = (item: typeof items.$inferSelect, userId: string) => ({
     id: item.id,
@@ -247,55 +256,44 @@ itemsRoute.post('/', async (c) => {
         assertModuleEnabled(business, 'stock');
         const payload = upsertItemSchema.parse(await c.req.json());
         const normalizedId = payload.id?.trim() ?? null;
-        let action: 'inventory.create' | 'inventory.update' = 'inventory.create';
-        if (normalizedId) {
-            const existingRows = await db.select({ id: items.id }).from(items).where(and(
+        const normalizedGodownId = normalizeGodownId(payload.godownId);
+        const existingItem = normalizedId
+            ? (await db.select().from(items).where(and(
                 eq(items.id, normalizedId),
                 eq(items.businessId, business.id),
-            )).limit(1);
-            if (existingRows[0]) {
-                action = 'inventory.update';
-            }
+            )).limit(1))[0]
+            : null;
+        let action: 'inventory.create' | 'inventory.update' = 'inventory.create';
+        if (existingItem) {
+            action = 'inventory.update';
         }
         const deniedAction = requireOrganizationAction(c, action);
         if (deniedAction) return deniedAction;
         if (payload.gstPercentage !== undefined) {
             assertAllowedGstRate(payload.gstPercentage);
         }
+        if (normalizedGodownId) {
+            const selectedGodown = await db.select({ id: godowns.id }).from(godowns).where(and(
+                eq(godowns.id, normalizedGodownId),
+                eq(godowns.businessId, business.id),
+                eq(godowns.isActive, true),
+            )).limit(1);
+            if (!selectedGodown[0]) {
+                return c.json({ ok: false, message: 'Selected godown not found.' }, 400);
+            }
+        }
         const id = normalizedId || `itm_${nanoid(18)}`;
         const now = new Date();
+        const previousStock = Number(existingItem?.stock ?? 0);
+        const stockDelta = Number(payload.stock ?? 0) - previousStock;
 
-        await db.insert(items).values({
-            id,
-            businessId: business.id,
-            name: payload.name,
-            nameLowercase: payload.name.toLowerCase(),
-            sku: null,
-            barcode: payload.barcode ?? null,
-            hsnCode: payload.hsn ?? null,
-            unit: payload.unit ?? 'pcs',
-            category: payload.category ?? null,
-            mrp: payload.mrp ?? payload.price,
-            purchasePrice: payload.purchasePrice ?? 0,
-            salePrice: payload.price,
-            gstRate: payload.gstPercentage ?? 0,
-            openingStock: payload.stock,
-            stock: payload.stock,
-            reorderLevel: payload.minimumStock ?? 0,
-            description: payload.description ?? null,
-            location: payload.location ?? null,
-            imageUrl: payload.imageUrl ?? null,
-            expiresAt: payload.expiresAt ?? null,
-            autoDeleteAt: payload.autoDeleteAt ?? null,
-            autoDeleteEnabled: payload.autoDeleteEnabled ?? false,
-            isActive: payload.isActive ?? true,
-            createdAt: now,
-            updatedAt: now,
-        }).onConflictDoUpdate({
-            target: items.id,
-            set: {
+        await withTransaction(db, async (tx) => {
+            await tx.insert(items).values({
+                id,
+                businessId: business.id,
                 name: payload.name,
                 nameLowercase: payload.name.toLowerCase(),
+                sku: null,
                 barcode: payload.barcode ?? null,
                 hsnCode: payload.hsn ?? null,
                 unit: payload.unit ?? 'pcs',
@@ -304,6 +302,7 @@ itemsRoute.post('/', async (c) => {
                 purchasePrice: payload.purchasePrice ?? 0,
                 salePrice: payload.price,
                 gstRate: payload.gstPercentage ?? 0,
+                openingStock: payload.stock,
                 stock: payload.stock,
                 reorderLevel: payload.minimumStock ?? 0,
                 description: payload.description ?? null,
@@ -313,21 +312,92 @@ itemsRoute.post('/', async (c) => {
                 autoDeleteAt: payload.autoDeleteAt ?? null,
                 autoDeleteEnabled: payload.autoDeleteEnabled ?? false,
                 isActive: payload.isActive ?? true,
+                createdAt: now,
                 updatedAt: now,
-            },
-        });
+            }).onConflictDoUpdate({
+                target: items.id,
+                set: {
+                    name: payload.name,
+                    nameLowercase: payload.name.toLowerCase(),
+                    barcode: payload.barcode ?? null,
+                    hsnCode: payload.hsn ?? null,
+                    unit: payload.unit ?? 'pcs',
+                    category: payload.category ?? null,
+                    mrp: payload.mrp ?? payload.price,
+                    purchasePrice: payload.purchasePrice ?? 0,
+                    salePrice: payload.price,
+                    gstRate: payload.gstPercentage ?? 0,
+                    openingStock: payload.stock,
+                    stock: payload.stock,
+                    reorderLevel: payload.minimumStock ?? 0,
+                    description: payload.description ?? null,
+                    location: payload.location ?? null,
+                    imageUrl: payload.imageUrl ?? null,
+                    expiresAt: payload.expiresAt ?? null,
+                    autoDeleteAt: payload.autoDeleteAt ?? null,
+                    autoDeleteEnabled: payload.autoDeleteEnabled ?? false,
+                    isActive: payload.isActive ?? true,
+                    updatedAt: now,
+                },
+            });
 
-        await db.insert(inventoryMovements).values({
-            id: `mov_${nanoid(16)}`,
-            businessId: business.id,
-            itemId: id,
-            movementType: 'ADJUST',
-            quantity: payload.stock,
-            balanceAfter: payload.stock,
-            reason: 'Opening/Upsert',
-            referenceId: id,
-            createdByUserId: authUser.id,
-            createdAt: now,
+            if (normalizedGodownId && stockDelta !== 0) {
+                const currentGodownRow = (await tx.select().from(godownStock).where(and(
+                    eq(godownStock.businessId, business.id),
+                    eq(godownStock.godownId, normalizedGodownId),
+                    eq(godownStock.itemId, id),
+                )).limit(1))[0];
+                const currentGodownQuantity = Number(currentGodownRow?.quantity ?? 0);
+                const nextGodownQuantity = existingItem
+                    ? currentGodownQuantity + stockDelta
+                    : Number(payload.stock ?? 0);
+
+                if (nextGodownQuantity < 0) {
+                    throw new Error('Selected godown does not have enough stock for this update.');
+                }
+
+                if (currentGodownRow) {
+                    await tx.update(godownStock).set({
+                        quantity: nextGodownQuantity,
+                        updatedAt: now,
+                    }).where(and(
+                        eq(godownStock.businessId, business.id),
+                        eq(godownStock.godownId, normalizedGodownId),
+                        eq(godownStock.itemId, id),
+                    ));
+                } else if (nextGodownQuantity > 0) {
+                    await tx.insert(godownStock).values({
+                        id: `gstk_${nanoid(16)}`,
+                        businessId: business.id,
+                        godownId: normalizedGodownId,
+                        itemId: id,
+                        quantity: nextGodownQuantity,
+                        createdAt: now,
+                        updatedAt: now,
+                    }).onConflictDoUpdate({
+                        target: [godownStock.godownId, godownStock.itemId],
+                        set: {
+                            quantity: nextGodownQuantity,
+                            updatedAt: now,
+                        },
+                    });
+                }
+            }
+
+            if ((!existingItem && payload.stock !== 0) || (existingItem && stockDelta !== 0)) {
+                await tx.insert(inventoryMovements).values({
+                    id: `mov_${nanoid(16)}`,
+                    businessId: business.id,
+                    itemId: id,
+                    movementType: 'ADJUST',
+                    quantity: Math.abs(existingItem ? stockDelta : payload.stock),
+                    balanceAfter: payload.stock,
+                    reason: normalizedGodownId ? 'Opening/Upsert via godown' : 'Opening/Upsert',
+                    referenceId: id,
+                    createdByUserId: authUser.id,
+                    createdAt: now,
+                });
+            }
         });
 
         return c.json({ ok: true, id });
@@ -416,6 +486,7 @@ itemsRoute.post('/:id/adjust', async (c) => {
 
         const id = c.req.param('id');
         const payload = adjustStockSchema.parse(await c.req.json());
+        const normalizedGodownId = normalizeGodownId(payload.godownId);
 
         const current = await db
             .select()
@@ -427,33 +498,101 @@ itemsRoute.post('/:id/adjust', async (c) => {
         if (!item) {
             return c.json({ ok: false, message: 'Item not found.' }, 404);
         }
+        if (normalizedGodownId) {
+            const selectedGodown = await db.select({ id: godowns.id }).from(godowns).where(and(
+                eq(godowns.id, normalizedGodownId),
+                eq(godowns.businessId, business.id),
+                eq(godowns.isActive, true),
+            )).limit(1);
+            if (!selectedGodown[0]) {
+                return c.json({ ok: false, message: 'Selected godown not found.' }, 400);
+            }
+        }
 
         const currentStock = Number(item.stock ?? 0);
-        const nextStock = payload.type === 'IN'
-            ? currentStock + payload.quantity
-            : payload.type === 'OUT'
-                ? currentStock - payload.quantity
-                : payload.quantity;
+        const currentGodownRow = normalizedGodownId
+            ? (await db.select().from(godownStock).where(and(
+                eq(godownStock.businessId, business.id),
+                eq(godownStock.godownId, normalizedGodownId),
+                eq(godownStock.itemId, id),
+            )).limit(1))[0]
+            : null;
+        const currentGodownQuantity = Number(currentGodownRow?.quantity ?? 0);
+        const godownDelta = normalizedGodownId
+            ? (payload.type === 'IN'
+                ? payload.quantity
+                : payload.type === 'OUT'
+                    ? -payload.quantity
+                    : payload.quantity - currentGodownQuantity)
+            : null;
+        const nextGodownQuantity = normalizedGodownId
+            ? currentGodownQuantity + (godownDelta ?? 0)
+            : null;
+        const nextStock = normalizedGodownId
+            ? currentStock + (godownDelta ?? 0)
+            : payload.type === 'IN'
+                ? currentStock + payload.quantity
+                : payload.type === 'OUT'
+                    ? currentStock - payload.quantity
+                    : payload.quantity;
 
         if (nextStock < 0) {
             return c.json({ ok: false, message: 'Insufficient stock.' }, 400);
         }
+        if (normalizedGodownId && (nextGodownQuantity ?? 0) < 0) {
+            return c.json({ ok: false, message: 'Insufficient stock in selected godown.' }, 400);
+        }
 
         const now = new Date();
-        await db.update(items).set({ stock: nextStock, updatedAt: now })
-            .where(and(eq(items.id, id), eq(items.businessId, business.id)));
+        await withTransaction(db, async (tx) => {
+            await tx.update(items).set({ stock: nextStock, updatedAt: now })
+                .where(and(eq(items.id, id), eq(items.businessId, business.id)));
 
-        await db.insert(inventoryMovements).values({
-            id: `mov_${nanoid(16)}`,
-            businessId: business.id,
-            itemId: id,
-            movementType: payload.type,
-            quantity: payload.quantity,
-            balanceAfter: nextStock,
-            reason: payload.reason ?? null,
-            referenceId: null,
-            createdByUserId: authUser.id,
-            createdAt: now,
+            if (nextStock !== currentStock) {
+                await tx.insert(inventoryMovements).values({
+                    id: `mov_${nanoid(16)}`,
+                    businessId: business.id,
+                    itemId: id,
+                    movementType: payload.type,
+                    quantity: payload.type === 'ADJUST'
+                        ? Math.abs(nextStock - currentStock)
+                        : payload.quantity,
+                    balanceAfter: nextStock,
+                    reason: payload.reason ?? null,
+                    referenceId: normalizedGodownId,
+                    createdByUserId: authUser.id,
+                    createdAt: now,
+                });
+            }
+
+            if (normalizedGodownId) {
+                if (currentGodownRow) {
+                    await tx.update(godownStock).set({
+                        quantity: nextGodownQuantity ?? 0,
+                        updatedAt: now,
+                    }).where(and(
+                        eq(godownStock.businessId, business.id),
+                        eq(godownStock.godownId, normalizedGodownId),
+                        eq(godownStock.itemId, id),
+                    ));
+                } else if ((nextGodownQuantity ?? 0) > 0) {
+                    await tx.insert(godownStock).values({
+                        id: `gstk_${nanoid(16)}`,
+                        businessId: business.id,
+                        godownId: normalizedGodownId,
+                        itemId: id,
+                        quantity: nextGodownQuantity ?? 0,
+                        createdAt: now,
+                        updatedAt: now,
+                    }).onConflictDoUpdate({
+                        target: [godownStock.godownId, godownStock.itemId],
+                        set: {
+                            quantity: nextGodownQuantity ?? 0,
+                            updatedAt: now,
+                        },
+                    });
+                }
+            }
         });
 
         return c.json({ ok: true });
