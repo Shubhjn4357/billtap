@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -11,12 +11,11 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { partyApi } from '../../../api/endpoints';
 import { useInvoiceBuilderStore } from '../../../store/invoiceBuilderStore';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useSmartBack } from '../../../hooks/useSmartBack';
+import { useParties } from '../../../hooks/useParties';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 
@@ -30,17 +29,11 @@ export default function PartySelectScreen() {
 
     const setParty = useInvoiceBuilderStore((state) => state.setParty);
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['party-select', search, normalizedPartyType],
-        queryFn: () => partyApi.list({
-            q: search.trim() || undefined,
-            limit: 200,
-            type: normalizedPartyType,
-        }),
-        staleTime: 30_000,
+    const { parties, isLoading, isRefetching, refetch } = useParties({
+        search,
+        limit: 200,
+        type: normalizedPartyType === 'supplier' ? 'SUPPLIER' : 'CUSTOMER',
     });
-
-    const parties = useMemo(() => data?.data ?? [], [data?.data]);
 
     const onSelect = (party: (typeof parties)[number]) => {
         setParty(party.id, {
@@ -78,12 +71,11 @@ export default function PartySelectScreen() {
                 <Pressable
                     style={[s.createPartyBtn, { borderColor: colors.border }]}
                     onPress={() =>
-                        router.push({
+                        router.replace({
                             pathname: '/(main)/parties/add',
                             params: {
                                 type: normalizedPartyType === 'supplier' ? 'SUPPLIER' : 'CUSTOMER',
-                                returnPath: '/(main)/billing/party-select',
-                                partyType: normalizedPartyType,
+                                returnContext: 'invoice',
                             },
                         })
                     }

@@ -4,16 +4,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { cashBankApi } from '../../../../api/endpoints';
-import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel, getVoucherReferenceHint } from '../../../../constants/accountingInputOptions';
+import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { SelectField, type SelectOption } from '../../../../components/ui/SelectField';
 import { DateField } from '../../../../components/ui/DateField';
-import type { Account } from '../../../../types/domain';
+import { FormHero, FormSectionCard } from '../../../../components/ui/FormBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { toUserMessage } from '../../../../api/client';
+import type { PaymentMode } from '../../../../constants/enums';
+import { useCashBankAccounts } from '../../../../hooks/useCashBankAccounts';
+import { useCashBankMutations } from '../../../../hooks/useCashBankMutations';
 
 const toAmount = (value: string) => {
     const parsed = Number(value);
@@ -23,7 +26,6 @@ const toAmount = (value: string) => {
 export default function WithdrawScreen() {
     const dialog = useAppDialog();
         const colors = useAppColors();
-    const qc = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
     const params = useLocalSearchParams<{ accountId?: string }>();
@@ -32,10 +34,9 @@ export default function WithdrawScreen() {
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-    const [paymentMode, setPaymentMode] = useState('BANK');
+    const [paymentMode, setPaymentMode] = useState<PaymentMode>('BANK');
 
-    const { data: accountsData, isRefetching, refetch } = useQuery({ queryKey: ['cash-bank-balances'], queryFn: () => cashBankApi.getBalances() });
-    const accounts = useMemo(() => (accountsData?.data ?? []) as Account[], [accountsData?.data]);
+    const { accounts, isRefetching, refetch } = useCashBankAccounts();
     const accountOptions = useMemo<SelectOption[]>(
         () =>
             accounts.map((entry) => ({
@@ -46,29 +47,34 @@ export default function WithdrawScreen() {
         [accounts]
     );
 
-    const { mutate, isPending } = useMutation({
-        mutationFn: () => {
-            const numericAmount = toAmount(amount);
-            if (!accountId) throw new Error('Select an account.');
-            if (numericAmount <= 0) throw new Error('Amount must be positive.');
-            return cashBankApi.withdraw({
-                accountId,
-                amount: numericAmount,
-                description: description.trim() || undefined,
-                date,
-                paymentMode,
-            });
-        },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['cash-bank-balances'] });
-            qc.invalidateQueries({ queryKey: ['cash-bank-summary'] });
-            dialog.alert('Saved', 'Withdrawal recorded.');
-            router.back();
-        },
-        onError: (error) => dialog.alert('Error', error instanceof Error ? error.message : 'Failed'),
-    });
+    const { withdraw, isWithdrawing: isPending } = useCashBankMutations();
 
-    const onSave = () => mutate();
+    const onSave = () => {
+        const numericAmount = toAmount(amount);
+        if (!accountId) {
+            dialog.alert('Error', 'Select an account.');
+            return;
+        }
+        if (numericAmount <= 0) {
+            dialog.alert('Error', 'Amount must be positive.');
+            return;
+        }
+        void withdraw({
+            accountId,
+            amount: numericAmount,
+            description: description.trim() || undefined,
+            date,
+            paymentMode,
+        })
+            .then((response) => {
+                dialog.alert('Saved', response.message ?? 'Withdrawal recorded.');
+                router.back();
+            })
+            .catch((error) => {
+                console.error('[cash-bank/withdraw] save failed', { accountId, amount, date, paymentMode, error });
+                dialog.alert('Error', toUserMessage(error, 'Failed to save withdrawal.'));
+            });
+    };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -96,55 +102,66 @@ export default function WithdrawScreen() {
                     />
                 )}
             >
-                <View style={[s.heroCard, { backgroundColor: colors.error }]}>
-                    <Text style={s.heroLabel}>WITHDRAW AMOUNT</Text>
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title="Record Withdrawal"
+                        subtitle="Post money paid out from a selected cash, bank, or cheque account."
+                        icon="cash-minus"
+                        tone="danger"
+                    />
+                </View>
+
+                <FormSectionCard title="Amount and Account" description="Choose the source account and the amount being withdrawn." tone="danger">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Amount</Text>
                     <AppInput
                         inputType="decimal"
                         value={amount}
                         onChangeText={setAmount}
                         placeholder="0.00"
-                        style={s.heroInput}
                     />
-                </View>
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Select Account</Text>
-                <SelectField
-                    value={accountId}
-                    onChange={setAccountId}
-                    options={accountOptions}
-                    title="Select Account"
-                    placeholder="Choose account"
-                    searchable
-                />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Select Account</Text>
+                    <SelectField
+                        value={accountId}
+                        onChange={setAccountId}
+                        options={accountOptions}
+                        title="Select Account"
+                        placeholder="Choose account"
+                        searchable
+                    />
+                </FormSectionCard>
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Payment Mode</Text>
-                <View style={s.modeRow}>
-                    {['CASH', 'BANK', 'UPI', 'CARD'].map((mode) => {
-                        const selected = paymentMode === mode;
-                        return (
-                            <Pressable
-                                key={mode}
-                                style={[s.modeChip, { backgroundColor: selected ? colors.primary : colors.surfaceVariant }]}
-                                onPress={() => setPaymentMode(mode)}
-                            >
-                                <Text style={{ color: selected ? colors.onPrimary : colors.text, fontSize: 12, fontWeight: '700' }}>{mode}</Text>
-                            </Pressable>
-                        );
-                    })}
-                </View>
+                <FormSectionCard title="Posting Details" description="Set withdrawal mode, date, and narration used for the payment voucher." tone="warning">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Payment Mode</Text>
+                    <SelectField
+                        value={paymentMode}
+                        onChange={(value) => setPaymentMode(value as PaymentMode)}
+                        options={CASH_BANK_VOUCHER_MODE_OPTIONS.map((entry) => ({
+                            label: entry.label,
+                            value: entry.value,
+                            description: entry.description,
+                        }))}
+                        title="Withdrawal Mode"
+                        placeholder="Choose payment mode"
+                        searchable={false}
+                    />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Date</Text>
-                <DateField value={date} onChange={(value) => setDate(value ?? date)} allowClear={false} />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Date</Text>
+                    <DateField value={date} onChange={(value) => setDate(value ?? date)} allowClear={false} />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Description (optional)</Text>
-                <AppInput
-                    inputType="text"
-                    value={description}
-                    onChangeText={setDescription}
-                    placeholder="Purpose"
-                    multiline
-                    style={s.notesInput}
-                />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Description (optional)</Text>
+                    <AppInput
+                        inputType="text"
+                        value={description}
+                        onChangeText={setDescription}
+                        placeholder={getVoucherReferenceHint(paymentMode)}
+                        multiline
+                        style={s.notesInput}
+                    />
+                    <Text style={[s.modeHint, { color: colors.textSecondary }]}>
+                        Withdrawal will be posted as {getPaymentModeLabel(paymentMode)} payment from the selected account.
+                    </Text>
+                </FormSectionCard>
 
                 <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={onSave} disabled={isPending}>
                     {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Record Withdrawal</Text>}
@@ -168,19 +185,10 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             paddingHorizontal: Spacing.md,
         },
-        saveText: { fontSize: 12, fontWeight: '700' },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.lg },
-        heroCard: {
-            borderRadius: Radius.card,
-            padding: Spacing.lg,
-            marginBottom: Spacing.sm,
-            gap: Spacing.xs,
-        },
-        heroLabel: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-        heroInput: { color: colors.onPrimary, fontSize: 24, fontWeight: '800' },
+        heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.xs },
-        modeRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-        modeChip: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 7 },
+        modeHint: { fontSize: 12 },
         notesInput: { minHeight: 64, textAlignVertical: 'top' },
         primaryBtn: {
             marginTop: Spacing.md,

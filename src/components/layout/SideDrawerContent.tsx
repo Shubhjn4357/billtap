@@ -3,36 +3,15 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { DESIGN_SPACING, getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { SIDE_DRAWER_ACTIONS } from '../../constants/navigationOptions';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
+import { useI18n } from '../../hooks/useI18n';
 import { useAuthStore } from '../../store/authStore';
 import { canAccessModule, canUsePos } from '../../utils/accessControl';
 import { AppSearchBar } from '../ui/AppSearchBar';
 import { useHaptics } from '../../hooks/useHaptics';
-
-type DrawerAction = {
-    key: string;
-    label: string;
-    route: Parameters<typeof router.push>[0];
-    icon: keyof typeof MaterialCommunityIcons.glyphMap;
-    module?: 'home' | 'billing' | 'inventory' | 'accounts' | 'reports' | 'parties' | 'settings' | 'operations' | 'staff';
-    requiresPos?: boolean;
-};
-
-const ACTIONS: DrawerAction[] = [
-    { key: 'home', label: 'Dashboard', route: '/(main)' as Parameters<typeof router.push>[0], icon: 'view-dashboard-outline', module: 'home' },
-    { key: 'billing', label: 'Billing', route: '/(main)/billing', icon: 'file-document-multiple-outline', module: 'billing' },
-    { key: 'invoice', label: 'New Sale Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', icon: 'file-document-plus-outline', module: 'billing' },
-    { key: 'pos', label: 'Quick Sale (POS)', route: '/(main)/billing/pos', icon: 'point-of-sale', module: 'billing', requiresPos: true },
-    { key: 'inventory', label: 'Inventory', route: '/(main)/inventory', icon: 'archive-outline', module: 'inventory' },
-    { key: 'add-item', label: 'Add Item', route: '/(main)/inventory/add-item', icon: 'package-variant-plus', module: 'inventory' },
-    { key: 'parties', label: 'Parties', route: '/(main)/parties', icon: 'account-multiple-outline', module: 'parties' },
-    { key: 'accounts', label: 'Accounts', route: '/(main)/accounts', icon: 'bank-outline', module: 'accounts' },
-    { key: 'reports', label: 'Reports', route: '/(main)/reports', icon: 'chart-line', module: 'reports' },
-    { key: 'staff', label: 'Staff and Roles', route: '/(main)/more/staff', icon: 'account-group-outline', module: 'staff' },
-    { key: 'settings', label: 'Settings', route: '/(main)/more/settings', icon: 'cog-outline', module: 'settings' },
-    { key: 'dir', label: 'Screen Directory', route: '/(main)/more/screen-directory', icon: 'compass-outline' },
-];
 
 type SideDrawerContentProps = {
     onClose: () => void;
@@ -43,6 +22,7 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
     const s = styles(colors);
     const insets = useSafeAreaInsets();
     const { selection } = useHaptics();
+    const { t } = useI18n();
 
     const [search, setSearch] = useState('');
     const user = useAuthStore((state) => state.user);
@@ -52,7 +32,7 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
 
     const actions = useMemo(() => {
         const normalized = search.trim().toLowerCase();
-        return ACTIONS.filter((action) => {
+        return SIDE_DRAWER_ACTIONS.filter((action) => {
             if (action.requiresPos && !canUsePos(subscription)) return false;
             if (action.module && !canAccessModule(role, action.module, subscription)) return false;
             if (!normalized) return true;
@@ -62,43 +42,82 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
 
     return (
         <View style={[s.root, { paddingTop: insets.top + Spacing.md, paddingBottom: insets.bottom + Spacing.md }]}>
-            <View style={s.header}>
-                <View style={[s.avatarWrap, { backgroundColor: colors.primary }]}>
-                    <Text style={s.avatarText}>{(user?.name ?? 'U').charAt(0).toUpperCase()}</Text>
+            <View style={s.headerCard}>
+                <View style={s.headerTop}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[s.eyebrow, { color: colors.primary }]}>{t('drawer.workspace')}</Text>
+                        <Text style={[s.headerTitle, { color: colors.text }]}>{t('drawer.navigate_faster')}</Text>
+                    </View>
+                    <Pressable
+                        style={({ pressed }) => [
+                            s.closeButton,
+                            { backgroundColor: pressed ? colors.backgroundSelected : colors.card },
+                        ]}
+                        onPress={onClose}
+                        accessibilityRole="button"
+                        accessibilityLabel="Close drawer"
+                    >
+                        <MaterialCommunityIcons name="close" size={18} color={colors.text} />
+                    </Pressable>
                 </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={[s.userName, { color: colors.text }]} numberOfLines={1}>{user?.name ?? 'User'}</Text>
-                    <Text style={[s.bizName, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {business?.name ?? 'Business'}
-                    </Text>
+
+                <View style={s.header}>
+                    <View style={[s.avatarWrap, { backgroundColor: colors.primary }]}>
+                        <Text style={s.avatarText}>{(user?.name ?? 'U').charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[s.userName, { color: colors.text }]} numberOfLines={1}>{user?.name ?? 'User'}</Text>
+                        <Text style={[s.bizName, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {business?.name ?? 'Business'}
+                        </Text>
+                    </View>
+                </View>
+
+                <View style={s.metaRow}>
+                    <View style={[s.metaChip, { backgroundColor: colors.backgroundElement, borderColor: withAlpha(colors.primary, '20') }]}>
+                        <MaterialCommunityIcons name="storefront-outline" size={14} color={colors.primary} />
+                        <Text style={[s.metaText, { color: colors.textSecondary }]}>{t('drawer.active_business')}</Text>
+                    </View>
+                    <View style={[s.metaChip, { backgroundColor: colors.backgroundElement, borderColor: withAlpha(colors.primary, '20') }]}>
+                        <MaterialCommunityIcons name="lightning-bolt-outline" size={14} color={colors.primary} />
+                        <Text style={[s.metaText, { color: colors.textSecondary }]}>{t('drawer.shortcuts', { count: actions.length })}</Text>
+                    </View>
                 </View>
             </View>
 
             <View style={s.searchWrap}>
                 <AppSearchBar
-                    placeholder="Search drawer actions..."
+                    placeholder={t('drawer.search_placeholder')}
                     value={search}
                     onChangeText={setSearch}
                     showScanAction={false}
                 />
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
                 {actions.map((action) => (
                     <Pressable
                         key={action.key}
                         style={({ pressed }) => [
                             s.actionRow,
-                            { backgroundColor: pressed ? colors.surfaceVariant : 'transparent' },
+                            {
+                                backgroundColor: pressed ? colors.backgroundSelected : colors.card,
+                                borderColor: pressed ? withAlpha(colors.primary, '34') : withAlpha(colors.primary, '18'),
+                            },
                         ]}
                         onPress={() => {
                             void selection();
                             onClose();
-                            router.push(action.route);
+                            router.push(action.route as Parameters<typeof router.push>[0]);
                         }}
                     >
-                        <MaterialCommunityIcons name={action.icon} size={20} color={colors.primary} />
-                        <Text style={[s.actionText, { color: colors.text }]}>{action.label}</Text>
+                        <View style={[s.actionIconWrap, { backgroundColor: withAlpha(colors.primary, '12') }]}>
+                            <MaterialCommunityIcons name={action.icon} size={20} color={colors.primary} />
+                        </View>
+                        <View style={s.actionCopy}>
+                            <Text style={[s.actionText, { color: colors.text }]}>{action.label}</Text>
+                            <Text style={[s.actionSubtext, { color: colors.textSecondary }]}>{t('drawer.open_workflow')}</Text>
+                        </View>
                         <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
                     </Pressable>
                 ))}
@@ -111,24 +130,60 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         root: {
             flex: 1,
-            width: 304,
-            backgroundColor: colors.surface,
-            borderRightWidth: 1,
-            borderColor: colors.border,
+            width: '100%',
+            backgroundColor: colors.surfaceRaised,
+            borderRadius: 28,
             paddingHorizontal: Spacing.md,
+            ...getSurfaceStyle(colors, { floating: true, elevated: true }),
+        },
+        headerCard: {
+            padding: Spacing.md,
+            marginBottom: Spacing.sm,
+            gap: Spacing.sm,
+            borderRadius: Radius.xl,
+            ...getSurfaceStyle(colors, { accent: colors.primary, elevated: true }),
+        },
+        headerTop: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.sm,
+        },
+        eyebrow: {
+            fontSize: Typography.caption.size,
+            fontWeight: '700',
+            textTransform: 'uppercase',
+            letterSpacing: 0.8,
+        },
+        headerTitle: {
+            marginTop: 2,
+            fontSize: Typography.title.size,
+            fontWeight: '700',
+        },
+        closeButton: {
+            width: 36,
+            height: 36,
+            borderRadius: Radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 1,
+            borderColor: withAlpha(colors.primary, '18'),
         },
         header: {
             flexDirection: 'row',
             alignItems: 'center',
             gap: Spacing.sm,
-            marginBottom: Spacing.sm,
         },
         avatarWrap: {
-            width: 42,
-            height: 42,
+            width: 46,
+            height: 46,
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
+            shadowColor: colors.primary,
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.18,
+            shadowRadius: 12,
+            elevation: 6,
         },
         avatarText: {
             color: colors.onPrimary,
@@ -144,23 +199,57 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
             fontWeight: '500',
         },
+        metaRow: {
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            gap: Spacing.xs,
+        },
+        metaChip: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+            ...getInsetPanelStyle(colors, colors.primary),
+        },
+        metaText: {
+            fontSize: Typography.caption.size,
+            fontWeight: '600',
+        },
         searchWrap: {
             marginBottom: Spacing.sm,
         },
+        scrollContent: {
+            paddingBottom: DESIGN_SPACING.sectionGap,
+        },
         actionRow: {
-            minHeight: 46,
-            borderRadius: Radius.md,
+            minHeight: 62,
             flexDirection: 'row',
             alignItems: 'center',
-            gap: Spacing.sm,
-            paddingHorizontal: Spacing.sm,
-            marginBottom: 4,
+            gap: Spacing.md,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.sm,
+            marginBottom: Spacing.xs,
+            ...getSurfaceStyle(colors, { elevated: true }),
+        },
+        actionIconWrap: {
+            width: 40,
+            height: 40,
+            borderRadius: Radius.md,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        actionCopy: {
+            flex: 1,
         },
         actionText: {
-            flex: 1,
             fontSize: Typography.body.size,
             fontWeight: '600',
         },
+        actionSubtext: {
+            marginTop: 2,
+            fontSize: Typography.caption.size,
+            fontWeight: '500',
+        },
     });
-
-

@@ -3,72 +3,14 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { REPORT_CARDS, type ReportCard } from '../../../constants/reportOptions';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { HubMetricCard } from '../../../components/ui/HubBlocks';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useHaptics } from '../../../hooks/useHaptics';
-
-type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
-type ReportCard = {
-    title: string;
-    subtitle: string;
-    route: string;
-    icon: IconName;
-    category: string;
-    tone: 'primary' | 'success' | 'warning' | 'info';
-};
-
-const REPORT_CARDS = [
-    {
-        title: 'Profit and Loss',
-        subtitle: 'Income, expense and net result',
-        route: '/(main)/more/reports/pnl',
-        icon: 'chart-areaspline',
-        category: 'Financial',
-        tone: 'success',
-    },
-    {
-        title: 'GST Summary',
-        subtitle: 'Slab-wise taxable turnover and tax',
-        route: '/(main)/reports/gst-summary',
-        icon: 'bank-outline',
-        category: 'Tax',
-        tone: 'primary',
-    },
-    {
-        title: 'Trial Balance',
-        subtitle: 'Debit and credit integrity check',
-        route: '/(main)/reports/trial-balance',
-        icon: 'scale-balance',
-        category: 'Accounting',
-        tone: 'warning',
-    },
-    {
-        title: 'Ledgers',
-        subtitle: 'Drill down voucher-level transactions',
-        route: '/(main)/reports/ledgers',
-        icon: 'book-open-page-variant-outline',
-        category: 'Accounting',
-        tone: 'info',
-    },
-    {
-        title: 'Inventory',
-        subtitle: 'Stock valuation and movement reports',
-        route: '/(main)/inventory',
-        icon: 'archive-outline',
-        category: 'Stock',
-        tone: 'primary',
-    },
-    {
-        title: 'Screen Directory',
-        subtitle: 'Open all screens and flows',
-        route: '/(main)/more/screen-directory',
-        icon: 'compass-outline',
-        category: 'Utility',
-        tone: 'info',
-    },
-] as const satisfies readonly ReportCard[];
 
 export default function ReportsScreen() {
     const colors = useAppColors();
@@ -83,6 +25,7 @@ export default function ReportsScreen() {
     }, [search]);
 
     const filteredCount = filteredCards.length;
+    const categoryCount = useMemo(() => new Set(filteredCards.map((entry) => entry.category)).size, [filteredCards]);
 
     const toneColor = (tone: ReportCard['tone']) => {
         if (tone === 'success') return colors.success;
@@ -109,12 +52,26 @@ export default function ReportsScreen() {
                     placeholder="Search reports..."
                 />
 
-                <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>AVAILABLE REPORTS</Text>
-                    <Text style={s.summaryValue}>{filteredCount}</Text>
-                    <Text style={[s.summaryMeta, { color: colors.textSecondary }]}>
-                        {search.trim().length > 0 ? 'Filtered by search' : 'Across GST, accounts and inventory'}
-                    </Text>
+                <UtilityHero
+                    title="Reports Hub"
+                    subtitle="Sales, GST, accounting, and inventory insight routes in one place."
+                    icon="chart-box-outline"
+                    tone="info"
+                />
+
+                <View style={s.metricRow}>
+                    <HubMetricCard
+                        label="Available Reports"
+                        value={String(filteredCount)}
+                        meta={search.trim().length > 0 ? 'Filtered by search' : 'Across GST, accounts, and inventory'}
+                        tone="info"
+                    />
+                    <HubMetricCard
+                        label="Categories"
+                        value={String(categoryCount)}
+                        meta="Financial, tax, stock, utility"
+                        tone="success"
+                    />
                 </View>
 
                 {filteredCards.map((card) => {
@@ -133,7 +90,7 @@ export default function ReportsScreen() {
                             }}
                         >
                             <View style={[s.iconWrap, { backgroundColor: withAlpha(accent, '18') }]}>
-                                <MaterialCommunityIcons name={card.icon} size={18} color={accent} />
+                                <MaterialCommunityIcons name={card.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={18} color={accent} />
                             </View>
                             <View style={s.cardBody}>
                                 <View style={s.cardTitleRow}>
@@ -169,16 +126,11 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, gap: Spacing.sm },
-        summaryCard: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.md,
-            marginBottom: Spacing.xs,
+        metricRow: {
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            gap: Spacing.sm,
         },
-        summaryLabel: { fontSize: Typography.caption.size, fontWeight: '700', letterSpacing: 0.8 },
-        summaryValue: { marginTop: 4, color: colors.text, fontSize: 22, fontWeight: '800' },
-        summaryMeta: { marginTop: 2, fontSize: Typography.caption.size },
         card: {
             flexDirection: 'row',
             gap: Spacing.sm,

@@ -4,23 +4,25 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toUserMessage } from '../../../api/client';
-import { settingsApi } from '../../../api/endpoints';
+import { SettingsSection } from '../../../constants/enums';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
+import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
+import { selectItemSettings } from '../../../selectors/settingsSelectors';
 import {
     DEFAULT_ITEM_CATEGORIES,
     DEFAULT_ITEM_UNITS,
-    getCustomItemCategories,
-    getCustomItemUnits,
     withCustomItemCategories,
     withCustomItemUnits,
 } from '../../../utils/itemMasters';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { settingsSectionQueryKey } from '../../../state/settingsQueryKeys';
+import { useSettingsSectionMutation } from '../../../hooks/useSettingsSectionMutation';
 
 const unique = (values: string[]) => {
     const seen = new Set<string>();
@@ -51,20 +53,15 @@ export default function ItemMastersScreen() {
     const [customCategories, setCustomCategories] = useState<string[]>([]);
     const [customUnits, setCustomUnits] = useState<string[]>([]);
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['settings-section', 'ITEM_SETTINGS'],
-        queryFn: () => settingsApi.get('ITEM_SETTINGS'),
-    });
-
-    const itemSettings = useMemo(
-        () => (data?.data ?? {}) as Record<string, unknown>,
-        [data?.data]
+    const { sectionData: itemSettings, selected: itemSettingsView, isLoading, isRefetching, refetch } = useSettingsSelector(
+        SettingsSection.ITEM_SETTINGS,
+        selectItemSettings
     );
 
     useEffect(() => {
-        setCustomCategories(getCustomItemCategories(itemSettings));
-        setCustomUnits(getCustomItemUnits(itemSettings));
-    }, [itemSettings]);
+        setCustomCategories(itemSettingsView.customCategories);
+        setCustomUnits(itemSettingsView.customUnits);
+    }, [itemSettingsView.customCategories, itemSettingsView.customUnits]);
 
     const mergedCategoryCount = useMemo(
         () => unique([...DEFAULT_ITEM_CATEGORIES, ...customCategories]).length,
@@ -75,20 +72,21 @@ export default function ItemMastersScreen() {
         [customUnits]
     );
 
-    const { mutate: save, isPending } = useMutation({
-        mutationFn: async () => {
-            let next: Record<string, unknown> = withCustomItemCategories(itemSettings, customCategories);
-            next = withCustomItemUnits(next, customUnits);
-            return settingsApi.update('ITEM_SETTINGS', { data: next });
-        },
+    const { mutate: save, isPending } = useSettingsSectionMutation('ITEM_SETTINGS', {
         onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ['settings-section', 'ITEM_SETTINGS'] });
+            await queryClient.invalidateQueries({ queryKey: settingsSectionQueryKey('ITEM_SETTINGS') });
             dialog.alert('Saved', 'Item categories and units updated.');
         },
         onError: (error) => {
             dialog.alert('Save failed', toUserMessage(error, 'Unable to save item masters.'));
         },
     });
+
+    const saveItemMasters = () => {
+        let next: Record<string, unknown> = withCustomItemCategories(itemSettings, customCategories);
+        next = withCustomItemUnits(next, customUnits);
+        save(next);
+    };
 
     const addCategory = () => {
         const value = newCategory.trim();
@@ -128,7 +126,7 @@ export default function ItemMastersScreen() {
                 subtitle="Categories and units"
                 onBackPress={smartBack}
                 rightAction={(
-                    <Pressable style={[s.saveBtn, { backgroundColor: colors.primary }]} onPress={() => save()} disabled={isPending}>
+                    <Pressable style={[s.saveBtn, { backgroundColor: colors.primary }]} onPress={saveItemMasters} disabled={isPending}>
                         {isPending ? (
                             <ActivityIndicator size="small" color={colors.onPrimary} />
                         ) : (

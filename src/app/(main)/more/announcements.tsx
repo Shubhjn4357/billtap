@@ -2,26 +2,20 @@ import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } f
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useQuery } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { offerApi } from '../../../api/endpoints';
-import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
+import { Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
-import type { Offer } from '../../../types/domain';
+import { UtilityBanner, UtilityEmptyState, UtilityHero, UtilityPanel } from '../../../components/ui/UtilityBlocks';
+import { useActiveOffers } from '../../../hooks/useOffers';
 
 export default function AnnouncementsScreen() {
     const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['active-offers'],
-        queryFn: () => offerApi.getActive(),
-        staleTime: 60_000,
-    });
-
-    const offers = (data?.data ?? []) as Offer[];
+    const { offers, isLoading, isRefetching, refetch, data } = useActiveOffers();
+    const cacheMessage = /offline cache/i.test(String(data?.message ?? '')) ? data?.message : null;
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -46,9 +40,30 @@ export default function AnnouncementsScreen() {
                             }}
                         />
                     )}
-                    ListEmptyComponent={<View style={s.centered}><Text style={{ color: colors.textSecondary }}>No active announcements.</Text></View>}
+                    ListHeaderComponent={(
+                        <View style={s.headerWrap}>
+                            <UtilityHero
+                                title="Announcements"
+                                subtitle="Offers, release notices, and subscription prompts from the platform."
+                                icon="bullhorn-outline"
+                                tone="info"
+                            />
+                            {cacheMessage ? (
+                                <View style={s.bannerWrap}>
+                                    <UtilityBanner message={cacheMessage} />
+                                </View>
+                            ) : null}
+                        </View>
+                    )}
+                    ListEmptyComponent={(
+                        <UtilityEmptyState
+                            icon="bullhorn-outline"
+                            title="No announcements"
+                            description="There are no active announcements right now."
+                        />
+                    )}
                     renderItem={({ item }) => (
-                        <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+                        <UtilityPanel>
                             <View style={s.titleRow}>
                                 <MaterialCommunityIcons name="bullhorn-outline" size={18} color={colors.primary} />
                                 <Text style={[s.cardTitle, { color: colors.text }]}>{item.title}</Text>
@@ -57,7 +72,7 @@ export default function AnnouncementsScreen() {
                             {(item.ctaText || item.ctaRoute) ? (
                                 <Text style={[s.cardMeta, { color: colors.primary }]}>{`${item.ctaText ?? 'Open'} ${item.ctaRoute ?? ''}`.trim()}</Text>
                             ) : null}
-                        </View>
+                        </UtilityPanel>
                     )}
                     contentContainerStyle={{ paddingBottom: 120 }}
                 />
@@ -70,12 +85,17 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+        headerWrap: {
+            marginHorizontal: Spacing.lg,
+            marginBottom: Spacing.sm,
+            gap: Spacing.sm,
+        },
+        bannerWrap: {
+            marginBottom: Spacing.xs,
+        },
         card: {
             marginHorizontal: Spacing.lg,
             marginBottom: Spacing.sm,
-            borderRadius: Radius.card,
-            borderWidth: 1,
-            padding: Spacing.md,
         },
         titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
         cardTitle: { fontWeight: '700', fontSize: 15 },

@@ -5,46 +5,28 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { expenseApi } from '../../../../api/endpoints';
 import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
-import type { Expense } from '../../../../types/domain';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useExpenses } from '../../../../hooks/useExpenses';
+import { useExpenseMutations } from '../../../../hooks/useExpenseMutations';
 
 export default function ExpenseRecycleBinScreen() {
     const dialog = useAppDialog();
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
-    const qc = useQueryClient();
     const [processingId, setProcessingId] = useState<string | null>(null);
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['expenses-recycle-bin'],
-        queryFn: () => expenseApi.recycleBin({ limit: 200 }),
+    const { expenses: entries, isLoading, isRefetching, refetch } = useExpenses({
+        limit: 200,
+        recycleBin: true,
         staleTime: 15_000,
     });
 
-    const { mutateAsync: restore } = useMutation({
-        mutationFn: (id: string) => expenseApi.restore(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['expenses-recycle-bin'] });
-            qc.invalidateQueries({ queryKey: ['expenses'] });
-        },
-    });
-
-    const { mutateAsync: permanentDelete } = useMutation({
-        mutationFn: (id: string) => expenseApi.permanentDelete(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['expenses-recycle-bin'] });
-            qc.invalidateQueries({ queryKey: ['expenses'] });
-        },
-    });
-
-    const entries = (data?.data ?? []) as Expense[];
+    const { restoreExpense, permanentlyDeleteExpense } = useExpenseMutations();
 
     const handleRestore = (id: string) => {
         dialog.alert('Restore expense', 'Move this expense back to active list?', [
@@ -54,7 +36,7 @@ export default function ExpenseRecycleBinScreen() {
                 onPress: async () => {
                     try {
                         setProcessingId(id);
-                        await restore(id);
+                        await restoreExpense(id);
                     } catch (error) {
                         dialog.alert('Restore failed', error instanceof Error ? error.message : 'Failed to restore expense.');
                     } finally {
@@ -74,7 +56,7 @@ export default function ExpenseRecycleBinScreen() {
                 onPress: async () => {
                     try {
                         setProcessingId(id);
-                        await permanentDelete(id);
+                        await permanentlyDeleteExpense(id);
                     } catch (error) {
                         dialog.alert('Delete failed', error instanceof Error ? error.message : 'Failed to delete expense.');
                     } finally {

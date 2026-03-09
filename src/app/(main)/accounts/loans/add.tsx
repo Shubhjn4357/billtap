@@ -4,18 +4,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { loanApi } from '../../../../api/endpoints';
 import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
+import { LoanType } from '../../../../constants/enums';
+import { INTEREST_TYPE_OPTIONS, LOAN_TYPE_OPTIONS, type InterestType } from '../../../../constants/formOptions';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { FormHero, FormSectionCard } from '../../../../components/ui/FormBlocks';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { SelectField } from '../../../../components/ui/SelectField';
 import { DateField } from '../../../../components/ui/DateField';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-
-type LoanType = 'BORROWED' | 'GIVEN';
-type InterestType = 'SIMPLE' | 'COMPOUND';
+import { useLoanMutations } from '../../../../hooks/useLoanMutations';
 
 const toAmount = (value: string) => {
     const parsed = Number(value);
@@ -24,12 +23,11 @@ const toAmount = (value: string) => {
 
 export default function AddLoanScreen() {
     const dialog = useAppDialog();
-        const colors = useAppColors();
-    const qc = useQueryClient();
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
 
-    const [loanType, setLoanType] = useState<LoanType>('BORROWED');
+    const [loanType, setLoanType] = useState<LoanType>(LoanType.BORROWED);
     const [name, setName] = useState('');
     const [principalAmount, setPrincipalAmount] = useState('');
     const [interestRatePercent, setInterestRatePercent] = useState('0');
@@ -38,34 +36,44 @@ export default function AddLoanScreen() {
     const [dueDate, setDueDate] = useState<string | null>(null);
     const [description, setDescription] = useState('');
 
-    const { mutate, isPending } = useMutation({
-        mutationFn: () => {
-            const principal = toAmount(principalAmount);
-            const rate = toAmount(interestRatePercent);
-            if (!name.trim()) throw new Error('Name is required.');
-            if (principal <= 0) throw new Error('Principal must be positive.');
-            if (rate < 0) throw new Error('Interest rate cannot be negative.');
+    const { saveLoan, isSavingLoan: isPending } = useLoanMutations();
 
-            return loanApi.create({
-                loanType,
-                lenderBorrowerName: name.trim(),
-                openingDate: startDate,
-                openingBalance: principal,
-                interestRatePercent: rate,
-                emiAmount: null,
-                accountId: null,
-                partyId: null,
-                dueDate: dueDate || null,
-                notes: description.trim() || null,
+    const handleSave = () => {
+        const principal = toAmount(principalAmount);
+        const rate = toAmount(interestRatePercent);
+        if (!name.trim()) {
+            dialog.alert('Error', 'Name is required.');
+            return;
+        }
+        if (principal <= 0) {
+            dialog.alert('Error', 'Principal must be positive.');
+            return;
+        }
+        if (rate < 0) {
+            dialog.alert('Error', 'Interest rate cannot be negative.');
+            return;
+        }
+
+        void saveLoan({
+            loanType,
+            lenderBorrowerName: name.trim(),
+            openingDate: startDate,
+            openingBalance: principal,
+            interestRatePercent: rate,
+            emiAmount: null,
+            accountId: null,
+            partyId: null,
+            dueDate: dueDate || null,
+            notes: description.trim() || null,
+        })
+            .then(() => {
+                dialog.alert('Saved', 'Loan created.');
+                router.back();
+            })
+            .catch((error) => {
+                dialog.alert('Error', error instanceof Error ? error.message : 'Failed to create loan');
             });
-        },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['loans'] });
-            dialog.alert('Saved', 'Loan created.');
-            router.back();
-        },
-        onError: (error) => dialog.alert('Error', error instanceof Error ? error.message : 'Failed to create loan'),
-    });
+    };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -74,64 +82,73 @@ export default function AddLoanScreen() {
                 subtitle="Track borrowed or given amount"
                 onBackPress={smartBack}
                 rightAction={(
-                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => mutate()} disabled={isPending}>
+                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={handleSave} disabled={isPending}>
                         {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />}
                     </Pressable>
                 )}
             />
 
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
-                <Text style={[s.label, { color: colors.textSecondary }]}>Loan Type</Text>
-                <SelectField
-                    value={loanType}
-                    onChange={(value) => setLoanType(value as LoanType)}
-                    options={[
-                        { label: 'Borrowed', value: 'BORROWED', description: 'Money you owe' },
-                        { label: 'Given', value: 'GIVEN', description: 'Money owed to you' },
-                    ]}
-                    title="Select Loan Type"
-                />
-
-                <Text style={[s.label, { color: colors.textSecondary }]}>{loanType === 'BORROWED' ? 'Lender Name' : 'Borrower Name'}</Text>
-                <AppInput inputType="name" value={name} onChangeText={setName} placeholder="Name" />
-
-                <Text style={[s.label, { color: colors.textSecondary }]}>Principal Amount</Text>
-                <AppInput inputType="decimal" value={principalAmount} onChangeText={setPrincipalAmount} placeholder="0.00" />
-
-                <View style={s.row}>
-                    <View style={s.flex1}>
-                        <Text style={[s.label, { color: colors.textSecondary }]}>Interest Rate %</Text>
-                        <AppInput inputType="decimal" value={interestRatePercent} onChangeText={setInterestRatePercent} placeholder="0" />
-                    </View>
-                    <View style={s.flex1}>
-                        <Text style={[s.label, { color: colors.textSecondary }]}>Interest Type</Text>
-                        <SelectField
-                            value={interestType}
-                            onChange={(value) => setInterestType(value as InterestType)}
-                            options={[
-                                { label: 'Simple', value: 'SIMPLE' },
-                                { label: 'Compound', value: 'COMPOUND' },
-                            ]}
-                            title="Select Interest Type"
-                        />
-                    </View>
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title="Create Loan"
+                        subtitle="Set principal, rate, type, and repayment timing for borrowed or given money."
+                        icon="hand-coin-outline"
+                        tone={loanType === LoanType.BORROWED ? 'warning' : 'success'}
+                    />
                 </View>
 
-                <View style={s.row}>
-                    <View style={s.flex1}>
-                        <Text style={[s.label, { color: colors.textSecondary }]}>Start Date</Text>
-                        <DateField value={startDate} onChange={(value) => setStartDate(value ?? startDate)} allowClear={false} />
-                    </View>
-                    <View style={s.flex1}>
-                        <Text style={[s.label, { color: colors.textSecondary }]}>Due Date (optional)</Text>
-                        <DateField value={dueDate} onChange={setDueDate} />
-                    </View>
-                </View>
+                <FormSectionCard title="Loan Setup" description="Choose the loan direction, counterparty, and principal amount." tone="warning">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Loan Type</Text>
+                    <SelectField
+                        value={loanType}
+                        onChange={(value) => setLoanType(value as LoanType)}
+                        options={LOAN_TYPE_OPTIONS}
+                        title="Select Loan Type"
+                    />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Notes (optional)</Text>
-                <AppInput inputType="text" value={description} onChangeText={setDescription} placeholder="Purpose" multiline style={s.notesInput} />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>{loanType === 'BORROWED' ? 'Lender Name' : 'Borrower Name'}</Text>
+                    <AppInput inputType="name" value={name} onChangeText={setName} placeholder="Name" />
 
-                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={() => mutate()} disabled={isPending}>
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Principal Amount</Text>
+                    <AppInput inputType="decimal" value={principalAmount} onChangeText={setPrincipalAmount} placeholder="0.00" />
+                </FormSectionCard>
+
+                <FormSectionCard title="Interest and Timeline" description="Define how interest is calculated and when the loan starts or ends." tone="info">
+                    <View style={s.row}>
+                        <View style={s.flex1}>
+                            <Text style={[s.label, { color: colors.textSecondary }]}>Interest Rate %</Text>
+                            <AppInput inputType="decimal" value={interestRatePercent} onChangeText={setInterestRatePercent} placeholder="0" />
+                        </View>
+                        <View style={s.flex1}>
+                            <Text style={[s.label, { color: colors.textSecondary }]}>Interest Type</Text>
+                            <SelectField
+                                value={interestType}
+                                onChange={(value) => setInterestType(value as InterestType)}
+                                options={INTEREST_TYPE_OPTIONS}
+                                title="Select Interest Type"
+                            />
+                        </View>
+                    </View>
+
+                    <View style={s.row}>
+                        <View style={s.flex1}>
+                            <Text style={[s.label, { color: colors.textSecondary }]}>Start Date</Text>
+                            <DateField value={startDate} onChange={(value) => setStartDate(value ?? startDate)} allowClear={false} />
+                        </View>
+                        <View style={s.flex1}>
+                            <Text style={[s.label, { color: colors.textSecondary }]}>Due Date (optional)</Text>
+                            <DateField value={dueDate} onChange={setDueDate} />
+                        </View>
+                    </View>
+                </FormSectionCard>
+
+                <FormSectionCard title="Notes" description="Optional purpose or internal description for the loan.">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Notes (optional)</Text>
+                    <AppInput inputType="text" value={description} onChangeText={setDescription} placeholder="Purpose" multiline style={s.notesInput} />
+                </FormSectionCard>
+
+                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={handleSave} disabled={isPending}>
                     {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Create Loan</Text>}
                 </Pressable>
 
@@ -153,8 +170,8 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             paddingHorizontal: Spacing.md,
         },
-        saveText: { fontSize: 12, fontWeight: '700' },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.lg },
+        heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.xs },
         row: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start' },
         flex1: { flex: 1 },

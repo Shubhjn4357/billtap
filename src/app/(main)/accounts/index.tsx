@@ -2,68 +2,78 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { cashBankApi, expenseApi, loanApi } from '../../../api/endpoints';
+import { ACCOUNTS_HUB_LINKS } from '../../../constants/accountsOptions';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
-import type { Account, Expense, Loan } from '../../../types/domain';
+import type { Expense, Loan } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { HubActionCard, HubMetricCard } from '../../../components/ui/HubBlocks';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useHaptics } from '../../../hooks/useHaptics';
+import { invalidateCashBankQueries, useCashBankAccounts } from '../../../hooks/useCashBankAccounts';
+import { useBusinessQueryScope } from '../../../hooks/useBusinessQueryScope';
+import { invalidateExpenseQueries, useExpenses } from '../../../hooks/useExpenses';
+import { invalidateLoanQueries, useLoans } from '../../../hooks/useLoans';
 
-const EMPTY_ACCOUNTS: Account[] = [];
 const EMPTY_EXPENSES: Expense[] = [];
 const EMPTY_LOANS: Loan[] = [];
 
+const toAmount = (value: unknown) => {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const getLoanName = (loan: Partial<Loan>) => loan.lenderBorrowerName?.trim() || 'Loan account';
+const getLoanType = (loan: Partial<Loan>) => loan.loanType === 'GIVEN' ? 'GIVEN' : 'BORROWED';
+const getLoanRate = (loan: Partial<Loan>) => toAmount(loan.interestRatePercent);
+const getExpenseDescription = (expense: Partial<Expense>) => expense.description ?? expense.paymentMode ?? 'No description';
+
 export default function AccountsScreen() {
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
     const [search, setSearch] = useState('');
     const { selection } = useHaptics();
     const queryClient = useQueryClient();
+    const businessId = useBusinessQueryScope();
 
-    const { data: balancesData, isLoading: balancesLoading, isRefetching: balancesRefetching } = useQuery({
-        queryKey: ['cash-bank-balances'],
-        queryFn: () => cashBankApi.getBalances(),
+    const { accounts, isLoading: balancesLoading, isRefetching: balancesRefetching } = useCashBankAccounts({
         staleTime: 60_000,
     });
 
-    const { data: expensesData, isLoading: expensesLoading, isRefetching: expensesRefetching } = useQuery({
-        queryKey: ['recent-expenses'],
-        queryFn: () => expenseApi.list({ limit: 5 }),
+    const {
+        expenses: filteredExpenses,
+        allExpenses = EMPTY_EXPENSES,
+        isLoading: expensesLoading,
+        isRefetching: expensesRefetching,
+    } = useExpenses({
+        search,
+        limit: 150,
         staleTime: 60_000,
     });
 
-    const { data: loansData, isLoading: loansLoading, isRefetching: loansRefetching } = useQuery({
-        queryKey: ['loans'],
-        queryFn: () => loanApi.list(),
+    const {
+        loans: filteredLoans,
+        allLoans = EMPTY_LOANS,
+        isLoading: loansLoading,
+        isRefetching: loansRefetching,
+    } = useLoans({
+        search,
         staleTime: 60_000,
     });
     const isRefreshing = balancesRefetching || expensesRefetching || loansRefetching;
 
-    const accounts = (balancesData?.data as Account[] | undefined) ?? EMPTY_ACCOUNTS;
-    const expenses = (expensesData?.data as Expense[] | undefined) ?? EMPTY_EXPENSES;
-    const loans = (loansData?.data as Loan[] | undefined) ?? EMPTY_LOANS;
     const needle = search.trim().toLowerCase();
 
     const filteredAccounts = useMemo(() => {
         if (!needle) return accounts;
         return accounts.filter((entry) => entry.name.toLowerCase().includes(needle));
     }, [accounts, needle]);
-    const filteredExpenses = useMemo(() => {
-        if (!needle) return expenses;
-        return expenses.filter((entry) =>
-            `${entry.category} ${entry.description ?? ''} ${entry.paymentMode}`.toLowerCase().includes(needle)
-        );
-    }, [expenses, needle]);
-    const filteredLoans = useMemo(() => {
-        if (!needle) return loans;
-        return loans.filter((entry) => `${entry.lenderBorrowerName} ${entry.loanType}`.toLowerCase().includes(needle));
-    }, [loans, needle]);
     const cashBalance = accounts.reduce((sum, entry) => sum + (entry.balance ?? 0), 0);
-    const expenseTotal = expenses.reduce((sum, entry) => sum + entry.amount, 0);
-    const loanExposure = loans.reduce((sum, entry) => sum + entry.currentBalance, 0);
+    const expenseTotal = allExpenses.reduce((sum, entry) => sum + toAmount(entry.amount), 0);
+    const loanExposure = allLoans.reduce((sum, entry) => sum + toAmount(entry.currentBalance), 0);
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -74,9 +84,11 @@ export default function AccountsScreen() {
                         tintColor={colors.primary}
                         refreshing={isRefreshing}
                         onRefresh={() => {
-                            queryClient.invalidateQueries({ queryKey: ['cash-bank-balances'] });
-                            queryClient.invalidateQueries({ queryKey: ['recent-expenses'] });
-                            queryClient.invalidateQueries({ queryKey: ['loans'] });
+                            void Promise.all([
+                                invalidateCashBankQueries(queryClient, businessId),
+                                invalidateExpenseQueries(queryClient, businessId),
+                                invalidateLoanQueries(queryClient, businessId),
+                            ]);
                         }}
                     />
                 )}
@@ -98,50 +110,51 @@ export default function AccountsScreen() {
                     />
                 </View>
 
+                <View style={s.heroWrap}>
+                    <UtilityHero
+                        title="Accounts Hub"
+                        subtitle="Cash, bank, expenses, loans, and linked report shortcuts from one screen."
+                        icon="bank-outline"
+                        tone="info"
+                    />
+                </View>
+
                 <View style={s.metricsRow}>
-                    <View style={[s.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[s.metricLabel, { color: colors.textSecondary }]}>Cash + Bank</Text>
-                        <Text style={[s.metricValue, { color: cashBalance >= 0 ? colors.success : colors.error }]}>
-                            Rs {cashBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                        </Text>
-                    </View>
-                    <View style={[s.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[s.metricLabel, { color: colors.textSecondary }]}>Expenses</Text>
-                        <Text style={[s.metricValue, { color: colors.error }]}>
-                            Rs {expenseTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                        </Text>
-                    </View>
-                    <View style={[s.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[s.metricLabel, { color: colors.textSecondary }]}>Loan Exposure</Text>
-                        <Text style={[s.metricValue, { color: colors.primary }]}>
-                            Rs {loanExposure.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                        </Text>
-                    </View>
+                    <HubMetricCard
+                        label="Cash + Bank"
+                        value={`Rs ${cashBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                        meta={`${accounts.length} accounts`}
+                        tone={cashBalance >= 0 ? 'success' : 'danger'}
+                    />
+                    <HubMetricCard
+                        label="Expenses"
+                        value={`Rs ${expenseTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                        meta={`${allExpenses.length} records`}
+                        tone="danger"
+                    />
+                    <HubMetricCard
+                        label="Loan Exposure"
+                        value={`Rs ${loanExposure.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                        meta={`${allLoans.length} loans`}
+                        tone="info"
+                    />
                 </View>
 
                 <View style={[s.section, { marginBottom: Spacing.sm }]}> 
                     <View style={s.quickGrid}>
-                        <Pressable style={[s.quickCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {
-                            void selection();
-                            router.push('/(main)/reports/trial-balance' as Parameters<typeof router.push>[0]);
-                        }}>
-                            <Text style={s.quickTitle}>Trial Balance</Text>
-                            <Text style={s.quickSub}>Debit/Credit check</Text>
-                        </Pressable>
-                        <Pressable style={[s.quickCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {
-                            void selection();
-                            router.push('/(main)/reports/ledgers' as Parameters<typeof router.push>[0]);
-                        }}>
-                            <Text style={s.quickTitle}>Ledgers</Text>
-                            <Text style={s.quickSub}>Account drill-down</Text>
-                        </Pressable>
-                        <Pressable style={[s.quickCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {
-                            void selection();
-                            router.push('/(main)/reports/gst-summary' as Parameters<typeof router.push>[0]);
-                        }}>
-                            <Text style={s.quickTitle}>GST Summary</Text>
-                            <Text style={s.quickSub}>Slab-wise tax data</Text>
-                        </Pressable>
+                        {ACCOUNTS_HUB_LINKS.map((entry) => (
+                            <HubActionCard
+                                key={entry.title}
+                                title={entry.title}
+                                subtitle={entry.subtitle}
+                                icon={entry.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                                tone={entry.tone}
+                                onPress={() => {
+                                    void selection();
+                                    router.push(entry.route as Parameters<typeof router.push>[0]);
+                                }}
+                            />
+                        ))}
                     </View>
                 </View>
 
@@ -178,14 +191,14 @@ export default function AccountsScreen() {
                     </View>
                     {expensesLoading ? <ActivityIndicator color={colors.primary} /> : filteredExpenses.length === 0 ? (
                         <Text style={s.emptyText}>No expenses recorded</Text>
-                    ) : filteredExpenses.map((expense) => (
+                    ) : filteredExpenses.slice(0, 5).map((expense) => (
                         <View key={expense.id} style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}> 
                             <View>
                                 <Text style={s.rowName}>{expense.category}</Text>
-                                <Text style={s.rowSub}>{expense.description ?? expense.paymentMode}</Text>
+                                <Text style={s.rowSub}>{getExpenseDescription(expense)}</Text>
                             </View>
                             <View style={s.rowRight}>
-                                <Text style={[s.rowBalance, { color: colors.error }]}>-Rs {expense.amount.toLocaleString('en-IN')}</Text>
+                                <Text style={[s.rowBalance, { color: colors.error }]}>-Rs {toAmount(expense.amount).toLocaleString('en-IN')}</Text>
                                 <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
                             </View>
                         </View>
@@ -205,15 +218,15 @@ export default function AccountsScreen() {
                     </View>
                     {loansLoading ? <ActivityIndicator color={colors.primary} /> : filteredLoans.length === 0 ? (
                         <Text style={s.emptyText}>No loans added</Text>
-                    ) : filteredLoans.map((loan) => (
+                    ) : filteredLoans.slice(0, 5).map((loan) => (
                         <Pressable key={loan.id} style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push(`/(main)/accounts/loans/${loan.id}` as Parameters<typeof router.push>[0])}>
                             <View>
-                                <Text style={s.rowName}>{loan.lenderBorrowerName}</Text>
-                                <Text style={s.rowSub}>{loan.loanType} | {loan.interestRatePercent}%</Text>
+                                <Text style={s.rowName}>{getLoanName(loan)}</Text>
+                                <Text style={s.rowSub}>{getLoanType(loan)} | {getLoanRate(loan)}%</Text>
                             </View>
                             <View style={s.rowRight}>
-                                <Text style={[s.rowBalance, { color: loan.loanType === 'BORROWED' ? colors.error : colors.success }]}>
-                                    Rs {loan.currentBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                <Text style={[s.rowBalance, { color: getLoanType(loan) === 'BORROWED' ? colors.error : colors.success }]}>
+                                    Rs {toAmount(loan.currentBalance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                 </Text>
                                 <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
                             </View>
@@ -233,35 +246,22 @@ export default function AccountsScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: {
-            paddingHorizontal: Spacing.lg,
-            paddingVertical: Spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        },
-        title: { fontSize: Typography.headline.size, fontWeight: '700', color: colors.text },
-        headerAction: { fontSize: Typography.body.size, fontWeight: '700' },
         searchWrap: {
             paddingHorizontal: Spacing.lg,
             marginBottom: Spacing.sm,
+        },
+        heroWrap: {
+            paddingHorizontal: Spacing.lg,
+            marginBottom: Spacing.md,
         },
         section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
         metricsRow: {
             flexDirection: 'row',
             gap: Spacing.sm,
+            flexWrap: 'wrap',
             paddingHorizontal: Spacing.lg,
             marginBottom: Spacing.md,
         },
-        metricCard: {
-            flex: 1,
-            borderWidth: 1,
-            borderRadius: Radius.md,
-            paddingHorizontal: Spacing.sm,
-            paddingVertical: Spacing.sm,
-        },
-        metricLabel: { fontSize: Typography.caption.size, fontWeight: '600' },
-        metricValue: { marginTop: 2, fontSize: Typography.title.size, fontWeight: '800' },
         sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.sm },
         sectionTitle: { fontWeight: '700', fontSize: Typography.title.size, color: colors.text },
         sectionCount: {
@@ -277,15 +277,6 @@ const styles = (colors: ColorPalette) =>
         },
         viewAll: { marginLeft: 'auto', fontSize: 12, fontWeight: '600' },
         quickGrid: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-        quickCard: {
-            borderRadius: Radius.card,
-            padding: Spacing.md,
-            minWidth: '47%',
-            flex: 1,
-            borderWidth: 1,
-        },
-        quickTitle: { color: colors.text, fontWeight: '700', fontSize: 13 },
-        quickSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
         row: {
             flexDirection: 'row',
             justifyContent: 'space-between',

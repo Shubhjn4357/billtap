@@ -4,19 +4,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { expenseApi } from '../../../../api/endpoints';
-import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { ExpenseCategory, PaymentMode } from '../../../../constants/enums';
+import { EXPENSE_CATEGORY_OPTIONS, EXPENSE_PAYMENT_MODE_OPTIONS } from '../../../../constants/formOptions';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { FormHero, FormSectionCard } from '../../../../components/ui/FormBlocks';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { SelectField } from '../../../../components/ui/SelectField';
 import { DateField } from '../../../../components/ui/DateField';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-
-const CATEGORIES = Object.values(ExpenseCategory);
-const PAYMENT_MODES = ['CASH', 'BANK', 'UPI', 'CARD'] as const;
+import { useExpenseMutations } from '../../../../hooks/useExpenseMutations';
 
 const toAmount = (value: string) => {
     const parsed = Number(value);
@@ -26,7 +24,6 @@ const toAmount = (value: string) => {
 export default function AddExpenseScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
-    const qc = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
 
@@ -37,12 +34,17 @@ export default function AddExpenseScreen() {
     const [paymentMode, setPaymentMode] = useState<PaymentMode>(PaymentMode.CASH);
     const [partyName, setPartyName] = useState('');
 
-    const { mutate, isPending } = useMutation({
-        mutationFn: () => {
-            const numericAmount = toAmount(amount);
-            if (numericAmount <= 0) throw new Error('Amount must be positive.');
+    const { saveExpense, isSavingExpense: isPending } = useExpenseMutations();
 
-            return expenseApi.create({
+    const handleSave = () => {
+        const numericAmount = toAmount(amount);
+        if (numericAmount <= 0) {
+            dialog.alert('Error', 'Amount must be positive.');
+            return;
+        }
+
+        void saveExpense({
+            data: {
                 category,
                 amount: numericAmount,
                 description: description.trim() || null,
@@ -55,16 +57,16 @@ export default function AddExpenseScreen() {
                 receiptUrl: null,
                 gstRate: 0,
                 isGstIncluded: false,
+            },
+        })
+            .then(() => {
+                dialog.alert('Saved', 'Expense recorded.');
+                router.back();
+            })
+            .catch((error) => {
+                dialog.alert('Error', error instanceof Error ? error.message : 'Failed to save expense');
             });
-        },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['expenses'] });
-            qc.invalidateQueries({ queryKey: ['recent-expenses'] });
-            dialog.alert('Saved', 'Expense recorded.');
-            router.back();
-        },
-        onError: (error) => dialog.alert('Error', error instanceof Error ? error.message : 'Failed to save expense'),
-    });
+    };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -73,60 +75,64 @@ export default function AddExpenseScreen() {
                 subtitle="Record expense transaction"
                 onBackPress={smartBack}
                 rightAction={(
-                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => mutate()} disabled={isPending}>
+                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={handleSave} disabled={isPending}>
                         {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />}
                     </Pressable>
                 )}
             />
 
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
-                <View style={[s.heroCard, { backgroundColor: colors.primary }]}>
-                    <Text style={s.heroLabel}>AMOUNT</Text>
-                    <AppInput inputType="decimal" value={amount} onChangeText={setAmount} placeholder="0.00" style={s.heroInput} />
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title="Create Expense"
+                        subtitle="Record category, payment mode, date, and vendor details for every outgoing amount."
+                        icon="receipt-text-plus-outline"
+                        tone="danger"
+                    />
                 </View>
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Category</Text>
-                <SelectField
-                    value={category}
-                    onChange={(value) => setCategory(value as ExpenseCategory)}
-                    options={CATEGORIES.map((entry) => ({ label: entry.replace(/_/g, ' '), value: entry }))}
-                    title="Select Category"
-                    placeholder="Choose category"
-                />
+                <FormSectionCard title="Amount and Classification" description="Capture the amount, category, and how the payment was made." tone="danger">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Amount</Text>
+                    <AppInput inputType="decimal" value={amount} onChangeText={setAmount} placeholder="0.00" />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Payment Mode</Text>
-                <View style={s.modeRow}>
-                    {PAYMENT_MODES.map((mode) => {
-                        const selected = paymentMode === mode;
-                        return (
-                            <Pressable
-                                key={mode}
-                                style={[s.modeChip, { backgroundColor: selected ? colors.primary : colors.surfaceVariant }]}
-                                onPress={() => setPaymentMode(mode)}
-                            >
-                                <Text style={{ color: selected ? colors.onPrimary : colors.text, fontWeight: '700', fontSize: 12 }}>{mode}</Text>
-                            </Pressable>
-                        );
-                    })}
-                </View>
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Category</Text>
+                    <SelectField
+                        value={category}
+                        onChange={(value) => setCategory(value as ExpenseCategory)}
+                        options={EXPENSE_CATEGORY_OPTIONS}
+                        title="Select Category"
+                        placeholder="Choose category"
+                    />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Date</Text>
-                <DateField value={expenseDate} onChange={(value) => setExpenseDate(value ?? expenseDate)} allowClear={false} />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Payment Mode</Text>
+                    <SelectField
+                        value={paymentMode}
+                        onChange={(value) => setPaymentMode(value as PaymentMode)}
+                        options={EXPENSE_PAYMENT_MODE_OPTIONS}
+                        title="Select Payment Mode"
+                        placeholder="Choose payment mode"
+                    />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Description (optional)</Text>
-                <AppInput
-                    inputType="text"
-                    value={description}
-                    onChangeText={setDescription}
-                    placeholder="Notes"
-                    multiline
-                    style={s.notesInput}
-                />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Date</Text>
+                    <DateField value={expenseDate} onChange={(value) => setExpenseDate(value ?? expenseDate)} allowClear={false} />
+                </FormSectionCard>
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Paid To (optional)</Text>
-                <AppInput inputType="text" value={partyName} onChangeText={setPartyName} placeholder="Vendor / Party name" />
+                <FormSectionCard title="Narration and Counterparty" description="Add notes and who the expense was paid to." tone="warning">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Description (optional)</Text>
+                    <AppInput
+                        inputType="text"
+                        value={description}
+                        onChangeText={setDescription}
+                        placeholder="Notes"
+                        multiline
+                        style={s.notesInput}
+                    />
 
-                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={() => mutate()} disabled={isPending}>
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Paid To (optional)</Text>
+                    <AppInput inputType="text" value={partyName} onChangeText={setPartyName} placeholder="Vendor / Party name" />
+                </FormSectionCard>
+
+                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={handleSave} disabled={isPending}>
                     {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Record Expense</Text>}
                 </Pressable>
 
@@ -148,14 +154,9 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             paddingHorizontal: Spacing.md,
         },
-        saveText: { fontSize: 12, fontWeight: '700' },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.lg },
-        heroCard: { borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.sm, gap: Spacing.xs },
-        heroLabel: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-        heroInput: { color: colors.onPrimary, fontSize: 24, fontWeight: '800' },
+        heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.xs },
-        modeRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-        modeChip: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 7 },
         notesInput: { minHeight: 64, textAlignVertical: 'top' },
         primaryBtn: {
             marginTop: Spacing.md,

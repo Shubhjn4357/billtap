@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, FlatList, Pressable, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { usePosStore } from '../../../store/posStore';
-import { posApi, itemApi } from '../../../api/endpoints';
 import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { GST_SLABS } from '../../../constants/gstRates';
@@ -16,7 +14,11 @@ import type { Item } from '../../../types/domain';
 import { toUserMessage } from '../../../api/client';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { HubMetricCard } from '../../../components/ui/HubBlocks';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useAppDialog } from '../../../components/providers/DialogProvider';
+import { useItemCatalog } from '../../../hooks/useInventory';
+import { useInvoiceMutations } from '../../../hooks/useInvoiceMutations';
 
 const normalizeGstRate = (value: number) => {
     if (GST_SLABS.includes(value as (typeof GST_SLABS)[number])) return value;
@@ -34,7 +36,6 @@ export default function PosScreen() {
     const subtotal = store.getSubtotal();
     const totalTax = store.getTotalTax();
     const total = store.getTotal();
-    const queryClient = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/billing');
     const dialog = useAppDialog();
@@ -45,9 +46,9 @@ export default function PosScreen() {
         dialog.alert(title, message);
     };
 
-    const { data: itemsData, isRefetching, refetch } = useQuery({
-        queryKey: ['items'],
-        queryFn: () => itemApi.list({ limit: 200 }),
+    const { items: filteredItems, isRefetching, refetch } = useItemCatalog({
+        search,
+        limit: 200,
         staleTime: 5 * 60_000,
     });
 
@@ -58,20 +59,10 @@ export default function PosScreen() {
         }
     }, [params.search, params.scanAt]);
 
-    const filteredItems = useMemo(() => {
-        const list = itemsData?.items ?? [];
-        const query = search.trim().toLowerCase();
-        if (!query) return list;
+    const { createPosSale, isCreatingPosSale: isPending } = useInvoiceMutations();
 
-        return list.filter((item) =>
-            item.name.toLowerCase().includes(query)
-            || (item.barcode ?? '').toLowerCase().includes(query)
-            || (item.sku ?? '').toLowerCase().includes(query)
-        );
-    }, [itemsData?.items, search]);
-
-    const { mutate: checkout, isPending } = useMutation({
-        mutationFn: () => posApi.createSale({
+    const handleCheckout = () => {
+        void createPosSale({
             partyId: store.partyId ?? undefined,
             items: store.cartItems.map((ci) => ({
                 itemId: ci.itemId ?? undefined,
@@ -88,33 +79,31 @@ export default function PosScreen() {
             discountAmount: store.discountAmount,
             roundOffAmount: store.roundOffAmount,
             notes: store.notes || undefined,
-        }),
-        onSuccess: (res) => {
-            dialog.alert('Sale Recorded', `Invoice: ${res.data.invoiceNumber}`, [
-                {
-                    text: 'View Invoice',
-                    onPress: () => {
-                        store.clearCart();
-                        queryClient.invalidateQueries({ queryKey: ['invoices'] });
-                        if (res.data.id) {
-                            router.replace(`/(main)/billing/${res.data.id}` as Parameters<typeof router.replace>[0]);
-                        }
+        })
+            .then((res) => {
+                dialog.alert('Sale Recorded', `Invoice: ${res.data.invoiceNumber}`, [
+                    {
+                        text: 'View Invoice',
+                        onPress: () => {
+                            store.clearCart();
+                            if (res.data.id) {
+                                router.replace(`/(main)/billing/${res.data.id}` as Parameters<typeof router.replace>[0]);
+                            }
+                        },
                     },
-                },
-                {
-                    text: 'New Sale',
-                    style: 'cancel',
-                    onPress: () => {
-                        store.clearCart();
-                        queryClient.invalidateQueries({ queryKey: ['invoices'] });
+                    {
+                        text: 'New Sale',
+                        style: 'cancel',
+                        onPress: () => {
+                            store.clearCart();
+                        },
                     },
-                },
-            ]);
-        },
-        onError: (err) => {
-            openInfoDialog('Sale failed', toUserMessage(err, 'Unable to complete quick sale.'));
-        },
-    });
+                ]);
+            })
+            .catch((err) => {
+                openInfoDialog('Sale failed', toUserMessage(err, 'Unable to complete quick sale.'));
+            });
+    };
 
     const handleAddItem = (item: Item) => {
         store.addItem({
@@ -161,6 +150,21 @@ export default function PosScreen() {
 
             <View style={s.layout}>
                 <View style={s.catalog}>
+                    <View style={s.heroWrap}>
+                        <UtilityHero
+                            title="Quick Sale POS"
+                            subtitle="Scan or tap items, build a fast cart, and finish a counter sale without leaving the screen."
+                            icon="cart-outline"
+                            tone="info"
+                        />
+                    </View>
+
+                    <View style={s.metricsRow}>
+                        <HubMetricCard label="Cart Items" value={String(store.cartItems.length)} meta="Distinct lines" tone="info" />
+                        <HubMetricCard label="Tax" value={`Rs ${totalTax.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} meta="Current cart tax" tone="warning" />
+                        <HubMetricCard label="Total" value={`Rs ${total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} meta="Current payable" tone="success" />
+                    </View>
+
                     <AppSearchBar
                         value={search}
                         onChangeText={setSearch}
@@ -250,7 +254,7 @@ export default function PosScreen() {
                         </View>
                         <Pressable
                             style={[s.checkoutBtn, { backgroundColor: store.cartItems.length === 0 ? colors.border : colors.primary }]}
-                            onPress={() => checkout()}
+                            onPress={handleCheckout}
                             disabled={store.cartItems.length === 0 || isPending}
                         >
                             {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.checkoutBtnText}>Checkout Rs {total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>}
@@ -274,6 +278,8 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     },
     layout: { flex: 1, flexDirection: 'column' },
     catalog: { flex: 1, paddingHorizontal: Spacing.sm, gap: Spacing.sm },
+    heroWrap: { paddingHorizontal: Spacing.sm, paddingTop: Spacing.xs },
+    metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: Spacing.sm },
     catalogItem: { flex: 1, borderRadius: Radius.card, padding: Spacing.sm, minHeight: 86, justifyContent: 'space-between' },
     itemName: { fontWeight: '600', fontSize: 13 },
     itemPrice: { fontWeight: '700', fontSize: 16, marginTop: 4 },

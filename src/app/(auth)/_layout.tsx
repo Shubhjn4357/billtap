@@ -1,5 +1,4 @@
 import { Stack } from 'expo-router';
-import { } from 'react-native';
 import { useAppColors } from '../../hooks/useAppColors';
 
 export default function AuthLayout() {
@@ -19,6 +18,5 @@ export default function AuthLayout() {
         </Stack>
     );
 }
-
 
 

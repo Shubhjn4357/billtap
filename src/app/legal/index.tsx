@@ -1,34 +1,13 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../hooks/useSmartBack';
 import Constants from 'expo-constants';
-import { Radius, Spacing, type ColorPalette } from '../../constants/theme';
+import { LEGAL_CENTER_LINKS } from '../../constants/appShellOptions';
+import { Radius, Spacing, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { AppTopBar } from '../../components/ui/AppTopBar';
-
-const LINKS = [
-    {
-        title: 'Terms of Service',
-        description: 'Usage rules, subscriptions, billing, and legal conditions.',
-        route: '/legal/terms',
-    },
-    {
-        title: 'Privacy Policy',
-        description: 'How account and business data is collected and used.',
-        route: '/legal/privacy',
-    },
-    {
-        title: 'Changelog',
-        description: 'Version history and major feature updates.',
-        route: '/legal/changelog',
-    },
-    {
-        title: 'About Vahi',
-        description: 'App identity, build version, and support details.',
-        route: '/legal/about',
-    },
-] as const;
+import { UtilityHero, UtilityPanel, UtilityRow, UtilitySection } from '../../components/ui/UtilityBlocks';
 
 export default function LegalCenterScreen() {
     const colors = useAppColors();
@@ -45,26 +24,41 @@ export default function LegalCenterScreen() {
             />
 
             <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-                {LINKS.map((link) => (
-                    <Pressable
-                        key={link.title}
-                        style={({ pressed }) => [
-                            s.card,
-                            { backgroundColor: colors.card, borderColor: colors.border },
-                            pressed && { opacity: 0.8 },
-                        ]}
-                        onPress={() => router.push(link.route as Parameters<typeof router.push>[0])}
-                        accessibilityRole="button"
-                        accessibilityLabel={link.title}
-                    >
-                        <Text style={[s.cardTitle, { color: colors.text }]}>{link.title}</Text>
-                        <Text style={[s.cardDescription, { color: colors.textSecondary }]}>{link.description}</Text>
-                    </Pressable>
-                ))}
-                <View style={[s.metaCard, { borderColor: colors.border, backgroundColor: colors.surfaceVariant }]}>
-                    <Text style={[s.metaLabel, { color: colors.textSecondary }]}>App Version</Text>
-                    <Text style={[s.metaValue, { color: colors.text }]}>{version}</Text>
-                </View>
+                <UtilityHero
+                    title="Legal and Compliance"
+                    subtitle="Policies, version history, and public app disclosures in one place."
+                    icon="scale-balance"
+                    tone="info"
+                    right={(
+                        <View style={[s.versionBadge, { backgroundColor: withAlpha(colors.primary, '18'), borderColor: withAlpha(colors.primary, '36') }]}>
+                            <Text style={[s.versionBadgeText, { color: colors.primary }]}>v{version}</Text>
+                        </View>
+                    )}
+                />
+                <UtilitySection title="Documents">
+                    <UtilityPanel>
+                        {LEGAL_CENTER_LINKS.map((link, index) => (
+                            <View key={link.title} style={index < LEGAL_CENTER_LINKS.length - 1 ? { borderBottomWidth: 1, borderBottomColor: colors.border } : undefined}>
+                                <UtilityRow
+                                    label={link.title}
+                                    description={link.description}
+                                    icon="file-document-outline"
+                                    onPress={() => router.push(link.route as Parameters<typeof router.push>[0])}
+                                />
+                            </View>
+                        ))}
+                    </UtilityPanel>
+                </UtilitySection>
+                <UtilitySection title="Build Info">
+                    <UtilityPanel tone="info">
+                        <UtilityRow
+                            label="App Version"
+                            description="Installed Expo app version reported by the bundle."
+                            icon="tag-outline"
+                            right={<Text style={[s.metaValue, { color: colors.text }]}>{version}</Text>}
+                        />
+                    </UtilityPanel>
+                </UtilitySection>
                 <View style={{ height: 40 }} />
             </ScrollView>
         </SafeAreaView>
@@ -75,20 +69,15 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
-        card: {
+        versionBadge: {
+            borderRadius: Radius.pill,
             borderWidth: 1,
-            borderRadius: Radius.card,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.md,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
         },
-        cardTitle: { fontSize: 14, fontWeight: '700' },
-        cardDescription: { fontSize: 12, marginTop: 4, lineHeight: 18 },
-        metaCard: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.md,
+        versionBadgeText: {
+            fontSize: 11,
+            fontWeight: '800',
         },
-        metaLabel: { fontSize: 12, fontWeight: '600' },
-        metaValue: { fontSize: 14, fontWeight: '700', marginTop: 2 },
+        metaValue: { fontSize: 14, fontWeight: '700' },
     });

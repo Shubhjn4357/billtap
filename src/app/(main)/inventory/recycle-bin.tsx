@@ -4,46 +4,24 @@ import {
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { itemApi } from '../../../api/endpoints';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
-import type { Item } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useInventoryMutations } from '../../../hooks/useInventoryMutations';
+import { useItemRecycleBin } from '../../../hooks/useInventory';
 
 export default function ItemRecycleBinScreen() {
     const dialog = useAppDialog();
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/inventory');
-    const queryClient = useQueryClient();
     const [processingId, setProcessingId] = useState<string | null>(null);
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['items-recycle-bin'],
-        queryFn: () => itemApi.recycleBin({ limit: 250 }),
-        staleTime: 15_000,
-    });
+    const { items: entries, isLoading, isRefetching, refetch } = useItemRecycleBin({ limit: 250 });
 
-    const entries: Item[] = data?.items ?? [];
-
-    const { mutateAsync: restore } = useMutation({
-        mutationFn: (id: string) => itemApi.restore(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['items'] });
-            queryClient.invalidateQueries({ queryKey: ['items-recycle-bin'] });
-        },
-    });
-
-    const { mutateAsync: permanentDelete } = useMutation({
-        mutationFn: (id: string) => itemApi.permanentDelete(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['items'] });
-            queryClient.invalidateQueries({ queryKey: ['items-recycle-bin'] });
-        },
-    });
+    const { restoreItem, permanentlyDeleteItem } = useInventoryMutations();
 
     const confirmRestore = (id: string) => {
         dialog.alert('Restore item', 'Move this item back to active inventory?', [
@@ -53,7 +31,7 @@ export default function ItemRecycleBinScreen() {
                 onPress: async () => {
                     try {
                         setProcessingId(id);
-                        await restore(id);
+                        await restoreItem(id);
                     } catch (error) {
                         dialog.alert('Restore failed', error instanceof Error ? error.message : 'Unable to restore item.');
                     } finally {
@@ -73,7 +51,7 @@ export default function ItemRecycleBinScreen() {
                 onPress: async () => {
                     try {
                         setProcessingId(id);
-                        await permanentDelete(id);
+                        await permanentlyDeleteItem(id);
                     } catch (error) {
                         dialog.alert('Delete failed', error instanceof Error ? error.message : 'Unable to delete item.');
                     } finally {

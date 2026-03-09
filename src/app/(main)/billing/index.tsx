@@ -3,6 +3,7 @@ import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Tex
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BILLING_CREATE_OPTIONS, BILLING_DATE_FILTER_OPTIONS, BILLING_STATUS_FILTER_OPTIONS, BILLING_TAB_OPTIONS } from '../../../constants/billingOptions';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -10,44 +11,14 @@ import { useInvoices, formatInvoiceDate, type InvoiceDateRange, type InvoiceStat
 import type { Invoice } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { ChipButton } from '../../../components/ui/ChipBlocks';
+import { HubMetricCard } from '../../../components/ui/HubBlocks';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { EmptyStateCard } from '../../../components/ui/ListBlocks';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useHaptics } from '../../../hooks/useHaptics';
 
 type BillingTab = 'sales' | 'purchases' | 'orders';
-
-const TAB_OPTIONS: { key: BillingTab; label: string; queryType: InvoiceQueryType; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
-    { key: 'sales', label: 'Sales', queryType: 'TAX_INVOICE', icon: 'file-document-outline' },
-    { key: 'purchases', label: 'Purchases', queryType: 'PURCHASE_BILL', icon: 'cart-outline' },
-    { key: 'orders', label: 'Orders', queryType: 'ESTIMATE', icon: 'clipboard-outline' },
-];
-
-const CREATE_OPTIONS: { label: string; route: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
-    { label: 'Sale Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', icon: 'file-document-plus-outline' },
-    { label: 'Quick Sale (POS)', route: '/(main)/billing/pos', icon: 'point-of-sale' },
-    { label: 'Purchase Bill', route: '/(main)/billing/purchase-bill', icon: 'cart-plus' },
-    { label: 'Sale Return', route: '/(main)/billing/sale-return', icon: 'undo-variant' },
-    { label: 'Purchase Return', route: '/(main)/billing/purchase-return', icon: 'redo-variant' },
-    { label: 'Estimate', route: '/(main)/billing/estimate', icon: 'file-document-edit-outline' },
-    { label: 'Sale Order', route: '/(main)/billing/sale-order', icon: 'clipboard-text-outline' },
-    { label: 'Purchase Order', route: '/(main)/billing/purchase-order', icon: 'clipboard-list-outline' },
-    { label: 'Delivery Challan', route: '/(main)/billing/delivery-challan', icon: 'truck-delivery-outline' },
-    { label: 'Payment In', route: '/(main)/billing/payment-in', icon: 'cash-plus' },
-    { label: 'Payment Out', route: '/(main)/billing/payment-out', icon: 'cash-minus' },
-];
-
-const DATE_FILTERS: { key: InvoiceDateRange; label: string }[] = [
-    { key: 'all', label: 'All Time' },
-    { key: 'today', label: 'Today' },
-    { key: 'week', label: 'This Week' },
-    { key: 'month', label: 'This Month' },
-];
-
-const STATUS_FILTERS: { key: InvoiceStatusFilter; label: string; color?: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'paid', label: 'Paid' },
-    { key: 'overdue', label: 'Overdue' },
-    { key: 'credit', label: 'Credit' },
-];
 
 export default function BillingScreen() {
     const colors = useAppColors();
@@ -61,7 +32,7 @@ export default function BillingScreen() {
     const [statusFilter, setStatusFilter] = useState<InvoiceStatusFilter>('all');
     const [createSheetOpen, setCreateSheetOpen] = useState(false);
 
-    const queryType = TAB_OPTIONS.find((t) => t.key === activeTab)?.queryType ?? 'TAX_INVOICE';
+    const queryType = (BILLING_TAB_OPTIONS.find((t) => t.key === activeTab)?.queryType ?? 'TAX_INVOICE') as InvoiceQueryType;
 
     const { invoices, summary, isLoading, isRefetching, refetch } = useInvoices({
         type: queryType,
@@ -93,62 +64,68 @@ export default function BillingScreen() {
                 renderItem={({ item }) => <InvoiceRow invoice={item} colors={colors} />}
                 ListHeaderComponent={(
                     <>
-                        {/* Summary Metrics */}
+                        <View style={s.heroWrap}>
+                            <UtilityHero
+                                title="Billing Hub"
+                                subtitle="Invoices, purchases, orders, and payment status from one list."
+                                icon="file-document-multiple-outline"
+                                tone="info"
+                            />
+                        </View>
                         <View style={s.metricsRow}>
-                            {[
-                                { label: 'Total', value: String(summary.total), color: colors.text },
-                                { label: 'Paid', value: String(summary.paid), color: colors.success },
-                                { label: 'Overdue', value: String(summary.overdue), color: colors.error },
-                            ].map((m) => (
-                                <View key={m.label} style={[s.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                    <Text style={[s.metricLabel, { color: colors.textSecondary }]}>{m.label}</Text>
-                                    <Text style={[s.metricValue, { color: m.color }]}>{m.value}</Text>
-                                </View>
-                            ))}
+                            <HubMetricCard label="Total" value={String(summary.total)} meta="Visible rows" tone="default" />
+                            <HubMetricCard label="Paid" value={String(summary.paid)} meta="Settled invoices" tone="success" />
+                            <HubMetricCard label="Overdue" value={String(summary.overdue)} meta="Needs follow-up" tone="danger" />
+                            <HubMetricCard
+                                label="Outstanding"
+                                value={`Rs ${summary.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+                                meta="Open amount"
+                                tone="warning"
+                            />
                         </View>
-                        <View style={[s.dueCard, { backgroundColor: withAlpha(colors.primary, '12'), borderColor: withAlpha(colors.primary, '30') }]}>
-                            <MaterialCommunityIcons name="cash-clock" size={16} color={colors.primary} />
-                            <Text style={[s.dueLabel, { color: colors.textSecondary }]}>Outstanding</Text>
-                            <Text style={[s.dueValue, { color: colors.primary }]}>Rs {summary.outstanding.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
-                        </View>
-
-                        {/* Tabs */}
                         <View style={s.tabs}>
-                            {TAB_OPTIONS.map((tab) => {
+                            {BILLING_TAB_OPTIONS.map((tab) => {
                                 const sel = activeTab === tab.key;
                                 return (
-                                    <Pressable key={tab.key} style={[s.tab, sel && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                                        onPress={() => { void selection(); setActiveTab(tab.key); }}>
-                                        <MaterialCommunityIcons name={tab.icon} size={13} color={sel ? colors.onPrimary : colors.textSecondary} />
-                                        <Text style={[s.tabText, { color: sel ? colors.onPrimary : colors.textSecondary, fontWeight: sel ? '700' : '500' }]}>{tab.label}</Text>
-                                    </Pressable>
+                                    <ChipButton
+                                        key={tab.key}
+                                        label={tab.label}
+                                        icon={tab.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                                        selected={sel}
+                                        tone="info"
+                                        onPress={() => { void selection(); setActiveTab(tab.key); }}
+                                    />
                                 );
                             })}
                         </View>
 
-                        {/* Date filters */}
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filtersScroll} contentContainerStyle={s.filtersRow}>
-                            {DATE_FILTERS.map((df) => {
+                            {BILLING_DATE_FILTER_OPTIONS.map((df) => {
                                 const sel = dateRange === df.key;
                                 return (
-                                    <Pressable key={df.key} style={[s.filterChip, sel && { backgroundColor: colors.primary }]}
-                                        onPress={() => { void selection(); setDateRange(df.key); }}>
-                                        <Text style={[s.filterChipText, { color: sel ? colors.onPrimary : colors.textSecondary, fontWeight: sel ? '700' : '500' }]}>{df.label}</Text>
-                                    </Pressable>
+                                    <ChipButton
+                                        key={df.key}
+                                        label={df.label}
+                                        selected={sel}
+                                        tone="info"
+                                        onPress={() => { void selection(); setDateRange(df.key as InvoiceDateRange); }}
+                                    />
                                 );
                             })}
                         </ScrollView>
 
-                        {/* Status filters */}
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filtersScroll} contentContainerStyle={s.filtersRow}>
-                            {STATUS_FILTERS.map((sf) => {
+                            {BILLING_STATUS_FILTER_OPTIONS.map((sf) => {
                                 const sel = statusFilter === sf.key;
-                                const chipColor = sf.key === 'paid' ? colors.success : sf.key === 'overdue' ? colors.error : sf.key === 'credit' ? colors.warning : colors.primary;
+                                const tone = sf.key === 'paid' ? 'success' : sf.key === 'overdue' ? 'danger' : sf.key === 'credit' ? 'warning' : 'info';
                                 return (
-                                    <Pressable key={sf.key} style={[s.filterChip, sel && { backgroundColor: chipColor }]}
-                                        onPress={() => { void selection(); setStatusFilter(sf.key); }}>
-                                        <Text style={[s.filterChipText, { color: sel ? colors.onPrimary : colors.textSecondary, fontWeight: sel ? '700' : '500' }]}>{sf.label}</Text>
-                                    </Pressable>
+                                    <ChipButton
+                                        key={sf.key}
+                                        label={sf.label}
+                                        selected={sel}
+                                        tone={tone}
+                                        onPress={() => { void selection(); setStatusFilter(sf.key as InvoiceStatusFilter); }}
+                                    />
                                 );
                             })}
                         </ScrollView>
@@ -159,10 +136,12 @@ export default function BillingScreen() {
                     isLoading ? (
                         <ListSkeleton rows={6} />
                     ) : (
-                        <View style={s.centered}>
-                                <MaterialCommunityIcons name="file-document-outline" size={36} color={colors.textSecondary} />
-                                <Text style={{ color: colors.textSecondary, marginTop: Spacing.sm }}>No transactions found</Text>
-                        </View>
+                        <EmptyStateCard
+                            icon="file-document-outline"
+                            title="No transactions found"
+                            subtitle={search.trim().length > 0 ? 'Try a different party name, invoice number, date range, or status.' : 'Start a new billing document from the create sheet.'}
+                            tone="info"
+                        />
                     )
                 }
                 refreshControl={(
@@ -188,7 +167,7 @@ export default function BillingScreen() {
                             </Pressable>
                         </View>
                         <ScrollView contentContainerStyle={s.sheetGrid} showsVerticalScrollIndicator={false}>
-                            {CREATE_OPTIONS.map((option) => {
+                            {BILLING_CREATE_OPTIONS.map((option) => {
                                 if (!canPos && option.route.endsWith('/billing/pos')) return null;
                                 return (
                                     <Pressable
@@ -197,7 +176,7 @@ export default function BillingScreen() {
                                         onPress={() => { void selection(); setCreateSheetOpen(false); router.push(option.route as Parameters<typeof router.push>[0]); }}
                                     >
                                         <View style={[s.sheetOptionIcon, { backgroundColor: withAlpha(colors.primary, '16') }]}>
-                                            <MaterialCommunityIcons name={option.icon} size={16} color={colors.primary} />
+                                            <MaterialCommunityIcons name={option.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={16} color={colors.primary} />
                                         </View>
                                         <Text style={[s.sheetOptionText, { color: colors.text }]}>{option.label}</Text>
                                     </Pressable>
@@ -254,20 +233,11 @@ function InvoiceRow({ invoice, colors }: { invoice: Invoice; colors: ColorPalett
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    metricsRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    metricCard: { flex: 1, borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm },
-    metricLabel: { fontSize: Typography.caption.size, fontWeight: '600' },
-    metricValue: { marginTop: 2, fontSize: Typography.title.size, fontWeight: '800' },
-    dueCard: { marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderRadius: Radius.card, borderWidth: 1, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-    dueLabel: { fontSize: Typography.caption.size, fontWeight: '600' },
-    dueValue: { marginLeft: 'auto', fontSize: Typography.body.size, fontWeight: '800' },
+    heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+    metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
     tabs: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.sm },
-    tab: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderRadius: Radius.pill, backgroundColor: colors.surfaceVariant, borderWidth: 1, borderColor: colors.border },
-    tabText: { fontSize: 12 },
     filtersScroll: { flexGrow: 0, marginBottom: 4 },
     filtersRow: { paddingHorizontal: Spacing.lg, gap: Spacing.xs },
-    filterChip: { paddingHorizontal: Spacing.sm, paddingVertical: 5, borderRadius: Radius.pill, backgroundColor: colors.surfaceVariant },
-    filterChipText: { fontSize: 12 },
     fab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.xl, width: 56, height: 56, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 8 },
     fabText: { fontSize: 28, lineHeight: 30, fontWeight: '700' },
     modalRoot: { flex: 1, justifyContent: 'flex-end' },
@@ -280,7 +250,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     sheetOption: { width: '48%', borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     sheetOptionIcon: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     sheetOptionText: { fontSize: 13, fontWeight: '600', flex: 1 },
-    centered: { paddingTop: 80, alignItems: 'center', gap: Spacing.sm },
 });
 
 const rowStyles = StyleSheet.create({

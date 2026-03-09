@@ -1,32 +1,30 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { godownApi } from '../../../../api/endpoints';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useInvoiceBuilderStore } from '../../../../store/invoiceBuilderStore';
+import { useGodownMutations } from '../../../../hooks/useGodownMutations';
 
 export default function AddGodownScreen() {
     const dialog = useAppDialog();
-        const colors = useAppColors();
+    const colors = useAppColors();
+    const { returnContext } = useLocalSearchParams<{ returnContext?: string }>();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
-    const queryClient = useQueryClient();
 
     const [name, setName] = useState('');
     const [address, setAddress] = useState('');
     const [isDefault, setIsDefault] = useState(false);
+    const setDefaultGodownId = useInvoiceBuilderStore((state) => state.setDefaultGodownId);
 
-    const { mutateAsync: createGodown, isPending } = useMutation({
-        mutationFn: () => godownApi.create({ name: name.trim(), address: address.trim() || undefined, isDefault }),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['godowns'] }),
-    });
+    const { saveGodown: createGodown, isSavingGodown: isPending } = useGodownMutations();
 
     const onSave = async () => {
         if (!name.trim()) {
@@ -35,7 +33,10 @@ export default function AddGodownScreen() {
         }
 
         try {
-            await createGodown();
+            const result = await createGodown({ name: name.trim(), address: address.trim() || undefined, isDefault });
+            if (returnContext === 'invoice' && result.data?.id) {
+                setDefaultGodownId(result.data.id);
+            }
             router.back();
         } catch (error) {
             dialog.alert('Create failed', error instanceof Error ? error.message : 'Unable to create godown.');

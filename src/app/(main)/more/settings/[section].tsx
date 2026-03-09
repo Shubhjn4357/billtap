@@ -15,12 +15,11 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMutation } from '@tanstack/react-query';
-import { settingsApi } from '../../../../api/endpoints';
 import { getSettingsSectionLabel } from '../../../../constants/settingsSchema';
-import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { useSettingsSection } from '../../../../hooks/useSettingsSection';
+import { useSettingsSectionMutation } from '../../../../hooks/useSettingsSectionMutation';
 import type { SettingsFieldDefinition } from '../../../../types/api';
 import { extractUpiIdFromPayload } from '../../../../utils/upi';
 import { SignatureCaptureSheet } from '../../../../components/signature/SignatureCaptureSheet';
@@ -28,6 +27,7 @@ import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { AppSearchBar } from '../../../../components/ui/AppSearchBar';
+import { ChipButton } from '../../../../components/ui/ChipBlocks';
 import { DateField } from '../../../../components/ui/DateField';
 import { SelectField } from '../../../../components/ui/SelectField';
 import {
@@ -38,7 +38,7 @@ import {
     setRoleAccessOverrides,
 } from '../../../../utils/accessControl';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-import { toUserMessage } from '../../../../api/client';
+import { isCloudWriteBlockedError, toUserMessage } from '../../../../api/client';
 import { useAuthStore } from '../../../../store/authStore';
 
 const coerceValue = (field: SettingsFieldDefinition, input: unknown) => {
@@ -128,6 +128,33 @@ export default function SettingsSectionEditorScreen() {
         }
         return normalized;
     }, [fields, rawSectionData]);
+    const baselineSignature = useMemo(() => JSON.stringify(baselineDraft), [baselineDraft]);
+    const draftSignature = useMemo(() => JSON.stringify(draft), [draft]);
+
+    const hydratedSectionRef = useRef<string>('');
+    const lastHydratedBaselineSignatureRef = useRef<string>('');
+    useEffect(() => {
+        const sectionChanged = hydratedSectionRef.current !== section;
+        if (sectionChanged) {
+            hydratedSectionRef.current = section;
+            lastHydratedBaselineSignatureRef.current = baselineSignature;
+            setDraft(baselineDraft);
+            return;
+        }
+
+        const previousHydratedBaselineSignature = lastHydratedBaselineSignatureRef.current;
+        const shouldHydrateFromLatestBaseline =
+            Object.keys(baselineDraft).length > 0
+            && (
+                Object.keys(draft).length === 0
+                || draftSignature === previousHydratedBaselineSignature
+            );
+
+        if (shouldHydrateFromLatestBaseline && previousHydratedBaselineSignature !== baselineSignature) {
+            lastHydratedBaselineSignatureRef.current = baselineSignature;
+            setDraft(baselineDraft);
+        }
+    }, [baselineDraft, baselineSignature, draft, draftSignature, section]);
 
 
     useEffect(() => {
@@ -198,16 +225,39 @@ export default function SettingsSectionEditorScreen() {
         };
     }, [draft, section]);
 
-    const { mutate: saveSettings, isPending } = useMutation({
-        mutationFn: () => settingsApi.update(section, { data: draft }),
-        onSuccess: () => {
+    const { mutate: saveSettings, mutateAsync: saveSettingsAsync, isPending } = useSettingsSectionMutation(section, {
+        onSuccess: (response, meta) => {
+            setDraft((response.data ?? {}) as Record<string, unknown>);
             void refetch();
-            dialog.alert('Saved', 'Settings updated successfully.');
+            if (!meta.silent) {
+                dialog.alert('Saved', response.message ?? 'Settings updated successfully.');
+            }
         },
-        onError: (error) => {
-            dialog.alert('Error', toUserMessage(error, 'Failed to save settings.'));
+        onError: (error, meta) => {
+            if (isCloudWriteBlockedError(error)) {
+                console.warn('[settings-screen] cloud sync blocked after local save', { section, draft, error });
+                return;
+            }
+
+            if (!meta.silent) {
+                console.error('[settings-screen] save failed', { section, draft, error });
+            } else {
+                console.warn('[settings-screen] silent save blocked', { section, draft, error });
+            }
+            if (!meta.silent) {
+                dialog.alert('Error', toUserMessage(error, 'Failed to save settings.'));
+            }
         },
     });
+
+    const commitFieldChange = (field: SettingsFieldDefinition, nextRawValue: unknown) => {
+        const nextDraft = {
+            ...draft,
+            [field.key]: coerceValue(field, nextRawValue),
+        };
+        setDraft(nextDraft);
+        void saveSettingsAsync({ data: nextDraft, silent: true }).catch(() => undefined);
+    };
 
     if (!section) {
         return (
@@ -226,7 +276,13 @@ export default function SettingsSectionEditorScreen() {
                 subtitle="Section preferences"
                 onBackPress={smartBack}
                 rightAction={(
-                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={() => saveSettings()} disabled={isPending}>
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Save ${getSettingsSectionLabel(section)}`}
+                        style={[s.saveBtn, { borderColor: colors.border }]}
+                        onPress={() => saveSettings(draft)}
+                        disabled={isPending}
+                    >
                         {isPending ? (
                             <ActivityIndicator color={colors.primary} />
                         ) : (
@@ -240,7 +296,7 @@ export default function SettingsSectionEditorScreen() {
                 {isOffline ? (
                     <View style={[s.offlineBanner, { backgroundColor: colors.warning }]}>
                         <MaterialCommunityIcons name="cloud-off-outline" size={13} color={colors.onPrimary} />
-                        <Text style={s.offlineBannerText}>Offline — showing cached. Changes cannot be saved.</Text>
+                        <Text style={s.offlineBannerText}>Offline - changes save locally now and sync when online.</Text>
                     </View>
                 ) : null}
                 {isLoading ? (
@@ -283,26 +339,20 @@ export default function SettingsSectionEditorScreen() {
                                     {field.type === 'boolean' ? (
                                         <Switch
                                             value={Boolean(value)}
-                                            onValueChange={(next) => setDraft((prev) => ({ ...prev, [field.key]: next }))}
+                                            onValueChange={(next) => commitFieldChange(field, next)}
                                             trackColor={{ true: colors.primary }}
                                         />
                                     ) : field.type === 'enum' ? (
                                         <View style={s.enumWrap}>
                                             {(field.enumValues ?? []).map((option) => {
-                                                const selected = value === option;
                                                 return (
-                                                    <Pressable
+                                                    <ChipButton
                                                         key={option}
-                                                        style={[
-                                                            s.enumChip,
-                                                            { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' },
-                                                        ]}
-                                                        onPress={() => setDraft((prev) => ({ ...prev, [field.key]: option }))}
-                                                    >
-                                                        <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 12, fontWeight: '600' }}>
-                                                            {option}
-                                                        </Text>
-                                                    </Pressable>
+                                                        label={option}
+                                                        selected={value === option}
+                                                        tone="info"
+                                                        onPress={() => commitFieldChange(field, option)}
+                                                    />
                                                 );
                                             })}
                                         </View>
@@ -310,44 +360,38 @@ export default function SettingsSectionEditorScreen() {
                                         <View style={s.enumWrap}>
                                             {(field.enumValues ?? []).map((option) => {
                                                 const selectedValues = Array.isArray(value) ? value.map(String) : [];
-                                                const selected = selectedValues.includes(option);
                                                 return (
-                                                    <Pressable
+                                                    <ChipButton
                                                         key={option}
-                                                        style={[
-                                                            s.enumChip,
-                                                            { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' },
-                                                        ]}
+                                                        label={option}
+                                                        selected={selectedValues.includes(option)}
+                                                        tone="info"
                                                         onPress={() => {
-                                                            const next = selected
+                                                            const next = selectedValues.includes(option)
                                                                 ? selectedValues.filter((entry) => entry !== option)
                                                                 : [...selectedValues, option];
-                                                            setDraft((prev) => ({ ...prev, [field.key]: next }));
+                                                            commitFieldChange(field, next);
                                                         }}
-                                                    >
-                                                        <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '600' }}>
-                                                            {option}
-                                                        </Text>
-                                                    </Pressable>
+                                                    />
                                                 );
                                             })}
                                         </View>
                                     ) : resolvedInputType === 'date' ? (
                                         <DateField
                                             value={value == null ? null : String(value)}
-                                            onChange={(next) => setDraft((prev) => ({ ...prev, [field.key]: coerceValue(field, next) }))}
+                                            onChange={(next) => commitFieldChange(field, next)}
                                         />
                                     ) : Array.isArray(field.allowed) && field.allowed.length > 0 ? (
                                         <SelectField
                                             value={value == null ? '' : String(value)}
-                                            onChange={(next) => setDraft((prev) => ({ ...prev, [field.key]: coerceValue(field, next) }))}
+                                            onChange={(next) => commitFieldChange(field, next)}
                                             options={field.allowed.map((option) => ({
                                                 label: option,
                                                 value: option,
                                                 description: option,
                                             }))}
                                             allowClear={field.nullable ?? false}
-                                            onClear={() => setDraft((prev) => ({ ...prev, [field.key]: null }))}
+                                            onClear={() => commitFieldChange(field, null)}
                                         />
                                     ) : (
                                         <>
@@ -511,12 +555,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         flexWrap: 'wrap',
         gap: Spacing.xs,
     },
-    enumChip: {
-        borderWidth: 1,
-        borderRadius: Radius.pill,
-        paddingHorizontal: Spacing.sm,
-        paddingVertical: 6,
-    },
     inlineAction: {
         alignSelf: 'flex-start',
         borderWidth: 1,
@@ -592,6 +630,4 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     },
     offlineBannerText: { color: colors.onPrimary, fontSize: 12, fontWeight: '600', flex: 1 },
 });
-
-
 

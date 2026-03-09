@@ -10,17 +10,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
-import { authApi } from '../../api/endpoints';
+import { authRepository } from '../../repositories/authRepository';
 import {
     configureNativeGoogleSignIn,
     getNativeGoogleErrorMessage,
     signInWithNativeGoogle,
 } from '../../utils/googleNativeSignIn';
 import { getApiBaseUrl, toUserMessage } from '../../api/client';
-import { Spacing, Radius, Typography, type ColorPalette } from '../../constants/theme';
+import { LOGIN_FEATURES } from '../../constants/appShellOptions';
+import { Spacing, Radius, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useAppDialog } from '../../components/providers/DialogProvider';
+import { AuthChip, AuthHero, AuthPanel } from '../../components/ui/AuthBlocks';
 
 const APP_LOGO = require('../../../assets/images/icon.png');
 
@@ -73,7 +76,7 @@ export default function LoginScreen() {
         const platform: 'ANDROID' | 'IOS' | 'WEB' =
             Platform.OS === 'android' ? 'ANDROID' : Platform.OS === 'ios' ? 'IOS' : 'WEB';
 
-        const response = await authApi.googleSignIn({ idToken, platform });
+        const response = await authRepository.googleSignIn({ idToken, platform });
         if (!response.ok || !response.token) {
             throw new Error('Google sign-in failed on server.');
         }
@@ -128,22 +131,45 @@ export default function LoginScreen() {
     return (
         <SafeAreaView style={s.safe}>
             <View style={s.container}>
-                <View style={s.hero}>
-                    <Image source={APP_LOGO} style={s.logo} resizeMode="contain" />
+                <AuthHero
+                    eyebrow="Offline-first billing"
+                    title="Run Vahi from anywhere"
+                    subtitle="Sales, stock, GST, and accounting stay available even when the network does not."
+                    icon="storefront-outline"
+                >
+                    <AuthChip icon="shield-check-outline" label="Business scoped" />
+                    <AuthChip icon="cloud-sync-outline" label="Silent sync" />
+                    <AuthChip icon="file-percent-outline" label="GST ready" />
+                </AuthHero>
+
+                <View style={s.brandCard}>
+                    <View style={[s.logoFrame, { backgroundColor: withAlpha(colors.primary, '10') }]}>
+                        <Image source={APP_LOGO} style={s.logo} resizeMode="contain" />
+                    </View>
                     <Text style={s.appName}>Vahi</Text>
                     <Text style={s.tagline}>Minimal. Fast. GST-ready billing for India.</Text>
                 </View>
 
-                <View style={s.features}>
-                    {FEATURES.map((f) => (
-                        <View key={f.text} style={s.featureRow}>
-                            <Text style={s.featureIcon}>{f.icon}</Text>
-                            <Text style={s.featureText}>{f.text}</Text>
-                        </View>
-                    ))}
-                </View>
+                <AuthPanel
+                    title="What you get"
+                    description="The app is optimized for quick invoice entry, connected inventory, and stable offline workflow."
+                >
+                    <View style={s.features}>
+                        {LOGIN_FEATURES.map((f) => (
+                            <View key={f.text} style={s.featureRow}>
+                                <View style={[s.featureIconWrap, { backgroundColor: withAlpha(colors.primary, '10') }]}>
+                                    <MaterialCommunityIcons name={f.icon} size={18} color={colors.primary} />
+                                </View>
+                                <Text style={s.featureText}>{f.text}</Text>
+                            </View>
+                        ))}
+                    </View>
+                </AuthPanel>
 
-                <View style={s.actions}>
+                <AuthPanel
+                    title="Continue"
+                    description="Google sign-in restores your organizations, permissions, and local offline scope."
+                >
                     <Pressable
                         style={({ pressed }) => [s.googleBtn, pressed && s.googleBtnPressed]}
                         onPress={handleGoogleSignIn}
@@ -171,38 +197,57 @@ export default function LoginScreen() {
                             <Text style={s.termsLink}>Privacy Policy</Text>
                         </Pressable>
                     </View>
-                </View>
+                </AuthPanel>
             </View>
         </SafeAreaView>
     );
 }
-
-const FEATURES = [
-    { icon: '*', text: 'GST compliant invoices in seconds' },
-    { icon: '*', text: 'Inventory tracking with low-stock alerts' },
-    { icon: '*', text: 'Profit and GST reports on the go' },
-    { icon: '*', text: 'Sync across devices and web' },
-];
 
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         container: {
             flex: 1,
-            paddingHorizontal: Spacing.xl,
-            paddingTop: Spacing.xxl,
+            paddingHorizontal: Spacing.lg,
+            paddingTop: Spacing.lg,
             paddingBottom: Spacing.xl,
-            justifyContent: 'space-between',
+            gap: Spacing.md,
         },
-        hero: { alignItems: 'center', marginTop: Spacing.xxl },
-        logo: { width: 80, height: 80, borderRadius: Radius.lg, marginBottom: Spacing.md },
-        appName: { fontSize: 36, fontWeight: '800', color: colors.primary, letterSpacing: -1 },
+        brandCard: {
+            alignItems: 'center',
+            backgroundColor: colors.card,
+            borderRadius: 28,
+            borderWidth: 1,
+            borderColor: withAlpha(colors.primary, '14'),
+            paddingVertical: Spacing.lg,
+            paddingHorizontal: Spacing.md,
+            shadowColor: colors.text,
+            shadowOpacity: 0.04,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: 2,
+        },
+        logoFrame: {
+            width: 84,
+            height: 84,
+            borderRadius: 24,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: Spacing.md,
+        },
+        logo: { width: 64, height: 64, borderRadius: Radius.lg },
+        appName: { fontSize: 34, fontWeight: '800', color: colors.primary, letterSpacing: -1 },
         tagline: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm, lineHeight: 22 },
-        features: { gap: Spacing.md, marginVertical: Spacing.xl },
+        features: { gap: Spacing.sm },
         featureRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-        featureIcon: { fontSize: 22, width: 24, color: colors.primary },
-        featureText: { fontSize: Typography.body.size, color: colors.text, flex: 1 },
-        actions: { gap: Spacing.md },
+        featureIconWrap: {
+            width: 36,
+            height: 36,
+            borderRadius: Radius.md,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        featureText: { fontSize: Typography.body.size, color: colors.text, flex: 1, lineHeight: 20 },
         googleBtn: {
             backgroundColor: colors.primary,
             borderRadius: Radius.pill,
@@ -211,6 +256,11 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'center',
             gap: Spacing.sm,
+            shadowColor: colors.primary,
+            shadowOpacity: 0.18,
+            shadowRadius: 14,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 4,
         },
         googleBtnPressed: { opacity: 0.85 },
         googleIcon: { color: colors.onPrimary, fontWeight: '700', fontSize: 20 },

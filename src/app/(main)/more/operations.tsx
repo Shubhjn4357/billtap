@@ -1,21 +1,21 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
     ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Switch, Text, View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { operationsApi } from '../../../api/endpoints';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useOrganizationRole } from '../../../store/authStore';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { DateField } from '../../../components/ui/DateField';
 import { AppInput } from '../../../components/ui/AppInput';
-import type { FinancialPeriod, OperationApproval, OperationsControls } from '../../../types/domain';
+import type { OperationsControls } from '../../../types/domain';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useOperationsOverview } from '../../../hooks/useOperations';
+import { useOperationsMutations } from '../../../hooks/useOperationsMutations';
 
 const toDateInput = (value?: string) => {
     if (!value) return new Date().toISOString().slice(0, 10);
@@ -30,12 +30,18 @@ const APPROVAL_ACTION_LABEL: Record<string, string> = {
     CUSTOM: 'Custom',
 };
 
+const formatDateTimeSafe = (value?: string | null) => {
+    if (!value) return 'Time unavailable';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Time unavailable';
+    return format(parsed, 'dd MMM yyyy, hh:mm a');
+};
+
 export default function OperationsScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
-    const qc = useQueryClient();
     const organizationRole = useOrganizationRole();
     const canReviewApprovals = organizationRole === 'owner' || organizationRole === 'manager';
 
@@ -43,99 +49,35 @@ export default function OperationsScreen() {
     const [periodEnd, setPeriodEnd] = useState(new Date().toISOString().slice(0, 10));
     const [notes, setNotes] = useState('');
 
-    const { data: controlsRes, isLoading: controlsLoading, isRefetching: controlsRefetching, refetch: refetchControls } = useQuery({
-        queryKey: ['operations-controls'],
-        queryFn: () => operationsApi.getControls(),
-        staleTime: 30_000,
-    });
+    const {
+        controls,
+        periods,
+        pendingApprovals,
+        isLoading,
+        isRefetching: isRefreshing,
+        refetch,
+    } = useOperationsOverview();
 
-    const { data: periodsRes, isLoading: periodsLoading, isRefetching: periodsRefetching, refetch: refetchPeriods } = useQuery({
-        queryKey: ['operations-periods'],
-        queryFn: () => operationsApi.getPeriods(),
-        staleTime: 30_000,
-    });
-
-    const { data: approvalsRes, isLoading: approvalsLoading, isRefetching: approvalsRefetching, refetch: refetchApprovals } = useQuery({
-        queryKey: ['operations-approvals'],
-        queryFn: () => operationsApi.getApprovals(),
-        staleTime: 20_000,
-    });
-    const isRefreshing = controlsRefetching || periodsRefetching || approvalsRefetching;
-
-    const controls = (controlsRes?.data?.controls ?? {
-        makerCheckerEnabled: true,
-        journalApprovalRequired: true,
-        stockAdjustmentApprovalRequired: true,
-        periodLockEnabled: true,
-    }) as OperationsControls;
-
-    const periods = useMemo(
-        () => ((periodsRes?.data?.periods ?? []) as FinancialPeriod[]),
-        [periodsRes?.data?.periods]
-    );
-
-    const pendingApprovals = useMemo(
-        () => (((approvalsRes?.data?.approvals ?? []) as OperationApproval[]).filter((entry) => entry.status === 'PENDING')),
-        [approvalsRes?.data?.approvals]
-    );
-
-    const invalidateAll = () =>
-        Promise.all([
-            qc.invalidateQueries({ queryKey: ['operations-controls'] }),
-            qc.invalidateQueries({ queryKey: ['operations-periods'] }),
-            qc.invalidateQueries({ queryKey: ['operations-approvals'] }),
-        ]);
-
-    const { mutateAsync: updateControls, isPending: savingControls } = useMutation({
-        mutationFn: (payload: Partial<OperationsControls>) => operationsApi.updateControls(payload),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['operations-controls'] }),
-    });
-
-    const { mutateAsync: lockPeriod, isPending: lockingPeriod } = useMutation({
-        mutationFn: () => operationsApi.lockPeriod({ periodStart, periodEnd, notes: notes.trim() || undefined }),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['operations-periods'] });
-            qc.invalidateQueries({ queryKey: ['operations-approvals'] });
-            setNotes('');
-        },
-    });
-
-    const { mutateAsync: closePeriod, isPending: closingPeriod } = useMutation({
-        mutationFn: (id: string) => operationsApi.closePeriod(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['operations-periods'] });
-            qc.invalidateQueries({ queryKey: ['operations-approvals'] });
-        },
-    });
-
-    const { mutateAsync: reopenPeriod, isPending: reopeningPeriod } = useMutation({
-        mutationFn: (id: string) => operationsApi.reopenPeriod(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['operations-periods'] });
-            qc.invalidateQueries({ queryKey: ['operations-approvals'] });
-        },
-    });
-
-    const { mutateAsync: approveApproval, isPending: approvingApproval } = useMutation({
-        mutationFn: (id: string) => operationsApi.approveApproval(id),
-        onSuccess: () => {
-            void invalidateAll();
-        },
-    });
-
-    const { mutateAsync: rejectApproval, isPending: rejectingApproval } = useMutation({
-        mutationFn: (id: string) => operationsApi.rejectApproval(id),
-        onSuccess: () => {
-            void qc.invalidateQueries({ queryKey: ['operations-approvals'] });
-        },
-    });
+    const {
+        updateControls,
+        lockPeriod,
+        closePeriod,
+        reopenPeriod,
+        approveApproval,
+        rejectApproval,
+        isSavingControls: savingControls,
+        isLockingPeriod: lockingPeriod,
+        isClosingPeriod: closingPeriod,
+        isReopeningPeriod: reopeningPeriod,
+        isApprovingApproval: approvingApproval,
+        isRejectingApproval: rejectingApproval,
+    } = useOperationsMutations();
 
     const toggleControl = async (key: keyof OperationsControls, value: boolean) => {
         try {
             const response = await updateControls({ ...controls, [key]: value });
             if (response.data?.status === 'PENDING_APPROVAL') {
                 dialog.alert('Approval required', 'Control change has been sent for approval.');
-                await qc.invalidateQueries({ queryKey: ['operations-approvals'] });
             }
         } catch (error) {
             dialog.alert('Save failed', error instanceof Error ? error.message : 'Unable to update control.');
@@ -144,12 +86,13 @@ export default function OperationsScreen() {
 
     const onLockPeriod = async () => {
         try {
-            const response = await lockPeriod();
+            const response = await lockPeriod({ periodStart, periodEnd, notes: notes.trim() || undefined });
             if (response.data?.status === 'PENDING_APPROVAL') {
                 dialog.alert('Approval required', 'Lock request is pending approval.');
                 return;
             }
             dialog.alert('Period locked', 'Financial period has been added as locked.');
+            setNotes('');
         } catch (error) {
             dialog.alert('Lock failed', error instanceof Error ? error.message : 'Unable to lock period.');
         }
@@ -217,7 +160,7 @@ export default function OperationsScreen() {
                 style: 'destructive',
                 onPress: async () => {
                     try {
-                        await rejectApproval(approvalId);
+                        await rejectApproval({ id: approvalId });
                     } catch (error) {
                         dialog.alert('Reject failed', error instanceof Error ? error.message : 'Unable to reject request.');
                     }
@@ -236,7 +179,7 @@ export default function OperationsScreen() {
                 onBackPress={smartBack}
             />
 
-            {controlsLoading || periodsLoading || approvalsLoading ? (
+            {isLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
             ) : (
                 <FlatList
@@ -247,7 +190,7 @@ export default function OperationsScreen() {
                             tintColor={colors.primary}
                             refreshing={isRefreshing}
                             onRefresh={() => {
-                                void Promise.all([refetchControls(), refetchPeriods(), refetchApprovals()]);
+                                void refetch();
                             }}
                         />
                     )}
@@ -300,7 +243,7 @@ export default function OperationsScreen() {
                                                     {APPROVAL_ACTION_LABEL[approval.actionType] ?? approval.actionType}
                                                 </Text>
                                                 <Text style={[s.meta, { color: colors.textSecondary }]}>
-                                                    Requested by {approval.requestedByRole ?? 'unknown'} at {format(new Date(approval.requestedAt), 'dd MMM yyyy, hh:mm a')}
+                                                    Requested by {approval.requestedByRole ?? 'unknown'} at {formatDateTimeSafe(approval.requestedAt ?? (approval as { createdAt?: string }).createdAt)}
                                                 </Text>
                                             </View>
                                             {canReviewApprovals && (

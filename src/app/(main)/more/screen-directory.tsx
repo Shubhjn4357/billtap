@@ -1,45 +1,27 @@
 import { useMemo, useState } from 'react';
 import {
-    Pressable,
     RefreshControl,
     ScrollView,
     StyleSheet,
-    Text,
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useQuery } from '@tanstack/react-query';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { FeatureFlag } from '../../../constants/enums';
+import { SCREEN_DIRECTORY_SECTIONS, type UtilityScreenSection } from '../../../constants/utilityNavigation';
 import { useAppColors } from '../../../hooks/useAppColors';
-import { Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
-import { accountingApi, cashBankApi, invoiceApi, itemApi, loanApi, partyApi } from '../../../api/endpoints';
+import { Spacing, Typography, type ColorPalette } from '../../../constants/theme';
 import { useAuthStore } from '../../../store/authStore';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
-import {
-    canAccessModule,
-    canUsePos,
-    hasFeatureAccess,
-    type AppModule,
-} from '../../../utils/accessControl';
-
-type ScreenLink = {
-    label: string;
-    route: string;
-    description: string;
-    module?: AppModule;
-    ownerOnly?: boolean;
-    requiresPos?: boolean;
-    requiresFeature?: FeatureFlag;
-};
-
-type ScreenSection = {
-    title: string;
-    items: ScreenLink[];
-};
+import { UtilityEmptyState, UtilityPanel, UtilityRow, UtilitySection } from '../../../components/ui/UtilityBlocks';
+import { canAccessModule, canUsePos, hasFeatureAccess, type AppModule } from '../../../utils/accessControl';
+import { useItemCatalog } from '../../../hooks/useInventory';
+import { useLoans } from '../../../hooks/useLoans';
+import { useInvoices } from '../../../hooks/useInvoices';
+import { useParties } from '../../../hooks/useParties';
+import { useCashBankAccounts } from '../../../hooks/useCashBankAccounts';
+import { useAccountingLedgers } from '../../../hooks/useAccountingLedgers';
 
 type SmartDeepLink = {
     label: string;
@@ -47,97 +29,6 @@ type SmartDeepLink = {
     route: string;
     module: AppModule;
 };
-
-const SCREEN_SECTIONS: ScreenSection[] = [
-    {
-        title: 'Core Navigation',
-        items: [
-            { label: 'Dashboard', route: '/(main)', description: 'Main business summary', module: 'home' },
-            { label: 'Billing', route: '/(main)/billing', description: 'Invoices and transactions', module: 'billing' },
-            { label: 'Inventory', route: '/(main)/inventory', description: 'Items and stock', module: 'inventory' },
-            { label: 'Accounts', route: '/(main)/accounts', description: 'Cash, bank, expenses, and loans', module: 'accounts' },
-            { label: 'Reports', route: '/(main)/reports', description: 'GST and accounting reports', module: 'reports' },
-            { label: 'Parties', route: '/(main)/parties', description: 'Customers and suppliers', module: 'parties' },
-            { label: 'More', route: '/(main)/more', description: 'Settings and system modules' },
-        ],
-    },
-    {
-        title: 'Billing Flows',
-        items: [
-            { label: 'Create Sales Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', description: 'Tax invoice billing', module: 'billing' },
-            { label: 'POS Sale', route: '/(main)/billing/pos', description: 'Fast POS billing', module: 'billing', requiresPos: true },
-            { label: 'Purchase Bill', route: '/(main)/billing/purchase-bill', description: 'Supplier purchase entry', module: 'billing' },
-            { label: 'Estimate / Quotation', route: '/(main)/billing/estimate', description: 'Non-posting estimate', module: 'billing' },
-            { label: 'Sale Order', route: '/(main)/billing/sale-order', description: 'Sales order workflow', module: 'billing' },
-            { label: 'Purchase Order', route: '/(main)/billing/purchase-order', description: 'Purchase order workflow', module: 'billing' },
-            { label: 'Sale Return', route: '/(main)/billing/sale-return', description: 'Credit note / return', module: 'billing' },
-            { label: 'Purchase Return', route: '/(main)/billing/purchase-return', description: 'Debit note / return', module: 'billing' },
-            { label: 'Delivery Challan', route: '/(main)/billing/delivery-challan', description: 'Goods movement document', module: 'billing' },
-            { label: 'Payment In', route: '/(main)/billing/payment-in', description: 'Incoming payment entry', module: 'accounts' },
-            { label: 'Payment Out', route: '/(main)/billing/payment-out', description: 'Outgoing payment entry', module: 'accounts' },
-        ],
-    },
-    {
-        title: 'Inventory and Masters',
-        items: [
-            { label: 'Add Item', route: '/(main)/inventory/add-item', description: 'Create product/service', module: 'inventory' },
-            { label: 'Item Recycle Bin', route: '/(main)/inventory/recycle-bin', description: 'Restore archived items', module: 'inventory' },
-            { label: 'Item Masters', route: '/(main)/more/item-masters', description: 'Categories and units', module: 'inventory' },
-            { label: 'Godowns', route: '/(main)/more/godowns', description: 'Warehouse and stock transfer', module: 'inventory', requiresFeature: FeatureFlag.MULTI_GODOWN },
-            { label: 'Stock Scan', route: '/scan?target=stock', description: 'Barcode scanner route', module: 'inventory' },
-        ],
-    },
-    {
-        title: 'Accounts Operations',
-        items: [
-            { label: 'Cash and Bank', route: '/(main)/accounts/cash-bank', description: 'All cash/bank balances', module: 'accounts' },
-            { label: 'Add Cash/Bank Account', route: '/(main)/accounts/cash-bank/add', description: 'Create account ledger', module: 'accounts' },
-            { label: 'Deposit', route: '/(main)/accounts/cash-bank/deposit', description: 'Bank deposit entry', module: 'accounts' },
-            { label: 'Withdraw', route: '/(main)/accounts/cash-bank/withdraw', description: 'Bank withdrawal entry', module: 'accounts' },
-            { label: 'Transfer', route: '/(main)/accounts/cash-bank/transfer', description: 'Contra transfer', module: 'accounts' },
-            { label: 'Expenses', route: '/(main)/accounts/expenses', description: 'Expense register', module: 'accounts' },
-            { label: 'Add Expense', route: '/(main)/accounts/expenses/add', description: 'Record expense entry', module: 'accounts' },
-            { label: 'Expense Recycle Bin', route: '/(main)/accounts/expenses/recycle-bin', description: 'Restore archived expenses', module: 'accounts' },
-            { label: 'Loans', route: '/(main)/accounts/loans', description: 'Loan register', module: 'accounts' },
-            { label: 'Add Loan', route: '/(main)/accounts/loans/add', description: 'Create loan account', module: 'accounts' },
-        ],
-    },
-    {
-        title: 'Reports',
-        items: [
-            { label: 'GST Summary', route: '/(main)/reports/gst-summary', description: 'Slab-wise GST report', module: 'reports' },
-            { label: 'Trial Balance', route: '/(main)/reports/trial-balance', description: 'Dr/Cr integrity check', module: 'reports' },
-            { label: 'Ledgers', route: '/(main)/reports/ledgers', description: 'Ledger list and drilldown', module: 'reports' },
-            { label: 'Profit and Loss', route: '/(main)/more/reports/pnl', description: 'Income vs expense report', module: 'reports' },
-            { label: 'GSTR-1', route: '/(main)/more/reports/gstr1', description: 'Outward supplies', module: 'reports' },
-            { label: 'GSTR-3B', route: '/(main)/more/reports/gstr3b', description: 'Monthly GST summary', module: 'reports' },
-        ],
-    },
-    {
-        title: 'Control and Settings',
-        items: [
-            { label: 'Settings', route: '/(main)/more/settings', description: 'All settings sections', module: 'settings' },
-            { label: 'Staff', route: '/(main)/more/staff', description: 'Invite/manage team', module: 'staff' },
-            { label: 'Role Access', route: '/(main)/more/role-access', description: 'Role/module/action permissions', module: 'settings', ownerOnly: true },
-            { label: 'Operations', route: '/(main)/more/operations', description: 'Utility tools', module: 'operations' },
-            { label: 'Announcements', route: '/(main)/more/announcements', description: 'Business notifications', module: 'operations' },
-            { label: 'Sync Diagnostics', route: '/(main)/more/sync', description: 'Offline sync queue and status' },
-            { label: 'Printing & Templates', route: '/(main)/more/printing', description: 'Thermal and PDF print profiles', module: 'settings' },
-            { label: 'App Preferences', route: '/(main)/more/settings', description: 'Theme, haptics, and device preferences', module: 'settings' },
-            { label: 'Subscription', route: '/(main)/more/subscription', description: 'Plan and limits' },
-        ],
-    },
-    {
-        title: 'Legal',
-        items: [
-            { label: 'Legal Center', route: '/legal', description: 'All legal documents' },
-            { label: 'Terms of Service', route: '/legal/terms', description: 'Terms and conditions' },
-            { label: 'Privacy Policy', route: '/legal/privacy', description: 'Data privacy statement' },
-            { label: 'Changelog', route: '/legal/changelog', description: 'Version history' },
-            { label: 'About', route: '/legal/about', description: 'App information' },
-        ],
-    },
-];
 
 export default function ScreenDirectoryScreen() {
     const colors = useAppColors();
@@ -149,50 +40,30 @@ export default function ScreenDirectoryScreen() {
     const subscription = useAuthStore((state) => state.subscription);
     const normalizedSearch = search.trim().toLowerCase();
 
-    const { data: invoiceList, isRefetching: invoiceRefetching, refetch: refetchInvoice } = useQuery({
-        queryKey: ['screen-directory', 'latest-invoice'],
-        queryFn: () => invoiceApi.list({ limit: 1 }),
+    const { invoices: latestInvoices, isRefetching: invoiceRefetching, refetch: refetchInvoice } = useInvoices({
+        type: 'ALL',
+        limit: 1,
         staleTime: 60_000,
     });
 
-    const { data: partyList, isRefetching: partyRefetching, refetch: refetchParty } = useQuery({
-        queryKey: ['screen-directory', 'latest-party'],
-        queryFn: () => partyApi.list({ limit: 1 }),
+    const { parties: latestParties, isRefetching: partyRefetching, refetch: refetchParty } = useParties({
+        limit: 1,
         staleTime: 60_000,
     });
 
-    const { data: itemList, isRefetching: itemRefetching, refetch: refetchItem } = useQuery({
-        queryKey: ['screen-directory', 'latest-item'],
-        queryFn: () => itemApi.list({ limit: 1 }),
-        staleTime: 60_000,
-    });
-
-    const { data: loanList, isRefetching: loanRefetching, refetch: refetchLoan } = useQuery({
-        queryKey: ['screen-directory', 'latest-loan'],
-        queryFn: () => loanApi.list(),
-        staleTime: 60_000,
-    });
-
-    const { data: accountList, isRefetching: accountRefetching, refetch: refetchAccount } = useQuery({
-        queryKey: ['screen-directory', 'latest-cash-bank'],
-        queryFn: () => cashBankApi.getBalances(),
-        staleTime: 60_000,
-    });
-
-    const { data: ledgerList, isRefetching: ledgerRefetching, refetch: refetchLedger } = useQuery({
-        queryKey: ['screen-directory', 'latest-ledger'],
-        queryFn: () => accountingApi.getLedgers(),
-        staleTime: 60_000,
-    });
+    const { items: latestItems, isRefetching: itemRefetching, refetch: refetchItem } = useItemCatalog({ limit: 1, staleTime: 60_000 });
+    const { loans: latestLoans, isRefetching: loanRefetching, refetch: refetchLoan } = useLoans({ limit: 1, staleTime: 60_000 });
+    const { accounts: latestAccounts, isRefetching: accountRefetching, refetch: refetchAccount } = useCashBankAccounts({ staleTime: 60_000 });
+    const { rows: latestLedgers, isRefetching: ledgerRefetching, refetch: refetchLedger } = useAccountingLedgers({ limit: 1, staleTime: 60_000 });
     const isRefreshing = invoiceRefetching || partyRefetching || itemRefetching || loanRefetching || accountRefetching || ledgerRefetching;
 
     const smartLinks = useMemo(() => {
-        const latestInvoice = invoiceList?.data?.[0];
-        const latestParty = partyList?.data?.[0];
-        const latestItem = itemList?.items?.[0];
-        const latestLoan = loanList?.data?.[0];
-        const latestAccount = accountList?.data?.[0];
-        const latestLedger = ledgerList?.data?.data?.[0];
+        const latestInvoice = latestInvoices[0];
+        const latestParty = latestParties[0];
+        const latestItem = latestItems[0];
+        const latestLoan = latestLoans[0];
+        const latestAccount = latestAccounts[0];
+        const latestLedger = latestLedgers[0];
 
         const links: SmartDeepLink[] = [
             {
@@ -263,19 +134,19 @@ export default function ScreenDirectoryScreen() {
             return `${link.label} ${link.subtitle}`.toLowerCase().includes(normalizedSearch);
         });
     }, [
-        accountList?.data,
-        invoiceList?.data,
-        itemList?.items,
-        ledgerList?.data?.data,
-        loanList?.data,
+        latestAccounts,
+        latestInvoices,
+        latestItems,
+        latestLedgers,
+        latestLoans,
         normalizedSearch,
-        partyList?.data,
+        latestParties,
         role,
         subscription,
     ]);
 
     const sections = useMemo(() => {
-        return SCREEN_SECTIONS.map((section) => {
+        return SCREEN_DIRECTORY_SECTIONS.map((section: UtilityScreenSection) => {
             const visibleItems = section.items.filter((item) => {
                 if (item.ownerOnly && role !== 'owner') return false;
                 if (item.module && !canAccessModule(role, item.module, subscription)) return false;
@@ -329,62 +200,56 @@ export default function ScreenDirectoryScreen() {
                 )}
             >
                 <View style={s.section}>
-                    <Text style={s.sectionTitle}>{'SMART DEEP LINKS'}</Text>
-                    <View style={[s.group, { backgroundColor: colors.card }]}>
+                    <UtilitySection title="Smart Deep Links">
+                        <UtilityPanel>
                         {smartLinks.map((link, index) => (
-                            <Pressable
+                            <View
                                 key={link.label}
-                                style={({ pressed }) => [
-                                    s.item,
-                                    index < smartLinks.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
-                                    pressed && { backgroundColor: colors.backgroundSelected },
-                                ]}
-                                onPress={() => router.push(link.route as Parameters<typeof router.push>[0])}
+                                style={index < smartLinks.length - 1 ? { borderBottomWidth: 1, borderBottomColor: colors.border } : undefined}
                             >
-                                    <View style={s.itemTextWrap}>
-                                        <Text style={s.itemLabel}>{link.label}</Text>
-                                        <Text style={s.itemDescription}>{link.subtitle}</Text>
-                                    </View>
-                                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
-                                </Pressable>
+                                <UtilityRow
+                                    label={link.label}
+                                    description={link.subtitle}
+                                    onPress={() => router.push(link.route as Parameters<typeof router.push>[0])}
+                                />
+                            </View>
                             ))}
                         {smartLinks.length === 0 ? (
-                            <View style={s.emptyInline}>
-                                <Text style={s.itemDescription}>No deep links available for current search or plan.</Text>
-                            </View>
+                            <UtilityEmptyState
+                                icon="radar"
+                                title="No deep links"
+                                description="No deep links are available for the current search or plan."
+                            />
                         ) : null}
-                    </View>
+                        </UtilityPanel>
+                    </UtilitySection>
                 </View>
 
                 {sections.map((section) => (
-                    <View key={section.title} style={s.section}>
-                        <Text style={s.sectionTitle}>{section.title.toUpperCase()}</Text>
-                        <View style={[s.group, { backgroundColor: colors.card }]}>
+                    <UtilitySection key={section.title} title={section.title}>
+                        <UtilityPanel>
                             {section.items.map((item, index) => (
-                                <Pressable
+                                <View
                                     key={`${section.title}-${item.label}`}
-                                    style={({ pressed }) => [
-                                        s.item,
-                                        index < section.items.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
-                                        pressed && { backgroundColor: colors.backgroundSelected },
-                                    ]}
-                                    onPress={() => router.push(item.route as Parameters<typeof router.push>[0])}
+                                    style={index < section.items.length - 1 ? { borderBottomWidth: 1, borderBottomColor: colors.border } : undefined}
                                 >
-                                    <View style={s.itemTextWrap}>
-                                        <Text style={s.itemLabel}>{item.label}</Text>
-                                        <Text style={s.itemDescription}>{item.description}</Text>
-                                    </View>
-                                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
-                                </Pressable>
+                                    <UtilityRow
+                                        label={item.label}
+                                        description={item.description}
+                                        onPress={() => router.push(item.route as Parameters<typeof router.push>[0])}
+                                    />
+                                </View>
                             ))}
-                        </View>
-                    </View>
+                        </UtilityPanel>
+                    </UtilitySection>
                 ))}
 
                 {sections.length === 0 ? (
-                    <View style={s.emptyWrap}>
-                        <Text style={s.emptyText}>No screens match your search.</Text>
-                    </View>
+                    <UtilityEmptyState
+                        icon="file-search-outline"
+                        title="No screens found"
+                        description="No screens match the current search."
+                    />
                 ) : null}
 
                 <View style={{ height: 80 }} />
@@ -404,27 +269,4 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         fontWeight: '700',
         letterSpacing: 0.7,
     },
-    group: { borderRadius: Radius.card, overflow: 'hidden' },
-    item: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: Spacing.sm,
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.md,
-    },
-    itemTextWrap: { flex: 1 },
-    itemLabel: { color: colors.text, fontWeight: '700', fontSize: Typography.body.size },
-    itemDescription: { color: colors.textSecondary, fontSize: Typography.caption.size, marginTop: 2 },
-    emptyInline: {
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.md,
-    },
-    emptyWrap: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: Spacing.xxl,
-    },
-    emptyText: { color: colors.textSecondary, fontSize: Typography.body.size },
 });
-
-

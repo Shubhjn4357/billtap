@@ -1,55 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import { reportApi } from '../../../../api/endpoints';
+import { getPnlRangePresets, PNL_METRIC_OPTIONS } from '../../../../constants/reportOptions';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { ChipButton } from '../../../../components/ui/ChipBlocks';
 import { useHaptics } from '../../../../hooks/useHaptics';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-
-const TODAY = new Date();
-const CURRENT_FIN_YEAR = TODAY.getMonth() >= 3 ? TODAY.getFullYear() : TODAY.getFullYear() - 1;
-const RANGES = [
-    {
-        label: 'This Month',
-        from: format(startOfMonth(TODAY), 'yyyy-MM-dd'),
-        to: format(endOfMonth(TODAY), 'yyyy-MM-dd'),
-    },
-    {
-        label: 'Last Month',
-        from: format(startOfMonth(subMonths(TODAY, 1)), 'yyyy-MM-dd'),
-        to: format(endOfMonth(subMonths(TODAY, 1)), 'yyyy-MM-dd'),
-    },
-    {
-        label: 'Last 3 Months',
-        from: format(startOfMonth(subMonths(TODAY, 2)), 'yyyy-MM-dd'),
-        to: format(endOfMonth(TODAY), 'yyyy-MM-dd'),
-    },
-    {
-        label: 'This Year',
-        from: `${CURRENT_FIN_YEAR}-04-01`,
-        to: `${CURRENT_FIN_YEAR + 1}-03-31`,
-    },
-] as const;
+import { useReportSummary } from '../../../../hooks/useReports';
 
 type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
 type MetricTone = 'success' | 'warning' | 'primary' | 'error' | 'neutral';
-type MetricItem = { label: string; key: string; icon: IconName; tone: MetricTone };
-const METRICS: MetricItem[] = [
-    { label: 'Total Sales', key: 'totalSales', icon: 'chart-line-variant', tone: 'success' },
-    { label: 'Total Purchases', key: 'totalPurchases', icon: 'package-variant-closed', tone: 'warning' },
-    { label: 'Gross Profit', key: 'grossProfit', icon: 'diamond-stone', tone: 'primary' },
-    { label: 'Total Expenses', key: 'totalExpenses', icon: 'cash-minus', tone: 'error' },
-    { label: 'Net Profit', key: 'netProfit', icon: 'trophy-outline', tone: 'success' },
-    { label: 'Tax Collected', key: 'totalTaxCollected', icon: 'bank-outline', tone: 'neutral' },
-    { label: 'Receivables', key: 'outstandingReceivables', icon: 'arrow-up-bold-circle-outline', tone: 'success' },
-    { label: 'Payables', key: 'outstandingPayables', icon: 'arrow-down-bold-circle-outline', tone: 'error' },
-];
 
 const toNumber = (value: unknown) => {
     const parsed = Number(value ?? 0);
@@ -65,21 +29,21 @@ const getMetricColor = (colors: ColorPalette, tone: MetricTone) => {
 };
 
 export default function PnLReportScreen() {
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
     const [rangeIndex, setRangeIndex] = useState(0);
     const smartBack = useSmartBack('/(main)/reports');
     const { selection } = useHaptics();
-    const range = RANGES[rangeIndex];
+    const ranges = useMemo(() => getPnlRangePresets(), []);
+    const range = ranges[rangeIndex] ?? ranges[0];
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['pnl-report', range.from, range.to],
-        queryFn: () => reportApi.getSummary({ from: range.from, to: range.to }),
-        staleTime: 120_000,
-    });
+    const { summary, isLoading, isRefetching, refetch } = useReportSummary(
+        { from: range.from, to: range.to },
+        { staleTime: 120_000 }
+    );
 
-    const summary = (data?.data ?? {}) as Record<string, number>;
-    const netProfit = toNumber(summary.netProfit);
+    const metrics = (summary ?? {}) as Record<string, number>;
+    const netProfit = toNumber(metrics.netProfit);
     const isProfitable = netProfit >= 0;
 
     return (
@@ -91,21 +55,18 @@ export default function PnLReportScreen() {
             />
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipsRow}>
-                {RANGES.map((entry, index) => {
-                    const selected = rangeIndex === index;
+                {ranges.map((entry, index) => {
                     return (
-                        <Pressable
+                        <ChipButton
                             key={entry.label}
-                            style={[s.rangeChip, { backgroundColor: selected ? colors.primary : colors.surfaceVariant }]}
+                            label={entry.label}
+                            selected={rangeIndex === index}
+                            tone="info"
                             onPress={() => {
                                 void selection();
                                 setRangeIndex(index);
                             }}
-                        >
-                            <Text style={{ color: selected ? colors.onPrimary : colors.textSecondary, fontWeight: '700', fontSize: Typography.caption.size }}>
-                                {entry.label}
-                            </Text>
-                        </Pressable>
+                        />
                     );
                 })}
             </ScrollView>
@@ -138,24 +99,24 @@ export default function PnLReportScreen() {
                     <View style={[s.topStatCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Text style={[s.topStatLabel, { color: colors.textSecondary }]}>Sales vs Expenses</Text>
                         <Text style={[s.topStatValue, { color: colors.text }]}>
-                            Rs {toNumber(summary.totalSales).toLocaleString('en-IN', { maximumFractionDigits: 0 })} / Rs {toNumber(summary.totalExpenses).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            Rs {toNumber(metrics.totalSales).toLocaleString('en-IN', { maximumFractionDigits: 0 })} / Rs {toNumber(metrics.totalExpenses).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                         </Text>
                     </View>
                     <View style={[s.topStatCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Text style={[s.topStatLabel, { color: colors.textSecondary }]}>Receivable vs Payable</Text>
                         <Text style={[s.topStatValue, { color: colors.text }]}>
-                            Rs {toNumber(summary.outstandingReceivables).toLocaleString('en-IN', { maximumFractionDigits: 0 })} / Rs {toNumber(summary.outstandingPayables).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            Rs {toNumber(metrics.outstandingReceivables).toLocaleString('en-IN', { maximumFractionDigits: 0 })} / Rs {toNumber(metrics.outstandingPayables).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                         </Text>
                     </View>
                 </View>
 
                 <View style={s.metricsGrid}>
-                    {METRICS.map((metric) => {
-                        const value = toNumber(summary[metric.key]);
+                    {PNL_METRIC_OPTIONS.map((metric) => {
+                        const value = toNumber(metrics[metric.key]);
                         const toneColor = getMetricColor(colors, metric.tone);
                         return (
                             <View key={metric.key} style={[s.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <MaterialCommunityIcons name={metric.icon} size={18} color={toneColor} />
+                                <MaterialCommunityIcons name={metric.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={18} color={toneColor} />
                                 <Text style={[s.metricLabel, { color: colors.textSecondary }]}>{metric.label}</Text>
                                 {isLoading ? (
                                     <View style={[s.skeleton, { backgroundColor: colors.skeleton }]} />
@@ -200,11 +161,6 @@ const styles = (colors: ColorPalette) =>
             paddingHorizontal: Spacing.lg,
             gap: Spacing.sm,
             paddingBottom: Spacing.md,
-        },
-        rangeChip: {
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
         },
         heroCard: {
             marginHorizontal: Spacing.lg,

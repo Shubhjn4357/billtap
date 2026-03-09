@@ -1,23 +1,16 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
-import { reportApi } from '../../../api/endpoints';
+import { GST_PERIOD_OPTIONS } from '../../../constants/reportOptions';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { ChipButton } from '../../../components/ui/ChipBlocks';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-
-type GstRow = {
-    gstRate: number;
-    taxableTurnover: number;
-    cgstAmount: number;
-    sgstAmount: number;
-    igstAmount: number;
-    totalTax: number;
-};
+import { useGstSummaryReport } from '../../../hooks/useReports';
+import { formatInr, formatMonthYear, normalizeGstRows, summarizeGstRows, type NormalizedGstRow } from '../../../selectors/reportSelectors';
 
 export default function GstSummaryScreen() {
     const colors = useAppColors();
@@ -33,28 +26,14 @@ export default function GstSummaryScreen() {
     const month = period === 'current' ? currentMonth : last.getMonth() + 1;
     const year = period === 'current' ? currentYear : last.getFullYear();
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['reports-gst-summary', month, year],
-        queryFn: () => reportApi.getGstSummary({ month, year }),
-        staleTime: 60_000,
-    });
-
-    const rows = useMemo<GstRow[]>(() => data?.data?.rows ?? [], [data?.data?.rows]);
-
-    const totals = useMemo(
-        () =>
-            rows.reduce(
-                (acc, row) => {
-                    acc.taxable += Number(row.taxableTurnover ?? 0);
-                    acc.tax += Number(row.totalTax ?? 0);
-                    return acc;
-                },
-                { taxable: 0, tax: 0 }
-            ),
-        [rows]
+    const { rows, isLoading, isRefetching, refetch } = useGstSummaryReport(
+        { month, year },
+        { staleTime: 60_000 }
     );
-    const formatInr = (value: number) => `Rs ${Number(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-    const monthLabel = `${month.toString().padStart(2, '0')}/${year}`;
+
+    const reportRows = useMemo<NormalizedGstRow[]>(() => normalizeGstRows(rows ?? []), [rows]);
+    const totals = useMemo(() => summarizeGstRows(reportRows), [reportRows]);
+    const monthLabel = formatMonthYear(month, year);
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -65,33 +44,28 @@ export default function GstSummaryScreen() {
             />
 
             <View style={s.filters}>
-                <Pressable
-                    style={[s.filterChip, period === 'current' && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                    onPress={() => {
-                        void selection();
-                        setPeriod('current');
-                    }}
-                >
-                    <MaterialCommunityIcons name="calendar-month-outline" size={16} color={period === 'current' ? colors.onPrimary : colors.textSecondary} />
-                    <Text style={[s.filterText, period === 'current' && { color: colors.onPrimary }]}>Current Month</Text>
-                </Pressable>
-                <Pressable
-                    style={[s.filterChip, period === 'last' && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                    onPress={() => {
-                        void selection();
-                        setPeriod('last');
-                    }}
-                >
-                    <MaterialCommunityIcons name="history" size={16} color={period === 'last' ? colors.onPrimary : colors.textSecondary} />
-                    <Text style={[s.filterText, period === 'last' && { color: colors.onPrimary }]}>Last Month</Text>
-                </Pressable>
+                {GST_PERIOD_OPTIONS.map((option) => {
+                    return (
+                        <ChipButton
+                            key={option.key}
+                            label={option.label}
+                            icon={option.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                            selected={period === option.key}
+                            tone="info"
+                            onPress={() => {
+                                void selection();
+                                setPeriod(option.key);
+                            }}
+                        />
+                    );
+                })}
             </View>
 
             {isLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
             ) : (
                 <FlatList
-                    data={rows}
+                    data={reportRows}
                     keyExtractor={(item) => String(item.gstRate)}
                     refreshControl={(
                         <RefreshControl
@@ -122,7 +96,7 @@ export default function GstSummaryScreen() {
                                 </View>
                                 <View style={[s.summaryCell, { backgroundColor: colors.surfaceVariant }]}>
                                     <Text style={[s.summaryCaption, { color: colors.textSecondary }]}>Slabs</Text>
-                                    <Text style={s.summaryValue}>{rows.length}</Text>
+                                    <Text style={s.summaryValue}>{reportRows.length}</Text>
                                 </View>
                             </View>
                         </View>
@@ -163,18 +137,6 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         filters: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        filterChip: {
-            backgroundColor: colors.surfaceVariant,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-        },
-        filterText: { color: colors.textSecondary, fontSize: Typography.caption.size, fontWeight: '700' },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         summaryCard: {
             borderWidth: 1,

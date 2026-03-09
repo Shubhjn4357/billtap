@@ -136,6 +136,7 @@ export interface InvoiceItem {
     id: string;
     invoiceId: string;
     itemId: string | null;
+    godownId?: string | null;
     description: string;
     quantity: number;
     unit: string | null;
@@ -199,6 +200,7 @@ export interface Invoice {
 export interface InvoiceLineItem {
     _key: string;
     itemId: string | null;
+    godownId: string | null;
     description: string;
     quantity: number;
     unit: string;
@@ -226,6 +228,7 @@ export interface InvoiceBuilderState {
     partyId: string | null;
     partySnapshot: Partial<Party> | null;
     placeOfSupply: string;
+    defaultGodownId: string | null;
     items: InvoiceLineItem[];
     discountAmount: number;
     additionalCharges: number;

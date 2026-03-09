@@ -1,28 +1,26 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Storage from 'expo-sqlite/kv-store';
 
-type BackendName = 'async-storage';
+type BackendName = 'expo-sqlite-kv-store';
 
 export const offlineKeyValueStore = {
     getBackendName(): BackendName {
-        return 'async-storage';
+        return 'expo-sqlite-kv-store';
     },
 
     async getItem(key: string): Promise<string | null> {
-        return AsyncStorage.getItem(key);
+        return Storage.getItem(key);
     },
 
     async setItem(key: string, value: string): Promise<void> {
-        await AsyncStorage.setItem(key, value);
+        await Storage.setItem(key, value);
     },
 
     async removeItem(key: string): Promise<void> {
-        await AsyncStorage.removeItem(key);
+        await Storage.removeItem(key);
     },
 
     async multiRemove(keys: string[]): Promise<void> {
         if (keys.length === 0) return;
-        for (const key of keys) {
-            await AsyncStorage.removeItem(key);
-        }
+        await Promise.all(keys.map((key) => Storage.removeItem(key)));
     },
 };

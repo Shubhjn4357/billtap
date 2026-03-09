@@ -5,12 +5,13 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { invoiceApi, itemApi, type InvoiceCreateInput } from '../../api/endpoints';
+import { type InvoiceCreateInput } from '../../repositories/invoiceRepository';
+import type { BillingDocumentConfig } from '../../constants/billingDocumentOptions';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { GST_SLABS, INDIAN_STATE_LIST } from '../../constants/gstRates';
 import { InvoiceType, PaymentMode } from '../../constants/enums';
+import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel } from '../../constants/accountingInputOptions';
 import { useAuthStore } from '../../store/authStore';
 import { useInvoiceBuilderStore, useInvoiceTotals } from '../../store/invoiceBuilderStore';
 import type { InvoiceLineItem, Item } from '../../types/domain';
@@ -21,17 +22,11 @@ import { SelectField, type SelectOption } from '../ui/SelectField';
 import { DateField } from '../ui/DateField';
 import { AppTopBar } from '../ui/AppTopBar';
 import { AppInput } from '../ui/AppInput';
+import { FormHero, FormSectionCard } from '../ui/FormBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-
-export type BillingDocumentConfig = {
-    title: string;
-    invoiceType: InvoiceType;
-    transactionType?: 'SALE' | 'PURCHASE' | 'RETURN_INWARD' | 'RETURN_OUTWARD';
-    documentKind?: string;
-    billMode?: 'GST' | 'ESTIMATE';
-    partyPlaceholder?: string;
-    helperText?: string;
-};
+import { useItemCatalog } from '../../hooks/useInventory';
+import { useGodowns } from '../../hooks/useGodowns';
+import { useInvoiceMutations } from '../../hooks/useInvoiceMutations';
 
 type LineItemRowProps = {
     line: InvoiceLineItem;
@@ -39,6 +34,8 @@ type LineItemRowProps = {
     onRemove: (key: string) => void;
     transactionType?: BillingDocumentConfig['transactionType'];
     itemOptions: SelectOption[];
+    godownOptions: SelectOption[];
+    defaultGodownId: string | null;
     itemById: Record<string, Item>;
     colors: ColorPalette;
     gstEnabled: boolean;
@@ -94,7 +91,6 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
-    const queryClient = useQueryClient();
     const smartBack = useSmartBack('/(main)/billing');
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
@@ -109,6 +105,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
         addLine,
         removeLine,
         updateLine,
+        setDefaultGodownId,
         setNotes,
         setInvoiceNumber,
         setInvoiceDate,
@@ -124,12 +121,11 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
     const [gstEnabled, setGstEnabled] = useState(config.invoiceType !== InvoiceType.BILL_OF_SUPPLY);
     const [eWayBillNumber, setEWayBillNumber] = useState('');
 
-    const { data: itemCatalogResponse } = useQuery({
-        queryKey: ['billing-item-catalog'],
-        queryFn: () => itemApi.list({ limit: 400 }),
+    const { allItems: itemCatalog } = useItemCatalog({
+        limit: 400,
         staleTime: 5 * 60_000,
     });
-    const itemCatalog = useMemo(() => itemCatalogResponse?.items ?? [], [itemCatalogResponse?.items]);
+    const { godowns } = useGodowns({ staleTime: 5 * 60_000 });
     const itemOptions: SelectOption[] = useMemo(
         () =>
             itemCatalog.map((item) => ({
@@ -138,6 +134,15 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                 description: `Stock ${item.stock} ${item.unit ?? 'pcs'} | GST ${item.gstRate}%`,
             })),
         [itemCatalog]
+    );
+    const godownOptions: SelectOption[] = useMemo(
+        () =>
+            godowns.map((godown) => ({
+                label: godown.name,
+                value: godown.id,
+                description: godown.isDefault ? 'Default stock location' : (godown.address ?? undefined),
+            })),
+        [godowns]
     );
     const stateOptions: SelectOption[] = useMemo(
         () => INDIAN_STATE_LIST.map((entry) => ({ label: entry.name, value: entry.name, description: entry.label })),
@@ -158,6 +163,13 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
         setGstEnabled(config.invoiceType !== InvoiceType.BILL_OF_SUPPLY);
         setEWayBillNumber('');
     }, [config.documentKind, config.invoiceType, init, setInvoiceDate, setInvoiceNumber]);
+
+    useEffect(() => {
+        if (state.defaultGodownId) return;
+        const defaultGodown = godowns.find((entry) => entry.isDefault) ?? godowns[0];
+        if (!defaultGodown) return;
+        setDefaultGodownId(defaultGodown.id);
+    }, [godowns, setDefaultGodownId, state.defaultGodownId]);
 
     const totalForPayment = useMemo(
         () => (gstEnabled ? totals.totalInvoiceValue : totals.totalTaxable),
@@ -186,47 +198,47 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
         }
     };
 
-    const { mutate: submit, isPending } = useMutation({
-        mutationFn: () => {
-            if (!canCreateBilling) {
-                throw new Error('Your role does not have permission to create billing transactions.');
-            }
-            const normalizedItems = gstEnabled ? state.items : state.items.map(withNoGst);
-            const payload: InvoiceCreateInput = {
-                ...state,
-                items: normalizedItems,
-                invoiceType: gstEnabled
-                    ? config.invoiceType
-                    : config.transactionType === 'PURCHASE'
-                        ? config.invoiceType
-                        : InvoiceType.BILL_OF_SUPPLY,
-                transactionType: config.transactionType,
-                documentKind: config.documentKind,
-                billMode: config.billMode,
-                reverseCharge: gstEnabled ? state.reverseCharge : false,
-                eWayBillNumber: gstEnabled ? (eWayBillNumber.trim() || null) : null,
-            };
-            return invoiceApi.create(payload);
-        },
-        onSuccess: (res) => {
-            queryClient.invalidateQueries({ queryKey: ['invoices'] });
-            if (res.data?.id) {
-                router.replace(`/(main)/billing/${res.data.id}` as Parameters<typeof router.replace>[0]);
-                return;
-            }
-            smartBack();
-        },
-        onError: (error) => {
-            dialog.alert('Save failed', toUserMessage(error, 'Could not save transaction.'));
-        },
-    });
+    const { saveInvoice: submit, isSavingInvoice: isPending } = useInvoiceMutations();
 
     const handleSave = () => {
         if (!canCreateBilling) {
             dialog.alert('Access denied', 'Your role cannot create billing transactions.');
             return;
         }
-        submit();
+        if (
+            (config.transactionType === 'PURCHASE' || config.transactionType === 'RETURN_INWARD')
+            && !state.partyId
+        ) {
+            dialog.alert('Supplier required', 'Select or create a supplier before saving this document.');
+            return;
+        }
+        const normalizedItems = gstEnabled ? state.items : state.items.map(withNoGst);
+        const payload: InvoiceCreateInput = {
+            ...state,
+            items: normalizedItems,
+            invoiceType: gstEnabled
+                ? config.invoiceType
+                : config.transactionType === 'PURCHASE'
+                    ? config.invoiceType
+                    : InvoiceType.BILL_OF_SUPPLY,
+            transactionType: config.transactionType,
+            documentKind: config.documentKind,
+            billMode: config.billMode,
+            reverseCharge: gstEnabled ? state.reverseCharge : false,
+            eWayBillNumber: gstEnabled ? (eWayBillNumber.trim() || null) : null,
+        };
+
+        void submit(payload)
+            .then((res) => {
+                if (res.data?.id) {
+                    router.replace(`/(main)/billing/${res.data.id}` as Parameters<typeof router.replace>[0]);
+                    return;
+                }
+                smartBack();
+            })
+            .catch((error) => {
+                dialog.alert('Save failed', toUserMessage(error, 'Could not save transaction.'));
+            });
     };
 
     return (
@@ -236,18 +248,20 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                 subtitle={config.billMode === 'ESTIMATE' ? 'Non-posting document' : 'Posting document'}
                 onBackPress={smartBack}
                 rightAction={(
-                <Pressable
-                    style={[s.saveBtn, { backgroundColor: isPending || !canCreateBilling ? colors.border : colors.primary }]}
-                    onPress={handleSave}
-                    disabled={isPending || !canCreateBilling}
-                >
-                    {isPending ? (
-                        <ActivityIndicator color={colors.onPrimary} size="small" />
-                    ) : (
-                        <MaterialCommunityIcons name="content-save-outline" color={colors.onPrimary} size={18} />
-                    )}
-                </Pressable>
-            )}
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Save ${config.title}`}
+                        style={[s.saveBtn, { backgroundColor: isPending || !canCreateBilling ? colors.border : colors.primary }]}
+                        onPress={handleSave}
+                        disabled={isPending || !canCreateBilling}
+                    >
+                        {isPending ? (
+                            <ActivityIndicator color={colors.onPrimary} size="small" />
+                        ) : (
+                            <MaterialCommunityIcons name="content-save-outline" color={colors.onPrimary} size={18} />
+                        )}
+                    </Pressable>
+                )}
             />
 
             <KeyboardAvoidingView
@@ -255,15 +269,26 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             >
                 <ScrollView style={s.flex} keyboardShouldPersistTaps="handled" contentContainerStyle={s.scrollContent}>
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title={config.title}
+                        subtitle={config.billMode === 'ESTIMATE'
+                            ? 'Draft a non-posting document with party, stock, and settlement details.'
+                            : 'Create a posting document with stock, tax, and settlement captured together.'}
+                        icon="file-document-edit-outline"
+                        tone={config.billMode === 'ESTIMATE' ? 'warning' : 'info'}
+                    />
+                </View>
+
                 {config.helperText ? (
                     <View style={[s.helperCard, { backgroundColor: colors.surfaceVariant }]}>
                         <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{config.helperText}</Text>
                     </View>
                 ) : null}
 
-                <View style={[s.card, { backgroundColor: colors.card }]}>
+                <View style={s.section}>
+                    <FormSectionCard title="Document Details" description="Document numbering, posting dates, and GST-specific settings.">
                     <View style={s.rowBetween}>
-                        <Text style={s.fieldTitle}>Document Details</Text>
                         <View style={s.toggleRow}>
                             <Text style={[s.smallLabel, { color: colors.textSecondary }]}>GST</Text>
                             <Switch value={gstEnabled} onValueChange={toggleGst} trackColor={{ true: colors.primary }} />
@@ -336,17 +361,19 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                             </View>
                         </>
                     ) : null}
+                    </FormSectionCard>
                 </View>
 
-                <View style={[s.card, { backgroundColor: colors.card }]}>
+                <View style={s.section}>
+                    <FormSectionCard title="Party" description="Attach the customer or supplier for this document.">
                     <View style={s.rowBetween}>
-                        <Text style={s.fieldTitle}>Party</Text>
                         <Pressable
                             style={[s.secondaryBtn, { borderColor: colors.border }]}
                             onPress={() => router.push({
                                 pathname: '/(main)/parties/add',
                                 params: {
                                     type: preferredPartyType === 'supplier' ? 'SUPPLIER' : 'CUSTOMER',
+                                    returnContext: 'invoice',
                                 },
                             })}
                         >
@@ -366,14 +393,43 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                             <Text style={[s.partyName, { color: colors.text }]}>{state.partySnapshot.name ?? 'Party'}</Text>
                         ) : (
                             <Text style={[s.partyPlaceholder, { color: colors.textSecondary }]}>
-                                {config.partyPlaceholder ?? '+ Select Party (optional)'}
+                                {config.partyPlaceholder ?? (preferredPartyType === 'supplier' ? '+ Select Supplier' : '+ Select Customer / Walk-in')}
                             </Text>
                         )}
                     </Pressable>
+                    </FormSectionCard>
                 </View>
 
                 <View style={s.section}>
-                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>ITEMS</Text>
+                    <FormSectionCard title="Stock Godown" description="Choose a default stock location for lines in this document.">
+                    <View style={s.rowBetween}>
+                        <Pressable
+                            style={[s.secondaryBtn, { borderColor: colors.border }]}
+                            onPress={() => router.push({
+                                pathname: '/(main)/more/godowns/add',
+                                params: {
+                                    returnContext: 'invoice',
+                                },
+                            })}
+                        >
+                            <Text style={[s.secondaryBtnText, { color: colors.primary }]}>Create</Text>
+                        </Pressable>
+                    </View>
+                    <SelectField
+                        value={state.defaultGodownId}
+                        onChange={setDefaultGodownId}
+                        options={godownOptions}
+                        placeholder={godownOptions.length > 0 ? 'Select default godown' : 'Create a godown first'}
+                        title="Select Default Godown"
+                        searchable
+                        allowClear
+                        onClear={() => setDefaultGodownId(null)}
+                    />
+                    </FormSectionCard>
+                </View>
+
+                <View style={s.section}>
+                    <FormSectionCard title="Items" description="Select stock items, quantities, rates, and tax values for each line." tone="warning">
                     {state.items.map((line) => (
                         <LineItemRow
                             key={line._key}
@@ -382,6 +438,8 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                             onRemove={removeLine}
                             transactionType={config.transactionType}
                             itemOptions={itemOptions}
+                            godownOptions={godownOptions}
+                            defaultGodownId={state.defaultGodownId}
                             itemById={itemById}
                             colors={colors}
                             gstEnabled={gstEnabled}
@@ -401,21 +459,27 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                                 <Text style={[s.addLineBtnText, { color: colors.textSecondary }]}>+ Create Item</Text>
                             </Pressable>
                         </View>
+                    </FormSectionCard>
                 </View>
 
-                <View style={[s.card, { backgroundColor: colors.card }]}>
-                    <Text style={s.fieldTitle}>Payment</Text>
-                    <View style={s.row}>
-                        <Pressable style={[s.chip, { borderColor: colors.border }]} onPress={() => setPaymentMode(PaymentMode.CASH)}>
-                            <Text style={[s.chipText, { color: colors.text }]}>Cash</Text>
-                        </Pressable>
-                        <Pressable style={[s.chip, { borderColor: colors.border }]} onPress={() => setPaymentMode(PaymentMode.UPI)}>
-                            <Text style={[s.chipText, { color: colors.text }]}>UPI</Text>
-                        </Pressable>
-                        <Pressable style={[s.chip, { borderColor: colors.border }]} onPress={() => setPaymentMode(PaymentMode.BANK)}>
-                            <Text style={[s.chipText, { color: colors.text }]}>Bank</Text>
-                        </Pressable>
-                    </View>
+                <View style={s.section}>
+                    <FormSectionCard title="Payment" description="Capture settlement mode and the amount already received or paid.">
+                    <Text style={s.inputLabel}>Settlement Mode</Text>
+                    <SelectField
+                        value={state.paymentMode}
+                        onChange={(value) => setPaymentMode(value as PaymentMode)}
+                        options={CASH_BANK_VOUCHER_MODE_OPTIONS.map((entry) => ({
+                            label: entry.label,
+                            value: entry.value,
+                            description: entry.description,
+                        }))}
+                        placeholder="Select payment mode"
+                        title="Settlement Mode"
+                        searchable={false}
+                    />
+                    <Text style={[s.smallLabel, { color: colors.textSecondary }]}>
+                        Current mode: {getPaymentModeLabel(state.paymentMode)}
+                    </Text>
                     <View style={s.row}>
                         <Pressable style={[s.chip, { borderColor: colors.border }]} onPress={() => setPaymentPreset('PAID')}>
                             <Text style={[s.chipText, { color: colors.text }]}>Paid</Text>
@@ -434,9 +498,11 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                         onChangeText={(value) => setPaidAmount(toNumber(value))}
                         placeholder="0"
                     />
+                    </FormSectionCard>
                 </View>
 
-                <View style={[s.totalsCard, { backgroundColor: colors.card }]}>
+                <View style={s.section}>
+                    <FormSectionCard title="Totals" description="Review subtotal, taxes, discounts, and final payable amount." tone="success">
                     <TotalRow label="Subtotal" value={totals.subtotal} colors={colors} />
                     {totals.totalDiscount > 0 ? <TotalRow label="Item Discount" value={-totals.totalDiscount} colors={colors} isNeg /> : null}
                     {gstEnabled && totals.totalCgst > 0 ? <TotalRow label="CGST" value={totals.totalCgst} colors={colors} /> : null}
@@ -444,10 +510,11 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                     {gstEnabled && totals.totalIgst > 0 ? <TotalRow label="IGST" value={totals.totalIgst} colors={colors} /> : null}
                     <View style={[s.divider, { backgroundColor: colors.border }]} />
                     <TotalRow label="Total" value={totalForPayment} colors={colors} bold />
+                    </FormSectionCard>
                 </View>
 
-                <View style={[s.card, { backgroundColor: colors.card }]}>
-                    <Text style={s.fieldTitle}>Notes</Text>
+                <View style={s.section}>
+                    <FormSectionCard title="Notes" description="Internal remarks, terms, or delivery instructions for this document.">
                     <AppInput
                         inputType="text"
                         containerStyle={s.notesInputWrap}
@@ -458,6 +525,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                         multiline
                         numberOfLines={3}
                     />
+                    </FormSectionCard>
                 </View>
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -471,6 +539,8 @@ function LineItemRow({
     onRemove,
     transactionType,
     itemOptions,
+    godownOptions,
+    defaultGodownId,
     itemById,
     colors,
     gstEnabled,
@@ -485,6 +555,17 @@ function LineItemRow({
 
     return (
         <View style={[lineStyles.card, { backgroundColor: colors.surfaceVariant }]}>
+            {godownOptions.length > 0 ? (
+                <SelectField
+                    value={line.godownId ?? defaultGodownId}
+                    onChange={(godownId) => onUpdate(line._key, { godownId })}
+                    title="Select Godown"
+                    options={godownOptions}
+                    placeholder="Select line godown"
+                    allowClear
+                    onClear={() => onUpdate(line._key, { godownId: null })}
+                />
+            ) : null}
             <SelectField
                 value={line.itemId}
                 onChange={(itemId) => {
@@ -595,22 +676,12 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
         },
         scrollContent: { paddingBottom: 120, gap: Spacing.sm },
+        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs },
         helperCard: {
             marginHorizontal: Spacing.lg,
             borderRadius: Radius.card,
             padding: Spacing.md,
             marginBottom: Spacing.xs,
-        },
-        card: {
-            marginHorizontal: Spacing.lg,
-            borderRadius: Radius.card,
-            padding: Spacing.md,
-            gap: Spacing.xs,
-        },
-        fieldTitle: {
-            color: colors.text,
-            fontSize: Typography.body.size,
-            fontWeight: '700',
         },
         inputLabel: {
             color: colors.textSecondary,
@@ -659,7 +730,6 @@ const styles = (colors: ColorPalette) =>
         partyName: { fontWeight: '600', fontSize: 14 },
         partyPlaceholder: { fontSize: 14 },
         section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-        sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
         addLineBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center', marginTop: Spacing.sm },
         addLineBtnText: { fontWeight: '600', fontSize: 13 },
         addItemRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
@@ -674,7 +744,6 @@ const styles = (colors: ColorPalette) =>
             fontWeight: '600',
             fontSize: Typography.caption.size,
         },
-        totalsCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md, backgroundColor: colors.card },
         divider: { height: 1, marginVertical: Spacing.sm },
         notesInputWrap: { marginTop: Spacing.xs },
         notesInput: { minHeight: 72, textAlignVertical: 'top' },

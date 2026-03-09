@@ -26,6 +26,8 @@ export function AppDialog({
 }: AppDialogProps) {
     const colors = useAppColors();
     const s = styles(colors);
+    const hasDestructive = actions.some((action) => action.variant === 'destructive');
+    const hasCancelOnly = actions.every((action) => action.variant === 'cancel');
 
     const resolveActionStyle = (variant: AppDialogAction['variant']) => {
         if (variant === 'destructive') {
@@ -54,11 +56,15 @@ export function AppDialog({
             visible={visible}
             transparent
             animationType="fade"
-                onRequestClose={onClose}
+            onRequestClose={onClose}
         >
             <View style={s.root}>
                 <Pressable style={[s.backdrop, { backgroundColor: withAlpha(colors.text, '66') }]} onPress={onClose} />
                 <View style={s.sheet}>
+                    <View style={s.handle} />
+                    <Text style={[s.eyebrow, { color: hasDestructive ? colors.error : hasCancelOnly ? colors.textSecondary : colors.primary }]}>
+                        {hasDestructive ? 'Confirmation required' : 'Vahi'}
+                    </Text>
                     <Text style={s.title}>{title}</Text>
                     {message ? <Text style={s.message}>{message}</Text> : null}
                     <View style={s.actions}>
@@ -107,11 +113,30 @@ const styles = (colors: ColorPalette) =>
         sheet: {
             borderWidth: 1,
             borderColor: colors.border,
-            borderRadius: Radius.lg,
-            backgroundColor: colors.surface,
+            borderRadius: 24,
+            backgroundColor: colors.card,
             paddingHorizontal: Spacing.lg,
             paddingVertical: Spacing.md,
             gap: Spacing.sm,
+            shadowColor: colors.text,
+            shadowOpacity: 0.08,
+            shadowRadius: 18,
+            shadowOffset: { width: 0, height: 10 },
+            elevation: 8,
+        },
+        handle: {
+            alignSelf: 'center',
+            width: 42,
+            height: 5,
+            borderRadius: Radius.pill,
+            backgroundColor: colors.border,
+            marginBottom: 2,
+        },
+        eyebrow: {
+            fontSize: Typography.caption.size,
+            fontWeight: '700',
+            textTransform: 'uppercase',
+            letterSpacing: 0.8,
         },
         title: {
             color: colors.text,
@@ -134,7 +159,7 @@ const styles = (colors: ColorPalette) =>
             borderWidth: 1,
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.xs,
+            paddingVertical: Spacing.sm,
             minWidth: 84,
             alignItems: 'center',
         },

@@ -9,6 +9,7 @@ type DateFieldProps = {
     value?: string | null;
     placeholder?: string;
     title?: string;
+    accessibilityLabel?: string;
     onChange: (value: string | null) => void;
     disabled?: boolean;
     allowClear?: boolean;
@@ -43,6 +44,7 @@ export function DateField({
     value,
     placeholder = 'Select date',
     title = 'Pick date',
+    accessibilityLabel,
     onChange,
     disabled = false,
     allowClear = true,
@@ -73,6 +75,8 @@ export function DateField({
     return (
         <>
             <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={accessibilityLabel ?? title ?? placeholder}
                 style={[
                     s.input,
                     { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
@@ -94,7 +98,8 @@ export function DateField({
             >
                 <View style={s.modalRoot}>
                     <Pressable style={s.backdrop} onPress={() => setOpen(false)} />
-                    <View style={[s.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[s.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={s.handle} />
                         <Text style={[s.title, { color: colors.text }]}>{title}</Text>
 
                         <DateTimePicker
@@ -164,14 +169,27 @@ const styles = (colors: ColorPalette) =>
             backgroundColor: withAlpha(colors.text, '88'),
         },
         sheet: {
-            borderTopLeftRadius: Radius.lg,
-            borderTopRightRadius: Radius.lg,
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
             borderWidth: 1,
             borderBottomWidth: 0,
+            backgroundColor: colors.card,
             paddingHorizontal: Spacing.lg,
             paddingTop: Spacing.md,
             paddingBottom: Spacing.xl,
             gap: Spacing.md,
+            shadowColor: colors.text,
+            shadowOpacity: 0.08,
+            shadowRadius: 18,
+            shadowOffset: { width: 0, height: -8 },
+            elevation: 10,
+        },
+        handle: {
+            alignSelf: 'center',
+            width: 44,
+            height: 5,
+            borderRadius: Radius.pill,
+            backgroundColor: colors.border,
         },
         title: {
             fontSize: Typography.title.size,

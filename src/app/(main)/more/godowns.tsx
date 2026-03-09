@@ -2,35 +2,22 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Tex
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { godownApi } from '../../../api/endpoints';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
-import type { Godown } from '../../../types/domain';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useGodowns } from '../../../hooks/useGodowns';
+import { useGodownMutations } from '../../../hooks/useGodownMutations';
 
 export default function GodownsScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
-    const queryClient = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['godowns'],
-        queryFn: () => godownApi.list(),
-        staleTime: 60_000,
-    });
-
-    const { mutate: deleteGodown } = useMutation({
-        mutationFn: (id: string) => godownApi.delete(id),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['godowns'] }),
-        onError: (error) => dialog.alert('Delete failed', error instanceof Error ? error.message : 'Unable to delete godown.'),
-    });
-
-    const godowns = (data?.data ?? []) as Godown[];
+    const { godowns, isLoading, isRefetching, refetch } = useGodowns();
+    const { deleteGodown } = useGodownMutations();
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -39,13 +26,22 @@ export default function GodownsScreen() {
                 subtitle="Warehouse and stock location control"
                 onBackPress={smartBack}
                 rightAction={(
-                    <Pressable
-                        style={[s.addBtn, { backgroundColor: colors.primary }]}
-                        onPress={() => router.push('/(main)/more/godowns/add')}
-                    >
-                        <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
-                        <Text style={s.addBtnText}>Add</Text>
-                    </Pressable>
+                    <View style={s.topActions}>
+                        <Pressable
+                            style={[s.secondaryBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                            onPress={() => router.push('/(main)/more/godowns/transfer' as Parameters<typeof router.push>[0])}
+                        >
+                            <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.text} />
+                            <Text style={[s.secondaryBtnText, { color: colors.text }]}>Transfer</Text>
+                        </Pressable>
+                        <Pressable
+                            style={[s.addBtn, { backgroundColor: colors.primary }]}
+                            onPress={() => router.push('/(main)/more/godowns/add')}
+                        >
+                            <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
+                            <Text style={s.addBtnText}>Add</Text>
+                        </Pressable>
+                    </View>
                 )}
             />
 
@@ -86,7 +82,15 @@ export default function GodownsScreen() {
                             onPress={() => router.push(`/(main)/more/godowns/${item.id}`)}
                             onLongPress={() => dialog.alert('Delete Godown', `Delete "${item.name}"?`, [
                                 { text: 'Cancel', style: 'cancel' },
-                                { text: 'Delete', style: 'destructive', onPress: () => deleteGodown(item.id) },
+                                {
+                                    text: 'Delete',
+                                    style: 'destructive',
+                                    onPress: () => {
+                                        void deleteGodown(item.id).catch((error) => {
+                                            dialog.alert('Delete failed', error instanceof Error ? error.message : 'Unable to delete godown.');
+                                        });
+                                    },
+                                },
                             ])}
                         >
                             <View style={[s.iconWrap, { backgroundColor: withAlpha(colors.primary, '20') }]}>
@@ -132,7 +136,22 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             gap: 4,
         },
+        topActions: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.xs,
+        },
+        secondaryBtn: {
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+            borderWidth: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+        },
         addBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
+        secondaryBtnText: { fontSize: Typography.caption.size, fontWeight: '700' },
         emptyTitle: { fontSize: Typography.title.size, fontWeight: '700' },
         emptyMeta: { fontSize: Typography.body.size, textAlign: 'center' },
         emptyBtn: {

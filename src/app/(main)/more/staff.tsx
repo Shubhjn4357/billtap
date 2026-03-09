@@ -1,22 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
     ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { staffApi } from '../../../api/endpoints';
 import { toApiError, toUserMessage } from '../../../api/client';
+import { STAFF_ROLE_OPTIONS, type StaffInviteRole } from '../../../constants/formOptions';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useAuthStore } from '../../../store/authStore';
-import type { StaffInvite, StaffMember } from '../../../types/domain';
 import { canPerformAction } from '../../../utils/accessControl';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { SelectField } from '../../../components/ui/SelectField';
+import { HubMetricCard } from '../../../components/ui/HubBlocks';
+import { UtilityHero, UtilitySection } from '../../../components/ui/UtilityBlocks';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useStaffDirectory } from '../../../hooks/useStaffDirectory';
+import { useStaffMutations } from '../../../hooks/useStaffMutations';
 
 const getStaffInviteMessage = (error: unknown) => {
     const normalized = toApiError(error);
@@ -37,9 +40,8 @@ export default function StaffScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
-    const qc = useQueryClient();
     const [phoneNumber, setPhoneNumber] = useState('');
-    const [inviteRole, setInviteRole] = useState<'staff' | 'salesman' | 'manager'>('staff');
+    const [inviteRole, setInviteRole] = useState<StaffInviteRole>('staff');
     const [search, setSearch] = useState('');
     const smartBack = useSmartBack('/(main)/more');
     const { selection } = useHaptics();
@@ -48,43 +50,19 @@ export default function StaffScreen() {
     const canInviteStaff = canPerformAction(role, 'staff.invite', subscription);
     const canRemoveStaffMember = canPerformAction(role, 'staff.remove', subscription);
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['staff'],
-        queryFn: () => staffApi.list(),
+    const { filteredMembers, filteredInvites, isLoading, isRefetching, refetch } = useStaffDirectory({
+        search,
         staleTime: 30_000,
     });
 
-    const { mutateAsync: inviteStaff, isPending: inviting } = useMutation({
-        mutationFn: (phone: string) => staffApi.invite({ phoneNumber: phone, role: inviteRole }),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['staff'] }),
-    });
-
-    const { mutateAsync: removeStaff, isPending: removing } = useMutation({
-        mutationFn: (uid: string) => staffApi.delete(uid),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['staff'] }),
-    });
-
-    const { mutateAsync: removeInvite, isPending: removingInvite } = useMutation({
-        mutationFn: (id: string) => staffApi.deleteInvite(id),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['staff'] }),
-    });
-
-    const members = useMemo<StaffMember[]>(() => (data?.data?.staff ?? []) as StaffMember[], [data?.data?.staff]);
-    const invites = useMemo<StaffInvite[]>(() => (data?.data?.invites ?? []) as StaffInvite[], [data?.data?.invites]);
-    const filteredMembers = useMemo(() => {
-        const needle = search.trim().toLowerCase();
-        if (!needle) return members;
-        return members.filter((member) =>
-            `${member.displayName ?? ''} ${member.phoneNumber ?? ''} ${member.email ?? ''} ${member.role}`.toLowerCase().includes(needle)
-        );
-    }, [members, search]);
-    const filteredInvites = useMemo(() => {
-        const needle = search.trim().toLowerCase();
-        if (!needle) return invites;
-        return invites.filter((invite) =>
-            `${invite.phoneNumber} ${invite.code} ${invite.status}`.toLowerCase().includes(needle)
-        );
-    }, [invites, search]);
+    const {
+        inviteStaff,
+        removeStaff,
+        removeInvite,
+        isInviting: inviting,
+        isRemovingStaff: removing,
+        isRemovingInvite: removingInvite,
+    } = useStaffMutations();
 
     const onInvite = async () => {
         if (!canInviteStaff) {
@@ -95,7 +73,7 @@ export default function StaffScreen() {
         if (!trimmed) return;
 
         try {
-            const response = await inviteStaff(trimmed);
+            const response = await inviteStaff({ phoneNumber: trimmed, role: inviteRole });
             dialog.alert('Invite created', `Code: ${response.data?.code ?? ''}`);
             setPhoneNumber('');
         } catch (error) {
@@ -154,67 +132,61 @@ export default function StaffScreen() {
             />
 
             <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-                <View style={s.searchWrap}>
-                <AppSearchBar
-                    value={search}
-                    onChangeText={setSearch}
-                    placeholder="Search staff, phone, invite code..."
-                />
+                <View style={s.heroWrap}>
+                    <UtilityHero
+                        title="Staff Hub"
+                        subtitle="Control invites, review pending access, and manage team membership from one screen."
+                        icon="account-group-outline"
+                        tone="warning"
+                    />
                 </View>
 
-                <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>TEAM OVERVIEW</Text>
-                <View style={s.summaryGrid}>
-                    <View style={[s.summaryCell, { backgroundColor: colors.surfaceVariant }]}>
-                        <Text style={[s.summaryCaption, { color: colors.textSecondary }]}>Active Staff</Text>
-                        <Text style={s.summaryValue}>{filteredMembers.length}</Text>
-                    </View>
-                    <View style={[s.summaryCell, { backgroundColor: colors.surfaceVariant }]}>
-                        <Text style={[s.summaryCaption, { color: colors.textSecondary }]}>Pending Invites</Text>
-                        <Text style={s.summaryValue}>{filteredInvites.length}</Text>
-                    </View>
+                <View style={s.searchWrap}>
+                    <AppSearchBar
+                        value={search}
+                        onChangeText={setSearch}
+                        placeholder="Search staff, phone, invite code..."
+                    />
                 </View>
-            </View>
+
+                <View style={s.statsRow}>
+                    <HubMetricCard label="Active Staff" value={String(filteredMembers.length)} meta="Members with access" tone="info" />
+                    <HubMetricCard label="Pending" value={String(filteredInvites.length)} meta="Open invite codes" tone="warning" />
+                    <HubMetricCard label="Invite Access" value={canInviteStaff ? 'Enabled' : 'Blocked'} meta="Role-based permission" tone={canInviteStaff ? 'success' : 'danger'} />
+                </View>
 
                 <View style={[s.inviteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[s.sectionTitle, { color: colors.text }]}>Invite Staff</Text>
-                {!canInviteStaff ? (
-                    <Text style={[s.accessHint, { color: colors.textSecondary }]}>
-                        Your role does not have permission to invite staff.
-                    </Text>
+                    <Text style={[s.sectionTitle, { color: colors.text }]}>Invite Staff</Text>
+                    {!canInviteStaff ? (
+                        <Text style={[s.accessHint, { color: colors.textSecondary }]}>
+                            Your role does not have permission to invite staff members.
+                        </Text>
                     ) : (
-                        <View style={s.roleRow}>
-                            {(['staff', 'salesman', 'manager'] as const).map((r) => {
-                                const selected = inviteRole === r;
-                                return (
-                                    <Pressable
-                                        key={r}
-                                        style={[s.roleChip, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.surfaceVariant : 'transparent' }]}
-                                        onPress={() => setInviteRole(r)}
-                                    >
-                                        <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontWeight: '700', fontSize: 11 }}>{r.toUpperCase()}</Text>
-                                    </Pressable>
-                                );
-                            })}
-                        </View>
+                        <SelectField
+                            value={inviteRole}
+                            onChange={(value) => setInviteRole(value as StaffInviteRole)}
+                            options={STAFF_ROLE_OPTIONS}
+                            title="Select Staff Role"
+                            placeholder="Choose role"
+                        />
                     )}
-                <View style={s.inviteRow}>
-                    <AppInput
-                        inputType="phone"
-                        leadingIcon="phone-outline"
-                        containerStyle={{ flex: 1 }}
-                        value={phoneNumber}
-                        onChangeText={setPhoneNumber}
-                        placeholder="Phone number"
-                    />
-                    <Pressable
-                        style={[s.inviteBtn, { backgroundColor: canInviteStaff ? colors.primary : colors.border }]}
-                        onPress={onInvite}
-                        disabled={inviting || phoneNumber.trim().length === 0 || !canInviteStaff}
-                    >
-                        {inviting ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <MaterialCommunityIcons name="account-plus-outline" size={18} color={colors.onPrimary} />}
-                    </Pressable>
-                </View>
+                    <View style={s.inviteRow}>
+                        <AppInput
+                            inputType="phone"
+                            leadingIcon="phone-outline"
+                            containerStyle={{ flex: 1 }}
+                            value={phoneNumber}
+                            onChangeText={setPhoneNumber}
+                            placeholder="Phone number"
+                        />
+                        <Pressable
+                            style={[s.inviteBtn, { backgroundColor: canInviteStaff ? colors.primary : colors.border }]}
+                            onPress={onInvite}
+                            disabled={inviting || phoneNumber.trim().length === 0 || !canInviteStaff}
+                        >
+                            {inviting ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <MaterialCommunityIcons name="account-plus-outline" size={18} color={colors.onPrimary} />}
+                        </Pressable>
+                    </View>
                 </View>
 
                 {isLoading ? (
@@ -235,8 +207,8 @@ export default function StaffScreen() {
                     renderItem={({ item }) => {
                         if (item.key === 'members') {
                             return (
-                                <View style={s.block}>
-                                    <Text style={[s.blockTitle, { color: colors.textSecondary }]}>Active Staff</Text>
+                                <UtilitySection title="Active Staff" count={filteredMembers.length}>
+                                    <View style={s.block}>
                                     {filteredMembers.length === 0 ? (
                                         <Text style={[s.emptyText, { color: colors.textSecondary }]}>No staff members yet.</Text>
                                     ) : (
@@ -264,13 +236,14 @@ export default function StaffScreen() {
                                             </View>
                                         ))
                                     )}
-                                </View>
+                                    </View>
+                                </UtilitySection>
                             );
                         }
 
                         return (
-                            <View style={s.block}>
-                                <Text style={[s.blockTitle, { color: colors.textSecondary }]}>Pending Invites</Text>
+                            <UtilitySection title="Pending Invites" count={filteredInvites.length}>
+                                <View style={s.block}>
                                 {filteredInvites.length === 0 ? (
                                     <Text style={[s.emptyText, { color: colors.textSecondary }]}>No pending invites.</Text>
                                 ) : (
@@ -296,9 +269,10 @@ export default function StaffScreen() {
                                                 <Text style={{ color: colors.error, fontWeight: '700', fontSize: 12 }}>Delete</Text>
                                             </Pressable>
                                         </View>
-                                    ))
-                                )}
-                            </View>
+                                        ))
+                                    )}
+                                </View>
+                            </UtilitySection>
                         );
                     }}
                     contentContainerStyle={{ paddingBottom: 100 }}
@@ -313,19 +287,9 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         flex: { flex: 1 },
+        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        summaryCard: {
-            marginHorizontal: Spacing.lg,
-            borderRadius: Radius.card,
-            borderWidth: 1,
-            padding: Spacing.md,
-            marginBottom: Spacing.sm,
-        },
-        summaryLabel: { fontSize: Typography.caption.size, fontWeight: '700', letterSpacing: 0.8 },
-        summaryGrid: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
-        summaryCell: { flex: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm },
-        summaryCaption: { fontSize: Typography.caption.size, fontWeight: '600' },
-        summaryValue: { marginTop: 2, color: colors.text, fontSize: Typography.title.size, fontWeight: '800' },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         inviteCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, borderWidth: 1, padding: Spacing.md, marginBottom: Spacing.md },
         sectionTitle: { fontWeight: '700', fontSize: 14, marginBottom: Spacing.sm },
         accessHint: { fontSize: 12, marginBottom: Spacing.xs },
@@ -339,7 +303,6 @@ const styles = (colors: ColorPalette) =>
         },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         block: { marginHorizontal: Spacing.lg, marginBottom: Spacing.lg },
-        blockTitle: { fontWeight: '700', fontSize: 12, marginBottom: Spacing.sm, textTransform: 'uppercase' },
         row: {
             borderWidth: 1,
             borderRadius: Radius.card,
@@ -361,6 +324,4 @@ const styles = (colors: ColorPalette) =>
         meta: { fontSize: 12, marginTop: 2 },
         inlineBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
         emptyText: { fontSize: 13 },
-        roleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.xs },
-        roleChip: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
     });

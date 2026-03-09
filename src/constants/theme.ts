@@ -3,56 +3,68 @@ import { offlineKeyValueStore } from '../offline/db/offlineKeyValueStore';
 
 export const Colors = {
     light: {
-        primary: '#007B83',
-        primaryVariant: '#005A60',
-        secondary: '#FFB300',
-        background: '#F4F5F7',
+        primary: '#0B78FF',
+        primaryVariant: '#085FD0',
+        secondary: '#F59E0B',
+        background: '#F4F7FC',
         surface: '#FFFFFF',
-        surfaceVariant: '#F0F2F5',
-        error: '#D32F2F',
-        text: '#111827',
-        textSecondary: '#6B7280',
-        border: '#E5E7EB',
-        success: '#16A34A',
-        warning: '#F97316',
+        surfaceVariant: '#EDF3FF',
+        error: '#D14343',
+        text: '#0F172A',
+        textSecondary: '#5F6D82',
+        border: '#D6DFED',
+        success: '#0E9F6E',
+        warning: '#F59E0B',
         info: '#0284C7',
-        backgroundElement: '#F0F0F3',
-        backgroundSelected: '#E0E1E6',
+        backgroundElement: '#EAF1FF',
+        backgroundSelected: '#DCEAFE',
         onPrimary: '#FFFFFF',
-        onSurface: '#111827',
+        onSurface: '#0F172A',
         tabBar: '#FFFFFF',
-        tabBarBorder: '#E5E7EB',
+        tabBarBorder: '#D6DFED',
         card: '#FFFFFF',
-        skeleton: '#E5E7EB',
-        skeletonHighlight: '#F9FAFB',
+        skeleton: '#E7EDF8',
+        skeletonHighlight: '#F8FBFF',
+        surfaceRaised: '#F9FBFF',
+        backdrop: '#0F172A',
+        glow: '#4DA3FF',
+        isDark: false,
     },
     dark: {
-        primary: '#00B4C0',
-        primaryVariant: '#007B83',
-        secondary: '#FFB300',
-        background: '#020617',
-        surface: '#111827',
-        surfaceVariant: '#1E293B',
-        error: '#EF4444',
-        text: '#F9FAFB',
-        textSecondary: '#9CA3AF',
-        border: '#374151',
-        success: '#22C55E',
-        warning: '#FB923C',
-        info: '#38BDF8',
-        backgroundElement: '#1E293B',
-        backgroundSelected: '#2E3135',
+        primary: '#56A8FF',
+        primaryVariant: '#2E84F6',
+        secondary: '#FFB64C',
+        background: '#06111F',
+        surface: '#0C1A2D',
+        surfaceVariant: '#13263E',
+        error: '#FF7D7D',
+        text: '#F5F8FF',
+        textSecondary: '#9FB2CF',
+        border: '#223754',
+        success: '#34D399',
+        warning: '#FFB547',
+        info: '#50C4FF',
+        backgroundElement: '#102136',
+        backgroundSelected: '#173152',
         onPrimary: '#FFFFFF',
-        onSurface: '#F9FAFB',
-        tabBar: '#111827',
-        tabBarBorder: '#374151',
-        card: '#1E293B',
-        skeleton: '#1E293B',
-        skeletonHighlight: '#374151',
+        onSurface: '#F5F8FF',
+        tabBar: '#0C1A2D',
+        tabBarBorder: '#223754',
+        card: '#102136',
+        skeleton: '#1A304D',
+        skeletonHighlight: '#254267',
+        surfaceRaised: '#13263E',
+        backdrop: '#020711',
+        glow: '#5EA9FF',
+        isDark: true,
     },
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light;
+type StringColorKeys<T> = {
+    [K in keyof T]: T[K] extends string ? K : never;
+}[keyof T];
+
+export type ThemeColor = StringColorKeys<typeof Colors.light>;
 export type ThemeMode = 'light' | 'dark';
 export type ThemePreference = ThemeMode | 'system';
 // Widened palette type: compatible with both light and dark, usable as component prop
@@ -79,6 +91,10 @@ export type ColorPalette = {
     card: string;
     skeleton: string;
     skeletonHighlight: string;
+    surfaceRaised: string;
+    backdrop: string;
+    glow: string;
+    isDark: boolean;
 };
 
 const normalizeHexColor = (value: string): string | null => {
@@ -153,7 +169,7 @@ export const Spacing = {
 } as const;
 
 export const Radius = {
-    sm: 6, md: 10, lg: 16, xl: 24, pill: 999, card: 12, chip: 999,
+    sm: 6, md: 12, lg: 18, xl: 24, pill: 999, card: 16, chip: 999,
 } as const;
 
 export const Elevation = { none: 0, low: 2, medium: 4, high: 8 } as const;

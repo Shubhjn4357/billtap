@@ -51,7 +51,7 @@ export default {
         "expo-splash-screen",
         {
           image: "./assets/images/splash-icon.png",
-          imageWidth: 220,
+          imageWidth: 150,
           resizeMode: "contain",
           backgroundColor: "#007B83",
           dark: {
@@ -77,7 +77,7 @@ export default {
       [
         "expo-sqlite",
         {
-          enableFTS: true
+          "enableFTS": true,
         }
       ],
       [

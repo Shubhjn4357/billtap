@@ -1,5 +1,5 @@
 import { Tabs, type ErrorBoundaryProps, router } from 'expo-router';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { VahiTabBar } from '../../components/VahiTabBar';
 import { GoToPalette } from '../../components/navigation/GoToPalette';
@@ -8,7 +8,7 @@ import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 
 export default function MainLayout() {
     return (
-        <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        
             <AppDrawerLayout>
                 <Tabs
                     tabBar={(props) => <VahiTabBar {...props} />}
@@ -47,7 +47,7 @@ export default function MainLayout() {
                 </Tabs>
                 <GoToPalette />
             </AppDrawerLayout>
-        </KeyboardAvoidingView>
+       
     );
 }
 

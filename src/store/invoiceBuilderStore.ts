@@ -7,6 +7,7 @@ import { computeGst } from '../constants/gstRates';
 const EMPTY_LINE = (): InvoiceLineItem => ({
     _key: Math.random().toString(36).slice(2),
     itemId: null,
+    godownId: null,
     description: '',
     quantity: 1,
     unit: 'pcs',
@@ -69,6 +70,7 @@ interface InvoiceBuilderStore {
     setDueDate: (d: string | null) => void;
     setParty: (id: string | null, snapshot?: InvoiceBuilderState['partySnapshot']) => void;
     setPlaceOfSupply: (s: string) => void;
+    setDefaultGodownId: (id: string | null) => void;
     addLine: () => void;
     addLineFromItem: (item: import('../types/domain').Item) => void;
     updateLine: (key: string, updates: Partial<InvoiceLineItem>) => void;
@@ -93,6 +95,7 @@ const defaultState = (): InvoiceBuilderState => ({
     partyId: null,
     partySnapshot: null,
     placeOfSupply: '',
+    defaultGodownId: null,
     items: [EMPTY_LINE()],
     discountAmount: 0,
     additionalCharges: 0,
@@ -143,9 +146,21 @@ export const useInvoiceBuilderStore = create<InvoiceBuilderStore>()(
             setDueDate: (d) => set((store) => { store.state.dueDate = d; }),
             setParty: (id, snapshot) => set((store) => { store.state.partyId = id; store.state.partySnapshot = snapshot ?? null; }),
             setPlaceOfSupply: (s) => set((store) => { store.state.placeOfSupply = s; }),
+            setDefaultGodownId: (id) => set((store) => {
+                store.state.defaultGodownId = id;
+                if (id) {
+                    store.state.items = store.state.items.map((line) => (
+                        line.godownId ? line : { ...line, godownId: id }
+                    ));
+                }
+                store.totals = syncTotals(store.state);
+            }),
 
             addLine: () => set((store) => {
-                store.state.items.push(EMPTY_LINE());
+                store.state.items.push({
+                    ...EMPTY_LINE(),
+                    godownId: store.state.defaultGodownId ?? null,
+                });
                 store.totals = syncTotals(store.state);
             }),
 
@@ -153,6 +168,7 @@ export const useInvoiceBuilderStore = create<InvoiceBuilderStore>()(
                 const newLine: InvoiceLineItem = {
                     _key: Math.random().toString(36).slice(2),
                     itemId: item.id,
+                    godownId: store.state.defaultGodownId ?? null,
                     description: item.name,
                     quantity: 1,
                     unit: item.unit ?? 'pcs',

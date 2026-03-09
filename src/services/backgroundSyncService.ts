@@ -57,13 +57,16 @@ export async function unregisterBackgroundSync(): Promise<void> {
     }
 }
 
-export function startForegroundSync(intervalMs = 60_000): void {
+export function startForegroundSync(
+    intervalMs = 60_000,
+    runSync: () => Promise<{ processed: number; remaining: number }> = () => offlineSyncService.flushQueue()
+): void {
     if (foregroundTimer) return;
     foregroundTimer = setInterval(async () => {
         try {
             const net = await NetInfo.fetch();
             if (!net.isConnected) return;
-            const result = await offlineSyncService.flushQueue();
+            const result = await runSync();
             if (result.processed > 0) {
                 await notifySyncComplete(result.processed);
             }

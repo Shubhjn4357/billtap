@@ -2,14 +2,33 @@ import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, Activity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useQuery } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { loanApi } from '../../../../api/endpoints';
 import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { format, parseISO } from 'date-fns';
 import type { LoanTransaction } from '../../../../types/domain';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { useLoanDetails } from '../../../../hooks/useLoans';
+
+const toAmount = (value: unknown) => {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const getLoanName = (loan: { lenderBorrowerName?: string | null }) => loan.lenderBorrowerName?.trim() || 'Loan account';
+const getLoanType = (loan: { loanType?: string | null }) => loan.loanType === 'GIVEN' ? 'GIVEN' : 'BORROWED';
+const getInterestRate = (loan: { interestRatePercent?: unknown }) => toAmount(loan.interestRatePercent);
+
+const formatDisplayDate = (value?: string | null, fallback = 'Date unavailable') => {
+    if (!value) return fallback;
+    try {
+        return format(parseISO(value), 'dd MMM yyyy');
+    } catch {
+        return fallback;
+    }
+};
+
+const getTransactionType = (txn: LoanTransaction) => txn.type ?? txn.transactionType ?? 'TRANSACTION';
 
 export default function LoanDetailScreen() {
     const colors = useAppColors();
@@ -17,21 +36,9 @@ export default function LoanDetailScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
 
-    const { data: loanData, isLoading, isRefetching: loanRefetching, refetch: refetchLoan } = useQuery({
-        queryKey: ['loan', id],
-        queryFn: () => loanApi.get(id!),
-        enabled: !!id,
+    const { loan, transactions, isLoading, isRefetching, refetch } = useLoanDetails(id, {
+        enabled: Boolean(id),
     });
-
-    const { data: txnData, isRefetching: txnRefetching, refetch: refetchTransactions } = useQuery({
-        queryKey: ['loan-transactions', id],
-        queryFn: () => loanApi.getTransactions(id!),
-        enabled: !!id,
-    });
-    const isRefreshing = loanRefetching || txnRefetching;
-
-    const loan = loanData?.data;
-    const transactions = (txnData?.data ?? []) as LoanTransaction[];
 
     if (isLoading) {
         return (
@@ -49,13 +56,13 @@ export default function LoanDetailScreen() {
         );
     }
 
-    const isLent = loan.loanType === 'GIVEN';
+    const isLent = getLoanType(loan) === 'GIVEN';
     const color = isLent ? colors.success : colors.error;
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
             <AppTopBar
-                title={loan.lenderBorrowerName}
+                title={getLoanName(loan)}
                 subtitle={isLent ? 'Given loan' : 'Borrowed loan'}
                 onBackPress={smartBack}
             />
@@ -65,31 +72,31 @@ export default function LoanDetailScreen() {
                 refreshControl={(
                     <RefreshControl
                         tintColor={colors.primary}
-                        refreshing={isRefreshing}
+                        refreshing={isRefetching}
                         onRefresh={() => {
-                            void Promise.all([refetchLoan(), refetchTransactions()]);
+                            void refetch();
                         }}
                     />
                 )}
             >
                 <View style={[s.summaryCard, { backgroundColor: color }]}>
                     <Text style={s.sumType}>{isLent ? 'Given' : 'Borrowed'}</Text>
-                    <Text style={s.sumName}>{loan.lenderBorrowerName}</Text>
+                    <Text style={s.sumName}>{getLoanName(loan)}</Text>
                     <View style={s.sumRow}>
                         <View style={s.sumCell}>
                             <Text style={s.sumCellLabel}>Principal</Text>
-                            <Text style={s.sumCellVal}>Rs {loan.principalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                            <Text style={s.sumCellVal}>Rs {toAmount(loan.principalAmount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
                         </View>
                         <View style={s.sumCell}>
                             <Text style={s.sumCellLabel}>Balance</Text>
-                            <Text style={s.sumCellVal}>Rs {loan.currentBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                            <Text style={s.sumCellVal}>Rs {toAmount(loan.currentBalance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
                         </View>
                         <View style={s.sumCell}>
                             <Text style={s.sumCellLabel}>Rate</Text>
-                            <Text style={s.sumCellVal}>{loan.interestRatePercent}%</Text>
+                            <Text style={s.sumCellVal}>{getInterestRate(loan)}%</Text>
                         </View>
                     </View>
-                    {loan.dueDate ? <Text style={s.dueDate}>Due: {format(parseISO(loan.dueDate), 'dd MMM yyyy')}</Text> : null}
+                    {loan.dueDate ? <Text style={s.dueDate}>Due: {formatDisplayDate(loan.dueDate)}</Text> : null}
                 </View>
 
                 <View style={s.actionsRow}>
@@ -111,15 +118,15 @@ export default function LoanDetailScreen() {
                         transactions.map((txn) => (
                             <View key={txn.id} style={[s.txnRow, { backgroundColor: colors.card }]}>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={[s.txnType, { color: colors.text }]}>{txn.type.replace(/_/g, ' ')}</Text>
-                                    <Text style={[s.txnDate, { color: colors.textSecondary }]}>{format(parseISO(txn.date), 'dd MMM yyyy')}</Text>
+                                    <Text style={[s.txnType, { color: colors.text }]}>{getTransactionType(txn).replace(/_/g, ' ')}</Text>
+                                    <Text style={[s.txnDate, { color: colors.textSecondary }]}>{formatDisplayDate(txn.date)}</Text>
                                     {txn.description ? <Text style={[s.txnDesc, { color: colors.textSecondary }]}>{txn.description}</Text> : null}
                                 </View>
                                 <View style={{ alignItems: 'flex-end' }}>
-                                    <Text style={[s.txnAmt, { color: txn.type === 'REPAYMENT' ? colors.success : txn.type === 'INTEREST' ? colors.warning : colors.primary }]}>
-                                        Rs {txn.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                    <Text style={[s.txnAmt, { color: getTransactionType(txn) === 'REPAYMENT' ? colors.success : getTransactionType(txn) === 'INTEREST' ? colors.warning : colors.primary }]}>
+                                        Rs {toAmount(txn.amount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                     </Text>
-                                    <Text style={[s.txnBal, { color: colors.textSecondary }]}>Bal: Rs {txn.balanceAfter.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                                    <Text style={[s.txnBal, { color: colors.textSecondary }]}>Bal: Rs {toAmount(txn.balanceAfter).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
                                 </View>
                             </View>
                         ))

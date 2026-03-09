@@ -2,35 +2,22 @@ import { useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useMutation } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { accountingApi } from '../../../api/endpoints';
 import { toUserMessage } from '../../../api/client';
+import { LEDGER_SORT_OPTIONS, LEDGER_TYPE_FILTER_OPTIONS, type LedgerSortKey, type LedgerTypeFilter } from '../../../constants/reportOptions';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { usePermissions } from '../../../hooks/usePermissions';
-import { useLedgers, type LedgerRow, type LedgerTypeFilter, type LedgerSortKey } from '../../../hooks/useLedgers';
+import { useLedgers, type LedgerRow } from '../../../hooks/useLedgers';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { ChipButton } from '../../../components/ui/ChipBlocks';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { EmptyStateCard } from '../../../components/ui/ListBlocks';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-
-const TYPE_FILTERS: { key: LedgerTypeFilter; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
-    { key: 'ALL', icon: 'view-list-outline' },
-    { key: 'ASSET', icon: 'cash-plus' },
-    { key: 'LIABILITY', icon: 'cash-minus' },
-    { key: 'INCOME', icon: 'trending-up' },
-    { key: 'EXPENSE', icon: 'trending-down' },
-    { key: 'EQUITY', icon: 'scale-balance' },
-];
-
-const SORT_OPTIONS: { key: LedgerSortKey; label: string }[] = [
-    { key: 'name_asc', label: 'Name A–Z' },
-    { key: 'balance_desc', label: 'Balance ↓' },
-    { key: 'balance_asc', label: 'Balance ↑' },
-];
+import { useAccountingAccountMutations } from '../../../hooks/useAccountingMutations';
 
 export default function LedgersListScreen() {
     const colors = useAppColors();
@@ -43,6 +30,7 @@ export default function LedgersListScreen() {
     const { selection } = useHaptics();
     const dialog = useAppDialog();
     const { isManager } = usePermissions();
+    const { deactivateAccount, isDeactivatingAccount } = useAccountingAccountMutations();
 
     const { rows, groups, totals, isLoading, isRefetching, refetch, typeLabels } = useLedgers({
         search,
@@ -66,12 +54,6 @@ export default function LedgersListScreen() {
         if (Math.abs(row.debitTotal ?? 0) > 0.0001 || Math.abs(row.creditTotal ?? 0) > 0.0001) return 'Ledger has posted entries.';
         return null;
     };
-
-    const { mutate: deactivateLedger } = useMutation({
-        mutationFn: (accountId: string) => accountingApi.deactivateAccount(accountId),
-        onSuccess: () => { void refetch(); dialog.alert('Ledger deactivated', 'Ledger has been deactivated successfully.'); },
-        onError: (error) => dialog.alert('Deactivate failed', toUserMessage(error, 'Unable to deactivate this ledger.')),
-    });
 
     const renderLedgerRow = ({ item }: { item: LedgerRow }) => {
         const typeStyle = getTypeStyle(item.type);
@@ -103,7 +85,19 @@ export default function LedgersListScreen() {
                         if (reason) { dialog.alert('Cannot deactivate', reason); return; }
                         dialog.alert('Deactivate ledger', `Deactivate "${item.name}"?`, [
                             { text: 'Cancel', style: 'cancel' },
-                            { text: 'Deactivate', style: 'destructive', onPress: () => deactivateLedger(item.id) },
+                            {
+                                text: 'Deactivate',
+                                style: 'destructive',
+                                onPress: async () => {
+                                    try {
+                                        await deactivateAccount(item.id);
+                                        void refetch();
+                                        dialog.alert('Ledger deactivated', 'Ledger has been deactivated successfully.');
+                                    } catch (error) {
+                                        dialog.alert('Deactivate failed', toUserMessage(error, 'Unable to deactivate this ledger.'));
+                                    }
+                                },
+                            },
                         ]);
                     }}
                 >
@@ -131,30 +125,28 @@ export default function LedgersListScreen() {
 
             {/* Type Filters */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.typeScroll} contentContainerStyle={s.typeRow}>
-                {TYPE_FILTERS.map((tf) => {
+                {LEDGER_TYPE_FILTER_OPTIONS.map((tf) => {
                     const sel = typeFilter === tf.key;
-                    const tStyle = tf.key !== 'ALL' ? getTypeStyle(tf.key) : { color: colors.primary, bg: withAlpha(colors.primary, '16') };
+                    const tone = tf.key === 'ASSET' ? 'success' : tf.key === 'LIABILITY' ? 'danger' : tf.key === 'EXPENSE' ? 'warning' : 'info';
                     return (
-                        <Pressable key={tf.key} style={[s.typeChip, { borderColor: sel ? tStyle.color : colors.border, backgroundColor: sel ? tStyle.bg : 'transparent' }]}
-                            onPress={() => { void selection(); setTypeFilter(tf.key); }}>
-                            <MaterialCommunityIcons name={tf.icon} size={13} color={sel ? tStyle.color : colors.textSecondary} />
-                            <Text style={[s.typeChipText, { color: sel ? tStyle.color : colors.textSecondary, fontWeight: sel ? '700' : '500' }]}>
-                                {tf.key === 'ALL' ? 'All' : typeLabels[tf.key]}
-                            </Text>
-                        </Pressable>
+                        <ChipButton
+                            key={tf.key}
+                            label={tf.key === 'ALL' ? 'All' : typeLabels[tf.key]}
+                            icon={tf.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                            selected={sel}
+                            tone={tone}
+                            onPress={() => { void selection(); setTypeFilter(tf.key); }}
+                        />
                     );
                 })}
             </ScrollView>
 
             {/* Sort */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.typeScroll} contentContainerStyle={s.typeRow}>
-                {SORT_OPTIONS.map((so) => {
+                {LEDGER_SORT_OPTIONS.map((so) => {
                     const sel = sortBy === so.key;
                     return (
-                        <Pressable key={so.key} style={[s.sortChip, { borderColor: sel ? colors.primary : colors.border, backgroundColor: sel ? withAlpha(colors.primary, '16') : 'transparent' }]}
-                            onPress={() => setSortBy(so.key)}>
-                            <Text style={[s.typeChipText, { color: sel ? colors.primary : colors.textSecondary }]}>{so.label}</Text>
-                        </Pressable>
+                        <ChipButton key={so.key} label={so.label} selected={sel} tone="info" onPress={() => setSortBy(so.key)} />
                     );
                 })}
                 <View style={[s.totalsBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -182,7 +174,7 @@ export default function LedgersListScreen() {
                         );
                     }}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
-                    refreshControl={<RefreshControl tintColor={colors.primary} refreshing={isRefetching} onRefresh={() => refetch()} />}
+                    refreshControl={<RefreshControl tintColor={colors.primary} refreshing={isRefetching} onRefresh={() => { void refetch(); }} />}
                     ListEmptyComponent={<LedgerEmpty colors={colors} />}
                 />
             ) : (
@@ -191,7 +183,7 @@ export default function LedgersListScreen() {
                     keyExtractor={(item) => item.id}
                     renderItem={renderLedgerRow}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
-                    refreshControl={<RefreshControl tintColor={colors.primary} refreshing={isRefetching} onRefresh={() => refetch()} />}
+                    refreshControl={<RefreshControl tintColor={colors.primary} refreshing={isRefetching || isDeactivatingAccount} onRefresh={() => { void refetch(); }} />}
                     ListHeaderComponent={(
                         <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>LEDGERS</Text>
@@ -207,11 +199,12 @@ export default function LedgersListScreen() {
 
 function LedgerEmpty({ colors }: { colors: ColorPalette }) {
     return (
-        <View style={{ alignItems: 'center', paddingTop: 60, gap: 8 }}>
-            <MaterialCommunityIcons name="book-search-outline" size={36} color={colors.textSecondary} />
-            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15 }}>No ledgers found</Text>
-            <Text style={{ color: colors.textSecondary, fontSize: 13 }}>Create accounting entries to generate ledgers.</Text>
-        </View>
+        <EmptyStateCard
+            icon="book-search-outline"
+            title="No ledgers found"
+            subtitle="Create accounting entries to generate ledgers."
+            tone="info"
+        />
     );
 }
 
@@ -220,9 +213,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs },
     typeScroll: { flexGrow: 0 },
     typeRow: { paddingHorizontal: Spacing.lg, gap: Spacing.xs, paddingVertical: 4 },
-    typeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
-    typeChipText: { fontSize: 12 },
-    sortChip: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
     totalsBadge: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
     totalsText: { fontSize: 11, fontWeight: '600' },
     groupToggle: { width: 32, height: 32, borderWidth: 1, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },

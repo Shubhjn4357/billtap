@@ -3,27 +3,24 @@ import {
     ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
-import { settingsApi } from '../../../api/endpoints';
+import { SettingsSection } from '../../../constants/enums';
 import { offlineSyncService } from '../../../services/offlineSyncService';
-import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { toUserMessage } from '../../../api/client';
+import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-
-type QueueEntry = {
-    id: string;
-    type: string;
-    status?: string;
-    lastErrorCode?: string;
-    createdAt: string;
-    attemptCount: number;
-    lastAttemptAt?: string;
-    lastError?: string;
-    nextRetryAt?: number;
-};
+import { useAppRuntime } from '../../../components/providers/AppRuntimeProvider';
+import { ChipButton } from '../../../components/ui/ChipBlocks';
+import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
+import { useOfflineSyncQueue } from '../../../hooks/useOfflineSyncQueue';
+import { useSyncQueueActions } from '../../../hooks/useSyncQueueActions';
+import { selectGeneralSyncSettings, type SyncConflictPolicy } from '../../../selectors/settingsSelectors';
+import { settingsSectionQueryKey } from '../../../state/settingsQueryKeys';
+import { useSettingsSectionMutation } from '../../../hooks/useSettingsSectionMutation';
 
 const formatDate = (value?: string) => {
     if (!value) return '-';
@@ -43,93 +40,83 @@ export default function SyncDiagnosticsScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
     const qc = useQueryClient();
+    const {
+        syncStats,
+        lastSyncError,
+        refreshSyncState,
+    } = useAppRuntime();
+    const { flushNow, isFlushing } = useSyncQueueActions();
 
     const [intervalInput, setIntervalInput] = useState('60');
 
-    const { data: queueData, isLoading: queueLoading, isRefetching: queueRefetching, refetch } = useQuery({
-        queryKey: ['offline-sync-queue'],
-        queryFn: async () => {
-            const [queue, stats] = await Promise.all([
-                offlineSyncService.getQueue(),
-                offlineSyncService.getQueueStats(),
-            ]);
-            return { queue: queue as QueueEntry[], stats };
-        },
-        staleTime: 15_000,
-    });
+    const { queue, isLoading: queueLoading, isRefetching: queueRefetching, refetch: refetchQueue } = useOfflineSyncQueue();
 
-    const { data: generalSettings, isRefetching: settingsRefetching, refetch: refetchSettings } = useQuery({
-        queryKey: ['settings-section', 'GENERAL'],
-        queryFn: () => settingsApi.get('GENERAL'),
-        staleTime: 30_000,
-    });
+    const {
+        sectionData: generalSettingsData,
+        selected: generalSettingsView,
+        isRefetching: settingsRefetching,
+        refetch: refetchSettings,
+    } = useSettingsSelector(SettingsSection.GENERAL, selectGeneralSyncSettings);
     const isRefreshing = queueRefetching || settingsRefetching;
 
-    const settingsData = (generalSettings?.data ?? {}) as Record<string, unknown>;
-    const conflictPolicy = typeof settingsData.sync_conflict_policy === 'string'
-        ? settingsData.sync_conflict_policy
-        : 'LAST_WRITE_WINS';
+    const conflictPolicy = generalSettingsView.conflictPolicy;
 
-    const queue = queueData?.queue ?? [];
-    const stats = queueData?.stats ?? { pendingCount: 0, blockedCount: 0, oldestCreatedAt: null as string | null };
     const [upgradeHintShown, setUpgradeHintShown] = useState(false);
-
     const storageBackend = useMemo(() => offlineSyncService.getStorageBackend(), []);
 
     useEffect(() => {
+        setIntervalInput(String(generalSettingsView.autoSyncIntervalSec));
+    }, [generalSettingsView.autoSyncIntervalSec]);
+
+    useEffect(() => {
         if (upgradeHintShown) return;
-        if (stats.blockedCount <= 0) return;
+        if (syncStats.blockedCount <= 0) return;
         setUpgradeHintShown(true);
         dialog.alert(
             'Upgrade required',
             'Some cloud sync items are blocked by current plan. Data is saved locally. Upgrade plan to sync these items.'
         );
-    }, [dialog, stats.blockedCount, upgradeHintShown]);
+    }, [dialog, syncStats.blockedCount, upgradeHintShown]);
 
-    const { mutate: flushNow, isPending: flushing } = useMutation({
-        mutationFn: () => offlineSyncService.flushQueue(),
-        onSuccess: async (result) => {
-            await refetch();
-            dialog.alert('Sync complete', `Processed: ${result.processed}, Remaining: ${result.remaining}`);
+    const { mutate: savePolicyMutation, isPending: savingPolicy } = useSettingsSectionMutation(SettingsSection.GENERAL, {
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: settingsSectionQueryKey(SettingsSection.GENERAL) });
         },
         onError: (error) => {
-            dialog.alert('Sync failed', error instanceof Error ? error.message : 'Unable to flush queue.');
+            console.error('[sync-diagnostics] save policy failed', { error });
+            dialog.alert('Save failed', toUserMessage(error, 'Unable to save policy.'));
         },
     });
 
-    const { mutate: savePolicy, isPending: savingPolicy } = useMutation({
-        mutationFn: async (policy: 'LAST_WRITE_WINS' | 'SERVER_WINS') => {
-            const payload = {
-                ...settingsData,
-                sync_conflict_policy: policy,
-            };
-            return settingsApi.update('GENERAL', { data: payload });
-        },
+    const { mutate: saveIntervalMutation, isPending: savingInterval } = useSettingsSectionMutation(SettingsSection.GENERAL, {
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['settings-section', 'GENERAL'] });
-        },
-    });
-
-    const { mutate: saveInterval, isPending: savingInterval } = useMutation({
-        mutationFn: async () => {
-            const interval = Number(intervalInput);
-            if (!Number.isFinite(interval) || interval < 15 || interval > 3600) {
-                throw new Error('Auto sync interval must be between 15 and 3600 seconds.');
-            }
-            const payload = {
-                ...settingsData,
-                sync_auto_interval_sec: Math.round(interval),
-            };
-            return settingsApi.update('GENERAL', { data: payload });
-        },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['settings-section', 'GENERAL'] });
+            qc.invalidateQueries({ queryKey: settingsSectionQueryKey(SettingsSection.GENERAL) });
             dialog.alert('Saved', 'Auto sync interval updated.');
         },
         onError: (error) => {
-            dialog.alert('Save failed', error instanceof Error ? error.message : 'Unable to save interval.');
+            console.error('[sync-diagnostics] save interval failed', { intervalInput, error });
+            dialog.alert('Save failed', toUserMessage(error, 'Unable to save interval.'));
         },
     });
+
+    const savePolicy = (policy: SyncConflictPolicy) => {
+        savePolicyMutation({
+            ...generalSettingsData,
+            sync_conflict_policy: policy,
+        });
+    };
+
+    const saveInterval = () => {
+        const interval = Number(intervalInput);
+        if (!Number.isFinite(interval) || interval < 15 || interval > 3600) {
+            dialog.alert('Save failed', 'Auto sync interval must be between 15 and 3600 seconds.');
+            return;
+        }
+        saveIntervalMutation({
+            ...generalSettingsData,
+            sync_auto_interval_sec: Math.round(interval),
+        });
+    };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -151,7 +138,7 @@ export default function SyncDiagnosticsScreen() {
                             tintColor={colors.primary}
                             refreshing={isRefreshing}
                             onRefresh={() => {
-                                void Promise.all([refetch(), refetchSettings()]);
+                                void Promise.all([refetchQueue(), refetchSettings(), refreshSyncState()]);
                             }}
                         />
                     )}
@@ -161,14 +148,27 @@ export default function SyncDiagnosticsScreen() {
                             <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
                                 <Text style={s.cardTitle}>Queue Overview</Text>
                                 <Text style={s.cardLine}>Storage: {storageBackend}</Text>
-                                <Text style={s.cardLine}>Pending: {stats.pendingCount}</Text>
-                                <Text style={s.cardLine}>Blocked (upgrade): {stats.blockedCount}</Text>
-                                <Text style={s.cardLine}>Oldest: {formatDate(stats.oldestCreatedAt ?? undefined)}</Text>
+                                <Text style={s.cardLine}>Pending: {syncStats.pendingCount}</Text>
+                                <Text style={s.cardLine}>Blocked (upgrade): {syncStats.blockedCount}</Text>
+                                <Text style={s.cardLine}>Oldest: {formatDate(syncStats.oldestCreatedAt ?? undefined)}</Text>
+                                {lastSyncError ? <Text style={s.errorLine}>Last sync error: {lastSyncError}</Text> : null}
                                 <View style={s.actionRow}>
-                                    <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => flushNow()} disabled={flushing}>
-                                        <Text style={s.actionBtnText}>{flushing ? 'Syncing...' : 'Flush Now'}</Text>
+                                    <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => {
+                                        void flushNow()
+                                            .then(async (result) => {
+                                                await refetchQueue();
+                                                dialog.alert('Sync complete', `Processed: ${result.processed}, Remaining: ${result.remaining}`);
+                                            })
+                                            .catch((error) => {
+                                                console.error('[sync-diagnostics] flush failed', { error });
+                                                dialog.alert('Sync failed', toUserMessage(error, 'Unable to flush queue.'));
+                                            });
+                                    }} disabled={isFlushing}>
+                                        <Text style={s.actionBtnText}>{isFlushing ? 'Syncing...' : 'Flush Now'}</Text>
                                     </Pressable>
-                                    <Pressable style={[s.actionBtn, { backgroundColor: colors.surfaceVariant }]} onPress={() => refetch()}>
+                                    <Pressable style={[s.actionBtn, { backgroundColor: colors.surfaceVariant }]} onPress={() => {
+                                        void Promise.all([refetchQueue(), refreshSyncState()]);
+                                    }}>
                                         <Text style={[s.actionBtnText, { color: colors.text }]}>Refresh</Text>
                                     </Pressable>
                                 </View>
@@ -177,20 +177,20 @@ export default function SyncDiagnosticsScreen() {
                             <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
                                 <Text style={s.cardTitle}>Conflict Resolution</Text>
                                 <View style={s.optionRow}>
-                                    <Pressable
-                                        style={[s.optionChip, conflictPolicy === 'LAST_WRITE_WINS' && { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, '22') }]}
+                                    <ChipButton
+                                        label="Last Write Wins"
+                                        selected={conflictPolicy === 'LAST_WRITE_WINS'}
+                                        tone="info"
                                         onPress={() => savePolicy('LAST_WRITE_WINS')}
                                         disabled={savingPolicy}
-                                    >
-                                        <Text style={s.optionText}>Last Write Wins</Text>
-                                    </Pressable>
-                                    <Pressable
-                                        style={[s.optionChip, conflictPolicy === 'SERVER_WINS' && { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, '22') }]}
+                                    />
+                                    <ChipButton
+                                        label="Server Wins"
+                                        selected={conflictPolicy === 'SERVER_WINS'}
+                                        tone="info"
                                         onPress={() => savePolicy('SERVER_WINS')}
                                         disabled={savingPolicy}
-                                    >
-                                        <Text style={s.optionText}>Server Wins</Text>
-                                    </Pressable>
+                                    />
                                 </View>
                             </View>
 
@@ -244,6 +244,7 @@ const styles = (colors: ColorPalette) =>
         },
         cardTitle: { color: colors.text, fontSize: 14, fontWeight: '700', marginBottom: 2 },
         cardLine: { color: colors.textSecondary, fontSize: 12 },
+        errorLine: { color: colors.error, fontSize: 12 },
         actionRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
         actionBtn: {
             borderRadius: Radius.pill,
@@ -254,14 +255,6 @@ const styles = (colors: ColorPalette) =>
         },
         actionBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
         optionRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap', marginTop: Spacing.xs },
-        optionChip: {
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-        },
-        optionText: { color: colors.text, fontSize: 12, fontWeight: '700' },
         intervalInputWrap: { marginTop: Spacing.xs, marginBottom: Spacing.sm },
         sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
         row: {

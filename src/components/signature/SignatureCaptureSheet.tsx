@@ -207,7 +207,7 @@ const buildSignatureHtml = (
 
 export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCaptureSheetProps) {
     const dialog = useAppDialog();
-  const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
 
     const signatureHtml = useMemo(
@@ -264,6 +264,7 @@ export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCap
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
             <View style={s.overlay}>
                 <View style={s.sheet}>
+                    <View style={s.handle} />
                     <Text style={s.title}>Draw Signature</Text>
                     <Text style={s.subtitle}>Use finger or stylus. This will be saved in business settings.</Text>
                     <View style={s.canvasWrap}>
@@ -303,14 +304,30 @@ const styles = (colors: ColorPalette) =>
             backgroundColor: withAlpha(colors.text, '66'),
         },
         sheet: {
-            borderTopLeftRadius: Radius.lg,
-            borderTopRightRadius: Radius.lg,
+            borderTopLeftRadius: 30,
+            borderTopRightRadius: 30,
             paddingHorizontal: Spacing.lg,
             paddingTop: Spacing.md,
             paddingBottom: Spacing.lg,
-            backgroundColor: colors.background,
+            borderWidth: 1,
+            borderBottomWidth: 0,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
             gap: Spacing.sm,
             minHeight: '96%',
+            shadowColor: colors.text,
+            shadowOpacity: 0.08,
+            shadowRadius: 18,
+            shadowOffset: { width: 0, height: -8 },
+            elevation: 12,
+        },
+        handle: {
+            alignSelf: 'center',
+            width: 44,
+            height: 5,
+            borderRadius: Radius.pill,
+            backgroundColor: colors.border,
+            marginBottom: 4,
         },
         title: {
             color: colors.text,
@@ -323,7 +340,7 @@ const styles = (colors: ColorPalette) =>
         },
         canvasWrap: {
             minHeight: 320,
-            borderRadius: Radius.md,
+            borderRadius: Radius.card,
             borderWidth: 1,
             borderColor: colors.border,
             overflow: 'hidden',

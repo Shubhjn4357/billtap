@@ -13,21 +13,15 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { TAB_BAR_QUICK_ACTIONS, type NavigationShortcut } from '../constants/navigationOptions';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../constants/theme';
+import { getInsetPanelStyle, getShadowStyle, getSurfaceStyle } from '../constants/designSystem';
 import { useAppColors } from '../hooks/useAppColors';
-import type { AppAction, AppModule } from '../utils/accessControl';
+import { useI18n } from '../hooks/useI18n';
 import { canAccessModule, canPerformAction, canUsePos } from '../utils/accessControl';
 import { useAuthStore } from '../store/authStore';
 import { useHaptics } from '../hooks/useHaptics';
-
-type QuickAction = {
-    label: string;
-    route: Parameters<typeof router.push>[0];
-    icon: keyof typeof MaterialCommunityIcons.glyphMap;
-    module?: AppModule;
-    action?: AppAction;
-    requiresPos?: boolean;
-};
+import { useThemeStore } from '../store/themeStore';
 
 const CENTER_SLOT_WIDTH = 84;
 const BAR_HORIZONTAL_PADDING = Spacing.sm;
@@ -35,28 +29,13 @@ const ACTIVE_PILL_MIN_WIDTH = 82;
 const ACTIVE_PILL_MAX_WIDTH = 108;
 const SHEET_ANIMATION_MS = 220;
 
-const QUICK_ACTIONS: QuickAction[] = [
-    { label: 'Screen Directory', route: '/(main)/more/screen-directory' as Parameters<typeof router.push>[0], icon: 'compass-outline' },
-    { label: 'New Sale Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', icon: 'file-document-plus-outline', module: 'billing', action: 'billing.create' },
-    { label: 'Purchase Bill', route: '/(main)/billing/create?type=PURCHASE_BILL', icon: 'cart-plus', module: 'billing', action: 'billing.create' },
-    { label: 'Quick Sale (POS)', route: '/(main)/billing/pos', icon: 'point-of-sale', module: 'billing', requiresPos: true },
-    { label: 'Payment In', route: '/(main)/billing/payment-in', icon: 'cash-plus', module: 'accounts' },
-    { label: 'Payment Out', route: '/(main)/billing/payment-out', icon: 'cash-minus', module: 'accounts' },
-    { label: 'Add Item', route: '/(main)/inventory/add-item', icon: 'package-variant-plus', module: 'inventory', action: 'inventory.create' },
-    { label: 'Add Party', route: '/(main)/parties/add', icon: 'account-plus', module: 'parties', action: 'party.create' },
-    { label: 'Billing List', route: '/(main)/billing', icon: 'file-document-multiple-outline', module: 'billing' },
-    { label: 'Inventory', route: '/(main)/inventory', icon: 'archive-outline', module: 'inventory' },
-    { label: 'Reports', route: '/(main)/reports', icon: 'chart-line', module: 'reports' },
-    { label: 'Cash & Bank', route: '/(main)/accounts/cash-bank', icon: 'bank-outline', module: 'accounts' },
-    { label: 'Settings', route: '/(main)/more/settings', icon: 'cog-outline', module: 'settings' },
-];
-
 export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
     const colors = useAppColors();
     const s = useMemo(() => styles(colors), [colors]);
     const insets = useSafeAreaInsets();
     const role = useAuthStore((value) => value.organizationRole);
     const subscription = useAuthStore((value) => value.subscription);
+    const richMotionEnabled = useThemeStore((value) => value.richMotionEnabled);
     const [sheetVisible, setSheetVisible] = useState(false);
     const [sheetOpen, setSheetOpen] = useState(false);
     const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -66,6 +45,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
     const barEntrance = useRef(new Animated.Value(0)).current;
     const sheetProgress = useRef(new Animated.Value(0)).current;
     const { selection, impact } = useHaptics();
+    const { t } = useI18n();
 
     const currentRoute = state.routes[state.index]?.name ?? 'index';
     const isMoreActive = currentRoute === 'more';
@@ -73,7 +53,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
 
     const visibleActions = useMemo(
         () =>
-            QUICK_ACTIONS.filter((action) => {
+            TAB_BAR_QUICK_ACTIONS.filter((action) => {
                 if (action.requiresPos && !canUsePos(subscription)) return false;
                 if (!action.module) return true;
                 if (!canAccessModule(role, action.module, subscription)) return false;
@@ -134,6 +114,10 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
         setSheetVisible(true);
         setSheetOpen(true);
         sheetProgress.setValue(0);
+        if (!richMotionEnabled) {
+            sheetProgress.setValue(1);
+            return;
+        }
         Animated.spring(sheetProgress, {
             toValue: 1,
             damping: 18,
@@ -149,6 +133,12 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
             return;
         }
         setSheetOpen(false);
+        if (!richMotionEnabled) {
+            sheetProgress.setValue(0);
+            setSheetVisible(false);
+            onClose?.();
+            return;
+        }
         Animated.timing(sheetProgress, {
             toValue: 0,
             duration: SHEET_ANIMATION_MS,
@@ -169,9 +159,9 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
         navigation.navigate(route.name);
     };
 
-    const openAction = (action: QuickAction) => {
+    const openAction = (action: NavigationShortcut) => {
         void selection();
-        closeSheet(() => router.push(action.route));
+        closeSheet(() => router.push(action.route as Parameters<typeof router.push>[0]));
     };
 
     useEffect(() => {
@@ -215,7 +205,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
     }, [activeProgress, isMoreActive]);
 
     useEffect(() => {
-        if (sheetOpen || keyboardVisible) {
+        if (!richMotionEnabled || sheetOpen || keyboardVisible) {
             centerPulse.stopAnimation();
             centerPulse.setValue(1);
             return;
@@ -239,7 +229,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
         );
         pulseLoop.start();
         return () => pulseLoop.stop();
-    }, [centerPulse, keyboardVisible, sheetOpen]);
+    }, [centerPulse, keyboardVisible, richMotionEnabled, sheetOpen]);
 
     if (keyboardVisible && !sheetVisible) {
         return null;
@@ -285,7 +275,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
                                 color={isHomeActive ? colors.primary : colors.textSecondary}
                             />
                         </Animated.View>
-                        <Text style={[s.sideLabel, { color: isHomeActive ? colors.primary : colors.textSecondary }]}>Dashboard</Text>
+                        <Text style={[s.sideLabel, { color: isHomeActive ? colors.primary : colors.textSecondary }]}>{t('tab.dashboard')}</Text>
                     </Pressable>
 
                     <View style={s.centerSlot}>
@@ -320,7 +310,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
                                 color={isMoreActive ? colors.primary : colors.textSecondary}
                             />
                         </Animated.View>
-                        <Text style={[s.sideLabel, { color: isMoreActive ? colors.primary : colors.textSecondary }]}>More</Text>
+                        <Text style={[s.sideLabel, { color: isMoreActive ? colors.primary : colors.textSecondary }]}>{t('tab.more')}</Text>
                     </Pressable>
                 </View>
             </Animated.View>
@@ -338,9 +328,13 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
                     <Animated.View style={[s.sheet, { transform: [{ translateY: sheetTranslateY }] }]}>
                         <View style={s.sheetHandle} />
                         <View style={s.sheetHeader}>
-                            <Text style={s.sheetTitle}>Quick Actions</Text>
-                            <Pressable onPress={() => closeSheet()}>
-                                <Text style={s.closeText}>Close</Text>
+                            <View style={s.sheetTitleBlock}>
+                                <Text style={s.sheetEyebrow}>{t('tab.quick_actions_eyebrow')}</Text>
+                                <Text style={s.sheetTitle}>{t('tab.quick_actions')}</Text>
+                                <Text style={s.sheetSubtitle}>{t('tab.quick_actions_subtitle')}</Text>
+                            </View>
+                            <Pressable style={s.sheetCloseButton} onPress={() => closeSheet()}>
+                                <Text style={s.closeText}>{t('tab.close')}</Text>
                             </Pressable>
                         </View>
                         <View style={s.sheetGrid}>
@@ -350,7 +344,9 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
                                     style={s.sheetAction}
                                     onPress={() => openAction(action)}
                                 >
-                                    <MaterialCommunityIcons name={action.icon} size={18} color={colors.primary} />
+                                    <View style={s.sheetActionIcon}>
+                                        <MaterialCommunityIcons name={action.icon} size={18} color={colors.primary} />
+                                    </View>
                                     <Text style={s.sheetActionText}>{action.label}</Text>
                                 </Pressable>
                             ))}
@@ -365,44 +361,38 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         barShell: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: Spacing.md,
             paddingTop: Spacing.xs,
         },
         bar: {
-            minHeight: 72,
-            borderWidth: 1,
-            borderRadius: Radius.xl,
-            borderColor: colors.tabBarBorder,
-            backgroundColor: withAlpha(colors.tabBar, 'F2'),
+            minHeight: 76,
+            borderRadius: 26,
             flexDirection: 'row',
             alignItems: 'center',
             paddingHorizontal: BAR_HORIZONTAL_PADDING,
             position: 'relative',
             overflow: 'hidden',
-            shadowColor: colors.text,
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.16,
-            shadowRadius: 14,
-            elevation: 12,
+            ...getSurfaceStyle(colors, { floating: true, elevated: true }),
         },
         activePill: {
             position: 'absolute',
-            top: 10,
-            height: 44,
+            top: 11,
+            height: 46,
             borderRadius: Radius.pill,
-            backgroundColor: withAlpha(colors.primary, '20'),
+            ...getInsetPanelStyle(colors, colors.primary),
         },
         sideAction: {
             flex: 1,
-            height: 54,
+            height: 56,
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 2,
+            gap: 4,
             zIndex: 2,
         },
         sideLabel: {
             fontSize: Typography.caption.size,
             fontWeight: '700',
+            letterSpacing: 0.2,
         },
         centerSlot: {
             width: CENTER_SLOT_WIDTH,
@@ -411,52 +401,49 @@ const styles = (colors: ColorPalette) =>
             zIndex: 3,
         },
         centerPulseWrap: {
-            width: 70,
-            height: 70,
+            width: 74,
+            height: 74,
             alignItems: 'center',
             justifyContent: 'center',
         },
         centerHalo: {
             position: 'absolute',
-            width: 68,
-            height: 68,
-            borderRadius: Radius.pill,
-            backgroundColor: withAlpha(colors.primary, '22'),
-        },
-        centerAction: {
             width: 58,
             height: 58,
+            borderRadius: Radius.pill,
+            backgroundColor: withAlpha(colors.glow, colors.isDark ? '20' : '16'),
+        },
+        centerAction: {
+            width: 52,
+            height: 52,
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: colors.primary,
             borderWidth: 1,
             borderColor: withAlpha(colors.onPrimary, '54'),
-            shadowColor: colors.primary,
-            shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: 0.35,
-            shadowRadius: 14,
-            elevation: 10,
+            ...getShadowStyle(colors, 'raised'),
         },
         modalRoot: {
             flex: 1,
             justifyContent: 'flex-end',
         },
         modalBackdrop: {
-            ...StyleSheet.absoluteFillObject,
+            ...StyleSheet.absoluteFill,
             backgroundColor: withAlpha(colors.text, '88'),
         },
         sheet: {
-            borderTopLeftRadius: 28,
-            borderTopRightRadius: 28,
+            borderTopLeftRadius: 32,
+            borderTopRightRadius: 32,
             borderWidth: 1,
             borderBottomWidth: 0,
             borderColor: colors.border,
-            backgroundColor: colors.surface,
+            backgroundColor: colors.card,
             paddingHorizontal: Spacing.lg,
             paddingTop: Spacing.sm,
             paddingBottom: Spacing.xl,
             gap: Spacing.sm,
+            ...getShadowStyle(colors, 'floating'),
         },
         sheetHandle: {
             alignSelf: 'center',
@@ -468,13 +455,42 @@ const styles = (colors: ColorPalette) =>
         },
         sheetHeader: {
             flexDirection: 'row',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'space-between',
+            gap: Spacing.sm,
+        },
+        sheetTitleBlock: {
+            flex: 1,
+            gap: 2,
+        },
+        sheetEyebrow: {
+            fontSize: Typography.caption.size,
+            fontWeight: '700',
+            color: colors.primary,
+            textTransform: 'uppercase',
+            letterSpacing: 0.8,
         },
         sheetTitle: {
             fontSize: Typography.title.size,
             fontWeight: '700',
             color: colors.text,
+        },
+        sheetSubtitle: {
+            fontSize: Typography.caption.size,
+            fontWeight: '500',
+            color: colors.textSecondary,
+            lineHeight: 18,
+        },
+        sheetCloseButton: {
+            minHeight: 34,
+            minWidth: 62,
+            borderRadius: Radius.pill,
+            borderWidth: 1,
+            borderColor: withAlpha(colors.primary, '18'),
+            backgroundColor: withAlpha(colors.primary, '08'),
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: Spacing.sm,
         },
         closeText: {
             fontSize: Typography.body.size,
@@ -488,22 +504,26 @@ const styles = (colors: ColorPalette) =>
         },
         sheetAction: {
             width: '48%',
-            borderRadius: Radius.md,
-            borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.surfaceVariant,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,
-            minHeight: 54,
+            minHeight: 84,
             justifyContent: 'flex-start',
-            alignItems: 'center',
-            flexDirection: 'row',
+            alignItems: 'flex-start',
             gap: Spacing.sm,
+            ...getSurfaceStyle(colors, { accent: colors.primary, elevated: true }),
+        },
+        sheetActionIcon: {
+            width: 34,
+            height: 34,
+            borderRadius: Radius.md,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: withAlpha(colors.primary, '12'),
         },
         sheetActionText: {
             fontSize: Typography.body.size,
             fontWeight: '600',
             color: colors.text,
-            flex: 1,
+            lineHeight: 20,
         },
     });

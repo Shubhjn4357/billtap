@@ -1,38 +1,47 @@
 import { useMemo } from 'react';
 import {
-    View,
-    Text,
-    ScrollView,
-    Pressable,
-    RefreshControl,
-    StyleSheet,
     ActivityIndicator,
-    Share,
     Image,
     Linking,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    Share,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
-import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { printToFileAsync } from 'expo-print';
 import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import { format, parseISO } from 'date-fns';
-import { invoiceApi, settingsApi } from '../../../api/endpoints';
-import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
-import { useAppColors } from '../../../hooks/useAppColors';
-import { buildUpiPaymentUri, buildUpiQrImageUrl, isValidUpiId, sanitizeUpiId } from '../../../utils/upi';
-import { useAuthStore } from '../../../store/authStore';
-import { generateInvoiceHtml, type InvoicePrintConfig } from '../../../utils/invoiceHtml';
+import { DESIGN_SPACING, getInsetPanelStyle, getSurfaceStyle } from '../../../constants/designSystem';
+import { Radius, Typography, withAlpha, type ColorPalette } from '../../../constants/theme';
+import { SettingsSection } from '../../../constants/enums';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { HubMetricCard } from '../../../components/ui/HubBlocks';
 import { useAppDialog } from '../../../components/providers/DialogProvider';
+import { useAppRuntime } from '../../../components/providers/AppRuntimeProvider';
+import { useAppColors } from '../../../hooks/useAppColors';
+import { useI18n } from '../../../hooks/useI18n';
+import { useInvoiceDetail } from '../../../hooks/useInvoiceDetails';
+import { useInvoiceMutations } from '../../../hooks/useInvoiceMutations';
+import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
+import { useSmartBack } from '../../../hooks/useSmartBack';
+import { selectGeneralPaymentSettings, selectInvoicePrintConfig } from '../../../selectors/settingsSelectors';
+import { useAuthStore } from '../../../store/authStore';
+import { generateInvoiceHtml } from '../../../utils/invoiceHtml';
+import { buildUpiPaymentUri, buildUpiQrImageUrl } from '../../../utils/upi';
+import { UtilityEmptyState, UtilityHero, UtilitySection } from '../../../components/ui/UtilityBlocks';
 
 export default function InvoiceDetailScreen() {
     const colors = useAppColors();
-    const { id } = useLocalSearchParams<{ id: string }>();
-    const qc = useQueryClient();
     const s = styles(colors);
+    const { t } = useI18n();
+    const { localPreferences } = useAppRuntime();
+    const { id } = useLocalSearchParams<{ id: string }>();
     const smartBack = useSmartBack('/(main)/billing');
     const business = useAuthStore((state) => state.business);
     const dialog = useAppDialog();
@@ -41,38 +50,25 @@ export default function InvoiceDetailScreen() {
         dialog.alert(title, message);
     };
 
-    const { data, isLoading, isRefetching: invoiceRefetching, refetch: refetchInvoice } = useQuery({
-        queryKey: ['invoice', id],
-        queryFn: () => invoiceApi.get(id!),
-        enabled: !!id,
-    });
+    const { invoice, isLoading, isRefetching: invoiceRefetching, refetch: refetchInvoice } = useInvoiceDetail(id);
+    const {
+        selected: paymentSettings,
+        isRefetching: generalRefetching,
+        refetch: refetchGeneralSettings,
+    } = useSettingsSelector(SettingsSection.GENERAL, selectGeneralPaymentSettings);
+    const {
+        selected: printConfig,
+        isRefetching: printRefetching,
+        refetch: refetchPrintSettings,
+    } = useSettingsSelector(SettingsSection.INVOICE_PRINT, selectInvoicePrintConfig);
+    const { recordInvoicePayment: markPaid, isRecordingInvoicePayment: paymentPending } = useInvoiceMutations();
 
-    const { data: generalSettings, isRefetching: generalRefetching, refetch: refetchGeneralSettings } = useQuery({
-        queryKey: ['settings-section', 'GENERAL'],
-        queryFn: () => settingsApi.get('GENERAL'),
-        staleTime: 5 * 60_000,
-    });
-    const { data: invoicePrintSettings, isRefetching: printRefetching, refetch: refetchPrintSettings } = useQuery({
-        queryKey: ['settings-section', 'INVOICE_PRINT'],
-        queryFn: () => settingsApi.get('INVOICE_PRINT'),
-        staleTime: 5 * 60_000,
-    });
-
-    const { mutate: markPaid, isPending: paymentPending } = useMutation({
-        mutationFn: () => invoiceApi.recordPayment(id!, { paidAmount: invoice?.totalInvoiceValue ?? 0, paymentMode: 'CASH' }),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['invoice', id] });
-            qc.invalidateQueries({ queryKey: ['invoices'] });
-        },
-        onError: (e) => openInfoDialog('Error', e instanceof Error ? e.message : 'Failed'),
-    });
-
-    const invoice = data?.data;
+    const locale = localPreferences.appLanguage === 'hi' ? 'hi-IN' : 'en-IN';
     const currencyCode = ((business?.currency as string | undefined) ?? 'INR').toUpperCase();
 
     const formatAmount = (amount: number, decimals = 2) => {
         try {
-            return new Intl.NumberFormat('en-IN', {
+            return new Intl.NumberFormat(locale, {
                 style: 'currency',
                 currency: currencyCode,
                 minimumFractionDigits: decimals,
@@ -80,58 +76,14 @@ export default function InvoiceDetailScreen() {
             }).format(amount);
         } catch {
             const symbol = currencyCode === 'INR' ? 'Rs ' : `${currencyCode} `;
-            return `${symbol}${amount.toLocaleString('en-IN', {
+            return `${symbol}${amount.toLocaleString(locale, {
                 minimumFractionDigits: decimals,
                 maximumFractionDigits: decimals,
             })}`;
         }
     };
 
-    const paymentSettings = useMemo(() => {
-        const raw = (generalSettings?.data ?? {}) as Record<string, unknown>;
-        const upiIdRaw = typeof raw.payment_upi_id === 'string' ? sanitizeUpiId(raw.payment_upi_id) : '';
-        const receiverName = typeof raw.payment_receiver_name === 'string' ? raw.payment_receiver_name.trim() : '';
-        const signatureUrl = typeof raw.signature_url === 'string'
-            ? raw.signature_url.trim()
-            : typeof raw.signatureUrl === 'string'
-                ? raw.signatureUrl.trim()
-                : '';
-        return {
-            upiId: isValidUpiId(upiIdRaw) ? upiIdRaw : '',
-            receiverName,
-            signatureUrl,
-        };
-    }, [generalSettings?.data]);
-
     const dueAmount = Math.max((invoice?.totalInvoiceValue ?? 0) - (invoice?.paidAmount ?? 0), 0);
-    const printConfig = useMemo<InvoicePrintConfig>(() => {
-        const raw = (invoicePrintSettings?.data ?? {}) as Record<string, unknown>;
-        return {
-            printLayoutType: raw.print_layout_type === 'THERMAL' ? 'THERMAL' : 'REGULAR',
-            printTextSize: raw.print_text_size === 'SMALL' || raw.print_text_size === 'LARGE'
-                ? (raw.print_text_size as 'SMALL' | 'LARGE')
-                : 'MEDIUM',
-            pageSize: typeof raw.page_size === 'string' && raw.page_size.trim() ? raw.page_size : 'A4',
-            orientation: raw.orientation === 'LANDSCAPE' ? 'LANDSCAPE' : 'PORTRAIT',
-            printCompanyInfo: Boolean(raw.print_company_info ?? true),
-            printCompanyName: Boolean(raw.print_company_name ?? true),
-            printCompanyLogo: Boolean(raw.print_company_logo ?? false),
-            printAddressEmailPhone: Boolean(raw.print_address_email_phone ?? true),
-            printGstinOnSale: Boolean(raw.print_gstin_on_sale ?? true),
-            printTaxDetailsBreakup: Boolean(raw.print_tax_details_breakup ?? true),
-            printDescription: Boolean(raw.print_description ?? true),
-            printTermsAndConditions: Boolean(raw.print_terms_and_conditions ?? false),
-            printSignatureText: Boolean(raw.print_signature_text ?? false),
-            printSignatureImage: Boolean(raw.print_signature_image ?? true),
-            customSignatureText: typeof raw.custom_signature_text === 'string' ? raw.custom_signature_text.trim() : '',
-            printPaymentMode: Boolean(raw.print_payment_mode ?? false),
-            printReceivedAmount: Boolean(raw.print_received_amount ?? false),
-            printBalanceAmount: Boolean(raw.print_balance_amount ?? false),
-            printTotalItemQuantity: Boolean(raw.print_total_item_quantity ?? false),
-            printPageNumbers: Boolean(raw.print_page_numbers ?? true),
-            printAmountWithDecimal: Boolean(raw.print_amount_with_decimal ?? true),
-        };
-    }, [invoicePrintSettings?.data]);
 
     const upiPayload = useMemo(() => {
         if (!invoice || dueAmount <= 0 || !paymentSettings.upiId) return '';
@@ -139,11 +91,11 @@ export default function InvoiceDetailScreen() {
             upiId: paymentSettings.upiId,
             amount: dueAmount,
             payeeName: paymentSettings.receiverName || 'Vahi Merchant',
-            note: `Invoice ${invoice.invoiceNumber}`,
+            note: `${t('invoice.label.invoice')} ${invoice.invoiceNumber}`,
             transactionRef: invoice.id,
             currency: currencyCode,
         });
-    }, [currencyCode, dueAmount, invoice, paymentSettings.receiverName, paymentSettings.upiId]);
+    }, [currencyCode, dueAmount, invoice, paymentSettings.receiverName, paymentSettings.upiId, t]);
 
     const upiQrImageUrl = upiPayload ? buildUpiQrImageUrl(upiPayload, 260) : '';
 
@@ -151,7 +103,7 @@ export default function InvoiceDetailScreen() {
         if (!upiPayload) return;
         const supported = await Linking.canOpenURL(upiPayload);
         if (!supported) {
-            openInfoDialog('UPI', 'No UPI app found on this device.');
+            openInfoDialog(t('billing.no_upi_app_title'), t('billing.no_upi_app'));
             return;
         }
         await Linking.openURL(upiPayload);
@@ -172,6 +124,8 @@ export default function InvoiceDetailScreen() {
             businessLogoUrl: business?.logoUrl ?? '',
             signatureImageUrl: paymentSettings.signatureUrl || undefined,
             printConfig,
+            language: localPreferences.appLanguage,
+            templateMode: localPreferences.invoiceTemplateMode,
         });
         try {
             const { uri } = await printToFileAsync({ html });
@@ -179,30 +133,43 @@ export default function InvoiceDetailScreen() {
                 await shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
             }
         } catch {
-            openInfoDialog('Error', 'Could not generate PDF');
+            openInfoDialog(t('billing.error_title'), t('billing.error_pdf'));
         }
     };
 
     const handleShare = async () => {
         if (!invoice) return;
         const lines = [
-            `Invoice ${invoice.invoiceNumber}`,
-            `Amount: ${formatAmount(invoice.totalInvoiceValue, 2)}`,
+            `${t('invoice.label.invoice')} ${invoice.invoiceNumber}`,
+            `${t('invoice.label.amount')}: ${formatAmount(invoice.totalInvoiceValue, 2)}`,
         ];
         if (dueAmount > 0) {
-            lines.push(`Due: ${formatAmount(dueAmount, 2)}`);
+            lines.push(`${t('invoice.label.due')}: ${formatAmount(dueAmount, 2)}`);
         }
         if (upiPayload) {
-            lines.push(`UPI Pay Link: ${upiPayload}`);
+            lines.push(`${t('invoice.label.upi')}: ${upiPayload}`);
         }
         await Share.share({ message: lines.join('\n') });
     };
 
-    if (isLoading) return <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>;
-    if (!invoice) return <View style={s.centered}><Text style={{ color: colors.textSecondary }}>Invoice not found.</Text></View>;
+    if (isLoading) {
+        return (
+            <View style={s.centered}>
+                <ActivityIndicator color={colors.primary} />
+            </View>
+        );
+    }
+
+    if (!invoice) {
+        return (
+            <View style={s.centered}>
+                <Text style={{ color: colors.textSecondary }}>{t('billing.not_found')}</Text>
+            </View>
+        );
+    }
 
     const isPaid = invoice.paymentStatus === 'PAID';
-    const statusColor = isPaid ? colors.success : invoice.paymentStatus === 'OVERDUE' ? colors.error : colors.warning;
+    const heroTone = isPaid ? 'success' : invoice.paymentStatus === 'OVERDUE' ? 'danger' : 'warning';
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -212,10 +179,10 @@ export default function InvoiceDetailScreen() {
                 onBackPress={smartBack}
                 rightAction={(
                     <View style={s.headerActions}>
-                        <Pressable style={s.iconBtnWrap} onPress={handleShare}>
+                        <Pressable style={s.iconButton} onPress={handleShare}>
                             <MaterialCommunityIcons name="share-variant-outline" size={18} color={colors.primary} />
                         </Pressable>
-                        <Pressable style={s.iconBtnWrap} onPress={handlePrint}>
+                        <Pressable style={s.iconButton} onPress={handlePrint}>
                             <MaterialCommunityIcons name="file-pdf-box" size={19} color={colors.primary} />
                         </Pressable>
                     </View>
@@ -234,109 +201,162 @@ export default function InvoiceDetailScreen() {
                     />
                 )}
             >
-                <View style={[s.statusBanner, { backgroundColor: withAlpha(statusColor, '22') }]}>
-                    <View>
-                        <Text style={[s.invNum, { color: colors.text }]}>{invoice.invoiceNumber}</Text>
-                        <Text style={[s.invDate, { color: colors.textSecondary }]}>{format(parseISO(invoice.invoiceDate), 'dd MMMM yyyy')}</Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={[s.statusText, { color: statusColor }]}>{invoice.paymentStatus}</Text>
-                        <Text style={[s.totalAmt, { color: colors.text }]}>{formatAmount(invoice.totalInvoiceValue, 2)}</Text>
-                    </View>
+                <View style={s.heroWrap}>
+                    <UtilityHero
+                        title={invoice.invoiceNumber}
+                        subtitle={`${invoice.invoiceType} - ${format(parseISO(invoice.invoiceDate), 'dd MMMM yyyy')}`}
+                        icon="file-document-outline"
+                        tone={heroTone}
+                    />
                 </View>
 
-                {invoice.partySnapshot && (
-                    <View style={[s.card, { backgroundColor: colors.card }]}>
-                        <Text style={[s.cardTitle, { color: colors.textSecondary }]}>BILL TO</Text>
-                        <Text style={[s.partyName, { color: colors.text }]}>{invoice.partySnapshot.name}</Text>
-                        {invoice.partySnapshot.gstin && <Text style={[s.partyMeta, { color: colors.textSecondary }]}>GSTIN: {invoice.partySnapshot.gstin}</Text>}
-                        {invoice.partySnapshot.phone && <Text style={[s.partyMeta, { color: colors.textSecondary }]}>Phone: {invoice.partySnapshot.phone}</Text>}
-                        {invoice.partySnapshot.address && <Text style={[s.partyMeta, { color: colors.textSecondary }]}>Address: {invoice.partySnapshot.address}</Text>}
-                    </View>
-                )}
+                <View style={s.statsRow}>
+                    <HubMetricCard
+                        label={t('billing.status')}
+                        value={invoice.paymentStatus}
+                        meta={invoice.invoiceType}
+                        tone={heroTone}
+                    />
+                    <HubMetricCard
+                        label={t('billing.invoice_total')}
+                        value={formatAmount(invoice.totalInvoiceValue, 2)}
+                        meta={t('billing.gross_value')}
+                        tone="info"
+                    />
+                    <HubMetricCard
+                        label={t('billing.balance_due')}
+                        value={formatAmount(dueAmount, 2)}
+                        meta={dueAmount > 0 ? t('billing.awaiting_settlement') : t('billing.cleared')}
+                        tone={dueAmount > 0 ? 'danger' : 'success'}
+                    />
+                </View>
 
-                <View style={[s.card, { backgroundColor: colors.card }]}>
-                    <Text style={[s.cardTitle, { color: colors.textSecondary }]}>ITEMS</Text>
-                    <View style={s.tableHeader}>
-                        <Text style={[s.th, { flex: 3, color: colors.textSecondary }]}>Description</Text>
-                        <Text style={[s.th, { color: colors.textSecondary }]}>Qty</Text>
-                        <Text style={[s.th, { color: colors.textSecondary }]}>Rate</Text>
-                        <Text style={[s.th, { textAlign: 'right', color: colors.textSecondary }]}>Total</Text>
+                {invoice.partySnapshot ? (
+                    <UtilitySection title={t('billing.bill_to')} count={null}>
+                        <View style={s.card}>
+                            <Text style={s.partyName}>{invoice.partySnapshot.name}</Text>
+                            {invoice.partySnapshot.gstin ? <Text style={s.partyMeta}>GSTIN: {invoice.partySnapshot.gstin}</Text> : null}
+                            {invoice.partySnapshot.phone ? <Text style={s.partyMeta}>{t('billing.phone')}: {invoice.partySnapshot.phone}</Text> : null}
+                            {invoice.partySnapshot.address ? <Text style={s.partyMeta}>{t('billing.address')}: {invoice.partySnapshot.address}</Text> : null}
+                        </View>
+                    </UtilitySection>
+                ) : null}
+
+                <UtilitySection title={t('billing.items')} count={(invoice.items ?? []).length}>
+                    <View style={s.card}>
+                        {(invoice.items ?? []).length === 0 ? (
+                            <UtilityEmptyState
+                                icon="package-variant-closed"
+                                title={t('billing.no_items')}
+                                description={t('billing.no_items_subtitle')}
+                            />
+                        ) : (
+                            <>
+                                <View style={s.tableHeader}>
+                                    <Text style={[s.th, s.descriptionCol]}>{t('invoice.label.description')}</Text>
+                                    <Text style={s.th}>{t('invoice.label.qty')}</Text>
+                                    <Text style={s.th}>{t('invoice.label.rate')}</Text>
+                                    <Text style={[s.th, s.rightText]}>{t('invoice.label.amount')}</Text>
+                                </View>
+                                {(invoice.items ?? []).map((item, index) => (
+                                    <View key={`${item.id}-${index}`} style={s.tableRow}>
+                                        <View style={s.descriptionCol}>
+                                            <Text style={s.td} numberOfLines={2}>{item.description}</Text>
+                                            {item.gstRate > 0 ? <Text style={s.tdSub}>GST {item.gstRate}%</Text> : null}
+                                        </View>
+                                        <Text style={s.td}>{item.quantity}</Text>
+                                        <Text style={s.td}>{formatAmount(item.rate, 2)}</Text>
+                                        <Text style={[s.td, s.rightText, s.amountText]}>{formatAmount(item.total, 2)}</Text>
+                                    </View>
+                                ))}
+                            </>
+                        )}
                     </View>
-                    {(invoice.items ?? []).map((item, i) => (
-                        <View key={i} style={[s.tableRow, { borderBottomColor: colors.border }]}>
-                            <View style={{ flex: 3 }}>
-                                <Text style={[s.td, { color: colors.text }]} numberOfLines={2}>{item.description}</Text>
-                                {item.gstRate > 0 && <Text style={[s.tdSub, { color: colors.textSecondary }]}>GST {item.gstRate}%</Text>}
+                </UtilitySection>
+
+                <UtilitySection title={t('billing.totals')} count={null}>
+                    <View style={s.card}>
+                        <TRow colors={colors} formatAmount={formatAmount} label={t('billing.taxable_value')} val={invoice.totalTaxableValue} />
+                        {invoice.totalCgstAmount > 0 ? <TRow colors={colors} formatAmount={formatAmount} label="CGST" val={invoice.totalCgstAmount} /> : null}
+                        {invoice.totalSgstAmount > 0 ? <TRow colors={colors} formatAmount={formatAmount} label="SGST" val={invoice.totalSgstAmount} /> : null}
+                        {invoice.totalIgstAmount > 0 ? <TRow colors={colors} formatAmount={formatAmount} label="IGST" val={invoice.totalIgstAmount} /> : null}
+                        {invoice.discountAmount > 0 ? <TRow colors={colors} formatAmount={formatAmount} label={t('billing.discount')} neg val={-invoice.discountAmount} /> : null}
+                        {invoice.roundOffAmount !== 0 ? <TRow colors={colors} formatAmount={formatAmount} label={t('billing.round_off')} val={invoice.roundOffAmount} /> : null}
+                        <View style={s.divider} />
+                        <TRow bold colors={colors} formatAmount={formatAmount} label={t('billing.invoice_total')} val={invoice.totalInvoiceValue} />
+                        <TRow color={colors.success} colors={colors} formatAmount={formatAmount} label={t('billing.paid_amount')} val={invoice.paidAmount} />
+                        {dueAmount > 0 ? (
+                            <TRow bold color={colors.error} colors={colors} formatAmount={formatAmount} label={t('billing.balance_due')} val={dueAmount} />
+                        ) : null}
+                    </View>
+                </UtilitySection>
+
+                <UtilitySection title={t('billing.upi_qr')} count={null}>
+                    <View style={s.card}>
+                        {upiQrImageUrl ? (
+                            <View style={s.qrWrap}>
+                                <Image source={{ uri: upiQrImageUrl }} style={s.qrImage} resizeMode="contain" />
+                                <Text style={s.qrMeta}>{t('invoice.label.upi')}: {paymentSettings.upiId}</Text>
+                                <Text style={s.qrMeta}>{t('invoice.label.due')}: {formatAmount(dueAmount, 2)}</Text>
+                                <Pressable style={s.primaryButton} onPress={handlePayViaUpi}>
+                                    <Text style={s.primaryButtonText}>{t('billing.pay_via_upi')}</Text>
+                                </Pressable>
                             </View>
-                            <Text style={[s.td, { color: colors.text }]}>{item.quantity}</Text>
-                            <Text style={[s.td, { color: colors.text }]}>{formatAmount(item.rate, 2)}</Text>
-                            <Text style={[s.td, { textAlign: 'right', color: colors.text, fontWeight: '600' }]}>{formatAmount(item.total, 2)}</Text>
-                        </View>
-                    ))}
-                </View>
+                        ) : (
+                            <Text style={s.emptyText}>
+                                {dueAmount <= 0 ? t('billing.qr_not_required') : t('billing.qr_settings_hint')}
+                            </Text>
+                        )}
+                    </View>
+                </UtilitySection>
 
-                <View style={[s.card, { backgroundColor: colors.card }]}>
-                    <TRow label="Taxable Value" val={invoice.totalTaxableValue} colors={colors} formatAmount={formatAmount} />
-                    {invoice.totalCgstAmount > 0 && <TRow label="CGST" val={invoice.totalCgstAmount} colors={colors} formatAmount={formatAmount} />}
-                    {invoice.totalSgstAmount > 0 && <TRow label="SGST" val={invoice.totalSgstAmount} colors={colors} formatAmount={formatAmount} />}
-                    {invoice.totalIgstAmount > 0 && <TRow label="IGST" val={invoice.totalIgstAmount} colors={colors} formatAmount={formatAmount} />}
-                    {invoice.discountAmount > 0 && <TRow label="Discount" val={-invoice.discountAmount} colors={colors} neg formatAmount={formatAmount} />}
-                    {invoice.roundOffAmount !== 0 && <TRow label="Round Off" val={invoice.roundOffAmount} colors={colors} formatAmount={formatAmount} />}
-                    <View style={[s.divider, { backgroundColor: colors.border }]} />
-                    <TRow label="Invoice Total" val={invoice.totalInvoiceValue} colors={colors} bold formatAmount={formatAmount} />
-                    <TRow label="Paid Amount" val={invoice.paidAmount} colors={colors} color={colors.success} formatAmount={formatAmount} />
-                    {dueAmount > 0 && (
-                        <TRow label="Balance Due" val={dueAmount} colors={colors} color={colors.error} bold formatAmount={formatAmount} />
-                    )}
-                </View>
-
-                <View style={[s.card, { backgroundColor: colors.card }]}> 
-                    <Text style={[s.cardTitle, { color: colors.textSecondary }]}>UPI PAYMENT QR</Text>
-                    {upiQrImageUrl ? (
-                        <View style={s.qrWrap}>
-                            <Image source={{ uri: upiQrImageUrl }} style={s.qrImage} resizeMode="contain" />
-                            <Text style={[s.qrMeta, { color: colors.textSecondary }]}>UPI: {paymentSettings.upiId}</Text>
-                            <Text style={[s.qrMeta, { color: colors.textSecondary }]}>Due: {formatAmount(dueAmount, 2)}</Text>
-                            <Pressable style={[s.upiBtn, { backgroundColor: colors.primary }]} onPress={handlePayViaUpi}>
-                                <Text style={s.upiBtnText}>Pay via UPI App</Text>
-                            </Pressable>
-                        </View>
-                    ) : (
-                        <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
-                            {dueAmount <= 0
-                                ? 'Invoice is fully paid. QR not required.'
-                                : 'Set payment UPI ID in Settings > General to enable bill QR payment.'}
-                        </Text>
-                    )}
-                </View>
-
-                {!isPaid && (
+                {!isPaid ? (
                     <View style={s.actions}>
                         <Pressable
-                            style={[s.actionBtn, { backgroundColor: colors.success }]}
-                            onPress={() =>
-                                dialog.alert('Mark as Paid', 'Record full payment?', [
+                            style={[s.actionButton, s.successButton]}
+                            onPress={() => {
+                                dialog.alert(t('billing.mark_as_paid'), t('billing.record_full_payment'), [
                                     { text: 'Cancel', style: 'cancel' },
-                                    { text: 'Mark Paid', onPress: () => markPaid() },
-                                ])
-                            }
+                                    {
+                                        text: t('billing.mark_paid'),
+                                        onPress: () => {
+                                            void markPaid({
+                                                invoiceId: id!,
+                                                payload: {
+                                                    paidAmount: invoice.totalInvoiceValue ?? 0,
+                                                    paymentMode: 'CASH',
+                                                },
+                                            }).catch((error) => {
+                                                openInfoDialog(
+                                                    t('billing.error_title'),
+                                                    error instanceof Error ? error.message : 'Failed'
+                                                );
+                                            });
+                                        },
+                                    },
+                                ]);
+                            }}
                             disabled={paymentPending}
                         >
-                            {paymentPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.actionBtnText}>Mark as Paid</Text>}
+                            {paymentPending ? (
+                                <ActivityIndicator color={colors.onPrimary} />
+                            ) : (
+                                <Text style={s.actionButtonText}>{t('billing.mark_paid')}</Text>
+                            )}
                         </Pressable>
-                        <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={handlePrint}>
-                            <Text style={s.actionBtnText}>Print / PDF</Text>
+                        <Pressable style={[s.actionButton, s.primaryButton]} onPress={handlePrint}>
+                            <Text style={s.actionButtonText}>{t('billing.print_pdf')}</Text>
                         </Pressable>
                     </View>
-                )}
+                ) : null}
 
-                {invoice.notes && (
-                    <View style={[s.card, { backgroundColor: colors.card }]}>
-                        <Text style={[s.cardTitle, { color: colors.textSecondary }]}>NOTES</Text>
-                        <Text style={{ color: colors.text }}>{invoice.notes}</Text>
-                    </View>
-                )}
+                {invoice.notes ? (
+                    <UtilitySection title={t('billing.notes')} count={null}>
+                        <View style={s.card}>
+                            <Text style={s.notesText}>{invoice.notes}</Text>
+                        </View>
+                    </UtilitySection>
+                ) : null}
 
                 <View style={{ height: 80 }} />
             </ScrollView>
@@ -344,19 +364,29 @@ export default function InvoiceDetailScreen() {
     );
 }
 
-function TRow({ label, val, bold, neg, color, colors, formatAmount }: {
-    label: string;
-    val: number;
+function TRow({
+    bold,
+    color,
+    colors,
+    formatAmount,
+    label,
+    neg,
+    val,
+}: {
     bold?: boolean;
-    neg?: boolean;
     color?: string;
     colors: ColorPalette;
     formatAmount: (value: number, decimals?: number) => string;
+    label: string;
+    neg?: boolean;
+    val: number;
 }) {
     return (
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-            <Text style={{ color: colors.textSecondary, fontWeight: bold ? '700' : '400', fontSize: 13 }}>{label}</Text>
-            <Text style={{ color: color ?? (bold ? colors.text : colors.textSecondary), fontWeight: bold ? '700' : '400', fontSize: 13 }}>
+        <View style={rowStyles.row}>
+            <Text style={[rowStyles.label, { color: colors.textSecondary, fontWeight: bold ? '700' : '500' }]}>
+                {label}
+            </Text>
+            <Text style={[rowStyles.value, { color: color ?? (bold ? colors.text : colors.textSecondary), fontWeight: bold ? '700' : '500' }]}>
                 {neg ? '-' : ''}{formatAmount(Math.abs(val), 2)}
             </Text>
         </View>
@@ -365,40 +395,160 @@ function TRow({ label, val, bold, neg, color, colors, formatAmount }: {
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    headerActions: { flexDirection: 'row', gap: Spacing.md },
-    iconBtnWrap: {
-        width: 34,
-        height: 34,
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    headerActions: { flexDirection: 'row', gap: DESIGN_SPACING.cardGap },
+    heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    statsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        paddingHorizontal: DESIGN_SPACING.screenX,
+        gap: DESIGN_SPACING.cardGap,
+        marginBottom: DESIGN_SPACING.sectionGap,
+    },
+    iconButton: {
+        width: 38,
+        height: 38,
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...getInsetPanelStyle(colors, colors.primary),
+    },
+    card: {
+        marginHorizontal: DESIGN_SPACING.screenX,
+        marginBottom: DESIGN_SPACING.sectionGap,
+        padding: DESIGN_SPACING.sectionGap,
+        ...getSurfaceStyle(colors, { elevated: true }),
+    },
+    partyName: {
+        color: colors.text,
+        fontSize: Typography.body.size + 1,
+        fontWeight: '800',
+        marginBottom: 4,
+    },
+    partyMeta: {
+        color: colors.textSecondary,
+        fontSize: Typography.caption.size,
+        lineHeight: Typography.caption.lineHeight,
+    },
+    tableHeader: {
+        flexDirection: 'row',
+        paddingBottom: DESIGN_SPACING.cardGap,
+        borderBottomWidth: 1,
+        borderBottomColor: withAlpha(colors.border, 'A0'),
+    },
+    tableRow: {
+        flexDirection: 'row',
+        paddingVertical: DESIGN_SPACING.cardGap,
+        borderBottomWidth: 1,
+        borderBottomColor: withAlpha(colors.border, '66'),
+        alignItems: 'flex-start',
+    },
+    descriptionCol: { flex: 3 },
+    th: {
+        flex: 1,
+        color: colors.textSecondary,
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    td: {
+        flex: 1,
+        color: colors.text,
+        fontSize: Typography.body.size,
+        lineHeight: Typography.body.lineHeight,
+    },
+    tdSub: {
+        fontSize: Typography.caption.size,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    amountText: {
+        fontWeight: '700',
+    },
+    rightText: {
+        textAlign: 'right',
+    },
+    divider: {
+        height: 1,
+        backgroundColor: withAlpha(colors.border, 'A0'),
+        marginVertical: DESIGN_SPACING.cardGap,
+    },
+    qrWrap: {
+        alignItems: 'center',
+        gap: DESIGN_SPACING.cardGap,
+    },
+    qrImage: {
+        width: 224,
+        height: 224,
+        borderRadius: Radius.lg,
+        backgroundColor: colors.surfaceRaised,
+    },
+    qrMeta: {
+        color: colors.textSecondary,
+        fontSize: Typography.caption.size,
+    },
+    emptyText: {
+        color: colors.textSecondary,
+        fontSize: Typography.body.size,
+        lineHeight: Typography.body.lineHeight,
+    },
+    primaryButton: {
+        minHeight: 48,
+        minWidth: 170,
+        borderRadius: Radius.pill,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: DESIGN_SPACING.sectionGap,
+    },
+    successButton: {
+        backgroundColor: colors.success,
+    },
+    primaryButtonText: {
+        color: colors.onPrimary,
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+    },
+    actions: {
+        flexDirection: 'row',
+        gap: DESIGN_SPACING.cardGap,
+        paddingHorizontal: DESIGN_SPACING.screenX,
+        marginBottom: DESIGN_SPACING.sectionGap,
+    },
+    actionButton: {
+        flex: 1,
+        minHeight: 50,
         borderRadius: Radius.pill,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: colors.surfaceVariant,
+        paddingHorizontal: DESIGN_SPACING.sectionGap,
     },
-    statusBanner: { marginHorizontal: Spacing.lg, marginBottom: Spacing.md, borderRadius: Radius.card, padding: Spacing.lg, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    invNum: { fontWeight: '700', fontSize: 18 },
-    invDate: { fontSize: 12 },
-    statusText: { fontWeight: '700', fontSize: 12 },
-    totalAmt: { fontWeight: '800', fontSize: 22, marginTop: 4 },
-    card: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
-    cardTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
-    partyName: { fontWeight: '700', fontSize: 15 },
-    partyMeta: { fontSize: 12 },
-    tableHeader: { flexDirection: 'row', paddingBottom: Spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
-    tableRow: { flexDirection: 'row', paddingVertical: Spacing.sm, borderBottomWidth: 0.5, alignItems: 'flex-start' },
-    th: { flex: 1, fontWeight: '600', fontSize: 11 },
-    td: { flex: 1, fontSize: 13 },
-    tdSub: { fontSize: 10, marginTop: 2 },
-    divider: { height: 1, marginVertical: Spacing.sm },
-    actions: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-    actionBtn: { flex: 1, borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center' },
-    actionBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 14 },
-    centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    qrWrap: { alignItems: 'center', gap: 6 },
-    qrImage: { width: 220, height: 220, borderRadius: Radius.md },
-    qrMeta: { fontSize: 12 },
-    upiBtn: { borderRadius: Radius.pill, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg, marginTop: 4 },
-    upiBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
+    actionButtonText: {
+        color: colors.onPrimary,
+        fontSize: Typography.body.size,
+        fontWeight: '800',
+    },
+    notesText: {
+        color: colors.text,
+        fontSize: Typography.body.size,
+        lineHeight: Typography.body.lineHeight,
+    },
 });
 
-
-
+const rowStyles = StyleSheet.create({
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 4,
+        gap: 12,
+    },
+    label: {
+        flex: 1,
+        fontSize: Typography.body.size,
+    },
+    value: {
+        fontSize: Typography.body.size,
+        textAlign: 'right',
+    },
+});

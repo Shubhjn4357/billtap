@@ -1,81 +1,45 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { accountingApi } from '../../../../api/endpoints';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { DateField } from '../../../../components/ui/DateField';
-import { SelectField, type SelectOption } from '../../../../components/ui/SelectField';
+import { HubMetricCard } from '../../../../components/ui/HubBlocks';
+import { SelectField } from '../../../../components/ui/SelectField';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { UtilityEmptyState, UtilityHero } from '../../../../components/ui/UtilityBlocks';
+import { useAccountingLedgerDetail } from '../../../../hooks/useAccountingMutations';
+import { buildLedgerVoucherOptions, filterLedgerEntries, formatInr, formatReportDate, type LedgerEntryLike } from '../../../../selectors/reportSelectors';
 
-const formatDate = (value: string) => {
-    if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString('en-IN');
-};
-
-type LedgerEntry = {
-    id: string;
-    voucherType: string;
-    voucherNumber: string;
-    date: string;
-    narration: string | null;
-    debit: number;
-    credit: number;
-    runningBalance: number;
-};
+type LedgerEntry = LedgerEntryLike;
 
 export default function LedgerDetailScreen() {
     const { id } = useLocalSearchParams<{ id?: string }>();
     const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/reports/ledgers');
-
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['reports-ledger-detail', id],
-        queryFn: () => accountingApi.getLedger(id!, { limit: 300 }),
-        enabled: Boolean(id),
+    const { account, entries: rawEntries, currentBalance, isLoading, isRefetching, refetch } = useAccountingLedgerDetail(id, {
+        limit: 300,
         staleTime: 60_000,
     });
-
-    const account = data?.data?.account;
-    const entries = useMemo<LedgerEntry[]>(() => data?.data?.entries ?? [], [data?.data?.entries]);
-    const currentBalance = data?.data?.currentBalance ?? 0;
-    const voucherOptions = useMemo<SelectOption[]>(() => {
-        const unique = Array.from(new Set(entries.map((entry) => entry.voucherType))).filter(Boolean);
-        return unique.map((voucher) => ({
-            label: voucher.replaceAll('_', ' '),
-            value: voucher,
-            description: `Filter ${voucher.replaceAll('_', ' ')} transactions`,
-        }));
-    }, [entries]);
+    const entries = useMemo<LedgerEntry[]>(() => rawEntries as LedgerEntry[], [rawEntries]);
+    const voucherOptions = useMemo(() => buildLedgerVoucherOptions(entries), [entries]);
 
     const [fromDate, setFromDate] = useState<string | null>(null);
     const [toDate, setToDate] = useState<string | null>(null);
     const [voucherType, setVoucherType] = useState('');
 
-    const filteredEntries = useMemo(() => {
-        const from = fromDate ? new Date(fromDate) : null;
-        const to = toDate ? new Date(toDate) : null;
-        const voucher = voucherType.trim().toUpperCase();
-
-        return entries.filter((entry) => {
-            const entryDate = new Date(entry.date);
-            if (from && !Number.isNaN(from.getTime()) && entryDate < from) return false;
-            if (to && !Number.isNaN(to.getTime())) {
-                const toInclusive = new Date(to);
-                toInclusive.setHours(23, 59, 59, 999);
-                if (entryDate > toInclusive) return false;
-            }
-            if (voucher && !entry.voucherType.toUpperCase().includes(voucher)) return false;
-            return true;
-        });
-    }, [entries, fromDate, toDate, voucherType]);
+    const filteredEntries = useMemo(
+        () =>
+            filterLedgerEntries(entries, {
+                fromDate,
+                toDate,
+                voucherType,
+            }),
+        [entries, fromDate, toDate, voucherType]
+    );
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -96,27 +60,25 @@ export default function LedgerDetailScreen() {
                             tintColor={colors.primary}
                             refreshing={isRefetching}
                             onRefresh={() => {
-                                refetch();
+                                void refetch();
                             }}
                         />
                     )}
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <>
-                            <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <Text style={[s.summaryTitle, { color: colors.text }]}>{account?.name ?? 'Account'}</Text>
-                                <Text style={[s.summaryMeta, { color: colors.textSecondary }]}>{account?.code} | {account?.type}</Text>
-                                <Text style={[s.summaryBalance, { color: colors.primary }]}>Balance: Rs {currentBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
-                                <View style={s.statRow}>
-                                    <View style={[s.statChip, { backgroundColor: colors.surfaceVariant }]}>
-                                        <Text style={[s.statLabel, { color: colors.textSecondary }]}>Entries</Text>
-                                        <Text style={s.statValue}>{entries.length}</Text>
-                                    </View>
-                                    <View style={[s.statChip, { backgroundColor: colors.surfaceVariant }]}>
-                                        <Text style={[s.statLabel, { color: colors.textSecondary }]}>Visible</Text>
-                                        <Text style={s.statValue}>{filteredEntries.length}</Text>
-                                    </View>
-                                </View>
+                            <View style={s.heroWrap}>
+                                <UtilityHero
+                                    title={account?.name ?? 'Ledger'}
+                                    subtitle={account?.code ? `${account.code} - ${account?.type}` : 'Voucher-wise entries'}
+                                    icon="book-open-page-variant-outline"
+                                    tone="info"
+                                />
+                            </View>
+                            <View style={s.statsRow}>
+                                <HubMetricCard label="Balance" value={formatInr(currentBalance)} meta="Running balance" tone="info" />
+                                <HubMetricCard label="Entries" value={String(entries.length)} meta="All rows" tone="success" />
+                                <HubMetricCard label="Visible" value={String(filteredEntries.length)} meta="After filters" tone="warning" />
                             </View>
 
                             <View style={[s.filterCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -145,21 +107,19 @@ export default function LedgerDetailScreen() {
                                         {item.voucherType.replaceAll('_', ' ')}
                                     </Text>
                                 </View>
-                                <Text style={s.rowMeta}>{formatDate(item.date)}</Text>
+                                <Text style={s.rowMeta}>{formatReportDate(item.date)}</Text>
                                 {item.narration ? <Text style={s.rowNarration}>{item.narration}</Text> : null}
                             </View>
                             <View style={s.numbers}>
-                                <Text style={s.dr}>Dr {item.debit.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
-                                <Text style={s.cr}>Cr {item.credit.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
-                                <Text style={s.balance}>Bal {item.runningBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
+                                <Text style={s.dr}>Dr {formatInr(item.debit)}</Text>
+                                <Text style={s.cr}>Cr {formatInr(item.credit)}</Text>
+                                <Text style={s.balance}>Bal {formatInr(item.runningBalance)}</Text>
                             </View>
                         </View>
                     )}
                     ListEmptyComponent={(
-                        <View style={[s.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <MaterialCommunityIcons name="book-search-outline" size={22} color={colors.textSecondary} />
-                            <Text style={[s.emptyTitle, { color: colors.text }]}>No ledger entries found</Text>
-                            <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Adjust filters or create transactions.</Text>
+                        <View style={s.emptyWrap}>
+                            <UtilityEmptyState icon="book-search-outline" title="No ledger entries found" description="Adjust filters or create transactions." />
                         </View>
                     )}
                 />
@@ -172,24 +132,8 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        summaryCard: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
-            padding: Spacing.md,
-            marginBottom: Spacing.md,
-        },
-        summaryTitle: { fontSize: 15, fontWeight: '700' },
-        summaryMeta: { fontSize: 12, marginTop: 2 },
-        summaryBalance: { marginTop: 6, fontSize: 13, fontWeight: '700' },
-        statRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
-        statChip: {
-            flex: 1,
-            borderRadius: Radius.md,
-            paddingHorizontal: Spacing.sm,
-            paddingVertical: Spacing.sm,
-        },
-        statLabel: { fontSize: Typography.caption.size, fontWeight: '600' },
-        statValue: { marginTop: 2, color: colors.text, fontSize: Typography.title.size, fontWeight: '800' },
+        heroWrap: { marginBottom: Spacing.sm },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.md },
         filterCard: {
             borderWidth: 1,
             borderRadius: Radius.card,
@@ -224,13 +168,5 @@ const styles = (colors: ColorPalette) =>
         dr: { color: colors.success, fontWeight: '700', fontSize: 11 },
         cr: { color: colors.error, fontWeight: '700', fontSize: 11 },
         balance: { color: colors.textSecondary, fontWeight: '700', fontSize: 11 },
-        emptyState: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
-            paddingVertical: Spacing.lg,
-            alignItems: 'center',
-            gap: 2,
-        },
-        emptyTitle: { fontSize: Typography.body.size, fontWeight: '700' },
-        emptySubtitle: { fontSize: Typography.caption.size },
+        emptyWrap: { paddingVertical: Spacing.lg },
     });

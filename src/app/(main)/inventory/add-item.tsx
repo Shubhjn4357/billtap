@@ -8,25 +8,27 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toUserMessage } from '../../../api/client';
-import { itemApi, settingsApi } from '../../../api/endpoints';
+import { SettingsSection } from '../../../constants/enums';
+import { ITEM_GST_RATE_OPTIONS } from '../../../constants/formOptions';
 import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
-import { GST_SLABS } from '../../../constants/gstRates';
 import { useScannerMode } from '../../../hooks/useScannerMode';
+import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
+import { selectItemSettings } from '../../../selectors/settingsSelectors';
 import { useAuthStore } from '../../../store/authStore';
 import { canPerformAction } from '../../../utils/accessControl';
-import { getItemCategoryOptions, getItemUnitOptions } from '../../../utils/itemMasters';
 import { DateField } from '../../../components/ui/DateField';
+import { FormHero, FormSectionCard } from '../../../components/ui/FormBlocks';
 import { SelectField, type SelectOption } from '../../../components/ui/SelectField';
 import { AppInput } from '../../../components/ui/AppInput';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useInvoiceBuilderStore } from '../../../store/invoiceBuilderStore';
-
-const GST_RATES = [...GST_SLABS];
+import { useItemDetails } from '../../../hooks/useInventory';
+import { useInventoryMutations } from '../../../hooks/useInventoryMutations';
+import { useGodowns } from '../../../hooks/useGodowns';
 
 const itemSchema = z.object({
     name: z.string().min(1, 'Name is required'),
@@ -40,6 +42,7 @@ const itemSchema = z.object({
     mrp: z.coerce.number().nonnegative().default(0),
     gstRate: z.coerce.number().default(18),
     stock: z.coerce.number().default(0),
+    godownId: z.string().nullable().optional(),
     reorderLevel: z.coerce.number().default(5),
     isSalesPriceInclusiveGst: z.boolean().default(false),
     description: z.string().optional(),
@@ -63,7 +66,6 @@ export default function AddItemScreen() {
     }>();
     const editId = params.id;
     const returnContext = Array.isArray(params.returnContext) ? params.returnContext[0] : params.returnContext;
-    const qc = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/inventory');
     const scanner = useScannerMode();
@@ -84,6 +86,7 @@ export default function AddItemScreen() {
             unit: 'pcs',
             gstRate: 18,
             stock: 0,
+            godownId: null,
             reorderLevel: 5,
             salePrice: 0,
             purchasePrice: 0,
@@ -94,25 +97,33 @@ export default function AddItemScreen() {
         },
     });
 
-    const { data: editItemData, isLoading: editItemLoading, isRefetching: editItemRefetching, refetch: refetchEditItem } = useQuery({
-        queryKey: ['item', editId],
-        queryFn: () => itemApi.get(editId!),
+    const {
+        item: editItem,
+        isLoading: editItemLoading,
+        isRefetching: editItemRefetching,
+        refetch: refetchEditItem,
+    } = useItemDetails(editId, {
         enabled: Boolean(editId),
     });
+    const {
+        godowns,
+        isRefetching: godownsRefetching,
+        refetch: refetchGodowns,
+    } = useGodowns();
 
-    const { data: itemSettingsRes, isRefetching: settingsRefetching, refetch: refetchItemSettings } = useQuery({
-        queryKey: ['settings-section', 'ITEM_SETTINGS'],
-        queryFn: () => settingsApi.get('ITEM_SETTINGS'),
-    });
-
-    const itemSettings = (itemSettingsRes?.data ?? {}) as Record<string, unknown>;
-    const unitOptions = getItemUnitOptions(itemSettings);
-    const categoryOptions = getItemCategoryOptions(itemSettings);
+    const {
+        selected: itemSettingsView,
+        isRefetching: settingsRefetching,
+        refetch: refetchItemSettings,
+    } = useSettingsSelector(SettingsSection.ITEM_SETTINGS, selectItemSettings);
+    const unitOptions = itemSettingsView.unitOptions;
+    const categoryOptions = itemSettingsView.categoryOptions;
     const canSaveItem = canPerformAction(role, editId ? 'inventory.update' : 'inventory.create', subscription);
 
     const selectedUnit = watch('unit');
     const selectedCategory = watch('category');
     const gstRate = watch('gstRate');
+    const selectedGodownId = watch('godownId');
 
     const categorySelectOptions: SelectOption[] = [
         ...categoryOptions.map((entry) => ({ label: entry, value: entry })),
@@ -126,64 +137,17 @@ export default function AddItemScreen() {
             ? [{ label: selectedUnit, value: selectedUnit, description: 'Custom' }]
             : []),
     ];
-    const gstRateOptions: SelectOption[] = GST_RATES.map((entry) => ({
-        label: `${entry}%`,
-        value: String(entry),
+    const gstRateOptions: SelectOption[] = ITEM_GST_RATE_OPTIONS;
+    const godownOptions: SelectOption[] = godowns.map((godown) => ({
+        label: godown.name,
+        value: godown.id,
+        description: godown.isDefault ? 'Default godown' : godown.address ?? 'Stock location',
     }));
 
-    const { mutate, isPending } = useMutation({
-        mutationFn: (data: ItemForm) => {
-            if (!canSaveItem) {
-                throw new Error('Your role does not have permission to save inventory items.');
-            }
-
-            const payload = {
-                name: data.name,
-                sku: data.sku ?? null,
-                barcode: data.barcode ?? null,
-                hsnCode: data.hsnCode ?? null,
-                category: data.category ?? null,
-                unit: data.unit,
-                salePrice: data.salePrice,
-                purchasePrice: data.purchasePrice,
-                mrp: data.mrp || data.salePrice,
-                gstRate: data.gstRate,
-                openingStock: data.stock,
-                stock: data.stock,
-                reorderLevel: data.reorderLevel,
-                imageUrl: null,
-                expiresAt: data.expiresAt ?? null,
-                autoDeleteAt: data.autoDeleteAt ?? null,
-                autoDeleteEnabled: false,
-                isSalesPriceInclusiveGst: data.isSalesPriceInclusiveGst,
-                description: data.description ?? null,
-                location: data.location ?? null,
-                trackStock: true,
-                isActive: true,
-            };
-
-            if (editId) {
-                return itemApi.update(editId, payload);
-            }
-
-            return itemApi.create(payload);
-        },
-        onSuccess: async (result) => {
-            await qc.invalidateQueries({ queryKey: ['items'] });
-            await qc.invalidateQueries({ queryKey: ['billing-item-catalog'] });
-            if (returnContext === 'invoice') {
-                const raw = (result as unknown) as Record<string, unknown>;
-                if (raw?.item && typeof raw.item === 'object') {
-                    addLineFromItem(raw.item as import('../../../types/domain').Item);
-                }
-            }
-            router.back();
-        },
-        onError: (error) => dialog.alert('Error', toUserMessage(error, 'Failed to save item.')),
-    });
+    const { saveItem, isSavingItem: isPending } = useInventoryMutations();
 
     useEffect(() => {
-        const item = editItemData?.item;
+        const item = editItem;
         if (!item) return;
 
         setValue('name', item.name ?? '');
@@ -197,24 +161,30 @@ export default function AddItemScreen() {
         setValue('mrp', Number(item.mrp ?? 0));
         setValue('gstRate', Number(item.gstRate ?? 0));
         setValue('stock', Number(item.stock ?? 0));
+        setValue('godownId', null);
         setValue('reorderLevel', Number(item.reorderLevel ?? 0));
         setValue('isSalesPriceInclusiveGst', Boolean(item.isSalesPriceInclusiveGst));
         setValue('description', item.description ?? '');
         setValue('location', item.location ?? '');
         setValue('expiresAt', item.expiresAt ?? null);
         setValue('autoDeleteAt', item.autoDeleteAt ?? null);
-    }, [editItemData?.item, setValue]);
+    }, [editItem, setValue]);
 
     useEffect(() => {
         if (editId) return;
-
-        const defaultUnit = typeof itemSettings.default_unit === 'string'
-            ? itemSettings.default_unit.trim()
-            : '';
+        const defaultUnit = itemSettingsView.defaultUnit;
 
         if (!defaultUnit) return;
         setValue('unit', defaultUnit);
-    }, [editId, itemSettings.default_unit, setValue]);
+    }, [editId, itemSettingsView.defaultUnit, setValue]);
+
+    useEffect(() => {
+        if (editId || selectedGodownId || godowns.length === 0) return;
+        const defaultGodown = godowns.find((entry) => entry.isDefault) ?? godowns[0];
+        if (defaultGodown) {
+            setValue('godownId', defaultGodown.id);
+        }
+    }, [editId, godowns, selectedGodownId, setValue]);
 
     useEffect(() => {
         const scannedFlag = Array.isArray(params.scanned) ? params.scanned[0] : params.scanned;
@@ -269,13 +239,53 @@ export default function AddItemScreen() {
                 onBackPress={smartBack}
                 rightAction={(
                     <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={editId ? 'Save item changes' : 'Save item'}
                         onPress={handleSubmit((data) => {
                             if (!canSaveItem) {
                                 dialog.alert('Access denied', 'Your role cannot save inventory items.');
                                 return;
                             }
                             void selection();
-                            mutate(data);
+                            const payload = {
+                                name: data.name,
+                                sku: data.sku ?? null,
+                                barcode: data.barcode ?? null,
+                                hsnCode: data.hsnCode ?? null,
+                                category: data.category ?? null,
+                                unit: data.unit,
+                                salePrice: data.salePrice,
+                                purchasePrice: data.purchasePrice,
+                                mrp: data.mrp || data.salePrice,
+                                gstRate: data.gstRate,
+                                openingStock: data.stock,
+                                stock: data.stock,
+                                godownId: data.godownId ?? null,
+                                reorderLevel: data.reorderLevel,
+                                imageUrl: null,
+                                expiresAt: data.expiresAt ?? null,
+                                autoDeleteAt: data.autoDeleteAt ?? null,
+                                autoDeleteEnabled: false,
+                                isSalesPriceInclusiveGst: data.isSalesPriceInclusiveGst,
+                                description: data.description ?? null,
+                                location: data.location ?? null,
+                                trackStock: true,
+                                isActive: true,
+                            };
+
+                            void saveItem({ id: editId, data: payload })
+                                .then((result) => {
+                                    if (returnContext === 'invoice') {
+                                        const raw = result as unknown as Record<string, unknown>;
+                                        if (raw?.item && typeof raw.item === 'object') {
+                                            addLineFromItem(raw.item as import('../../../types/domain').Item);
+                                        }
+                                    }
+                                    router.back();
+                                })
+                                .catch((error) => {
+                                    dialog.alert('Error', toUserMessage(error, 'Failed to save item.'));
+                                });
                         })}
                         disabled={isPending || !canSaveItem}
                     >
@@ -294,32 +304,43 @@ export default function AddItemScreen() {
 
             <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
                 <ScrollView
-                keyboardShouldPersistTaps="handled"
-                refreshControl={(
-                    <RefreshControl
-                        tintColor={colors.primary}
-                        refreshing={editItemRefetching || settingsRefetching}
-                        onRefresh={() => {
-                            void Promise.all([
-                                editId ? refetchEditItem() : Promise.resolve(),
-                                refetchItemSettings(),
-                            ]);
-                        }}
-                    />
-                )}
-            >
-                {scanner.isUsbScannerMode ? (
-                    <View style={s.helperWrap}>
-                        <Text style={{ color: colors.textSecondary, fontSize: 11 }}>
-                            USB scanner mode active. Place cursor in Barcode/HSN fields and scan from hardware scanner.
-                        </Text>
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={s.content}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={editItemRefetching || settingsRefetching || godownsRefetching}
+                            onRefresh={() => {
+                                void Promise.all([
+                                    editId ? refetchEditItem() : Promise.resolve(),
+                                    refetchItemSettings(),
+                                    refetchGodowns(),
+                                ]);
+                            }}
+                        />
+                    )}
+                >
+                    <View style={s.heroWrap}>
+                        <FormHero
+                            title={editId ? 'Edit Inventory Item' : 'Create Inventory Item'}
+                            subtitle="Capture GST, barcode, pricing, and stock controls in one place."
+                            icon="archive-plus-outline"
+                            tone="info"
+                        />
                     </View>
-                ) : null}
 
-                <View style={s.section}>
-                    <Text style={s.sectionTitle}>BASIC INFO</Text>
+                    {scanner.isUsbScannerMode ? (
+                        <View style={s.helperWrap}>
+                            <Text style={{ color: colors.textSecondary, fontSize: 11 }}>
+                                USB scanner mode active. Place cursor in Barcode or HSN fields and scan from hardware scanner.
+                            </Text>
+                        </View>
+                    ) : null}
 
-                    <Field label="Item Name *" error={errors.name?.message} colors={colors}>
+                    <View style={s.section}>
+                        <FormSectionCard title="Basic Info" description="Core product identity, lookup codes, category, and unit.">
+
+                            <Field label="Item Name *" error={errors.name?.message} colors={colors}>
                         <Controller
                             control={control}
                             name="name"
@@ -333,11 +354,11 @@ export default function AddItemScreen() {
                                 />
                             )}
                         />
-                    </Field>
+                            </Field>
 
-                    <View style={s.row}>
-                        <View style={{ flex: 1 }}>
-                            <Field label="SKU / Code" colors={colors}>
+                            <View style={s.row}>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="SKU / Code" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="sku"
@@ -351,10 +372,10 @@ export default function AddItemScreen() {
                                         />
                                     )}
                                 />
-                            </Field>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Barcode" colors={colors}>
+                                    </Field>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="Barcode" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="barcode"
@@ -373,13 +394,13 @@ export default function AddItemScreen() {
                                         {scanner.canUseCameraScanner ? 'Scan Barcode' : scanner.isUsbScannerMode ? 'Use USB Scanner' : 'Scanner Off'}
                                     </Text>
                                 </Pressable>
-                            </Field>
-                        </View>
-                    </View>
+                                    </Field>
+                                </View>
+                            </View>
 
-                    <View style={s.row}>
-                        <View style={{ flex: 1 }}>
-                            <Field label="HSN Code" colors={colors}>
+                            <View style={s.row}>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="HSN Code" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="hsnCode"
@@ -398,10 +419,10 @@ export default function AddItemScreen() {
                                         {scanner.canUseCameraScanner ? 'Scan HSN' : scanner.isUsbScannerMode ? 'Use USB Scanner' : 'Scanner Off'}
                                     </Text>
                                 </Pressable>
-                            </Field>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Category" colors={colors}>
+                                    </Field>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="Category" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="category"
@@ -423,11 +444,11 @@ export default function AddItemScreen() {
                                 >
                                     <Text style={[s.scanInlineText, { color: colors.primary }]}>Manage Categories</Text>
                                 </Pressable>
-                            </Field>
-                        </View>
-                    </View>
+                                    </Field>
+                                </View>
+                            </View>
 
-                    <Field label="Unit" colors={colors}>
+                            <Field label="Unit" colors={colors}>
                         <Controller
                             control={control}
                             name="unit"
@@ -447,15 +468,16 @@ export default function AddItemScreen() {
                         >
                             <Text style={[s.scanInlineText, { color: colors.primary }]}>Manage Units</Text>
                         </Pressable>
-                    </Field>
-                </View>
+                            </Field>
+                        </FormSectionCard>
+                    </View>
 
-                <View style={s.section}>
-                    <Text style={s.sectionTitle}>PRICING</Text>
+                    <View style={s.section}>
+                        <FormSectionCard title="Pricing" description="Sales, purchase, MRP, and GST setup for this item." tone="success">
 
-                    <View style={s.row}>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Sale Price (Rs) *" error={errors.salePrice?.message} colors={colors}>
+                            <View style={s.row}>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="Sale Price (Rs) *" error={errors.salePrice?.message} colors={colors}>
                                 <Controller
                                     control={control}
                                     name="salePrice"
@@ -469,10 +491,10 @@ export default function AddItemScreen() {
                                         />
                                     )}
                                 />
-                            </Field>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Field label="MRP (Rs)" colors={colors}>
+                                    </Field>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="MRP (Rs)" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="mrp"
@@ -486,11 +508,11 @@ export default function AddItemScreen() {
                                         />
                                     )}
                                 />
-                            </Field>
-                        </View>
-                    </View>
+                                    </Field>
+                                </View>
+                            </View>
 
-                    <Field label="Purchase Price (Rs)" colors={colors}>
+                            <Field label="Purchase Price (Rs)" colors={colors}>
                         <Controller
                             control={control}
                             name="purchasePrice"
@@ -504,9 +526,9 @@ export default function AddItemScreen() {
                                 />
                             )}
                         />
-                    </Field>
+                            </Field>
 
-                    <Field label="GST Rate %" colors={colors}>
+                            <Field label="GST Rate %" colors={colors}>
                         <Controller
                             control={control}
                             name="gstRate"
@@ -519,25 +541,26 @@ export default function AddItemScreen() {
                                 />
                             )}
                         />
-                    </Field>
+                            </Field>
 
-                    <View style={s.toggleRow}>
-                        <Text style={{ color: colors.text, flex: 1 }}>Sale price inclusive of GST</Text>
-                        <Controller
-                            control={control}
-                            name="isSalesPriceInclusiveGst"
-                            render={({ field: { onChange, value } }) => (
-                                <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.primary }} />
-                            )}
-                        />
+                            <View style={s.toggleRow}>
+                                <Text style={{ color: colors.text, flex: 1 }}>Sale price inclusive of GST</Text>
+                                <Controller
+                                    control={control}
+                                    name="isSalesPriceInclusiveGst"
+                                    render={({ field: { onChange, value } }) => (
+                                        <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.primary }} />
+                                    )}
+                                />
+                            </View>
+                        </FormSectionCard>
                     </View>
-                </View>
 
-                <View style={s.section}>
-                    <Text style={s.sectionTitle}>STOCK</Text>
-                    <View style={s.row}>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Opening Stock" colors={colors}>
+                    <View style={s.section}>
+                        <FormSectionCard title="Stock" description="Opening quantity, reorder threshold, location, and expiry controls." tone="warning">
+                            <View style={s.row}>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="Opening Stock" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="stock"
@@ -551,10 +574,10 @@ export default function AddItemScreen() {
                                         />
                                     )}
                                 />
-                            </Field>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Reorder Level" colors={colors}>
+                                    </Field>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="Reorder Level" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="reorderLevel"
@@ -568,10 +591,35 @@ export default function AddItemScreen() {
                                         />
                                     )}
                                 />
-                            </Field>
-                        </View>
-                    </View>
-                    <Field label="Storage Location" colors={colors}>
+                                    </Field>
+                                </View>
+                            </View>
+                            {godownOptions.length > 0 ? (
+                                <Field label="Opening Stock Godown" colors={colors}>
+                                    <Controller
+                                        control={control}
+                                        name="godownId"
+                                        render={({ field: { onChange, value } }) => (
+                                            <SelectField
+                                                value={value ?? null}
+                                                onChange={onChange}
+                                                placeholder="Select godown for opening stock"
+                                                title="Opening Stock Godown"
+                                                options={godownOptions}
+                                                allowClear
+                                                onClear={() => onChange(null)}
+                                            />
+                                        )}
+                                    />
+                                    <Pressable
+                                        style={s.scanInlineAction}
+                                        onPress={() => router.push('/(main)/more/godowns' as Parameters<typeof router.push>[0])}
+                                    >
+                                        <Text style={[s.scanInlineText, { color: colors.primary }]}>Manage Godowns</Text>
+                                    </Pressable>
+                                </Field>
+                            ) : null}
+                            <Field label="Storage Location" colors={colors}>
                         <Controller
                             control={control}
                             name="location"
@@ -585,11 +633,11 @@ export default function AddItemScreen() {
                                 />
                             )}
                         />
-                    </Field>
+                            </Field>
 
-                    <View style={s.row}>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Expiry Date" colors={colors}>
+                            <View style={s.row}>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="Expiry Date" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="expiresAt"
@@ -602,10 +650,10 @@ export default function AddItemScreen() {
                                         />
                                     )}
                                 />
-                            </Field>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Field label="Auto Delete Date" colors={colors}>
+                                    </Field>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Field label="Auto Delete Date" colors={colors}>
                                 <Controller
                                     control={control}
                                     name="autoDeleteAt"
@@ -618,12 +666,13 @@ export default function AddItemScreen() {
                                         />
                                     )}
                                 />
-                            </Field>
-                        </View>
+                                    </Field>
+                                </View>
+                            </View>
+                        </FormSectionCard>
                     </View>
-                </View>
 
-                <View style={{ height: 80 }} />
+                    <View style={{ height: 80 }} />
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -655,6 +704,8 @@ const styles = (colors: ColorPalette) =>
         safe: { flex: 1, backgroundColor: colors.background },
         flex: { flex: 1 },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+        content: { paddingBottom: Spacing.xl },
+        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         helperWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         permissionHintWrap: {
             paddingHorizontal: Spacing.lg,
@@ -664,13 +715,6 @@ const styles = (colors: ColorPalette) =>
             fontSize: 12,
         },
         section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-        sectionTitle: {
-            color: colors.textSecondary,
-            fontSize: 11,
-            fontWeight: '700',
-            letterSpacing: 0.8,
-            marginBottom: Spacing.sm,
-        },
         inputWrap: { marginBottom: Spacing.xs },
         row: { flexDirection: 'row', gap: Spacing.sm },
         suggestionList: { marginTop: Spacing.xs },

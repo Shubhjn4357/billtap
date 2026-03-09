@@ -1,11 +1,12 @@
 import axios, {
     AxiosError,
+    isAxiosError,
     type AxiosInstance,
     type AxiosRequestConfig,
     type InternalAxiosRequestConfig,
 } from 'axios';
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { secureStorage } from '../services/secureStorage';
 
 const normalizeApiBaseUrl = (value: string): string => {
     const trimmed = value.trim().replace(/\/+$/, '');
@@ -33,39 +34,95 @@ export type ApiErrorNormalized = {
     code?: string;
 };
 
-const extractServerMessage = (payload: unknown): string | null => {
+const isAxiosLikeError = (value: unknown): value is AxiosError =>
+    isAxiosError(value)
+    || Boolean(
+        value
+        && typeof value === 'object'
+        && 'isAxiosError' in value
+        && (value as { isAxiosError?: unknown }).isAxiosError === true
+    );
+
+const coerceErrorPayload = (payload: unknown): Record<string, unknown> | null => {
+    if (typeof payload === 'string') {
+        try {
+            const parsed = JSON.parse(payload);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return parsed as Record<string, unknown>;
+            }
+        } catch {
+            return null;
+        }
+        return null;
+    }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
-    const message = (payload as { message?: unknown }).message;
+    return payload as Record<string, unknown>;
+};
+
+const extractServerMessage = (payload: unknown): string | null => {
+    const record = coerceErrorPayload(payload);
+    if (!record) return null;
+    const message = record.message;
     if (typeof message === 'string' && message.trim().length > 0) return message.trim();
-    const nestedMessage = (payload as { error?: { message?: unknown } }).error?.message;
+    const nestedMessage = (record.error as { message?: unknown } | undefined)?.message;
     if (typeof nestedMessage === 'string' && nestedMessage.trim().length > 0) return nestedMessage.trim();
+    const dataMessage = (record.data as { message?: unknown } | undefined)?.message;
+    if (typeof dataMessage === 'string' && dataMessage.trim().length > 0) return dataMessage.trim();
     return null;
 };
 
 const extractServerCode = (payload: unknown): string | null => {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
-    const directCode = (payload as { code?: unknown }).code;
+    const record = coerceErrorPayload(payload);
+    if (!record) return null;
+    const directCode = record.code;
     if (typeof directCode === 'string' && directCode.trim().length > 0) return directCode.trim();
-    const nestedCode = (payload as { error?: { code?: unknown } }).error?.code;
+    const nestedCode = (record.error as { code?: unknown } | undefined)?.code;
     if (typeof nestedCode === 'string' && nestedCode.trim().length > 0) return nestedCode.trim();
+    const dataCode = (record.data as { code?: unknown } | undefined)?.code;
+    if (typeof dataCode === 'string' && dataCode.trim().length > 0) return dataCode.trim();
     return null;
 };
 
-export const toApiError = (error: unknown): ApiErrorNormalized => {
-    if (error && typeof error === 'object') {
-        const asKnown = error as Partial<ApiErrorNormalized>;
-        if (typeof asKnown.status === 'number' && typeof asKnown.message === 'string') {
-            return {
-                status: asKnown.status,
-                message: asKnown.message,
-                details: asKnown.details,
-                code: typeof asKnown.code === 'string' ? asKnown.code : undefined,
-            };
-        }
+const inferCloudBlockedCode = (message: string | null | undefined): string | undefined => {
+    const normalized = String(message ?? '').trim().toLowerCase();
+    if (!normalized) return undefined;
+    if (normalized.includes('read-only') || normalized.includes('grace mode')) {
+        return 'SUBSCRIPTION_READ_ONLY';
     }
+    if (normalized.includes('plan limit')) {
+        return 'PLAN_LIMIT_EXCEEDED';
+    }
+    if (normalized.includes('not enabled for current subscription')) {
+        return 'FEATURE_NOT_ENABLED';
+    }
+    return undefined;
+};
 
-    if (error instanceof AxiosError) {
+const getKnownErrorDetails = (value: Partial<ApiErrorNormalized> & Record<string, unknown>): unknown =>
+    value.details
+    ?? value.responseData
+    ?? (value.response as { data?: unknown } | undefined)?.data
+    ?? (value.error as { details?: unknown; data?: unknown } | undefined)?.details
+    ?? (value.error as { details?: unknown; data?: unknown } | undefined)?.data;
+
+const extractBlockedLikeMessage = (error: unknown): string | null => {
+    if (!error || typeof error !== 'object') return null;
+    const record = error as Record<string, unknown>;
+    return (
+        extractServerMessage(record.details)
+        ?? extractServerMessage(record.responseData)
+        ?? extractServerMessage(record.error)
+        ?? extractServerMessage(record.response)
+        ?? null
+    );
+};
+
+export const toApiError = (error: unknown): ApiErrorNormalized => {
+    if (isAxiosLikeError(error)) {
         const status = error.response?.status ?? 0;
+        const details = error.response?.data ?? error.toJSON?.();
+        const nestedMessage = extractServerMessage(details);
+        const nestedCode = extractServerCode(details);
         const rawAxiosMessage = error.message ?? '';
         const statusFallbackMessage =
             status >= 500
@@ -74,14 +131,32 @@ export const toApiError = (error: unknown): ApiErrorNormalized => {
                     ? `Request failed (${status}).`
                     : 'Network request failed.';
         const message =
-            extractServerMessage(error.response?.data) ??
-            ((rawAxiosMessage.startsWith('Request failed with status code') ? statusFallbackMessage : rawAxiosMessage) || statusFallbackMessage);
+            nestedMessage
+            ?? ((rawAxiosMessage.startsWith('Request failed with status code') ? statusFallbackMessage : rawAxiosMessage) || statusFallbackMessage);
         return {
             status,
             message,
-            details: error.response?.data ?? error.toJSON?.(),
-            code: extractServerCode(error.response?.data) ?? error.code,
+            details,
+            code: nestedCode ?? inferCloudBlockedCode(nestedMessage ?? message) ?? error.code,
         };
+    }
+
+    if (error && typeof error === 'object') {
+        const asKnown = error as Partial<ApiErrorNormalized> & Record<string, unknown>;
+        if (typeof asKnown.status === 'number' && typeof asKnown.message === 'string') {
+            const details = getKnownErrorDetails(asKnown);
+            const nestedMessage = extractServerMessage(details);
+            const nestedCode = extractServerCode(details);
+            return {
+                status: asKnown.status,
+                message: nestedMessage ?? asKnown.message,
+                details,
+                code:
+                    nestedCode
+                    ?? inferCloudBlockedCode(nestedMessage ?? asKnown.message)
+                    ?? (typeof asKnown.code === 'string' ? asKnown.code : undefined),
+            };
+        }
     }
 
     if (error instanceof Error) {
@@ -103,6 +178,40 @@ export const isUnauthorizedError = (error: unknown): boolean => {
     return normalized.status === 401;
 };
 
+const CLOUD_WRITE_BLOCKED_CODES = new Set([
+    'SUBSCRIPTION_READ_ONLY',
+    'SUBSCRIPTION_WRITE_BLOCKED',
+    'PLAN_LIMIT_EXCEEDED',
+    'FEATURE_NOT_ENABLED',
+    'MULTI_BUSINESS_NOT_ALLOWED',
+    'STAFF_INVITE_NOT_ALLOWED',
+    'DEVICE_REGISTRATION_NOT_ALLOWED',
+]);
+
+export const isCloudWriteBlockedError = (error: unknown): boolean => {
+    const normalized = toApiError(error);
+    const code = String(normalized.code ?? '').trim().toUpperCase();
+    const nestedMessage = extractBlockedLikeMessage(error);
+    const message = String(nestedMessage ?? normalized.message ?? '').trim().toLowerCase();
+
+    if (CLOUD_WRITE_BLOCKED_CODES.has(code)) {
+        return true;
+    }
+
+    if (normalized.status !== 400 && normalized.status !== 403 && normalized.status !== 409) {
+        return false;
+    }
+
+    return (
+        message.includes('read-only')
+        || message.includes('grace mode')
+        || message.includes('offline mode only')
+        || message.includes('plan limit')
+        || message.includes('not enabled for current subscription')
+        || message.includes('subscription is required')
+    );
+};
+
 export const toUserMessage = (error: unknown, fallback = 'Something went wrong. Please try again.'): string => {
     const normalized = toApiError(error);
     const message = normalized.message?.trim();
@@ -114,33 +223,33 @@ export const toUserMessage = (error: unknown, fallback = 'Something went wrong. 
 
 export async function getStoredToken(): Promise<string | null> {
     if (_token) return _token;
-    _token = await SecureStore.getItemAsync(TOKEN_KEY);
+    _token = await secureStorage.getItemAsync(TOKEN_KEY);
     return _token;
 }
 
 export async function storeToken(token: string): Promise<void> {
     _token = token;
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    await secureStorage.setItemAsync(TOKEN_KEY, token);
 }
 
 export async function clearToken(): Promise<void> {
     _token = null;
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await secureStorage.deleteItemAsync(TOKEN_KEY);
 }
 
 export async function clearStoredBusinessId(): Promise<void> {
     _businessId = null;
-    await SecureStore.deleteItemAsync(BUSINESS_ID_KEY);
+    await secureStorage.deleteItemAsync(BUSINESS_ID_KEY);
 }
 
 export async function storeBusinessId(id: string): Promise<void> {
     _businessId = id;
-    await SecureStore.setItemAsync(BUSINESS_ID_KEY, id);
+    await secureStorage.setItemAsync(BUSINESS_ID_KEY, id);
 }
 
 export async function getStoredBusinessId(): Promise<string | null> {
     if (_businessId) return _businessId;
-    _businessId = await SecureStore.getItemAsync(BUSINESS_ID_KEY);
+    _businessId = await secureStorage.getItemAsync(BUSINESS_ID_KEY);
     return _businessId;
 }
 
@@ -178,11 +287,37 @@ client.interceptors.request.use(async (config: RequestConfigWithFlags) => {
 client.interceptors.response.use(
     (res) => res,
     (error) => {
-        if (error instanceof AxiosError && error.response?.status === 401) {
+        const responseData = isAxiosLikeError(error) ? error.response?.data : undefined;
+        const normalizedBase = toApiError(error);
+        const blockedMessage = extractServerMessage(responseData) ?? extractBlockedLikeMessage(error);
+        const normalized: ApiErrorNormalized & { responseData?: unknown } = {
+            ...normalizedBase,
+            details: normalizedBase.details ?? responseData,
+            ...(responseData !== undefined ? { responseData } : {}),
+            ...(blockedMessage ? { message: blockedMessage } : {}),
+            code:
+                normalizedBase.code
+                ?? inferCloudBlockedCode(blockedMessage ?? normalizedBase.message)
+                ?? extractServerCode(responseData)
+                ?? undefined,
+        };
+        const config = isAxiosLikeError(error) ? error.config : undefined;
+        if (!isCloudWriteBlockedError(normalized)) {
+            console.error('[api] request failed', {
+                method: config?.method?.toUpperCase?.() ?? config?.method,
+                url: config?.url,
+                status: normalized.status,
+                code: normalized.code,
+                message: normalized.message,
+                requestData: config?.data,
+                responseData: responseData ?? normalized.details,
+            });
+        }
+        if (isAxiosLikeError(error) && error.response?.status === 401) {
             clearToken().catch(() => null);
             clearStoredBusinessId().catch(() => null);
         }
-        return Promise.reject(toApiError(error));
+        return Promise.reject(normalized);
     }
 );
 

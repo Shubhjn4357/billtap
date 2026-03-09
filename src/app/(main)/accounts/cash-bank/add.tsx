@@ -6,18 +6,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { accountingApi } from '../../../../api/endpoints';
-import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { CASH_BANK_ACCOUNT_KIND_OPTIONS, type CashBankAccountKind } from '../../../../constants/accountingInputOptions';
+import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { ChipButton } from '../../../../components/ui/ChipBlocks';
+import { FormHero, FormSectionCard } from '../../../../components/ui/FormBlocks';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { useAccountingAccounts } from '../../../../hooks/useAccountingAccounts';
+import { useAccountingAccountMutations } from '../../../../hooks/useAccountingMutations';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-
-type AccountKind = 'CASH' | 'BANK' | 'CHEQUE' | 'OTHER';
 
 type AccountSummary = {
     id: string;
@@ -25,19 +26,26 @@ type AccountSummary = {
     name: string;
 };
 
-const buildDefaultName = (kind: AccountKind) => {
+const buildDefaultName = (kind: CashBankAccountKind) => {
     if (kind === 'CASH') return 'Cash in Hand';
     if (kind === 'BANK') return 'Bank Account';
     if (kind === 'CHEQUE') return 'Cheque in Hand';
     return 'Business Account';
 };
 
-const inferKind = (name: string): AccountKind => {
+const inferKind = (name: string): CashBankAccountKind => {
     const normalized = name.toLowerCase();
     if (normalized.includes('cash')) return 'CASH';
     if (normalized.includes('bank')) return 'BANK';
     if (normalized.includes('cheque')) return 'CHEQUE';
     return 'OTHER';
+};
+
+const getKindTone = (kind: CashBankAccountKind) => {
+    if (kind === 'CASH') return 'success' as const;
+    if (kind === 'BANK') return 'info' as const;
+    if (kind === 'CHEQUE') return 'warning' as const;
+    return 'default' as const;
 };
 
 const accountSchema = z.object({
@@ -54,7 +62,6 @@ export default function AddCashBankAccountScreen() {
     const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
-    const qc = useQueryClient();
     const { id } = useLocalSearchParams<{ id?: string }>();
     const isEdit = Boolean(id);
 
@@ -75,16 +82,16 @@ export default function AddCashBankAccountScreen() {
 
     const currentKind = watch('kind');
 
-    const { data: accountsRes, isLoading: accountsLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['accounting-accounts'],
-        queryFn: () => accountingApi.getAccounts(),
+    const { accounts, isLoading: accountsLoading, isRefetching, refetch } = useAccountingAccounts({
+        includeInactive: true,
         staleTime: 60_000,
     });
+    const { saveAccount, isSavingAccount: isPending } = useAccountingAccountMutations();
 
     const account = useMemo(() => {
-        const rows = (accountsRes?.data?.accounts ?? []) as AccountSummary[];
+        const rows = accounts as AccountSummary[];
         return rows.find((entry) => entry.id === id) ?? null;
-    }, [accountsRes?.data?.accounts, id]);
+    }, [accounts, id]);
 
     useEffect(() => {
         if (!account) return;
@@ -93,29 +100,17 @@ export default function AddCashBankAccountScreen() {
         setValue('kind', inferKind(account.name));
     }, [account, setValue]);
 
-    const { mutate, isPending } = useMutation({
-        mutationFn: async (data: AccountForm) => {
+    const handleSave = async (data: AccountForm) => {
+        try {
             const finalName = data.name.trim();
             const generatedCode = data.code?.trim() || `1${Date.now().toString().slice(-5)}`;
-
-            if (isEdit && id) {
-                return accountingApi.updateAccount(id, {
-                    name: finalName,
-                    code: generatedCode,
-                });
-            }
-
-            return accountingApi.createAccount({
+            const res = await saveAccount({
+                ...(isEdit && id ? { id } : {}),
                 code: generatedCode,
                 name: finalName,
                 type: 'ASSET',
                 parentId: null,
             });
-        },
-        onSuccess: (res) => {
-            qc.invalidateQueries({ queryKey: ['cash-bank-balances'] });
-            qc.invalidateQueries({ queryKey: ['cash-bank-summary'] });
-            qc.invalidateQueries({ queryKey: ['accounting-accounts'] });
 
             if (isEdit) {
                 dialog.alert('Saved', 'Cash/Bank account updated.');
@@ -130,13 +125,14 @@ export default function AddCashBankAccountScreen() {
                 return;
             }
             router.back();
-        },
-        onError: (error) => {
+        } catch (error) {
             dialog.alert(isEdit ? 'Update failed' : 'Create failed', error instanceof Error ? error.message : 'Unable to save account.');
-        },
-    });
+        }
+    };
 
-    const onKindSelect = (nextKind: AccountKind) => {
+    const currentKindMeta = CASH_BANK_ACCOUNT_KIND_OPTIONS.find((entry) => entry.value === currentKind);
+
+    const onKindSelect = (nextKind: CashBankAccountKind) => {
         setValue('kind', nextKind);
         const currentName = watch('name');
         if (!currentName.trim() || currentName === buildDefaultName(currentKind)) {
@@ -159,7 +155,13 @@ export default function AddCashBankAccountScreen() {
                 subtitle="Cash and bank setup"
                 onBackPress={smartBack}
                 rightAction={(
-                    <Pressable style={[s.saveBtn, { borderColor: colors.border }]} onPress={handleSubmit((data) => mutate(data))} disabled={isPending}>
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={isEdit ? 'Save account changes' : 'Save account'}
+                        style={[s.saveBtn, { borderColor: colors.border }]}
+                        onPress={handleSubmit(handleSave)}
+                        disabled={isPending}
+                    >
                         {isPending ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />}
                     </Pressable>
                 )}
@@ -172,74 +174,85 @@ export default function AddCashBankAccountScreen() {
                         tintColor={colors.primary}
                         refreshing={isRefetching}
                         onRefresh={() => {
-                            refetch();
+                            void refetch();
                         }}
                     />
                 )}
             >
-                <Text style={[s.label, { color: colors.textSecondary }]}>Account Kind</Text>
-                <View style={s.kindsRow}>
-                    {(['CASH', 'BANK', 'CHEQUE', 'OTHER'] as AccountKind[]).map((entry) => {
-                        const selected = entry === currentKind;
-                        return (
-                            <Pressable
-                                key={entry}
-                                style={[
-                                    s.kindChip,
-                                    {
-                                        borderColor: selected ? colors.primary : colors.border,
-                                        backgroundColor: selected ? withAlpha(colors.primary, '22') : colors.surfaceVariant,
-                                    },
-                                ]}
-                                onPress={() => onKindSelect(entry)}
-                            >
-                                <Text style={{ color: selected ? colors.primary : colors.text, fontWeight: '700', fontSize: 12 }}>{entry}</Text>
-                            </Pressable>
-                        );
-                    })}
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title={isEdit ? 'Edit Cash or Bank Account' : 'Create Cash or Bank Account'}
+                        subtitle="Define the ledger type, label, and code used by cash, bank, and cheque workflows."
+                        icon="bank-plus"
+                        tone="info"
+                    />
                 </View>
 
-                <Controller
-                    control={control}
-                    name="name"
-                    render={({ field: { onChange, value } }) => (
-                        <>
-                            <Text style={[s.label, { color: colors.textSecondary }]}>Account Name</Text>
-                            <AppInput
-                                inputType="text"
-                                leadingIcon="bank-outline"
-                                value={value}
-                                onChangeText={onChange}
-                                placeholder="Account name"
-                                error={errors.name?.message}
+                <FormSectionCard title="Account Identity" description="Choose the account kind, display name, and optional code." tone="info">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Account Kind</Text>
+                    <View style={s.kindsRow}>
+                        {CASH_BANK_ACCOUNT_KIND_OPTIONS.map((entry) => (
+                            <ChipButton
+                                key={entry.value}
+                                label={entry.label}
+                                selected={entry.value === currentKind}
+                                tone={getKindTone(entry.value)}
+                                onPress={() => onKindSelect(entry.value)}
                             />
-                        </>
-                    )}
-                />
+                        ))}
+                    </View>
+                    {currentKindMeta ? (
+                        <Text style={[s.kindHelp, { color: colors.textSecondary }]}>{currentKindMeta.description}</Text>
+                    ) : null}
 
-                <Controller
-                    control={control}
-                    name="code"
-                    render={({ field: { onChange, value } }) => (
-                        <>
-                            <Text style={[s.label, { color: colors.textSecondary }]}>Account Code (optional)</Text>
-                            <AppInput
-                                inputType="text"
-                                leadingIcon="pound"
-                                value={value || ''}
-                                onChangeText={onChange}
-                                placeholder="Auto-generated if empty"
-                                error={errors.code?.message}
-                            />
-                        </>
-                    )}
-                />
+                    <Controller
+                        control={control}
+                        name="name"
+                        render={({ field: { onChange, value } }) => (
+                            <>
+                                <Text style={[s.label, { color: colors.textSecondary }]}>Account Name</Text>
+                                <AppInput
+                                    inputType="text"
+                                    leadingIcon="bank-outline"
+                                    value={value}
+                                    onChangeText={onChange}
+                                    placeholder="Account name"
+                                    error={errors.name?.message}
+                                />
+                            </>
+                        )}
+                    />
 
-                <View style={[s.noteBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                    <Text style={[s.note, { color: colors.textSecondary }]}>Account is maintained under Assets and appears in Cash and Bank balances.</Text>
-                </View>
+                    <Controller
+                        control={control}
+                        name="code"
+                        render={({ field: { onChange, value } }) => (
+                            <>
+                                <Text style={[s.label, { color: colors.textSecondary }]}>Account Code (optional)</Text>
+                                <AppInput
+                                    inputType="text"
+                                    leadingIcon="pound"
+                                    value={value || ''}
+                                    onChangeText={onChange}
+                                    placeholder="Auto-generated if empty"
+                                    error={errors.code?.message}
+                                />
+                            </>
+                        )}
+                    />
+                </FormSectionCard>
 
-                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={handleSubmit((data) => mutate(data))} disabled={isPending}>
+                <FormSectionCard title="Usage Notes" description="Understand how this account behaves in accounting and transfer flows." tone={currentKind === 'CHEQUE' ? 'warning' : 'default'}>
+                    <View style={[s.noteBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                        <Text style={[s.note, { color: colors.textSecondary }]}>
+                            {currentKind === 'CHEQUE'
+                                ? 'Use cheque accounts for received or issued cheques awaiting clearance. Move balances between cheque and bank with deposit or bounce flows.'
+                                : 'Account is maintained under Assets and appears in cash and bank balances.'}
+                        </Text>
+                    </View>
+                </FormSectionCard>
+
+                <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={handleSubmit(handleSave)} disabled={isPending}>
                     {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>{isEdit ? 'Update Account' : 'Create Account'}</Text>}
                 </Pressable>
             </ScrollView>
@@ -260,16 +273,11 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             paddingHorizontal: Spacing.md,
         },
-        saveText: { fontSize: 12, fontWeight: '700' },
         content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.sm },
+        heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.sm },
         kindsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-        kindChip: {
-            borderWidth: 1,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: 7,
-        },
+        kindHelp: { fontSize: 12, marginTop: -4 },
         noteBox: {
             borderWidth: 1,
             borderRadius: Radius.card,

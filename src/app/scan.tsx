@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ComponentProps } from 'react';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, CameraView, type BarcodeScanningResult } from 'expo-camera';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../hooks/useSmartBack';
-import { Radius, Spacing, type ColorPalette } from '../constants/theme';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../constants/theme';
 import { useAppColors } from '../hooks/useAppColors';
 import { AppTopBar } from '../components/ui/AppTopBar';
 
@@ -134,15 +135,37 @@ export default function ScanScreen() {
                     onBarcodeScanned={scanned ? undefined : handleScan}
                     barcodeScannerSettings={{ barcodeTypes: DEFAULT_TYPES }}
                 />
+                <View pointerEvents="none" style={s.scanOverlay}>
+                    <View style={s.frameWrap}>
+                        <View style={[s.frameCorner, s.frameTopLeft]} />
+                        <View style={[s.frameCorner, s.frameTopRight]} />
+                        <View style={[s.frameCorner, s.frameBottomLeft]} />
+                        <View style={[s.frameCorner, s.frameBottomRight]} />
+                    </View>
+                    <View style={s.guideCard}>
+                        <MaterialCommunityIcons name="barcode-scan" size={18} color={colors.primary} />
+                        <Text style={s.guideText}>
+                            Keep the code inside the frame. Vahi will route the result to the correct workflow automatically.
+                        </Text>
+                    </View>
+                </View>
             </View>
 
             <View style={s.footer}>
-                <Pressable
-                    style={[s.secondaryBtn, { borderColor: colors.border }]}
-                    onPress={() => setScanned(false)}
-                >
-                    <Text style={[s.secondaryText, { color: colors.textSecondary }]}>Scan Again</Text>
-                </Pressable>
+                <View style={s.footerCard}>
+                    <View style={s.footerCopy}>
+                        <Text style={s.footerTitle}>{scanned ? 'Result captured' : 'Scanner ready'}</Text>
+                        <Text style={s.footerSubtitle}>
+                            {scanned ? 'Use scan again if you want to capture a different barcode or QR.' : 'Barcode and QR formats are supported in the same frame.'}
+                        </Text>
+                    </View>
+                    <Pressable
+                        style={[s.secondaryBtn, { borderColor: colors.border }]}
+                        onPress={() => setScanned(false)}
+                    >
+                        <Text style={[s.secondaryText, { color: colors.textSecondary }]}>Scan Again</Text>
+                    </Pressable>
+                </View>
             </View>
         </SafeAreaView>
     );
@@ -158,13 +181,114 @@ const styles = (colors: ColorPalette) =>
             overflow: 'hidden',
             marginHorizontal: Spacing.lg,
             marginBottom: Spacing.md,
+            borderWidth: 1,
+            borderColor: withAlpha(colors.primary, '16'),
+            backgroundColor: colors.card,
+        },
+        scanOverlay: {
+            ...StyleSheet.absoluteFillObject,
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingVertical: Spacing.xl,
+            paddingHorizontal: Spacing.lg,
+        },
+        frameWrap: {
+            width: '76%',
+            aspectRatio: 1.45,
+            maxWidth: 320,
+            maxHeight: 220,
+            borderRadius: 28,
+            borderWidth: 1,
+            borderColor: withAlpha('#ffffff', '18'),
+            backgroundColor: withAlpha('#000000', '12'),
+            position: 'relative',
+            marginTop: Spacing.xl,
+        },
+        frameCorner: {
+            position: 'absolute',
+            width: 34,
+            height: 34,
+            borderColor: '#ffffff',
+        },
+        frameTopLeft: {
+            top: 14,
+            left: 14,
+            borderTopWidth: 4,
+            borderLeftWidth: 4,
+            borderTopLeftRadius: 18,
+        },
+        frameTopRight: {
+            top: 14,
+            right: 14,
+            borderTopWidth: 4,
+            borderRightWidth: 4,
+            borderTopRightRadius: 18,
+        },
+        frameBottomLeft: {
+            bottom: 14,
+            left: 14,
+            borderBottomWidth: 4,
+            borderLeftWidth: 4,
+            borderBottomLeftRadius: 18,
+        },
+        frameBottomRight: {
+            bottom: 14,
+            right: 14,
+            borderBottomWidth: 4,
+            borderRightWidth: 4,
+            borderBottomRightRadius: 18,
+        },
+        guideCard: {
+            width: '100%',
+            borderRadius: Radius.card,
+            borderWidth: 1,
+            borderColor: withAlpha('#ffffff', '18'),
+            backgroundColor: withAlpha(colors.surface, 'D9'),
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.sm,
+            paddingHorizontal: Spacing.md,
+            paddingVertical: Spacing.md,
+            shadowColor: colors.text,
+            shadowOpacity: 0.08,
+            shadowRadius: 14,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: 4,
+        },
+        guideText: {
+            flex: 1,
+            color: colors.text,
+            fontSize: Typography.caption.size,
+            lineHeight: 18,
         },
         footer: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+        footerCard: {
+            borderRadius: Radius.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+            padding: Spacing.md,
+            gap: Spacing.sm,
+        },
+        footerCopy: {
+            gap: 2,
+        },
+        footerTitle: {
+            color: colors.text,
+            fontSize: Typography.title.size,
+            fontWeight: '700',
+        },
+        footerSubtitle: {
+            color: colors.textSecondary,
+            fontSize: Typography.caption.size,
+            lineHeight: 18,
+        },
         secondaryBtn: {
             borderWidth: 1,
             borderRadius: Radius.pill,
             paddingVertical: Spacing.sm,
             alignItems: 'center',
+            backgroundColor: colors.surface,
         },
         secondaryText: { fontWeight: '600', fontSize: 13 },
         centered: {

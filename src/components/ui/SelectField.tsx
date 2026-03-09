@@ -22,6 +22,7 @@ type SelectFieldProps = {
     value?: string | null;
     placeholder?: string;
     title?: string;
+    accessibilityLabel?: string;
     options: SelectOption[];
     onChange: (value: string) => void;
     disabled?: boolean;
@@ -36,6 +37,7 @@ export function SelectField({
     value,
     placeholder = 'Select',
     title = 'Select option',
+    accessibilityLabel,
     options,
     onChange,
     disabled,
@@ -66,6 +68,8 @@ export function SelectField({
     return (
         <>
             <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={accessibilityLabel ?? title ?? placeholder}
                 style={[
                     s.input,
                     { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
@@ -172,7 +176,7 @@ export function SelectField({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         input: {
-            minHeight: 44,
+            minHeight: 48,
             borderWidth: 1,
             borderRadius: Radius.md,
             paddingHorizontal: Spacing.md,
@@ -180,6 +184,11 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: Spacing.sm,
+            shadowColor: colors.primary,
+            shadowOpacity: 0.04,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 1,
         },
         inputText: {
             flex: 1,
@@ -208,6 +217,11 @@ const styles = (colors: ColorPalette) =>
             paddingTop: Spacing.md,
             paddingBottom: Spacing.xl,
             gap: Spacing.sm,
+            shadowColor: colors.text,
+            shadowOpacity: 0.12,
+            shadowRadius: 20,
+            shadowOffset: { width: 0, height: -6 },
+            elevation: 10,
         },
         headerRow: {
             flexDirection: 'row',
@@ -234,6 +248,7 @@ const styles = (colors: ColorPalette) =>
             flexDirection: 'row',
             alignItems: 'center',
             gap: Spacing.sm,
+            backgroundColor: colors.card,
         },
         optionLabel: {
             fontSize: Typography.body.size,

@@ -3,14 +3,17 @@ import {
     ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { toUserMessage } from '../../../api/client';
-import { settingsApi } from '../../../api/endpoints';
-import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { SettingsSection } from '../../../constants/enums';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useAuthStore } from '../../../store/authStore';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { ChipButton } from '../../../components/ui/ChipBlocks';
+import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
+import { selectSecuritySettings } from '../../../selectors/settingsSelectors';
 import {
     APP_ACTIONS,
     APP_MODULES,
@@ -18,8 +21,6 @@ import {
     getDefaultActionPermission,
     getDefaultModulePermission,
     ORGANIZATION_ROLES,
-    parseRoleActionOverrides,
-    parseRoleModuleOverrides,
     ROLE_ACTION_OVERRIDES_KEY,
     ROLE_MODULE_OVERRIDES_KEY,
     setRoleAccessOverrides,
@@ -34,6 +35,8 @@ import {
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { settingsSectionQueryKey } from '../../../state/settingsQueryKeys';
+import { useSettingsSectionMutation } from '../../../hooks/useSettingsSectionMutation';
 
 const ROLE_LABELS: Record<OrganizationRole, string> = {
     owner: 'Owner',
@@ -136,20 +139,18 @@ export default function RoleAccessScreen() {
     const [selectedRole, setSelectedRole] = useState<OrganizationRole>('owner');
     const [search, setSearch] = useState('');
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['settings-section', 'SECURITY'],
-        queryFn: () => settingsApi.get('SECURITY'),
-    });
-
-    const securitySettings = useMemo(
-        () => ((data?.data ?? {}) as Record<string, unknown>),
-        [data?.data]
-    );
+    const {
+        sectionData: securitySettings,
+        selected: securitySelection,
+        isLoading,
+        isRefetching,
+        refetch,
+    } = useSettingsSelector(SettingsSection.SECURITY, selectSecuritySettings);
 
     useEffect(() => {
-        setActionOverrides(parseRoleActionOverrides(securitySettings[ROLE_ACTION_OVERRIDES_KEY]));
-        setModuleOverrides(parseRoleModuleOverrides(securitySettings[ROLE_MODULE_OVERRIDES_KEY]));
-    }, [securitySettings]);
+        setActionOverrides(securitySelection.actionOverrides);
+        setModuleOverrides(securitySelection.moduleOverrides);
+    }, [securitySelection.actionOverrides, securitySelection.moduleOverrides]);
     const visibleModules = useMemo(() => {
         const needle = search.trim().toLowerCase();
         if (!needle) return APP_MODULES;
@@ -166,27 +167,29 @@ export default function RoleAccessScreen() {
         return { moduleCount, actionCount, total: moduleCount + actionCount };
     }, [actionOverrides, moduleOverrides, selectedRole]);
 
-    const { mutate: saveOverrides, isPending: saving } = useMutation({
-        mutationFn: async () => {
-            if (!canEditSettings) {
-                throw new Error('Only owner can update role access controls.');
-            }
-            const payload = {
-                ...securitySettings,
-                [ROLE_ACTION_OVERRIDES_KEY]: stringifyRoleActionOverrides(actionOverrides),
-                [ROLE_MODULE_OVERRIDES_KEY]: stringifyRoleModuleOverrides(moduleOverrides),
-            };
-            return settingsApi.update('SECURITY', { data: payload });
-        },
+    const { mutate: saveOverrides, isPending: saving } = useSettingsSectionMutation('SECURITY', {
         onSuccess: async () => {
             setRoleAccessOverrides({ actionOverrides, moduleOverrides });
-            await queryClient.invalidateQueries({ queryKey: ['settings-section', 'SECURITY'] });
+            await queryClient.invalidateQueries({ queryKey: settingsSectionQueryKey('SECURITY') });
             dialog.alert('Saved', 'Role access controls updated.');
         },
         onError: (error) => {
             dialog.alert('Save failed', toUserMessage(error, 'Unable to save role access controls.'));
         },
     });
+
+    const saveRoleAccess = () => {
+        if (!canEditSettings) {
+            dialog.alert('Save failed', 'Only owner can update role access controls.');
+            return;
+        }
+        const payload = {
+            ...securitySettings,
+            [ROLE_ACTION_OVERRIDES_KEY]: stringifyRoleActionOverrides(actionOverrides),
+            [ROLE_MODULE_OVERRIDES_KEY]: stringifyRoleModuleOverrides(moduleOverrides),
+        };
+        saveOverrides(payload);
+    };
 
     const resetToDefault = () => {
         dialog.alert(
@@ -226,7 +229,7 @@ export default function RoleAccessScreen() {
                 rightAction={(
                     <Pressable
                         style={[s.saveBtn, { backgroundColor: canEditSettings ? colors.primary : colors.border }]}
-                        onPress={() => saveOverrides()}
+                        onPress={saveRoleAccess}
                         disabled={saving || !canEditSettings}
                     >
                         {saving ? (
@@ -276,24 +279,16 @@ export default function RoleAccessScreen() {
                     {ORGANIZATION_ROLES.map((targetRole) => {
                         const active = selectedRole === targetRole;
                         return (
-                            <Pressable
+                            <ChipButton
                                 key={targetRole}
-                                style={[
-                                    s.roleChip,
-                                    {
-                                        borderColor: active ? colors.primary : colors.border,
-                                        backgroundColor: active ? withAlpha(colors.primary, '16') : colors.surfaceVariant,
-                                    },
-                                ]}
+                                label={ROLE_LABELS[targetRole]}
+                                selected={active}
+                                tone="info"
                                 onPress={() => {
                                     void selection();
                                     setSelectedRole(targetRole);
                                 }}
-                            >
-                                <Text style={{ color: active ? colors.primary : colors.textSecondary, fontSize: Typography.caption.size, fontWeight: '700' }}>
-                                    {ROLE_LABELS[targetRole]}
-                                </Text>
-                            </Pressable>
+                            />
                         );
                     })}
                 </ScrollView>
@@ -399,12 +394,6 @@ const styles = (colors: ColorPalette) =>
         summaryValue: { marginTop: 4, color: colors.text, fontSize: Typography.headline.size, fontWeight: '800' },
         summaryMeta: { marginTop: 2, fontSize: Typography.caption.size },
         roleChipsRow: { gap: Spacing.sm },
-        roleChip: {
-            borderWidth: 1,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-        },
         toolsRow: { flexDirection: 'row', justifyContent: 'flex-end' },
         toolBtn: {
             borderWidth: 1,

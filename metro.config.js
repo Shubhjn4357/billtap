@@ -4,6 +4,9 @@ const { getDefaultConfig } = require('expo/metro-config');
 const config = getDefaultConfig(__dirname);
 const originalResolveRequest = config.resolver.resolveRequest;
 
+config.resolver.assetExts = Array.from(new Set([...(config.resolver.assetExts ?? []), 'wasm']));
+config.resolver.sourceExts = (config.resolver.sourceExts ?? []).filter((ext) => ext !== 'wasm');
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === 'expo/virtual/env') {
     return {

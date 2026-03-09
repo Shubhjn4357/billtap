@@ -10,7 +10,7 @@ import {
     type ViewStyle,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
 
@@ -140,6 +140,7 @@ export const AppInput = memo(function AppInput({
     style,
     onFocus,
     onBlur,
+    accessibilityLabel,
     ...props
 }: AppInputProps) {
     const colors = useAppColors();
@@ -157,6 +158,7 @@ export const AppInput = memo(function AppInput({
                 ) : null}
                 <TextInput
                     {...props}
+                    accessibilityLabel={accessibilityLabel ?? label ?? placeholder}
                     placeholder={placeholder}
                     placeholderTextColor={colors.textSecondary}
                     keyboardType={keyboardType ?? defaults.keyboardType}
@@ -194,17 +196,23 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
             fontWeight: '700',
             marginBottom: 6,
+            letterSpacing: 0.4,
         },
         inputWrap: {
-            minHeight: 46,
+            minHeight: 48,
             borderRadius: Radius.md,
             borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.surfaceVariant,
+            borderColor: withAlpha(colors.primary, '22'),
+            backgroundColor: colors.card,
             paddingHorizontal: Spacing.sm,
             flexDirection: 'row',
             alignItems: 'center',
             gap: Spacing.xs,
+            shadowColor: colors.primary,
+            shadowOpacity: 0.04,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 1,
         },
         input: {
             flex: 1,
@@ -216,5 +224,6 @@ const styles = (colors: ColorPalette) =>
             marginTop: 4,
             color: colors.error,
             fontSize: Typography.caption.size,
+            fontWeight: '600',
         },
     });

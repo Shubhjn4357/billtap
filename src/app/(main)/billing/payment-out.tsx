@@ -11,15 +11,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { cashBankApi, partyApi } from '../../../api/endpoints';
+import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel, getVoucherReferenceHint } from '../../../constants/accountingInputOptions';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
-import type { Account, Party } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
+import { FormHero, FormSectionCard } from '../../../components/ui/FormBlocks';
 import { SelectField, type SelectOption } from '../../../components/ui/SelectField';
 import { useAppDialog } from '../../../components/providers/DialogProvider';
+import type { PaymentMode } from '../../../constants/enums';
+import { useCashBankAccounts } from '../../../hooks/useCashBankAccounts';
+import { useParties } from '../../../hooks/useParties';
+import { useCashBankMutations } from '../../../hooks/useCashBankMutations';
 
 const toAmount = (value: string) => {
     const parsed = Number(value);
@@ -27,14 +30,14 @@ const toAmount = (value: string) => {
 };
 
 export default function PaymentOutScreen() {
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/billing');
-    const qc = useQueryClient();
     const dialog = useAppDialog();
 
     const [partyId, setPartyId] = useState<string | null>(null);
     const [accountId, setAccountId] = useState<string | null>(null);
+    const [paymentMode, setPaymentMode] = useState<PaymentMode>('BANK');
     const [amountInput, setAmountInput] = useState('');
     const [description, setDescription] = useState('');
 
@@ -42,20 +45,11 @@ export default function PaymentOutScreen() {
         dialog.alert(title, message);
     };
 
-    const { data: partiesRes, isLoading: partiesLoading, isRefetching: partiesRefetching, refetch: refetchParties } = useQuery({
-        queryKey: ['billing-payment-out-parties'],
-        queryFn: () => partyApi.list({ type: 'supplier', limit: 100 }),
-        staleTime: 30_000,
+    const { parties, isLoading: partiesLoading, isRefetching: partiesRefetching, refetch: refetchParties } = useParties({
+        type: 'SUPPLIER',
+        limit: 100,
     });
-
-    const { data: accountsRes, isLoading: accountsLoading, isRefetching: accountsRefetching, refetch: refetchAccounts } = useQuery({
-        queryKey: ['billing-payment-out-accounts'],
-        queryFn: () => cashBankApi.getBalances(),
-        staleTime: 30_000,
-    });
-
-    const parties = useMemo(() => (partiesRes?.data ?? []) as Party[], [partiesRes?.data]);
-    const accounts = useMemo(() => (accountsRes?.data ?? []) as Account[], [accountsRes?.data]);
+    const { accounts, isLoading: accountsLoading, isRefetching: accountsRefetching, refetch: refetchAccounts } = useCashBankAccounts();
     const partyOptions = useMemo<SelectOption[]>(
         () => [
             { label: 'Unlinked', value: '__unlinked__', description: 'No linked supplier ledger' },
@@ -73,33 +67,37 @@ export default function PaymentOutScreen() {
         [accounts]
     );
 
-    const { mutate: submitPayment, isPending } = useMutation({
-        mutationFn: async () => {
-            const amount = toAmount(amountInput);
-            if (!accountId) throw new Error('Select account.');
-            if (amount <= 0) throw new Error('Enter a valid amount.');
+    const { withdraw, isWithdrawing: isPending } = useCashBankMutations();
 
-            const party = parties.find((entry) => entry.id === partyId);
-            const note = description.trim() || (party ? `Payment sent to ${party.name}` : 'Payment Out');
+    const handleSave = () => {
+        const amount = toAmount(amountInput);
+        if (!accountId) {
+            openInfoDialog('Payment Out failed', 'Select account.');
+            return;
+        }
+        if (amount <= 0) {
+            openInfoDialog('Payment Out failed', 'Enter a valid amount.');
+            return;
+        }
 
-            return cashBankApi.withdraw({
-                accountId,
-                amount,
-                paymentMode: 'BANK',
-                description: note,
+        const party = parties.find((entry) => entry.id === partyId);
+        const note = description.trim() || (party ? `Payment sent to ${party.name}` : 'Payment Out');
+
+        void withdraw({
+            accountId,
+            amount,
+            paymentMode,
+            description: note,
+        })
+            .then(() => {
+                dialog.alert('Payment Out', 'Payment recorded successfully.', [
+                    { text: 'OK', onPress: () => router.back() },
+                ]);
+            })
+            .catch((error) => {
+                openInfoDialog('Payment Out failed', error instanceof Error ? error.message : 'Unable to record payment.');
             });
-        },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['cash-bank-balances'] });
-            qc.invalidateQueries({ queryKey: ['cash-bank-summary'] });
-            dialog.alert('Payment Out', 'Payment recorded successfully.', [
-                { text: 'OK', onPress: () => router.back() },
-            ]);
-        },
-        onError: (error) => {
-            openInfoDialog('Payment Out failed', error instanceof Error ? error.message : 'Unable to record payment.');
-        },
-    });
+    };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -126,7 +124,16 @@ export default function PaymentOutScreen() {
                         />
                     )}
                 >
-                    <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={s.heroWrap}>
+                        <FormHero
+                            title="Record Payment Out"
+                            subtitle="Capture supplier or vendor payments from cash, bank, or cheque accounts."
+                            icon="cash-minus"
+                            tone="danger"
+                        />
+                    </View>
+
+                    <FormSectionCard title="Payment Setup" description="Choose supplier, source account, and settlement mode." tone="danger">
                         <Text style={[s.label, { color: colors.textSecondary }]}>Supplier / Vendor</Text>
                         <SelectField
                             value={partyId ?? '__unlinked__'}
@@ -147,6 +154,22 @@ export default function PaymentOutScreen() {
                             searchable
                         />
 
+                        <Text style={[s.label, { color: colors.textSecondary }]}>Payment Mode</Text>
+                        <SelectField
+                            value={paymentMode}
+                            onChange={(value) => setPaymentMode(value as PaymentMode)}
+                            options={CASH_BANK_VOUCHER_MODE_OPTIONS.map((entry) => ({
+                                label: entry.label,
+                                value: entry.value,
+                                description: entry.description,
+                            }))}
+                            placeholder="Select payment mode"
+                            title="Payment Mode"
+                            searchable={false}
+                        />
+                    </FormSectionCard>
+
+                    <FormSectionCard title="Amount and Narration" description="Enter payment amount and the posting note used for this voucher." tone="warning">
                         <Text style={[s.label, { color: colors.textSecondary }]}>Amount</Text>
                         <AppInput
                             inputType="decimal"
@@ -160,17 +183,20 @@ export default function PaymentOutScreen() {
                             inputType="text"
                             value={description}
                             onChangeText={setDescription}
-                            placeholder="Optional note"
+                            placeholder={getVoucherReferenceHint(paymentMode)}
                         />
+                        <Text style={[s.modeHint, { color: colors.textSecondary }]}>
+                            Payment posts as {getPaymentModeLabel(paymentMode)} disbursement.
+                        </Text>
+                    </FormSectionCard>
 
-                        <Pressable
-                            style={[s.submitBtn, { backgroundColor: colors.primary }, isPending && { opacity: 0.7 }]}
-                            onPress={() => submitPayment()}
-                            disabled={isPending}
-                        >
-                            {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.submitText}>Save Payment Out</Text>}
-                        </Pressable>
-                    </View>
+                    <Pressable
+                        style={[s.submitBtn, { backgroundColor: colors.primary }, isPending && { opacity: 0.7 }]}
+                        onPress={handleSave}
+                        disabled={isPending}
+                    >
+                        {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.submitText}>Save Payment Out</Text>}
+                    </Pressable>
                     <View style={{ height: 80 }} />
                 </ScrollView>
             )}
@@ -182,14 +208,10 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        content: { paddingHorizontal: Spacing.lg, paddingBottom: 40 },
-        card: {
-            borderWidth: 1,
-            borderRadius: Radius.card,
-            padding: Spacing.md,
-            gap: Spacing.sm,
-        },
+        content: { paddingHorizontal: Spacing.lg, paddingBottom: 40, gap: Spacing.sm },
+        heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '600' },
+        modeHint: { fontSize: 12 },
         submitBtn: {
             borderRadius: Radius.pill,
             alignItems: 'center',

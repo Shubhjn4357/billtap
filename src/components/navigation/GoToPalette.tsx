@@ -10,12 +10,9 @@ import {
     View,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FeatureFlag } from '../../constants/enums';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
-import { accountingApi, cashBankApi, invoiceApi, itemApi, loanApi, partyApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
 import {
     canAccessModule,
@@ -23,16 +20,13 @@ import {
     hasFeatureAccess,
     type AppModule,
 } from '../../utils/accessControl';
-
-type RouteEntry = {
-    label: string;
-    route: string;
-    description: string;
-    module?: AppModule;
-    ownerOnly?: boolean;
-    requiresPos?: boolean;
-    requiresFeature?: FeatureFlag;
-};
+import { GO_TO_PALETTE_ROUTES } from '../../constants/navigationOptions';
+import { useItemCatalog } from '../../hooks/useInventory';
+import { useLoans } from '../../hooks/useLoans';
+import { useInvoices } from '../../hooks/useInvoices';
+import { useParties } from '../../hooks/useParties';
+import { useCashBankAccounts } from '../../hooks/useCashBankAccounts';
+import { useAccountingLedgers } from '../../hooks/useAccountingLedgers';
 
 type SmartRouteEntry = {
     label: string;
@@ -40,34 +34,6 @@ type SmartRouteEntry = {
     route: string;
     module: AppModule;
 };
-
-const ROUTES: RouteEntry[] = [
-    { label: 'Dashboard', route: '/(main)', description: 'Home summary', module: 'home' },
-    { label: 'Billing', route: '/(main)/billing', description: 'Sales and purchases', module: 'billing' },
-    { label: 'Create Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', description: 'New tax invoice', module: 'billing' },
-    { label: 'POS Sale', route: '/(main)/billing/pos', description: 'Point of sale billing', module: 'billing', requiresPos: true },
-    { label: 'Inventory', route: '/(main)/inventory', description: 'Items and stock', module: 'inventory' },
-    { label: 'Add Item', route: '/(main)/inventory/add-item', description: 'Create inventory item', module: 'inventory' },
-    { label: 'Parties', route: '/(main)/parties', description: 'Customers and suppliers', module: 'parties' },
-    { label: 'Add Party', route: '/(main)/parties/add', description: 'Create customer/supplier', module: 'parties' },
-    { label: 'Accounts', route: '/(main)/accounts', description: 'Cash, bank, loans, expenses', module: 'accounts' },
-    { label: 'Cash and Bank', route: '/(main)/accounts/cash-bank', description: 'Cash/bank ledger', module: 'accounts' },
-    { label: 'Expenses', route: '/(main)/accounts/expenses', description: 'Expense entries', module: 'accounts' },
-    { label: 'Loans', route: '/(main)/accounts/loans', description: 'Loan management', module: 'accounts' },
-    { label: 'Reports', route: '/(main)/reports', description: 'Business reports', module: 'reports' },
-    { label: 'Trial Balance', route: '/(main)/reports/trial-balance', description: 'Debit/credit balancing', module: 'reports' },
-    { label: 'Ledgers', route: '/(main)/reports/ledgers', description: 'Account ledgers', module: 'reports' },
-    { label: 'GST Summary', route: '/(main)/reports/gst-summary', description: 'GST slab report', module: 'reports' },
-    { label: 'More', route: '/(main)/more', description: 'Utilities and controls' },
-    { label: 'Settings', route: '/(main)/more/settings', description: 'Business settings', module: 'settings' },
-    { label: 'Staff', route: '/(main)/more/staff', description: 'Team management', module: 'staff' },
-    { label: 'Role Access', route: '/(main)/more/role-access', description: 'Role based controls', module: 'settings', ownerOnly: true },
-    { label: 'Godowns', route: '/(main)/more/godowns', description: 'Warehouse management', module: 'inventory', requiresFeature: FeatureFlag.MULTI_GODOWN },
-    { label: 'Subscription', route: '/(main)/more/subscription', description: 'Plan and limits' },
-    { label: 'Screen Directory', route: '/(main)/more/screen-directory', description: 'Full route explorer' },
-    { label: 'Legal Center', route: '/legal', description: 'Terms/privacy/changelog' },
-    { label: 'Stock Scanner', route: '/scan?target=stock', description: 'Barcode scanner', module: 'inventory' },
-];
 
 const listeners = new Set<() => void>();
 export const openGoToPalette = () => {
@@ -85,49 +51,31 @@ export function GoToPalette() {
     const subscription = useAuthStore((state) => state.subscription);
     const normalizedQuery = query.trim().toLowerCase();
 
-    const { data: invoiceList } = useQuery({
-        queryKey: ['go-to-palette', 'latest-invoice'],
-        queryFn: () => invoiceApi.list({ limit: 1 }),
+    const { invoices: latestInvoices } = useInvoices({
+        type: 'ALL',
+        limit: 1,
         staleTime: 60_000,
+        enabled: visible,
     });
 
-    const { data: partyList } = useQuery({
-        queryKey: ['go-to-palette', 'latest-party'],
-        queryFn: () => partyApi.list({ limit: 1 }),
+    const { parties: latestParties } = useParties({
+        limit: 1,
         staleTime: 60_000,
+        enabled: visible,
     });
 
-    const { data: itemList } = useQuery({
-        queryKey: ['go-to-palette', 'latest-item'],
-        queryFn: () => itemApi.list({ limit: 1 }),
-        staleTime: 60_000,
-    });
-
-    const { data: loanList } = useQuery({
-        queryKey: ['go-to-palette', 'latest-loan'],
-        queryFn: () => loanApi.list(),
-        staleTime: 60_000,
-    });
-
-    const { data: accountList } = useQuery({
-        queryKey: ['go-to-palette', 'latest-cash-bank'],
-        queryFn: () => cashBankApi.getBalances(),
-        staleTime: 60_000,
-    });
-
-    const { data: ledgerList } = useQuery({
-        queryKey: ['go-to-palette', 'latest-ledger'],
-        queryFn: () => accountingApi.getLedgers(),
-        staleTime: 60_000,
-    });
+    const { items: latestItems } = useItemCatalog({ limit: 1, staleTime: 60_000, enabled: visible });
+    const { loans: latestLoans } = useLoans({ limit: 1, staleTime: 60_000, enabled: visible });
+    const { accounts: latestAccounts } = useCashBankAccounts({ staleTime: 60_000, enabled: visible });
+    const { rows: latestLedgers } = useAccountingLedgers({ limit: 1, staleTime: 60_000, enabled: visible });
 
     const smartEntries = useMemo(() => {
-        const latestInvoice = invoiceList?.data?.[0];
-        const latestParty = partyList?.data?.[0];
-        const latestItem = itemList?.items?.[0];
-        const latestLoan = loanList?.data?.[0];
-        const latestAccount = accountList?.data?.[0];
-        const latestLedger = ledgerList?.data?.data?.[0];
+        const latestInvoice = latestInvoices[0];
+        const latestParty = latestParties[0];
+        const latestItem = latestItems[0];
+        const latestLoan = latestLoans[0];
+        const latestAccount = latestAccounts[0];
+        const latestLedger = latestLedgers[0];
 
         const items: SmartRouteEntry[] = [
             {
@@ -186,19 +134,19 @@ export function GoToPalette() {
             return `${entry.label} ${entry.subtitle}`.toLowerCase().includes(normalizedQuery);
         });
     }, [
-        accountList?.data,
-        invoiceList?.data,
-        itemList?.items,
-        ledgerList?.data?.data,
-        loanList?.data,
+        latestAccounts,
+        latestInvoices,
+        latestItems,
+        latestLedgers,
+        latestLoans,
         normalizedQuery,
-        partyList?.data,
+        latestParties,
         role,
         subscription,
     ]);
 
     const visibleRoutes = useMemo(() => {
-        return ROUTES.filter((entry) => {
+        return GO_TO_PALETTE_ROUTES.filter((entry) => {
             if (entry.ownerOnly && role !== 'owner') return false;
             if (entry.module && !canAccessModule(role, entry.module, subscription)) return false;
             if (entry.requiresPos && !canUsePos(subscription)) return false;
@@ -423,5 +371,3 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         paddingVertical: Spacing.xl,
     },
 });
-
-

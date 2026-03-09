@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
 import { useAppDrawer } from '../layout/AppDrawerLayout';
@@ -95,7 +95,7 @@ export const AppTopBar = memo(function AppTopBar({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         wrap: {
-            minHeight: 56,
+            minHeight: 60,
             borderWidth: 1,
             borderRadius: Radius.card,
             flexDirection: 'row',
@@ -106,6 +106,11 @@ const styles = (colors: ColorPalette) =>
             marginTop: Spacing.sm,
             marginBottom: Spacing.sm,
             gap: Spacing.sm,
+            shadowColor: colors.primary,
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 3,
         },
         leftRow: {
             flex: 1,
@@ -114,12 +119,14 @@ const styles = (colors: ColorPalette) =>
             gap: Spacing.xs,
         },
         iconBtn: {
-            width: 36,
-            height: 36,
+            width: 38,
+            height: 38,
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.surfaceVariant,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: withAlpha(colors.primary, '22'),
         },
         iconPlaceholder: {
             width: 36,
@@ -136,6 +143,7 @@ const styles = (colors: ColorPalette) =>
         title: {
             fontSize: Typography.title.size,
             fontWeight: '700',
+            letterSpacing: -0.2,
         },
         subtitle: {
             marginTop: 1,

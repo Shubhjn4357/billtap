@@ -4,74 +4,35 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
-import { reportApi } from '../../../../api/endpoints';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { useGstr3bReport } from '../../../../hooks/useReports';
+import { formatInr, formatMonthYear, normalizeGstRows, shiftMonthYear, summarizeGstRows, type NormalizedGstRow } from '../../../../selectors/reportSelectors';
 
 const CURRENT_DATE = new Date();
 const DEFAULT_MONTH = CURRENT_DATE.getMonth() + 1;
 const DEFAULT_YEAR = CURRENT_DATE.getFullYear();
 
-const asNumber = (value: unknown) => {
-    const parsed = Number(value ?? 0);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-type GstSummaryRow = {
-    gstRate?: number;
-    rate?: number;
-    taxableTurnover?: number;
-    taxable?: number;
-    totalTaxable?: number;
-    totalTax?: number;
-    taxAmount?: number;
-    cgstAmount?: number;
-    cgst?: number;
-    sgstAmount?: number;
-    sgst?: number;
-    igstAmount?: number;
-    igst?: number;
-};
-
 export default function Gstr3bReportScreen() {
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/reports');
     const [month, setMonth] = useState(DEFAULT_MONTH);
-    const [year] = useState(DEFAULT_YEAR);
+    const [year, setYear] = useState(DEFAULT_YEAR);
 
-    const { data, isLoading, isFetching, refetch } = useQuery({
-        queryKey: ['report-gstr3b', month, year],
-        queryFn: () => reportApi.getGstr3b({ month, year }),
-        staleTime: 60_000,
-    });
-
-    const rows = useMemo<GstSummaryRow[]>(() => {
-        const payload = data as { data?: { rows?: GstSummaryRow[] }; rows?: GstSummaryRow[] } | undefined;
-        return payload?.data?.rows ?? payload?.rows ?? [];
-    }, [data]);
-
-    const totals = useMemo(
-        () => rows.reduce<{ taxable: number; tax: number; cgst: number; sgst: number; igst: number }>(
-            (acc, row) => ({
-                taxable: acc.taxable + asNumber(row.taxableTurnover ?? row.taxable ?? row.totalTaxable),
-                tax: acc.tax + asNumber(row.totalTax ?? row.taxAmount),
-                cgst: acc.cgst + asNumber(row.cgstAmount ?? row.cgst),
-                sgst: acc.sgst + asNumber(row.sgstAmount ?? row.sgst),
-                igst: acc.igst + asNumber(row.igstAmount ?? row.igst),
-            }),
-            { taxable: 0, tax: 0, cgst: 0, sgst: 0, igst: 0 }
-        ),
-        [rows]
+    const { rows, isLoading, isFetching, refetch } = useGstr3bReport(
+        { month, year },
+        { staleTime: 60_000 }
     );
 
+    const reportRows = useMemo<NormalizedGstRow[]>(() => normalizeGstRows(rows ?? []), [rows]);
+    const totals = useMemo(() => summarizeGstRows(reportRows), [reportRows]);
+
     const changeMonth = (delta: number) => {
-        const next = month + delta;
-        if (next >= 1 && next <= 12) {
-            setMonth(next);
-        }
+        const next = shiftMonthYear(month, year, delta);
+        setMonth(next.month);
+        setYear(next.year);
     };
 
     return (
@@ -87,7 +48,7 @@ export default function Gstr3bReportScreen() {
                     <MaterialCommunityIcons name="chevron-left" size={18} color={colors.textSecondary} />
                 </Pressable>
                 <Text style={[s.periodText, { color: colors.text }]}>
-                    {String(month).padStart(2, '0')}/{year}
+                    {formatMonthYear(month, year)}
                 </Text>
                 <Pressable style={[s.periodBtn, { borderColor: colors.border }]} onPress={() => changeMonth(1)}>
                     <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
@@ -97,7 +58,7 @@ export default function Gstr3bReportScreen() {
             <View style={[s.summaryCard, { backgroundColor: colors.primaryVariant }]}>
                 <Text style={s.summaryLabel}>NET TAX LIABILITY (EST.)</Text>
                 <Text style={s.summaryValue}>
-                    Rs {totals.tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    {formatInr(totals.tax)}
                 </Text>
                 <Text style={s.summaryMeta}>
                     CGST {totals.cgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -114,7 +75,7 @@ export default function Gstr3bReportScreen() {
                 </View>
             ) : (
                 <FlatList
-                    data={rows}
+                    data={reportRows}
                     keyExtractor={(item, index) => `${item.gstRate ?? index}`}
                     refreshControl={(
                         <RefreshControl
@@ -132,12 +93,12 @@ export default function Gstr3bReportScreen() {
                         </View>
                     )}
                     renderItem={({ item }) => {
-                        const rate = asNumber(item.gstRate ?? item.rate);
-                        const taxable = asNumber(item.taxableTurnover ?? item.taxable ?? item.totalTaxable);
-                        const tax = asNumber(item.totalTax ?? item.taxAmount);
-                        const cgst = asNumber(item.cgstAmount ?? item.cgst);
-                        const sgst = asNumber(item.sgstAmount ?? item.sgst);
-                        const igst = asNumber(item.igstAmount ?? item.igst);
+                        const rate = item.gstRate;
+                        const taxable = item.taxableTurnover;
+                        const tax = item.totalTax;
+                        const cgst = item.cgstAmount;
+                        const sgst = item.sgstAmount;
+                        const igst = item.igstAmount;
 
                         return (
                             <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -153,10 +114,10 @@ export default function Gstr3bReportScreen() {
                                 </View>
                                 <View style={{ alignItems: 'flex-end' }}>
                                     <Text style={[s.rowValue, { color: colors.text }]}>
-                                        Rs {taxable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                        {formatInr(taxable)}
                                     </Text>
                                     <Text style={[s.rowTax, { color: colors.primary }]}>
-                                        Tax Rs {tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                        Tax {formatInr(tax)}
                                     </Text>
                                 </View>
                             </View>

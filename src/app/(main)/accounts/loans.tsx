@@ -3,28 +3,39 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useQuery } from '@tanstack/react-query';
-import { loanApi } from '../../../api/endpoints';
 import { Spacing, Radius, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import type { Loan } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { useLoans } from '../../../hooks/useLoans';
+
+const toAmount = (value: unknown) => {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const getLoanName = (loan: Partial<Loan>) => loan.lenderBorrowerName?.trim() || 'Loan account';
+const getLoanType = (loan: Partial<Loan>) => loan.loanType === 'GIVEN' ? 'GIVEN' : 'BORROWED';
+const getInterestRate = (loan: Partial<Loan>) => toAmount(loan.interestRatePercent);
+const getInterestType = (loan: Partial<Loan>) => loan.interestType ?? 'SIMPLE';
+
+const formatDueDate = (value?: string | null) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleDateString('en-IN');
+};
 
 export default function LoansScreen() {
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['loans'],
-        queryFn: () => loanApi.list(),
+    const { loans, isLoading, isRefetching, refetch, stats } = useLoans({
         staleTime: 60_000,
     });
-
-    const loans = (data?.data ?? []) as Loan[];
-    const totalBorrowed = loans.filter((entry) => entry.loanType === 'BORROWED').reduce((sum, entry) => sum + entry.currentBalance, 0);
-    const totalLent = loans.filter((entry) => entry.loanType === 'GIVEN').reduce((sum, entry) => sum + entry.currentBalance, 0);
-    const dueLoans = loans.filter((entry) => entry.dueDate).length;
+    const totalBorrowed = stats.totalBorrowed;
+    const totalLent = stats.totalLent;
+    const dueLoans = stats.dueLoans;
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -94,8 +105,9 @@ export default function LoansScreen() {
 }
 
 function LoanRow({ loan, colors }: { loan: Loan; colors: ColorPalette }) {
-    const isOut = loan.loanType === 'GIVEN';
+    const isOut = getLoanType(loan) === 'GIVEN';
     const color = isOut ? colors.success : colors.error;
+    const dueDateLabel = formatDueDate(loan.dueDate);
 
     return (
         <Pressable
@@ -106,13 +118,13 @@ function LoanRow({ loan, colors }: { loan: Loan; colors: ColorPalette }) {
                 <Text style={{ color, fontWeight: '700', fontSize: 11 }}>{isOut ? 'GIVEN' : 'BORROWED'}</Text>
             </View>
             <View style={{ flex: 1 }}>
-                <Text style={[rowStyles.name, { color: colors.text }]}>{loan.lenderBorrowerName}</Text>
-                <Text style={[rowStyles.meta, { color: colors.textSecondary }]}>{loan.interestRatePercent}% p.a. - {loan.interestType}</Text>
+                <Text style={[rowStyles.name, { color: colors.text }]}>{getLoanName(loan)}</Text>
+                <Text style={[rowStyles.meta, { color: colors.textSecondary }]}>{getInterestRate(loan)}% p.a. - {getInterestType(loan)}</Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[rowStyles.bal, { color }]}>Rs {loan.currentBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-                {loan.dueDate ? (
-                    <Text style={[rowStyles.due, { color: colors.textSecondary }]}>Due: {new Date(loan.dueDate).toLocaleDateString('en-IN')}</Text>
+                <Text style={[rowStyles.bal, { color }]}>Rs {toAmount(loan.currentBalance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                {dueDateLabel ? (
+                    <Text style={[rowStyles.due, { color: colors.textSecondary }]}>Due: {dueDateLabel}</Text>
                 ) : null}
                 <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} style={rowStyles.chevron} />
             </View>

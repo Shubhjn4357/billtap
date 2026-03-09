@@ -1,76 +1,84 @@
-/**
- * useSettingsSection - settings schema + section data hook with offline fallback.
- *
- * Combines the schema query and section data query. Serves cached data
- * when offline, and exposes `isOffline` so the UI can show a banner.
- */
-
 import { useEffect, useMemo, useState } from 'react';
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { settingsApi } from '../api/endpoints';
 import type { SettingsSection } from '../constants/enums';
+import { settingsRepository } from '../repositories/settingsRepository';
+import { settingsSchemaQueryKey, settingsSectionQueryKey } from '../state/settingsQueryKeys';
+
+export const asSettingsRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+const useIsOffline = () => {
+    const [isOffline, setIsOffline] = useState(false);
+
+    useEffect(() => {
+        const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
+            setIsOffline(!(Boolean(state.isConnected) && state.isInternetReachable !== false));
+        });
+        return unsubscribe;
+    }, []);
+
+    return isOffline;
+};
+
+export function useSettingsSchemaQuery() {
+    return useQuery({
+        queryKey: settingsSchemaQueryKey,
+        queryFn: () => settingsRepository.getSchema(),
+        staleTime: 30 * 60_000,
+        gcTime: 60 * 60_000,
+    });
+}
+
+export function useSettingsSectionQuery(section: SettingsSection | string) {
+    const normalizedSection = String(section ?? '').toUpperCase();
+
+    return useQuery({
+        queryKey: settingsSectionQueryKey(normalizedSection),
+        queryFn: () => settingsRepository.getSection(normalizedSection as SettingsSection),
+        staleTime: 5 * 60_000,
+        gcTime: 30 * 60_000,
+        enabled: normalizedSection.length > 0,
+    });
+}
 
 export function useSettingsSection(section: SettingsSection | string) {
-  const qc = useQueryClient();
-  const [isOffline, setIsOffline] = useState(false);
+    const normalizedSection = String(section ?? '').toUpperCase();
+    const queryClient = useQueryClient();
+    const isOffline = useIsOffline();
+    const schemaQuery = useSettingsSchemaQuery();
+    const sectionQuery = useSettingsSectionQuery(normalizedSection);
 
-  // NetInfo-based offline detection
-  useEffect(() => {
-    const unsub = NetInfo.addEventListener((state: NetInfoState) => {
-      setIsOffline(!(Boolean(state.isConnected) && state.isInternetReachable !== false));
-    });
+    const schema = useMemo(() => schemaQuery.data?.schema ?? {}, [schemaQuery.data]);
+    const sectionFields = useMemo(
+        () => (schema[normalizedSection] ?? []) as unknown[],
+        [normalizedSection, schema]
+    );
+    const sectionData = useMemo(
+        () => asSettingsRecord(sectionQuery.data?.data),
+        [sectionQuery.data?.data]
+    );
 
-    return () => {
-      unsub();
+    const refetch = async () => {
+        await Promise.all([schemaQuery.refetch(), sectionQuery.refetch()]);
     };
-  }, []);
 
-  // Schema query - long stale time, offline returns cached
-  const schemaQuery = useQuery({
-    queryKey: ['settings-schema'],
-    queryFn: () => settingsApi.getSchema(),
-    staleTime: 30 * 60_000,
-    gcTime: 60 * 60_000,
-  });
+    const invalidate = async () => {
+        await queryClient.invalidateQueries({ queryKey: settingsSectionQueryKey(normalizedSection) });
+    };
 
-  // Section data query
-  const sectionQuery = useQuery({
-    queryKey: ['settings-section', section],
-    queryFn: () => settingsApi.getSection(section as SettingsSection),
-    staleTime: 5 * 60_000,
-    gcTime: 30 * 60_000,
-    enabled: Boolean(section),
-  });
-
-  const isLoading = schemaQuery.isLoading || sectionQuery.isLoading;
-  const isRefreshing = schemaQuery.isRefetching || sectionQuery.isRefetching;
-
-  const schema = useMemo(() => schemaQuery.data?.schema ?? {}, [schemaQuery.data]);
-  const sectionFields = useMemo(() => (schema[section] ?? []) as unknown[], [schema, section]);
-  const sectionData = useMemo(
-    () => (sectionQuery.data?.data ?? {}) as Record<string, unknown>,
-    [sectionQuery.data]
-  );
-
-  const refetch = async () => {
-    await Promise.all([schemaQuery.refetch(), sectionQuery.refetch()]);
-  };
-
-  const invalidate = async () => {
-    await qc.invalidateQueries({ queryKey: ['settings-section', section] });
-  };
-
-  return {
-    isLoading,
-    isRefreshing,
-    isOffline,
-    schema,
-    sectionFields,
-    sectionData,
-    schemaResponse: schemaQuery.data,
-    sectionResponse: sectionQuery.data,
-    refetch,
-    invalidate,
-  };
+    return {
+        isLoading: schemaQuery.isLoading || sectionQuery.isLoading,
+        isRefreshing: schemaQuery.isRefetching || sectionQuery.isRefetching,
+        isOffline,
+        schema,
+        sectionFields,
+        sectionData,
+        schemaResponse: schemaQuery.data,
+        sectionResponse: sectionQuery.data,
+        refetch,
+        invalidate,
+    };
 }

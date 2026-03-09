@@ -4,25 +4,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { accountingApi, cashBankApi } from '../../../../api/endpoints';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import type { Account } from '../../../../types/domain';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { HubMetricCard } from '../../../../components/ui/HubBlocks';
+import { UtilityEmptyState, UtilityHero, UtilitySection } from '../../../../components/ui/UtilityBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-
-type LedgerEntry = {
-    id?: string;
-    voucherType?: string;
-    voucherNumber?: string;
-    date?: string;
-    narration?: string;
-    debit?: number;
-    credit?: number;
-    runningBalance?: number;
-};
+import { useCashBankAccounts } from '../../../../hooks/useCashBankAccounts';
+import { useCashBankLedger } from '../../../../hooks/useCashBankLedger';
+import { useAccountingAccountMutations } from '../../../../hooks/useAccountingMutations';
 
 const formatDate = (value: unknown) => {
     if (!value) return '-';
@@ -41,46 +33,22 @@ export default function CashBankAccountDetailScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
     const { id } = useLocalSearchParams<{ id: string }>();
-    const qc = useQueryClient();
 
-    const { data: balancesRes, isLoading: balancesLoading, isRefetching: balancesRefetching, refetch: refetchBalances } = useQuery({
-        queryKey: ['cash-bank-balances'],
-        queryFn: () => cashBankApi.getBalances(),
-        staleTime: 30_000,
-    });
-
-    const { data: ledgerRes, isLoading: ledgerLoading, isRefetching: ledgerRefetching, refetch: refetchLedger } = useQuery({
-        queryKey: ['cash-bank-ledger', id],
-        queryFn: () => cashBankApi.getLedger(id!, { limit: 200 }),
-        enabled: Boolean(id),
-        staleTime: 30_000,
-    });
+    const { accounts, isLoading: balancesLoading, isRefetching: balancesRefetching, refetch: refetchBalances } = useCashBankAccounts();
+    const {
+        entries,
+        currentBalance: ledgerBalance,
+        isLoading: ledgerLoading,
+        isRefetching: ledgerRefetching,
+        refetch: refetchLedger,
+    } = useCashBankLedger(id);
 
     const account = useMemo(() => {
-        const list = (balancesRes?.data ?? []) as Account[];
-        return list.find((entry) => entry.id === id) ?? null;
-    }, [balancesRes?.data, id]);
+        return accounts.find((entry) => entry.id === id) ?? null;
+    }, [accounts, id]);
 
-    const entries = useMemo(() => (ledgerRes?.data ?? []) as LedgerEntry[], [ledgerRes?.data]);
-    const currentBalance = Number((ledgerRes as { currentBalance?: number } | undefined)?.currentBalance ?? account?.balance ?? 0);
-
-    const { mutate: deactivateAccount, isPending: deactivating } = useMutation({
-        mutationFn: async () => {
-            if (!id) throw new Error('Account ID missing.');
-            return accountingApi.deactivateAccount(id);
-        },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['cash-bank-balances'] });
-            qc.invalidateQueries({ queryKey: ['cash-bank-summary'] });
-            qc.invalidateQueries({ queryKey: ['accounting-accounts'] });
-            dialog.alert('Deactivated', 'Account moved to inactive state.', [
-                { text: 'OK', onPress: () => router.back() },
-            ]);
-        },
-        onError: (error) => {
-            dialog.alert('Deactivate failed', error instanceof Error ? error.message : 'Unable to deactivate account.');
-        },
-    });
+    const currentBalance = Number(ledgerBalance ?? account?.balance ?? 0);
+    const { deactivateAccount, isDeactivatingAccount: deactivating } = useAccountingAccountMutations();
 
     const isLoading = balancesLoading || ledgerLoading;
     const isRefreshing = balancesRefetching || ledgerRefetching;
@@ -121,68 +89,93 @@ export default function CashBankAccountDetailScreen() {
                     contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <>
-                            <View style={[s.balanceCard, { backgroundColor: colors.primary }]}>
-                                <Text style={s.balanceLabel}>CURRENT BALANCE</Text>
-                                <Text style={s.balanceValue}>{formatAmount(currentBalance)}</Text>
-                                <Text style={s.balanceMeta}>{account?.code ? `Code ${account.code}` : 'Account ledger'}</Text>
+                            <View style={s.heroWrap}>
+                                <UtilityHero
+                                    title={account?.name ?? 'Account'}
+                                    subtitle={account?.code ? `Code ${account.code}` : 'Cash and bank ledger'}
+                                    icon="bank-outline"
+                                    tone="info"
+                                />
                             </View>
 
-                            <View style={s.actionRow}>
-                                <Pressable
-                                    style={[s.actionBtn, { backgroundColor: colors.success }]}
-                                    onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/deposit', params: { accountId: id } })}
-                                >
-                                    <Text style={s.actionBtnText}>Deposit</Text>
-                                </Pressable>
-                                <Pressable
-                                    style={[s.actionBtn, { backgroundColor: colors.error }]}
-                                    onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/withdraw', params: { accountId: id } })}
-                                >
-                                    <Text style={s.actionBtnText}>Withdraw</Text>
-                                </Pressable>
-                                <Pressable
-                                    style={[s.actionBtn, { backgroundColor: colors.primaryVariant }]}
-                                    onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/transfer', params: { fromAccountId: id } })}
-                                >
-                                    <Text style={s.actionBtnText}>Transfer</Text>
-                                </Pressable>
+                            <View style={s.statsRow}>
+                                <HubMetricCard label="Current Balance" value={formatAmount(currentBalance)} meta="Live ledger balance" tone={currentBalance >= 0 ? 'success' : 'danger'} />
+                                <HubMetricCard label="Entries" value={String(entries.length)} meta="Visible ledger rows" tone="info" />
                             </View>
 
-                            <View style={s.actionRow}>
-                                <Pressable
-                                    style={[s.actionBtn, { backgroundColor: withAlpha(colors.error, '22') }]}
-                                    onPress={() => dialog.alert('Deactivate account', 'Hide this account from active balances?', [
-                                        { text: 'Cancel', style: 'cancel' },
-                                        { text: 'Deactivate', style: 'destructive', onPress: () => deactivateAccount() },
-                                    ])}
-                                    disabled={deactivating || Boolean((account as Account & { isDefault?: boolean })?.isDefault)}
-                                >
-                                    <Text style={[s.actionBtnText, { color: colors.error }]}>{deactivating ? '...' : 'Deactivate'}</Text>
-                                </Pressable>
-                            </View>
+                            <UtilitySection title="Quick Actions" count={4}>
+                                <View style={s.sectionWrap}>
+                                    <View style={s.actionRow}>
+                                        <Pressable
+                                            style={[s.actionBtn, { backgroundColor: colors.success }]}
+                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/deposit', params: { accountId: id } })}
+                                        >
+                                            <Text style={s.actionBtnText}>Deposit</Text>
+                                        </Pressable>
+                                        <Pressable
+                                            style={[s.actionBtn, { backgroundColor: colors.error }]}
+                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/withdraw', params: { accountId: id } })}
+                                        >
+                                            <Text style={s.actionBtnText}>Withdraw</Text>
+                                        </Pressable>
+                                        <Pressable
+                                            style={[s.actionBtn, { backgroundColor: colors.primaryVariant }]}
+                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/transfer', params: { fromAccountId: id } })}
+                                        >
+                                            <Text style={s.actionBtnText}>Transfer</Text>
+                                        </Pressable>
+                                    </View>
 
-                            <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>LEDGER</Text>
+                                    <View style={s.actionRow}>
+                                        <Pressable
+                                            style={[s.actionBtn, { backgroundColor: withAlpha(colors.error, '22') }]}
+                                            onPress={() => dialog.alert('Deactivate account', 'Hide this account from active balances?', [
+                                                { text: 'Cancel', style: 'cancel' },
+                                                {
+                                                    text: 'Deactivate',
+                                                    style: 'destructive',
+                                                    onPress: async () => {
+                                                        try {
+                                                            await deactivateAccount(id);
+                                                            dialog.alert('Deactivated', 'Account moved to inactive state.', [
+                                                                { text: 'OK', onPress: () => router.back() },
+                                                            ]);
+                                                        } catch (error) {
+                                                            dialog.alert('Deactivate failed', error instanceof Error ? error.message : 'Unable to deactivate account.');
+                                                        }
+                                                    },
+                                                },
+                                            ])}
+                                            disabled={deactivating || Boolean((account as Account & { isDefault?: boolean })?.isDefault)}
+                                        >
+                                            <Text style={[s.actionBtnText, { color: colors.error }]}>{deactivating ? '...' : 'Deactivate'}</Text>
+                                        </Pressable>
+                                    </View>
+                                </View>
+                            </UtilitySection>
                         </>
                     }
                     ListEmptyComponent={
-                        <View style={s.centered}>
-                            <Text style={{ color: colors.textSecondary }}>No entries yet.</Text>
+                        <View style={s.emptyWrap}>
+                            <UtilityEmptyState icon="book-open-variant" title="No entries yet" description="Deposits, withdrawals, transfers, and linked vouchers will appear here." />
                         </View>
                     }
                     renderItem={({ item }) => (
-                        <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[s.rowTitle, { color: colors.text }]}>
-                                    {String(item.voucherType ?? 'ENTRY')} {item.voucherNumber ? `#${item.voucherNumber}` : ''}
-                                </Text>
-                                <Text style={[s.rowMeta, { color: colors.textSecondary }]}>
-                                    {formatDate(item.date)} {item.narration ? `- ${String(item.narration)}` : ''}
-                                </Text>
-                            </View>
-                            <View style={{ alignItems: 'flex-end' }}>
-                                <Text style={[s.rowValue, { color: colors.success }]}>Dr {formatAmount(item.debit)}</Text>
-                                <Text style={[s.rowValue, { color: colors.error }]}>Cr {formatAmount(item.credit)}</Text>
-                                <Text style={[s.rowMeta, { color: colors.textSecondary }]}>Bal {formatAmount(item.runningBalance)}</Text>
+                        <View style={s.sectionWrap}>
+                            <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[s.rowTitle, { color: colors.text }]}>
+                                        {String(item.voucherType ?? 'ENTRY')} {item.voucherNumber ? `#${item.voucherNumber}` : ''}
+                                    </Text>
+                                    <Text style={[s.rowMeta, { color: colors.textSecondary }]}>
+                                        {formatDate(item.date)} {item.narration ? `- ${String(item.narration)}` : ''}
+                                    </Text>
+                                </View>
+                                <View style={{ alignItems: 'flex-end' }}>
+                                    <Text style={[s.rowValue, { color: colors.success }]}>Dr {formatAmount(item.debit)}</Text>
+                                    <Text style={[s.rowValue, { color: colors.error }]}>Cr {formatAmount(item.credit)}</Text>
+                                    <Text style={[s.rowMeta, { color: colors.textSecondary }]}>Bal {formatAmount(item.runningBalance)}</Text>
+                                </View>
                             </View>
                         </View>
                     )}
@@ -205,18 +198,13 @@ const styles = (colors: ColorPalette) =>
             backgroundColor: colors.surfaceVariant,
         },
         centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xl },
-        balanceCard: {
-            borderRadius: Radius.card,
-            padding: Spacing.xl,
-            marginBottom: Spacing.md,
-        },
-        balanceLabel: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-        balanceValue: { color: colors.onPrimary, fontSize: 30, fontWeight: '800', marginTop: 6 },
-        balanceMeta: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 12, marginTop: 6 },
+        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.md },
+        sectionWrap: { paddingHorizontal: Spacing.lg },
+        emptyWrap: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xl },
         actionRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
         actionBtn: { flex: 1, borderRadius: Radius.pill, alignItems: 'center', paddingVertical: Spacing.sm },
         actionBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
-        sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
         row: {
             borderWidth: 1,
             borderRadius: Radius.card,

@@ -249,7 +249,7 @@ function normalizeAdminCallPath(callPath) {
     return normalized;
 }
 
-function extractRelativeImports(source) {
+function extractImportSpecifiers(source) {
     const specs = [];
     const patterns = [
         /\bimport\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g,
@@ -261,7 +261,7 @@ function extractRelativeImports(source) {
     for (const pattern of patterns) {
         for (const match of source.matchAll(pattern)) {
             const spec = match[1];
-            if (!spec || !spec.startsWith('.')) continue;
+            if (!spec) continue;
             specs.push(spec);
         }
     }
@@ -269,9 +269,7 @@ function extractRelativeImports(source) {
     return specs;
 }
 
-function resolveLocalImport(fromFileAbs, specifier) {
-    const fromDir = path.dirname(fromFileAbs);
-    const base = path.resolve(fromDir, specifier);
+function resolveImportWithSuffixes(base) {
     const tried = [];
 
     for (const suffix of IMPORT_SUFFIXES) {
@@ -289,7 +287,24 @@ function resolveLocalImport(fromFileAbs, specifier) {
     return null;
 }
 
-function buildImportGraph(rootDir) {
+function resolveLocalImport({ fromFileAbs, specifier, sourceRoot }) {
+    if (!specifier) return null;
+    const fromDir = path.dirname(fromFileAbs);
+
+    if (specifier.startsWith('.')) {
+        const relativeBase = path.resolve(fromDir, specifier);
+        return resolveImportWithSuffixes(relativeBase);
+    }
+
+    if (specifier.startsWith('@/')) {
+        const aliasBase = path.resolve(sourceRoot, specifier.slice(2));
+        return resolveImportWithSuffixes(aliasBase);
+    }
+
+    return null;
+}
+
+function buildImportGraph({ rootDir, sourceRoot }) {
     const files = walkFiles(rootDir, SOURCE_EXTS);
     const fileSet = new Set(files.map((value) => path.resolve(value)));
     const graph = new Map();
@@ -300,11 +315,15 @@ function buildImportGraph(rootDir) {
 
     for (const filePath of fileSet) {
         const source = fs.readFileSync(filePath, 'utf8');
-        const imports = extractRelativeImports(source);
+        const imports = extractImportSpecifiers(source);
         const edges = graph.get(filePath);
 
         for (const specifier of imports) {
-            const resolved = resolveLocalImport(filePath, specifier);
+            const resolved = resolveLocalImport({
+                fromFileAbs: filePath,
+                specifier,
+                sourceRoot,
+            });
             if (!resolved) continue;
             if (!fileSet.has(path.resolve(resolved))) continue;
             edges.add(path.resolve(resolved));
@@ -343,6 +362,10 @@ function dedupeCalls(calls) {
     return [...map.values()];
 }
 
+function callSignature(call) {
+    return `${call.method}|${call.path}|${call.source}`;
+}
+
 function discoverSurfaces({ appRoot, deriveRoute, sourceBaseDir }) {
     const files = walkFiles(appRoot, SOURCE_EXTS);
     const surfaces = [];
@@ -366,7 +389,7 @@ function mapSurfacesToCalls({ surfaces, graph, calls }) {
     }
 
     const surfaceMappings = [];
-    const usedCallIds = new Set();
+    const usedCallSignatures = new Set();
 
     for (const surface of surfaces) {
         const reachable = traverseReachable(graph, surface.fileAbs);
@@ -389,7 +412,7 @@ function mapSurfacesToCalls({ surfaces, graph, calls }) {
         });
 
         for (const call of deduped) {
-            usedCallIds.add(call.id);
+            usedCallSignatures.add(callSignature(call));
         }
 
         surfaceMappings.push({
@@ -405,8 +428,32 @@ function mapSurfacesToCalls({ surfaces, graph, calls }) {
             if (routeSort !== 0) return routeSort;
             return a.fileRel.localeCompare(b.fileRel);
         }),
-        usedCallIds,
+        usedCallSignatures,
     };
+}
+
+function collectReachableCallSignatures({ entryFiles, graph, calls }) {
+    const callsByFile = new Map();
+    for (const call of calls) {
+        const current = callsByFile.get(call.sourceAbs) ?? [];
+        current.push(call);
+        callsByFile.set(call.sourceAbs, current);
+    }
+
+    const signatures = new Set();
+    for (const entry of entryFiles) {
+        if (!entry) continue;
+        const entryAbs = path.resolve(entry);
+        if (!graph.has(entryAbs)) continue;
+        const reachable = traverseReachable(graph, entryAbs);
+        for (const fileAbs of reachable) {
+            const fileCalls = callsByFile.get(fileAbs) ?? [];
+            for (const call of fileCalls) {
+                signatures.add(callSignature(call));
+            }
+        }
+    }
+    return signatures;
 }
 
 function extractServerRoutes() {
@@ -846,14 +893,20 @@ function run() {
         return !okShapeAllowlist.has(`${route.method} ${route.path}`);
     });
 
-    const { graph: mobileGraph } = buildImportGraph(MOBILE_SRC_ROOT);
+    const { graph: mobileGraph } = buildImportGraph({
+        rootDir: MOBILE_SRC_ROOT,
+        sourceRoot: MOBILE_SRC_ROOT,
+    });
     const mobileSurfaces = discoverSurfaces({
         appRoot: MOBILE_APP_ROOT,
         deriveRoute: deriveExpoRouteFromFile,
         sourceBaseDir: VAHI_ROOT,
     });
 
-    const { graph: adminGraph } = buildImportGraph(ADMIN_SRC_ROOT);
+    const { graph: adminGraph } = buildImportGraph({
+        rootDir: ADMIN_SRC_ROOT,
+        sourceRoot: ADMIN_SRC_ROOT,
+    });
     const adminSurfaces = discoverSurfaces({
         appRoot: ADMIN_APP_ROOT,
         deriveRoute: deriveNextPageRouteFromFile,
@@ -872,11 +925,31 @@ function run() {
         calls: adminCalls,
     });
 
+    const mobileEntrySignatures = collectReachableCallSignatures({
+        entryFiles: [path.join(MOBILE_APP_ROOT, '_layout.tsx')],
+        graph: mobileGraph,
+        calls: mobileCalls,
+    });
+    const adminEntrySignatures = collectReachableCallSignatures({
+        entryFiles: [path.join(ADMIN_SRC_ROOT, 'lib', 'auth.ts')],
+        graph: adminGraph,
+        calls: adminCalls,
+    });
+
+    const usedMobileSignatures = new Set([
+        ...mobileSurfaceResult.usedCallSignatures,
+        ...mobileEntrySignatures,
+    ]);
+    const usedAdminSignatures = new Set([
+        ...adminSurfaceResult.usedCallSignatures,
+        ...adminEntrySignatures,
+    ]);
+
     const mobileOrphanCalls = dedupeCalls(
-        mobileCalls.filter((call) => !mobileSurfaceResult.usedCallIds.has(call.id))
+        mobileCalls.filter((call) => !usedMobileSignatures.has(callSignature(call)))
     );
     const adminOrphanCalls = dedupeCalls(
-        adminCalls.filter((call) => !adminSurfaceResult.usedCallIds.has(call.id))
+        adminCalls.filter((call) => !usedAdminSignatures.has(callSignature(call)))
     );
 
     const report = renderReport({
@@ -927,6 +1000,6 @@ module.exports = {
     deriveNextPageRouteFromFile,
     inferFetchMethod,
     compileBackendPattern,
-    extractRelativeImports,
+    extractImportSpecifiers,
     resolveLocalImport,
 };

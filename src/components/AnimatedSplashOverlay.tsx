@@ -212,6 +212,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: Spacing.md,
+        backgroundColor: withAlpha('#ffffff', '10'),
+        borderWidth: 1,
+        borderColor: withAlpha('#ffffff', '26'),
     },
     logo: {
         width: 148,
@@ -238,13 +241,15 @@ const styles = StyleSheet.create({
         fontSize: Typography.headline.size,
         fontWeight: '800',
         letterSpacing: 1.2,
+        textTransform: 'uppercase',
     },
     tagline: {
-        marginTop: 2,
+        marginTop: 6,
         color: withAlpha('#ffffff', 'D9'),
         fontSize: Typography.caption.size,
         fontWeight: '600',
         textAlign: 'center',
+        lineHeight: 18,
     },
     shimmerTrack: {
         marginTop: Spacing.md,

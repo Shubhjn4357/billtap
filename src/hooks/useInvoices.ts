@@ -7,13 +7,16 @@
  */
 
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { invoiceApi } from '../api/endpoints';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { PaymentStatus } from '../constants/enums';
+import { invoiceRepository } from '../repositories/invoiceRepository';
 import type { Invoice } from '../types/domain';
 import { format, parseISO, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import { useBusinessQueryScope } from './useBusinessQueryScope';
+import { invoiceQueryKeys } from '../state/domainQueryKeys';
 
 export type InvoiceQueryType =
+    | 'ALL'
     | 'TAX_INVOICE'
     | 'PURCHASE_BILL'
     | 'ESTIMATE'
@@ -33,6 +36,7 @@ export interface UseInvoicesOptions {
     statusFilter?: InvoiceStatusFilter;
     limit?: number;
     enabled?: boolean;
+    staleTime?: number;
 }
 
 export interface InvoicesSummary {
@@ -42,6 +46,13 @@ export interface InvoicesSummary {
     outstanding: number;
 }
 
+export const invalidateInvoiceQueries = async (
+    queryClient: QueryClient,
+    businessId?: string | null
+) => {
+    await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all(businessId) });
+};
+
 export function useInvoices(options: UseInvoicesOptions = {}) {
     const {
         type = 'TAX_INVOICE',
@@ -50,12 +61,15 @@ export function useInvoices(options: UseInvoicesOptions = {}) {
         statusFilter = 'all',
         limit = 50,
         enabled = true,
+        staleTime = 60_000,
     } = options;
+    const businessId = useBusinessQueryScope();
+    const apiType = type === 'ALL' ? undefined : type;
 
     const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['invoices', type, dateRange, limit],
-        queryFn: () => invoiceApi.list({ type, limit }),
-        staleTime: 60_000,
+        queryKey: invoiceQueryKeys.list(businessId, { type, dateRange, limit }),
+        queryFn: () => invoiceRepository.list({ type: apiType, limit }),
+        staleTime,
         enabled,
     });
 

@@ -3,15 +3,17 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useAuthStore } from '../../../store/authStore';
 import { FeatureFlag } from '../../../constants/enums';
+import { MORE_SCREEN_SECTIONS } from '../../../constants/utilityNavigation';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { canAccessModule, getEffectiveFeatureFlags } from '../../../utils/accessControl';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { UtilityEmptyState, UtilityHero, UtilityPanel, UtilityRow, UtilitySection } from '../../../components/ui/UtilityBlocks';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useAppColors } from '../../../hooks/useAppColors';
+import { useAuthStore } from '../../../store/authStore';
 
 export default function MoreScreen() {
     const dialog = useAppDialog();
@@ -44,44 +46,19 @@ export default function MoreScreen() {
         ]);
     };
 
-    const sections = useMemo(() => [
-        {
-            title: 'Main',
-            items: [
-                { label: 'Screen Directory', route: '/(main)/more/screen-directory', visible: true },
-                { label: 'Parties', route: '/(main)/parties', visible: canAccessModule(role, 'parties', subscription) },
-                { label: 'Party Recycle Bin', route: '/(main)/parties/recycle-bin', visible: canAccessModule(role, 'parties', subscription) },
-                { label: 'Item Recycle Bin', route: '/(main)/inventory/recycle-bin', visible: canAccessModule(role, 'inventory', subscription) },
-                { label: 'Reports', route: '/(main)/reports', visible: canAccessModule(role, 'reports', subscription) },
-                { label: 'Quick Sale (POS)', route: '/(main)/billing/pos', visible: featureFlags.includes(FeatureFlag.POS_MODE) },
-            ],
-        },
-        {
-            title: 'Accounts',
-            items: [
-                { label: 'Cash and Bank', route: '/(main)/accounts/cash-bank', visible: canAccessModule(role, 'accounts', subscription) },
-                { label: 'Expenses', route: '/(main)/accounts/expenses', visible: canAccessModule(role, 'accounts', subscription) },
-                { label: 'Expense Recycle Bin', route: '/(main)/accounts/expenses/recycle-bin', visible: canAccessModule(role, 'accounts', subscription) },
-                { label: 'Loans', route: '/(main)/accounts/loans', visible: canAccessModule(role, 'accounts', subscription) },
-            ],
-        },
-        {
-            title: 'Control',
-            items: [
-                { label: 'Operations', route: '/(main)/more/operations', visible: canAccessModule(role, 'operations', subscription) },
-                { label: 'Announcements', route: '/(main)/more/announcements', visible: canAccessModule(role, 'operations', subscription) },
-                { label: 'Godowns', route: '/(main)/more/godowns', visible: featureFlags.includes(FeatureFlag.MULTI_GODOWN) },
-                { label: 'Offline Sync Diagnostics', route: '/(main)/more/sync', visible: true },
-            ],
-        },
-        {
-            title: 'Business',
-            items: [
-                { label: 'Switch Business', route: '/(auth)/business-select', visible: true },
-                { label: 'Settings', route: '/(main)/more/settings', visible: canAccessModule(role, 'settings', subscription) },
-            ],
-        },
-    ], [featureFlags, role, subscription]);
+    const sections = useMemo(() => MORE_SCREEN_SECTIONS.map((section) => ({
+        title: section.title,
+        items: section.items.map((item) => ({
+            ...item,
+            visible: item.requiresPos
+                ? featureFlags.includes(FeatureFlag.POS_MODE)
+                : item.requiresFeature
+                    ? featureFlags.includes(item.requiresFeature)
+                    : item.module
+                        ? canAccessModule(role, item.module, subscription)
+                        : true,
+        })),
+    })), [featureFlags, role, subscription]);
 
     const filteredSections = useMemo(() => {
         const needle = search.trim().toLowerCase();
@@ -115,28 +92,30 @@ export default function MoreScreen() {
                     />
                 </View>
 
-                <View style={[s.profileCard, { backgroundColor: colors.primary }]}> 
-                    <View style={s.profileAvatar}>
-                        <Text style={s.profileAvatarText}>{user?.name?.charAt(0) ?? '?'}</Text>
-                    </View>
-                    <View style={s.profileInfo}>
-                        <Text style={s.profileName}>{user?.name ?? 'User'}</Text>
-                        <Text style={s.profileEmail}>{user?.email ?? ''}</Text>
-                        <Text style={s.profileBiz}>{business?.name ?? 'My Business'}</Text>
-                    </View>
-                    <View style={[s.tierChip, { backgroundColor: withAlpha(colors.onPrimary, '33') }]}>
-                        <Text style={s.tierChipText}>{subscription?.tier ?? 'FREE'}</Text>
-                    </View>
-                </View>
-                <View style={s.profileMetaRow}>
-                    <View style={[s.metaChip, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
-                        <MaterialCommunityIcons name="shield-account-outline" size={14} color={colors.primary} />
-                        <Text style={[s.metaChipText, { color: colors.text }]}>{roleLabel}</Text>
-                    </View>
-                    <View style={[s.metaChip, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
-                        <MaterialCommunityIcons name="sync" size={14} color={colors.primary} />
-                        <Text style={[s.metaChipText, { color: colors.text }]}>{syncLabel}</Text>
-                    </View>
+                <View style={s.heroWrap}>
+                    <UtilityHero
+                        title={business?.name ?? 'My Business'}
+                        subtitle={`${user?.name ?? 'User'}${user?.email ? ` · ${user.email}` : ''}`}
+                        icon="view-grid-plus-outline"
+                        tone="info"
+                        right={(
+                            <View style={[s.tierChip, { backgroundColor: withAlpha(colors.primary, '18'), borderColor: withAlpha(colors.primary, '42') }]}>
+                                <Text style={[s.tierChipText, { color: colors.primary }]}>{subscription?.tier ?? 'FREE'}</Text>
+                            </View>
+                        )}
+                        footer={(
+                            <>
+                                <View style={[s.metaChip, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+                                    <MaterialCommunityIcons name="shield-account-outline" size={14} color={colors.primary} />
+                                    <Text style={[s.metaChipText, { color: colors.text }]}>{roleLabel}</Text>
+                                </View>
+                                <View style={[s.metaChip, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+                                    <MaterialCommunityIcons name="sync" size={14} color={colors.primary} />
+                                    <Text style={[s.metaChipText, { color: colors.text }]}>{syncLabel}</Text>
+                                </View>
+                            </>
+                        )}
+                    />
                 </View>
 
                 {filteredSections.map((section) => {
@@ -144,33 +123,39 @@ export default function MoreScreen() {
                     if (visibleItems.length === 0) return null;
 
                     return (
-                        <View key={section.title} style={s.section}>
-                            <View style={s.sectionHead}>
-                                <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>{section.title.toUpperCase()}</Text>
-                                <Text style={[s.sectionCount, { color: colors.textSecondary }]}>{visibleItems.length}</Text>
-                            </View>
-                            <View style={[s.menuGroup, { backgroundColor: colors.card }]}> 
+                        <UtilitySection key={section.title} title={section.title} count={visibleItems.length}>
+                            <UtilityPanel>
                                 {visibleItems.map((item, index) => (
-                                    <Pressable
+                                    <View
                                         key={item.label}
-                                        style={({ pressed }) => [
-                                            s.menuItem,
-                                            index < visibleItems.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
-                                            pressed && { backgroundColor: colors.backgroundSelected },
-                                        ]}
-                                        onPress={() => {
-                                            void selection();
-                                            router.push(item.route as Parameters<typeof router.push>[0]);
-                                        }}
+                                        style={index < visibleItems.length - 1 ? { borderBottomWidth: 1, borderBottomColor: colors.border } : undefined}
                                     >
-                                        <Text style={[s.menuLabel, { color: colors.text }]}>{item.label}</Text>
-                                        <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
-                                    </Pressable>
+                                        <UtilityRow
+                                            label={item.label}
+                                            description={item.description}
+                                            icon={item.icon}
+                                            accent={item.tone}
+                                            onPress={() => {
+                                                void selection();
+                                                router.push(item.route as Parameters<typeof router.push>[0]);
+                                            }}
+                                        />
+                                    </View>
                                 ))}
-                            </View>
-                        </View>
+                            </UtilityPanel>
+                        </UtilitySection>
                     );
                 })}
+
+                {filteredSections.length === 0 ? (
+                    <View style={s.section}>
+                        <UtilityEmptyState
+                            icon="file-search-outline"
+                            title="No matches"
+                            description="No utility or admin screen matches the current search."
+                        />
+                    </View>
+                ) : null}
 
                 <View style={s.section}>
                     <Pressable style={[s.signOutBtn, { borderColor: colors.error }]} onPress={handleSignOut}>
@@ -193,36 +178,17 @@ const styles = (colors: ColorPalette) =>
             paddingHorizontal: Spacing.lg,
             marginBottom: Spacing.md,
         },
-        profileCard: {
-            marginHorizontal: Spacing.lg,
-            marginBottom: Spacing.sm,
-            borderRadius: Radius.card,
-            padding: Spacing.lg,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: Spacing.md,
-        },
-        profileAvatar: {
-            width: 48,
-            height: 48,
-            borderRadius: 24,
-            backgroundColor: withAlpha(colors.onPrimary, '44'),
-            alignItems: 'center',
-            justifyContent: 'center',
-        },
-        profileAvatarText: { color: colors.onPrimary, fontWeight: '700', fontSize: 22 },
-        profileInfo: { flex: 1 },
-        profileName: { color: colors.onPrimary, fontWeight: '700', fontSize: 16 },
-        profileEmail: { color: withAlpha(colors.onPrimary, 'aa'), fontSize: 12 },
-        profileBiz: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 12, marginTop: 2 },
-        tierChip: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.pill },
-        tierChipText: { color: colors.onPrimary, fontWeight: '700', fontSize: 11 },
-        profileMetaRow: {
+        heroWrap: {
             paddingHorizontal: Spacing.lg,
             marginBottom: Spacing.lg,
-            flexDirection: 'row',
-            gap: Spacing.sm,
         },
+        tierChip: {
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+            borderRadius: Radius.pill,
+            borderWidth: 1,
+        },
+        tierChipText: { fontWeight: '800', fontSize: 11 },
         metaChip: {
             flexDirection: 'row',
             alignItems: 'center',
@@ -237,17 +203,6 @@ const styles = (colors: ColorPalette) =>
             fontWeight: '600',
         },
         section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg },
-        sectionHead: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: Spacing.sm,
-        },
-        sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-        sectionCount: { fontSize: Typography.caption.size, fontWeight: '700' },
-        menuGroup: { borderRadius: Radius.card, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
-        menuItem: { flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingVertical: 12, paddingHorizontal: Spacing.md, gap: Spacing.md },
-        menuLabel: { flex: 1, fontSize: Typography.body.size, fontWeight: '600' },
         signOutBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center' },
         signOutText: { fontWeight: '700', fontSize: 14 },
     });

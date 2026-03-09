@@ -4,16 +4,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { cashBankApi } from '../../../../api/endpoints';
-import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { SelectField, type SelectOption } from '../../../../components/ui/SelectField';
 import { DateField } from '../../../../components/ui/DateField';
-import type { Account } from '../../../../types/domain';
+import { FormHero, FormSectionCard } from '../../../../components/ui/FormBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { toUserMessage } from '../../../../api/client';
+import { useCashBankAccounts } from '../../../../hooks/useCashBankAccounts';
+import { useCashBankMutations } from '../../../../hooks/useCashBankMutations';
 
 const toAmount = (value: string) => {
     const parsed = Number(value);
@@ -23,7 +24,6 @@ const toAmount = (value: string) => {
 export default function TransferScreen() {
     const dialog = useAppDialog();
         const colors = useAppColors();
-    const qc = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
     const params = useLocalSearchParams<{ fromAccountId?: string }>();
@@ -34,8 +34,7 @@ export default function TransferScreen() {
     const [description, setDescription] = useState('');
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
-    const { data: accountsData, isRefetching, refetch } = useQuery({ queryKey: ['cash-bank-balances'], queryFn: () => cashBankApi.getBalances() });
-    const accounts = useMemo(() => (accountsData?.data ?? []) as Account[], [accountsData?.data]);
+    const { accounts, isRefetching, refetch } = useCashBankAccounts();
 
     const accountOptions = useMemo<SelectOption[]>(
         () =>
@@ -52,32 +51,43 @@ export default function TransferScreen() {
         [accountOptions, fromAccountId]
     );
 
-    const { mutate, isPending } = useMutation({
-        mutationFn: () => {
-            const numericAmount = toAmount(amount);
-            if (!fromAccountId) throw new Error('Select source account.');
-            if (!toAccountId) throw new Error('Select destination account.');
-            if (fromAccountId === toAccountId) throw new Error('Source and destination must be different.');
-            if (numericAmount <= 0) throw new Error('Amount must be positive.');
+    const { transfer, isTransferring: isPending } = useCashBankMutations();
 
-            return cashBankApi.transfer({
-                fromAccountId,
-                toAccountId,
-                amount: numericAmount,
-                description: description.trim() || undefined,
-                date,
+    const onSave = () => {
+        const numericAmount = toAmount(amount);
+        if (!fromAccountId) {
+            dialog.alert('Error', 'Select source account.');
+            return;
+        }
+        if (!toAccountId) {
+            dialog.alert('Error', 'Select destination account.');
+            return;
+        }
+        if (fromAccountId === toAccountId) {
+            dialog.alert('Error', 'Source and destination must be different.');
+            return;
+        }
+        if (numericAmount <= 0) {
+            dialog.alert('Error', 'Amount must be positive.');
+            return;
+        }
+
+        void transfer({
+            fromAccountId,
+            toAccountId,
+            amount: numericAmount,
+            description: description.trim() || undefined,
+            date,
+        })
+            .then((response) => {
+                dialog.alert('Saved', response.message ?? 'Transfer recorded.');
+                router.back();
+            })
+            .catch((error) => {
+                console.error('[cash-bank/transfer] save failed', { fromAccountId, toAccountId, amount, date, error });
+                dialog.alert('Error', toUserMessage(error, 'Failed to save transfer.'));
             });
-        },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['cash-bank-balances'] });
-            qc.invalidateQueries({ queryKey: ['cash-bank-summary'] });
-            dialog.alert('Saved', 'Transfer recorded.');
-            router.back();
-        },
-        onError: (error) => dialog.alert('Error', error instanceof Error ? error.message : 'Failed'),
-    });
-
-    const onSave = () => mutate();
+    };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -105,52 +115,62 @@ export default function TransferScreen() {
                     />
                 )}
             >
-                <View style={[s.heroCard, { backgroundColor: colors.primaryVariant }]}>
-                    <Text style={s.heroLabel}>TRANSFER AMOUNT</Text>
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title="Record Transfer"
+                        subtitle="Move funds between internal accounts without losing ledger traceability."
+                        icon="bank-transfer"
+                        tone="info"
+                    />
+                </View>
+
+                <FormSectionCard title="Transfer Setup" description="Select source, destination, and the amount being moved." tone="info">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Amount</Text>
                     <AppInput
                         inputType="decimal"
                         value={amount}
                         onChangeText={setAmount}
                         placeholder="0.00"
-                        style={s.heroInput}
                     />
-                </View>
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>From Account</Text>
-                <SelectField
-                    value={fromAccountId}
-                    onChange={(value) => {
-                        setFromAccountId(value);
-                        if (toAccountId === value) {
-                            setToAccountId('');
-                        }
-                    }}
-                    options={accountOptions}
-                    title="Select Source Account"
-                    placeholder="Choose source"
-                    searchable
-                />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>From Account</Text>
+                    <SelectField
+                        value={fromAccountId}
+                        onChange={(value) => {
+                            setFromAccountId(value);
+                            if (toAccountId === value) {
+                                setToAccountId('');
+                            }
+                        }}
+                        options={accountOptions}
+                        title="Select Source Account"
+                        placeholder="Choose source"
+                        searchable
+                    />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>To Account</Text>
-                <SelectField
-                    value={toAccountId}
-                    onChange={setToAccountId}
-                    options={toOptions}
-                    title="Select Destination Account"
-                    placeholder="Choose destination"
-                    searchable
-                />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>To Account</Text>
+                    <SelectField
+                        value={toAccountId}
+                        onChange={setToAccountId}
+                        options={toOptions}
+                        title="Select Destination Account"
+                        placeholder="Choose destination"
+                        searchable
+                    />
+                </FormSectionCard>
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Date</Text>
-                <DateField value={date} onChange={(value) => setDate(value ?? date)} allowClear={false} />
+                <FormSectionCard title="Voucher Details" description="Choose posting date and optional narration for the contra entry." tone="warning">
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Date</Text>
+                    <DateField value={date} onChange={(value) => setDate(value ?? date)} allowClear={false} />
 
-                <Text style={[s.label, { color: colors.textSecondary }]}>Note (optional)</Text>
-                <AppInput
-                    inputType="text"
-                    value={description}
-                    onChangeText={setDescription}
-                    placeholder="Reason"
-                />
+                    <Text style={[s.label, { color: colors.textSecondary }]}>Note (optional)</Text>
+                    <AppInput
+                        inputType="text"
+                        value={description}
+                        onChangeText={setDescription}
+                        placeholder="Reason"
+                    />
+                </FormSectionCard>
 
                 <Pressable style={[s.primaryBtn, { backgroundColor: colors.primary }]} onPress={onSave} disabled={isPending}>
                     {isPending ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Record Transfer</Text>}
@@ -174,16 +194,8 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             paddingHorizontal: Spacing.md,
         },
-        saveText: { fontSize: 12, fontWeight: '700' },
         content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.lg },
-        heroCard: {
-            borderRadius: Radius.card,
-            padding: Spacing.lg,
-            marginBottom: Spacing.sm,
-            gap: Spacing.xs,
-        },
-        heroLabel: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-        heroInput: { color: colors.onPrimary, fontSize: 24, fontWeight: '800' },
+        heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.xs },
         primaryBtn: {
             marginTop: Spacing.md,

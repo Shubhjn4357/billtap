@@ -6,10 +6,12 @@
  */
 
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { partyApi } from '../api/endpoints';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import type { Party } from '../types/domain';
 import { PartyType } from '../constants/enums';
+import { useBusinessQueryScope } from './useBusinessQueryScope';
+import { partyQueryKeys } from '../state/domainQueryKeys';
+import { partyRepository } from '../repositories/partyRepository';
 
 export type PartyTypeFilter = 'ALL' | 'CUSTOMER' | 'SUPPLIER';
 
@@ -18,7 +20,21 @@ export interface UsePartiesOptions {
     type?: PartyTypeFilter;
     limit?: number;
     enabled?: boolean;
+    staleTime?: number;
 }
+
+export interface UsePartyRecycleBinOptions {
+    limit?: number;
+    enabled?: boolean;
+    staleTime?: number;
+}
+
+export const invalidatePartyQueries = async (
+    queryClient: QueryClient,
+    businessId?: string | null
+) => {
+    await queryClient.invalidateQueries({ queryKey: partyQueryKeys.all(businessId) });
+};
 
 export function useParties(options: UsePartiesOptions = {}) {
     const {
@@ -26,18 +42,23 @@ export function useParties(options: UsePartiesOptions = {}) {
         type = 'ALL',
         limit = 200,
         enabled = true,
+        staleTime = 60_000,
     } = options;
+    const businessId = useBusinessQueryScope();
 
     const apiType = type === 'ALL' ? undefined : type;
 
     const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['parties', type, limit],
-        queryFn: () => partyApi.list({ type: apiType, limit }),
-        staleTime: 60_000,
+        queryKey: partyQueryKeys.list(businessId, { type, limit }),
+        queryFn: () => partyRepository.list({ type: apiType, limit }),
+        staleTime,
         enabled,
     });
 
-    const allParties: Party[] = useMemo(() => data?.data ?? [], [data?.data]);
+    const allParties: Party[] = useMemo(
+        () => ((data?.data ?? []) as Party[]).filter((party) => party.isActive !== false),
+        [data?.data]
+    );
 
     const filteredParties = useMemo(() => {
         if (!search.trim()) return allParties;
@@ -70,5 +91,31 @@ export function useParties(options: UsePartiesOptions = {}) {
         isLoading,
         isRefetching,
         refetch,
+    };
+}
+
+export function usePartyRecycleBin(options: UsePartyRecycleBinOptions = {}) {
+    const {
+        limit = 250,
+        enabled = true,
+        staleTime = 15_000,
+    } = options;
+    const businessId = useBusinessQueryScope();
+
+    const query = useQuery({
+        queryKey: partyQueryKeys.recycleBin(businessId, { limit }),
+        queryFn: () => partyRepository.recycleBin({ limit }),
+        staleTime,
+        enabled,
+    });
+
+    const parties = useMemo(
+        () => (query.data?.data ?? []) as Party[],
+        [query.data?.data]
+    );
+
+    return {
+        ...query,
+        parties,
     };
 }

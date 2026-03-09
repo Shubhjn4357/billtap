@@ -2,46 +2,27 @@ import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, Activity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { partyApi, invoiceApi } from '../../../api/endpoints';
-import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { format, parseISO } from 'date-fns';
-import type { Invoice } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { HubMetricCard } from '../../../components/ui/HubBlocks';
+import { UtilityEmptyState, UtilityHero, UtilitySection } from '../../../components/ui/UtilityBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { usePartyDetails } from '../../../hooks/usePartyDetails';
+import { usePartyMutations } from '../../../hooks/usePartyMutations';
 
 export default function PartyDetailScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const { id } = useLocalSearchParams<{ id: string }>();
-    const qc = useQueryClient();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/parties');
 
-    const { data: partyData, isLoading, isRefetching: partyRefetching, refetch: refetchParty } = useQuery({
-        queryKey: ['party', id],
-        queryFn: () => partyApi.get(id!),
-        enabled: !!id,
-    });
+    const { party, invoices, isLoading, isRefetching, refetch } = usePartyDetails(id);
+    const { archiveParty, isArchivingParty: deleting } = usePartyMutations();
 
-    const { data: invoicesData, isRefetching: invoicesRefetching, refetch: refetchInvoices } = useQuery({
-        queryKey: ['party-invoices', id],
-        queryFn: () => invoiceApi.list({ limit: 20 }),
-        enabled: !!id,
-    });
-
-    const { mutate: deleteParty, isPending: deleting } = useMutation({
-        mutationFn: () => partyApi.delete(id!),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['parties'] });
-            router.back();
-        },
-        onError: (error) => dialog.alert('Error', error instanceof Error ? error.message : 'Delete failed'),
-    });
-
-    const party = partyData?.data;
     if (isLoading) return <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>;
     if (!party) return <View style={s.centered}><Text style={{ color: colors.textSecondary }}>Party not found.</Text></View>;
 
@@ -66,30 +47,31 @@ export default function PartyDetailScreen() {
                 refreshControl={(
                     <RefreshControl
                         tintColor={colors.primary}
-                        refreshing={partyRefetching || invoicesRefetching}
+                        refreshing={isRefetching}
                         onRefresh={() => {
-                            void Promise.all([refetchParty(), refetchInvoices()]);
+                            void refetch();
                         }}
                     />
                 )}
             >
-                <View style={[s.summaryCard, { backgroundColor: colors.primary }]}>
-                    <View style={s.avatarLg}>
-                        <Text style={s.avatarText}>{party.name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <Text style={s.partyName}>{party.name}</Text>
-                    <Text style={s.partyType}>{party.type}{party.gstin ? ` - GSTIN: ${party.gstin}` : ''}</Text>
-                    <View style={s.balanceChip}>
-                        <Text style={[s.balanceAmt, { color: colors.onPrimary }]}>Balance: Rs {Math.abs(party.openingBalance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-                    </View>
+                <View style={s.heroWrap}>
+                    <UtilityHero
+                        title={party.name}
+                        subtitle={`${party.type}${party.gstin ? ` - GSTIN ${party.gstin}` : ''}`}
+                        icon={party.type === 'CUSTOMER' ? 'account-outline' : 'truck-delivery-outline'}
+                        tone={party.type === 'CUSTOMER' ? 'success' : 'warning'}
+                    />
                 </View>
 
-                <View style={[s.infoCard, { backgroundColor: colors.card }]}>
-                    {party.phone ? <InfoRow icon="phone-outline" label="Phone" value={party.phone} colors={colors} /> : null}
-                    {party.email ? <InfoRow icon="email-outline" label="Email" value={party.email} colors={colors} /> : null}
-                    {party.billingAddress ? <InfoRow icon="map-marker-outline" label="Address" value={party.billingAddress} colors={colors} /> : null}
-                    {party.creditLimit > 0 ? <InfoRow icon="credit-card-outline" label="Credit Limit" value={`Rs ${party.creditLimit.toLocaleString('en-IN')}`} colors={colors} /> : null}
-                    {party.loyaltyPoints > 0 ? <InfoRow icon="star-outline" label="Loyalty Points" value={String(party.loyaltyPoints)} colors={colors} /> : null}
+                <View style={s.statsRow}>
+                    <HubMetricCard
+                        label="Balance"
+                        value={`Rs ${Math.abs(Number(party.openingBalance ?? 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                        meta={Number(party.openingBalance ?? 0) >= 0 ? 'Receivable side' : 'Payable side'}
+                        tone={Number(party.openingBalance ?? 0) >= 0 ? 'success' : 'danger'}
+                    />
+                    <HubMetricCard label="Credit Limit" value={`Rs ${Number(party.creditLimit ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} meta="Configured limit" tone="info" />
+                    <HubMetricCard label="Transactions" value={String(invoices.length)} meta="Visible invoices" tone="warning" />
                 </View>
 
                 <View style={s.quickRow}>
@@ -101,32 +83,55 @@ export default function PartyDetailScreen() {
                     </Pressable>
                 </View>
 
-                <View style={s.section}>
-                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>RECENT TRANSACTIONS</Text>
-                    {(invoicesData?.data ?? []).slice(0, 8).map((inv: Invoice) => (
-                        <Pressable
-                            key={inv.id}
-                            style={[s.txnRow, { backgroundColor: colors.card }]}
-                            onPress={() => router.push(`/(main)/billing/${inv.id}` as Parameters<typeof router.push>[0])}
-                        >
-                            <View style={{ flex: 1 }}>
-                                <Text style={[s.txnNum, { color: colors.text }]}>{inv.invoiceNumber}</Text>
-                                <Text style={[s.txnDate, { color: colors.textSecondary }]}>{format(parseISO(inv.invoiceDate), 'dd MMM yyyy')}</Text>
-                            </View>
-                            <View style={{ alignItems: 'flex-end' }}>
-                                <Text style={[s.txnAmt, { color: colors.text }]}>Rs {inv.totalInvoiceValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-                                <Text style={[s.txnStatus, { color: inv.paymentStatus === 'PAID' ? colors.success : colors.warning }]}>{inv.paymentStatus}</Text>
-                            </View>
-                        </Pressable>
-                    ))}
-                </View>
+                <UtilitySection title="Profile Details" count={null}>
+                    <View style={[s.infoCard, { backgroundColor: colors.card }]}>
+                        {party.phone ? <InfoRow icon="phone-outline" label="Phone" value={party.phone} colors={colors} /> : null}
+                        {party.email ? <InfoRow icon="email-outline" label="Email" value={party.email} colors={colors} /> : null}
+                        {party.billingAddress ? <InfoRow icon="map-marker-outline" label="Address" value={party.billingAddress} colors={colors} /> : null}
+                        {party.creditLimit > 0 ? <InfoRow icon="credit-card-outline" label="Credit Limit" value={`Rs ${party.creditLimit.toLocaleString('en-IN')}`} colors={colors} /> : null}
+                        {party.loyaltyPoints > 0 ? <InfoRow icon="star-outline" label="Loyalty Points" value={String(party.loyaltyPoints)} colors={colors} /> : null}
+                    </View>
+                </UtilitySection>
+
+                <UtilitySection title="Recent Transactions" count={Math.min(invoices.length, 8)}>
+                    <View style={s.section}>
+                        {invoices.length === 0 ? (
+                            <UtilityEmptyState icon="file-document-outline" title="No invoices yet" description="Transactions linked to this party will appear here." />
+                        ) : (
+                            invoices.slice(0, 8).map((inv) => (
+                                <Pressable
+                                    key={inv.id}
+                                    style={[s.txnRow, { backgroundColor: colors.card }]}
+                                    onPress={() => router.push(`/(main)/billing/${inv.id}` as Parameters<typeof router.push>[0])}
+                                >
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[s.txnNum, { color: colors.text }]}>{inv.invoiceNumber}</Text>
+                                        <Text style={[s.txnDate, { color: colors.textSecondary }]}>{format(parseISO(inv.invoiceDate), 'dd MMM yyyy')}</Text>
+                                    </View>
+                                    <View style={{ alignItems: 'flex-end' }}>
+                                        <Text style={[s.txnAmt, { color: colors.text }]}>Rs {inv.totalInvoiceValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                                        <Text style={[s.txnStatus, { color: inv.paymentStatus === 'PAID' ? colors.success : colors.warning }]}>{inv.paymentStatus}</Text>
+                                    </View>
+                                </Pressable>
+                            ))
+                        )}
+                    </View>
+                </UtilitySection>
 
                 <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.xxl }}>
                     <Pressable
                         style={[s.deleteBtn, { borderColor: colors.error }]}
                         onPress={() => dialog.alert('Delete Party', `Delete ${party.name}?`, [
                             { text: 'Cancel', style: 'cancel' },
-                            { text: 'Delete', style: 'destructive', onPress: () => deleteParty() },
+                            {
+                                text: 'Delete',
+                                style: 'destructive',
+                                onPress: () => {
+                                    void archiveParty(id!)
+                                        .then(() => router.back())
+                                        .catch((error) => dialog.alert('Error', error instanceof Error ? error.message : 'Delete failed'));
+                                },
+                            },
                         ])}
                         disabled={deleting}
                     >
@@ -170,19 +175,13 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             backgroundColor: colors.surfaceVariant,
         },
-        summaryCard: { marginHorizontal: Spacing.lg, marginBottom: Spacing.md, borderRadius: Radius.card, padding: Spacing.xl, alignItems: 'center', gap: Spacing.sm },
-        avatarLg: { width: 60, height: 60, borderRadius: 30, backgroundColor: withAlpha(colors.onPrimary, '33'), alignItems: 'center', justifyContent: 'center' },
-        avatarText: { color: colors.onPrimary, fontWeight: '800', fontSize: 28 },
-        partyName: { color: colors.onPrimary, fontWeight: '700', fontSize: 20 },
-        partyType: { color: withAlpha(colors.onPrimary, 'bb'), fontSize: 12 },
-        balanceChip: { backgroundColor: withAlpha(colors.onPrimary, '22'), borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 4 },
-        balanceAmt: { fontWeight: '700', fontSize: 14 },
+        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.md },
         infoCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
         quickRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
         quickBtn: { flex: 1, borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center' },
         quickBtnText: { color: colors.onPrimary, fontWeight: '600', fontSize: 13 },
         section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-        sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
         txnRow: { flexDirection: 'row', padding: Spacing.md, borderRadius: Radius.card, marginBottom: Spacing.sm },
         txnNum: { fontWeight: '600', fontSize: 13 },
         txnDate: { fontSize: 11 },

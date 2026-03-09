@@ -2,37 +2,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { offerApi, reportApi } from '../../api/endpoints';
-import { offlineSyncService } from '../../services/offlineSyncService';
-import { canAccessModule, canUsePos, type AppModule } from '../../utils/accessControl';
+import { canAccessModule, canUsePos } from '../../utils/accessControl';
+import { HOME_QUICK_ACTIONS } from '../../constants/navigationOptions';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { AppTopBar } from '../../components/ui/AppTopBar';
 import { useHaptics } from '../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useAppColors } from '../../hooks/useAppColors';
+import { useAppRuntime } from '../../components/providers/AppRuntimeProvider';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { useInvoices } from '../../hooks/useInvoices';
 import { useParties } from '../../hooks/useParties';
-
-type QuickAction = {
-    icon: keyof typeof MaterialCommunityIcons.glyphMap;
-    label: string;
-    route: string;
-    module: AppModule;
-    requiresPos?: boolean;
-};
-
-const QUICK_ACTIONS: QuickAction[] = [
-    { icon: 'file-document-plus-outline', label: 'Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', module: 'billing' },
-    { icon: 'point-of-sale', label: 'POS', route: '/(main)/billing/pos', module: 'billing', requiresPos: true },
-    { icon: 'cart-plus', label: 'Purchase', route: '/(main)/billing/create?type=PURCHASE_BILL', module: 'billing' },
-    { icon: 'file-document-edit-outline', label: 'Estimate', route: '/(main)/billing/create?type=ESTIMATE', module: 'billing' },
-    { icon: 'cash-minus', label: 'Expense', route: '/(main)/accounts/expenses/add', module: 'accounts' },
-    { icon: 'package-variant-plus', label: 'Add Item', route: '/(main)/inventory/add-item', module: 'inventory' },
-];
+import { useReportSummary } from '../../hooks/useReports';
+import { useActiveOffers } from '../../hooks/useOffers';
 
 export default function HomeScreen() {
     const colors = useAppColors();
@@ -40,6 +24,7 @@ export default function HomeScreen() {
     const { user, business, tierLabel, subscription, role, refresh } = useCurrentBusiness();
     const { selection } = useHaptics();
     const dialog = useAppDialog();
+    const { syncStats, refreshSyncState } = useAppRuntime();
     const [upgradePromptShown, setUpgradePromptShown] = useState(false);
 
     // Compute month range once per mount
@@ -53,16 +38,16 @@ export default function HomeScreen() {
     useEffect(() => { void refresh(); }, [refresh]);
 
     // -- Report summary (server aggregated) --
-    const { data: summary, isLoading: summaryLoading, isRefetching: summaryRefetching, refetch: refetchSummary } = useQuery({
-        queryKey: ['report-summary', monthStart, monthEnd],
-        queryFn: () => reportApi.getSummary({ from: monthStart, to: monthEnd }),
-        staleTime: 5 * 60_000,
-    });
-    const { data: prevSummary } = useQuery({
-        queryKey: ['report-summary', prevMonthStart, prevMonthEnd],
-        queryFn: () => reportApi.getSummary({ from: prevMonthStart, to: prevMonthEnd }),
-        staleTime: 20 * 60_000,
-    });
+    const {
+        summary,
+        isLoading: summaryLoading,
+        isRefetching: summaryRefetching,
+        refetch: refetchSummary,
+    } = useReportSummary({ from: monthStart, to: monthEnd }, { staleTime: 5 * 60_000 });
+    const { summary: prevSummary } = useReportSummary(
+        { from: prevMonthStart, to: prevMonthEnd },
+        { staleTime: 20 * 60_000 }
+    );
 
     // -- Live invoice stats for this month (from hook) --
     const { summary: invoiceSummary, isLoading: invoicesLoading, refetch: refetchInvoices } = useInvoices({
@@ -74,28 +59,16 @@ export default function HomeScreen() {
     const { stats: supplierStats, isLoading: supplierLoading, refetch: refetchSuppliers } = useParties({ type: 'SUPPLIER' });
 
     // -- Offers banner --
-    const { data: offerResponse } = useQuery({
-        queryKey: ['dashboard-offers'],
-        queryFn: () => offerApi.getActive(),
-        staleTime: 60_000,
-    });
-
-    // -- Offline sync --
-    const { data: queueStats, refetch: refetchQueueStats } = useQuery({
-        queryKey: ['offline-sync-stats-home'],
-        queryFn: () => offlineSyncService.getQueueStats(),
-        staleTime: 20_000,
-    });
-
-    const stats = summary?.data as Record<string, number> | undefined;
-    const prevStats = prevSummary?.data as Record<string, number> | undefined;
-    const offers = offerResponse?.data ?? [];
-    const blockedCount = queueStats?.blockedCount ?? 0;
+    const stats = summary;
+    const prevStats = prevSummary;
+    const { offers } = useActiveOffers({ staleTime: 60_000 });
+    const blockedCount = syncStats.blockedCount;
     const isLoading = summaryLoading;
     const isRefetching = summaryRefetching;
 
-    const quickActions = QUICK_ACTIONS.filter((action) => {
+    const quickActions = HOME_QUICK_ACTIONS.filter((action) => {
         if (action.requiresPos && !canUsePos(subscription)) return false;
+        if (!action.module) return true;
         return canAccessModule(role, action.module, subscription);
     });
 
@@ -115,7 +88,7 @@ export default function HomeScreen() {
 
     const doRefresh = () => {
         void refetchSummary();
-        void refetchQueueStats();
+        void refreshSyncState();
         void refetchInvoices();
         void refetchCustomers();
         void refetchSuppliers();
@@ -125,7 +98,7 @@ export default function HomeScreen() {
         <SafeAreaView style={s.safe} edges={['top']}>
             <AppTopBar
                 title={business?.name ?? 'Dashboard'}
-                subtitle={`Hello, ${user?.name?.split(' ')[0] ?? 'there'} 👋`}
+                subtitle={`Hello, ${user?.name?.split(' ')[0] ?? 'there'}`}
                 rightAction={(
                     <Pressable style={[s.tierBadge, { backgroundColor: withAlpha(colors.primary, '22'), borderColor: colors.primary }]} onPress={() => router.push('/(main)/more')}>
                         <Text style={[s.tierText, { color: colors.primary }]}>{tierDisplay}</Text>
@@ -137,7 +110,6 @@ export default function HomeScreen() {
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={isRefetching && !isLoading} onRefresh={doRefresh} tintColor={colors.primary} />}
             >
-                {/* ── Offline / blocked banner ── */}
                 {blockedCount > 0 ? (
                     <Pressable
                         style={[s.banner, { borderColor: colors.warning, backgroundColor: withAlpha(colors.warning, '14') }]}
@@ -145,12 +117,10 @@ export default function HomeScreen() {
                     >
                         <MaterialCommunityIcons name="cloud-alert-outline" size={15} color={colors.warning} />
                         <Text style={[s.bannerText, { color: colors.warning }]}>
-                            {blockedCount} change(s) queued offline — upgrade to sync
+                            {blockedCount} change(s) queued offline - upgrade to sync
                         </Text>
                     </Pressable>
                 ) : null}
-
-                {/* ── This Month metrics ── */}
                 <View style={s.section}>
                     <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>THIS MONTH</Text>
                     <View style={s.statsGrid}>
@@ -160,11 +130,9 @@ export default function HomeScreen() {
                         <StatCard label="Net Profit" value={stats?.netProfit} prev={prevStats?.netProfit} prefix="Rs " loading={isLoading} color={colors.primary} colors={colors} />
                     </View>
                 </View>
-
-                {/* ── Invoice activity summary (live via useInvoices) ── */}
                 {!invoicesLoading && invoiceSummary ? (
                     <View style={s.section}>
-                        <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>INVOICES — THIS MONTH</Text>
+                        <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>INVOICES - THIS MONTH</Text>
                         <View style={s.invoiceRow}>
                             <InvoiceChip label="Total" value={invoiceSummary.total} color={colors.primary} colors={colors} />
                             <InvoiceChip label="Paid" value={invoiceSummary.paid} color={colors.success} colors={colors} />
@@ -172,15 +140,13 @@ export default function HomeScreen() {
                             <InvoiceChip
                                 label="Outstanding"
                                 value={invoiceSummary.outstanding}
-                                prefix="₹"
+                                prefix="Rs "
                                 color={invoiceSummary.outstanding > 0 ? colors.warning : colors.textSecondary}
                                 colors={colors}
                             />
                         </View>
                     </View>
                 ) : null}
-
-                {/* ── Receivables / Payables ── */}
                 <View style={s.section}>
                     <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>OUTSTANDING</Text>
                     <View style={s.row}>
@@ -204,8 +170,6 @@ export default function HomeScreen() {
                         />
                     </View>
                 </View>
-
-                {/* ── Offers ── */}
                 {offers.length > 0 ? (
                     <View style={s.section}>
                         {offers.slice(0, 2).map((offer) => (
@@ -224,8 +188,6 @@ export default function HomeScreen() {
                         ))}
                     </View>
                 ) : null}
-
-                {/* ── Quick Create ── */}
                 <View style={s.section}>
                     <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>QUICK CREATE</Text>
                     <View style={s.quickGrid}>
@@ -245,8 +207,6 @@ export default function HomeScreen() {
                         ))}
                     </View>
                 </View>
-
-                {/* ── Screen Directory shortcut ── */}
                 <View style={s.section}>
                     <Pressable
                         style={({ pressed }) => [s.directoryButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.85 : 1 }]}

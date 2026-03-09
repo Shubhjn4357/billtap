@@ -6,11 +6,8 @@
  */
 
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { accountingApi } from '../api/endpoints';
-
-export type LedgerTypeFilter = 'ALL' | 'ASSET' | 'LIABILITY' | 'INCOME' | 'EXPENSE' | 'EQUITY';
-export type LedgerSortKey = 'name_asc' | 'balance_asc' | 'balance_desc';
+import { LEDGER_TYPE_LABELS, type LedgerSortKey, type LedgerTypeFilter } from '../constants/reportOptions';
+import { useAccountingLedgers } from './useAccountingLedgers';
 
 export interface LedgerRow {
     id: string;
@@ -40,15 +37,6 @@ export interface UseLedgersOptions {
     enabled?: boolean;
 }
 
-const TYPE_LABELS: Record<LedgerTypeFilter, string> = {
-    ALL: 'All',
-    ASSET: 'Assets',
-    LIABILITY: 'Liabilities',
-    INCOME: 'Income',
-    EXPENSE: 'Expenses',
-    EQUITY: 'Equity',
-};
-
 export function useLedgers(options: UseLedgersOptions = {}) {
     const {
         search = '',
@@ -58,14 +46,11 @@ export function useLedgers(options: UseLedgersOptions = {}) {
         enabled = true,
     } = options;
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['reports-ledgers', includeInactive],
-        queryFn: () => accountingApi.getLedgers({ includeInactive }),
-        staleTime: 60_000,
+    const { allRows, isLoading, isRefetching, refetch } = useAccountingLedgers({
+        includeInactive,
         enabled,
+        staleTime: 60_000,
     });
-
-    const allRows: LedgerRow[] = useMemo(() => data?.data?.data ?? [], [data?.data?.data]);
 
     const filteredRows = useMemo(() => {
         let result = allRows;
@@ -97,7 +82,7 @@ export function useLedgers(options: UseLedgersOptions = {}) {
         const map = new Map<LedgerTypeFilter, LedgerRow[]>();
 
         for (const row of filteredRows) {
-            const key = (row.type.toUpperCase() as LedgerTypeFilter) in TYPE_LABELS
+            const key = (row.type.toUpperCase() as LedgerTypeFilter) in LEDGER_TYPE_LABELS
                 ? (row.type.toUpperCase() as LedgerTypeFilter)
                 : 'ASSET';
             if (!map.has(key)) map.set(key, []);
@@ -108,7 +93,7 @@ export function useLedgers(options: UseLedgersOptions = {}) {
             .filter((t) => map.has(t))
             .map((t) => ({
                 type: t,
-                label: TYPE_LABELS[t],
+                label: LEDGER_TYPE_LABELS[t],
                 rows: map.get(t)!,
                 totalBalance: map.get(t)!.reduce((sum, r) => sum + (r.balance ?? 0), 0),
             }));
@@ -126,7 +111,7 @@ export function useLedgers(options: UseLedgersOptions = {}) {
         groups,
         totals,
         allRows,
-        typeLabels: TYPE_LABELS,
+        typeLabels: LEDGER_TYPE_LABELS,
         isLoading,
         isRefetching,
         refetch,

@@ -13,13 +13,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as SecureStore from 'expo-secure-store';
 import { storeBusinessId, toApiError, toUserMessage } from '../../api/client';
-import { businessApi, settingsApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
-import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { extractUpiIdFromPayload, isValidUpiId, sanitizeUpiId } from '../../utils/upi';
 import { SignatureCaptureSheet } from '../../components/signature/SignatureCaptureSheet';
@@ -27,9 +24,14 @@ import { AppTopBar } from '../../components/ui/AppTopBar';
 import { AppInput } from '../../components/ui/AppInput';
 import { DateField } from '../../components/ui/DateField';
 import { SelectField } from '../../components/ui/SelectField';
+import { AuthChip, AuthHero } from '../../components/ui/AuthBlocks';
 import { CURRENCY_OPTIONS, DEFAULT_CURRENCY_CODE } from '../../constants/countryOptions';
 import { INDIAN_STATE_LIST } from '../../constants/gstRates';
 import { useAppDialog } from '../../components/providers/DialogProvider';
+import { secureStorage } from '../../services/secureStorage';
+import { saveSettingsSection } from '../../repositories/settingsRepository';
+import { useOrganizations } from '../../hooks/useOrganizations';
+import { useOrganizationMutations } from '../../hooks/useOrganizationMutations';
 
 type OrganizationLite = {
     id: string;
@@ -44,6 +46,31 @@ type OrganizationLite = {
     openingCashInBank?: number | null;
     role?: string | null;
 };
+
+const toOrganizationLite = (entry: {
+    id: string;
+    name: string;
+    code?: string | null;
+    currency?: string | null;
+    state?: string | null;
+    city?: string | null;
+    pincode?: string | null;
+    booksStartDate?: string | null;
+    openingCashInHand?: number | null;
+    openingCashInBank?: number | null;
+}): OrganizationLite => ({
+    id: entry.id,
+    name: entry.name,
+    code: entry.code ?? null,
+    currency: entry.currency ?? 'INR',
+    state: entry.state ?? null,
+    city: entry.city ?? null,
+    pincode: entry.pincode ?? null,
+    booksStartDate: entry.booksStartDate ?? null,
+    openingCashInHand: entry.openingCashInHand ?? null,
+    openingCashInBank: entry.openingCashInBank ?? null,
+    role: 'owner',
+});
 
 const PENDING_SETUP_KEY_PREFIX = 'vahi_pending_setup_';
 
@@ -74,58 +101,6 @@ const toPositiveNumber = (value: string) => {
     return parsed;
 };
 
-const fetchOrganizations = async (): Promise<OrganizationLite[]> => {
-    const response = await businessApi.list();
-    return (response.data ?? []).map((entry) => ({
-        id: entry.id,
-        name: entry.name,
-        code: entry.code ?? null,
-        currency: entry.currency ?? 'INR',
-        state: entry.state ?? null,
-        city: entry.city ?? null,
-        pincode: entry.pincode ?? null,
-        booksStartDate: entry.booksStartDate ?? null,
-        openingCashInHand: entry.openingCashInHand ?? null,
-        openingCashInBank: entry.openingCashInBank ?? null,
-        role: 'owner',
-    }));
-};
-
-const createOrganization = async (input: {
-    name: string;
-    code: string;
-    currency: string;
-    legalName?: string;
-    phoneNumber?: string;
-    email?: string;
-    gstNumber?: string;
-    address?: string;
-    state?: string;
-    city?: string;
-    pincode?: string;
-    booksStartDate?: string;
-    openingCashInHand?: number;
-    openingCashInBank?: number;
-}): Promise<string> => {
-    const response = await businessApi.create({
-        name: input.name,
-        code: input.code,
-        currency: input.currency,
-        legalName: input.legalName ?? null,
-        phone: input.phoneNumber ?? null,
-        email: input.email ?? null,
-        gstin: input.gstNumber ?? null,
-        address: input.address ?? null,
-        state: input.state ?? null,
-        city: input.city ?? null,
-        pincode: input.pincode ?? null,
-        booksStartDate: input.booksStartDate ?? null,
-        openingCashInHand: input.openingCashInHand ?? null,
-        openingCashInBank: input.openingCashInBank ?? null,
-    });
-    return response.data.id;
-};
-
 const isCloudWriteRestriction = (error: unknown): boolean => {
     const message = toUserMessage(error, '').toLowerCase();
     return (
@@ -139,7 +114,6 @@ export default function BusinessSelectScreen() {
     const colors = useAppColors();
     const s = styles(colors);
     const dialog = useAppDialog();
-    const queryClient = useQueryClient();
     const params = useLocalSearchParams<{ upiPayload?: string | string[]; scanAt?: string | string[] }>();
 
     const refreshUser = useAuthStore((state) => state.refreshUser);
@@ -170,31 +144,29 @@ export default function BusinessSelectScreen() {
     };
 
     const {
-        data: organizations = [],
+        organizations: organizationRows,
         isLoading,
         isFetching,
         refetch,
-    } = useQuery({
-        queryKey: ['organizations-mine'],
-        queryFn: fetchOrganizations,
+    } = useOrganizations({
         staleTime: 60_000,
     });
+    const organizations = useMemo<OrganizationLite[]>(
+        () => organizationRows.map(toOrganizationLite),
+        [organizationRows]
+    );
+    const {
+        createOrganization,
+        deleteOrganization,
+        isCreatingOrganization,
+        isDeletingOrganization,
+    } = useOrganizationMutations();
 
     useEffect(() => {
         if (!selectedId && organizations.length > 0) {
             setSelectedId(organizations[0].id);
         }
     }, [organizations, selectedId]);
-
-    const createMutation = useMutation({
-        mutationFn: createOrganization,
-    });
-
-    const deleteMutation = useMutation({
-        mutationFn: async (businessId: string) => {
-            await businessApi.remove(businessId);
-        },
-    });
 
     useEffect(() => {
         const payload = Array.isArray(params.upiPayload) ? params.upiPayload[0] : params.upiPayload;
@@ -215,7 +187,6 @@ export default function BusinessSelectScreen() {
 
     const handleRefresh = async () => {
         await refetch();
-        await queryClient.invalidateQueries({ queryKey: ['organizations-mine'] });
     };
 
     const persistBusinessSetup = async (receiverName?: string) => {
@@ -228,13 +199,11 @@ export default function BusinessSelectScreen() {
             throw new Error('Invalid UPI ID format. Use format like merchant@upi.');
         }
 
-        await settingsApi.update('GENERAL', {
-            data: {
-                payment_upi_id: normalizedUpi || null,
-                payment_receiver_name: receiverName?.trim() || null,
-                signature_url: normalizedSignature || null,
-                signature_data_url: normalizedSignature.startsWith('data:image/') ? normalizedSignature : null,
-            },
+        await saveSettingsSection('GENERAL', {
+            payment_upi_id: normalizedUpi || null,
+            payment_receiver_name: receiverName?.trim() || null,
+            signature_url: normalizedSignature || null,
+            signature_data_url: normalizedSignature.startsWith('data:image/') ? normalizedSignature : null,
         });
     };
 
@@ -244,7 +213,7 @@ export default function BusinessSelectScreen() {
             payment_receiver_name: receiverName?.trim() || null,
             signature_url: signatureUrl.trim() || null,
         };
-        await SecureStore.setItemAsync(`${PENDING_SETUP_KEY_PREFIX}${businessId}`, JSON.stringify(payload));
+        await secureStorage.setItemAsync(`${PENDING_SETUP_KEY_PREFIX}${businessId}`, JSON.stringify(payload));
     };
 
     const handleContinue = async (businessId?: string, receiverName?: string) => {
@@ -290,7 +259,7 @@ export default function BusinessSelectScreen() {
         }
 
         try {
-            const id = await createMutation.mutateAsync({
+            const response = await createOrganization({
                 name,
                 code,
                 currency,
@@ -306,6 +275,7 @@ export default function BusinessSelectScreen() {
                 openingCashInHand: toPositiveNumber(openingCashInHand),
                 openingCashInBank: toPositiveNumber(openingCashInBank),
             });
+            const id = response.data.id;
             setBusinessName('');
             setBusinessCode('');
             setLegalName('');
@@ -320,7 +290,6 @@ export default function BusinessSelectScreen() {
             setOpeningCashInHand('0');
             setOpeningCashInBank('0');
             await refetch();
-            await queryClient.invalidateQueries({ queryKey: ['organizations-mine'] });
             setSelectedId(id);
             await handleContinue(id, name);
         } catch (error) {
@@ -358,10 +327,9 @@ export default function BusinessSelectScreen() {
                 void (async () => {
                     try {
                         setSwitchingBusinessId(org.id);
-                        await deleteMutation.mutateAsync(org.id);
+                        await deleteOrganization(org.id);
                         const refreshed = await refetch();
-                        await queryClient.invalidateQueries({ queryKey: ['organizations-mine'] });
-                        const remaining = refreshed.data ?? [];
+                        const remaining = (refreshed.data?.data ?? []).map(toOrganizationLite);
 
                         if (selectedId === org.id) {
                             const next = remaining.find((entry) => entry.id !== org.id) ?? remaining[0] ?? null;
@@ -414,6 +382,17 @@ export default function BusinessSelectScreen() {
                         />
                     )}
                 >
+                    <AuthHero
+                        eyebrow="Workspace setup"
+                        title="Choose your active business"
+                        subtitle="Data, permissions, settings, and offline sync all stay isolated by the selected business."
+                        icon="domain"
+                    >
+                        <AuthChip icon="database-outline" label="Local-first scope" />
+                        <AuthChip icon="account-lock-outline" label="Role aware" />
+                        <AuthChip icon="cloud-sync-outline" label="Sync later" />
+                    </AuthHero>
+
                     <View style={s.section}>
                         <Text style={s.sectionTitle}>Your Businesses</Text>
                         {isLoading ? (
@@ -473,10 +452,10 @@ export default function BusinessSelectScreen() {
                                         <Pressable
                                             style={[
                                                 s.dangerButton,
-                                                (!canDelete || isSwitching || deleteMutation.isPending) && s.buttonDisabled,
+                                                (!canDelete || isSwitching || isDeletingOrganization) && s.buttonDisabled,
                                             ]}
                                             onPress={() => handleDeleteBusiness(org)}
-                                            disabled={Boolean(!canDelete || isSwitching || deleteMutation.isPending)}
+                                            disabled={Boolean(!canDelete || isSwitching || isDeletingOrganization)}
                                         >
                                             <MaterialCommunityIcons name="trash-can-outline" size={14} color={colors.error} />
                                             <Text style={s.dangerButtonText}>
@@ -687,11 +666,11 @@ export default function BusinessSelectScreen() {
                             <Text style={s.helperText}>UPI and signature setup will be saved into General settings of selected business.</Text>
 
                             <Pressable
-                                style={[s.primaryButton, createMutation.isPending && s.buttonDisabled]}
+                                style={[s.primaryButton, isCreatingOrganization && s.buttonDisabled]}
                                 onPress={handleCreateBusiness}
-                                disabled={createMutation.isPending}
+                                disabled={isCreatingOrganization}
                             >
-                                {createMutation.isPending ? (
+                                {isCreatingOrganization ? (
                                     <ActivityIndicator color={colors.onPrimary} />
                                 ) : (
                                     <Text style={s.primaryButtonText}>Create and Continue</Text>
@@ -748,7 +727,7 @@ const styles = (colors: ColorPalette) =>
             textTransform: 'uppercase',
         },
         loadingBox: {
-            backgroundColor: colors.card,
+            backgroundColor: colors.surface,
             borderRadius: Radius.card,
             borderWidth: 1,
             borderColor: colors.border,
@@ -757,7 +736,7 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
         },
         emptyBox: {
-            backgroundColor: colors.card,
+            backgroundColor: colors.surface,
             borderRadius: Radius.card,
             borderWidth: 1,
             borderColor: colors.border,
@@ -775,6 +754,11 @@ const styles = (colors: ColorPalette) =>
             padding: Spacing.md,
             gap: Spacing.sm,
             marginBottom: Spacing.sm,
+            shadowColor: colors.text,
+            shadowOpacity: 0.04,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: 2,
         },
         orgRow: {
             flexDirection: 'row',
@@ -805,11 +789,16 @@ const styles = (colors: ColorPalette) =>
         },
         formCard: {
             backgroundColor: colors.card,
-            borderRadius: Radius.card,
+            borderRadius: 24,
             borderWidth: 1,
-            borderColor: colors.border,
+            borderColor: withAlpha(colors.primary, '16'),
             padding: Spacing.md,
             gap: Spacing.sm,
+            shadowColor: colors.text,
+            shadowOpacity: 0.04,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: 2,
         },
         inputLabel: {
             color: colors.textSecondary,
@@ -867,6 +856,11 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'center',
             marginTop: Spacing.xs,
+            shadowColor: colors.primary,
+            shadowOpacity: 0.16,
+            shadowRadius: 14,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 4,
         },
         primaryButtonText: {
             color: colors.onPrimary,

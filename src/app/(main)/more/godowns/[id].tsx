@@ -1,15 +1,13 @@
 import { useMemo } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
-import { useQuery } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { godownApi } from '../../../../api/endpoints';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
-import type { GodownStockEntry } from '../../../../types/domain';
+import { useGodownStock } from '../../../../hooks/useGodowns';
 
 export default function GodownDetailScreen() {
     const colors = useAppColors();
@@ -19,14 +17,7 @@ export default function GodownDetailScreen() {
 
     const godownId = useMemo(() => (Array.isArray(id) ? id[0] : id), [id]);
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['godown-stock', godownId],
-        queryFn: () => godownApi.getStock(godownId as string),
-        enabled: Boolean(godownId),
-        staleTime: 30_000,
-    });
-
-    const stock = (data?.data ?? []) as GodownStockEntry[];
+    const { stock, isLoading, isRefetching, refetch } = useGodownStock(godownId);
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -34,6 +25,19 @@ export default function GodownDetailScreen() {
                 title="Godown Stock"
                 subtitle="Item-wise quantities at this location"
                 onBackPress={smartBack}
+                rightAction={godownId ? (
+                    <Pressable
+                        style={[s.transferBtn, { backgroundColor: colors.primary }]}
+                        onPress={() =>
+                            router.push(
+                                (`/(main)/more/godowns/transfer?fromGodownId=${encodeURIComponent(godownId)}`) as Parameters<typeof router.push>[0]
+                            )
+                        }
+                    >
+                        <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.onPrimary} />
+                        <Text style={s.transferBtnText}>Transfer</Text>
+                    </Pressable>
+                ) : undefined}
             />
 
             {isLoading ? (
@@ -110,6 +114,19 @@ const styles = (colors: ColorPalette) =>
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
+        },
+        transferBtn: {
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+        },
+        transferBtnText: {
+            color: colors.onPrimary,
+            fontSize: Typography.caption.size,
+            fontWeight: '700',
         },
         itemName: { fontSize: Typography.body.size, fontWeight: '700' },
         meta: { fontSize: Typography.caption.size, marginTop: 2 },

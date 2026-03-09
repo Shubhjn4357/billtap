@@ -1,23 +1,45 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { expenseApi } from '../../../api/endpoints';
 import { Spacing, Radius, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { ExpenseCategory } from '../../../constants/enums';
+import { EXPENSE_CATEGORY_FILTER_OPTIONS } from '../../../constants/formOptions';
 import type { Expense } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { ChipButton } from '../../../components/ui/ChipBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
-
-const CATEGORIES = ['ALL', ...Object.values(ExpenseCategory)] as const;
+import { EmptyStateCard } from '../../../components/ui/ListBlocks';
+import { useExpenses, type ExpenseCategoryFilter } from '../../../hooks/useExpenses';
+import { useExpenseMutations } from '../../../hooks/useExpenseMutations';
 
 const toggleId = (list: string[], id: string) =>
     list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
+
+const toAmount = (value: unknown) => {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const getExpenseCategoryLabel = (expense: Partial<Expense>) =>
+    (expense.category ?? ExpenseCategory.MISCELLANEOUS).replace(/_/g, ' ');
+
+const getExpenseDescription = (expense: Partial<Expense>) =>
+    expense.description ?? expense.paymentMode ?? 'No description';
+
+const formatExpenseDate = (expense: Partial<Expense>) => {
+    const value = expense.expenseDate ?? expense.date ?? expense.createdAt;
+    if (!value) return 'Date unavailable';
+    try {
+        return format(parseISO(value), 'dd MMM yyyy');
+    } catch {
+        return value;
+    }
+};
 
 export default function ExpensesScreen() {
     const dialog = useAppDialog();
@@ -27,54 +49,40 @@ export default function ExpensesScreen() {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
-    const queryClient = useQueryClient();
-
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['expenses', cat],
-        queryFn: () => expenseApi.list({ category: cat === 'ALL' ? undefined : (cat as ExpenseCategory), limit: 150 }),
-        staleTime: 60_000,
+    const { expenses, isLoading, isRefetching, refetch, stats } = useExpenses({
+        category: cat as ExpenseCategoryFilter,
+        limit: 150,
     });
-
-    const expenses = useMemo(() => (data?.data ?? []) as Expense[], [data?.data]);
-    const total = expenses.reduce((sum, entry) => sum + entry.amount, 0);
-    const average = expenses.length > 0 ? total / expenses.length : 0;
-    const categoriesUsed = new Set(expenses.map((entry) => entry.category)).size;
+    const total = stats.total;
+    const average = stats.average;
+    const categoriesUsed = stats.categoriesUsed;
     const selectedCount = selectedIds.length;
 
-    const { mutate: bulkDelete, isPending: bulkDeleting } = useMutation({
-        mutationFn: async (ids: string[]) => {
-            await Promise.all(ids.map((id) => expenseApi.delete(id)));
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['expenses'] });
-            queryClient.invalidateQueries({ queryKey: ['expenses-recycle-bin'] });
-            setSelectionMode(false);
-            setSelectedIds([]);
-        },
-        onError: (error) => {
-            dialog.alert('Bulk delete failed', error instanceof Error ? error.message : 'Unable to archive selected expenses.');
-        },
-    });
-
-    const { mutate: bulkSetMisc, isPending: bulkUpdating } = useMutation({
-        mutationFn: async (ids: string[]) => {
-            await Promise.all(ids.map((id) => expenseApi.update(id, { category: ExpenseCategory.MISCELLANEOUS })));
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['expenses'] });
-            setSelectionMode(false);
-            setSelectedIds([]);
-        },
-        onError: (error) => {
-            dialog.alert('Bulk update failed', error instanceof Error ? error.message : 'Unable to update selected expenses.');
-        },
-    });
+    const {
+        archiveExpenses,
+        updateExpenseCategories,
+        isArchivingExpenses: bulkDeleting,
+        isUpdatingExpenseCategories: bulkUpdating,
+    } = useExpenseMutations();
 
     const requestBulkDelete = () => {
         if (selectedCount === 0) return;
         dialog.alert('Archive expenses', `Move ${selectedCount} expense(s) to recycle bin?`, [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Archive', style: 'destructive', onPress: () => bulkDelete(selectedIds) },
+            {
+                text: 'Archive',
+                style: 'destructive',
+                onPress: () => {
+                    void archiveExpenses(selectedIds)
+                        .then(() => {
+                            setSelectionMode(false);
+                            setSelectedIds([]);
+                        })
+                        .catch((error) => {
+                            dialog.alert('Bulk delete failed', error instanceof Error ? error.message : 'Unable to archive selected expenses.');
+                        });
+                },
+            },
         ]);
     };
 
@@ -82,7 +90,19 @@ export default function ExpensesScreen() {
         if (selectedCount === 0) return;
         dialog.alert('Set category', `Set ${selectedCount} expense(s) category to Miscellaneous?`, [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Apply', onPress: () => bulkSetMisc(selectedIds) },
+            {
+                text: 'Apply',
+                onPress: () => {
+                    void updateExpenseCategories({ ids: selectedIds, category: ExpenseCategory.MISCELLANEOUS })
+                        .then(() => {
+                            setSelectionMode(false);
+                            setSelectedIds([]);
+                        })
+                        .catch((error) => {
+                            dialog.alert('Bulk update failed', error instanceof Error ? error.message : 'Unable to update selected expenses.');
+                        });
+                },
+            },
         ]);
     };
 
@@ -144,25 +164,17 @@ export default function ExpensesScreen() {
             <View style={s.catRow}>
                 <FlatList
                     horizontal
-                    data={CATEGORIES}
-                    keyExtractor={(entry) => entry}
+                    data={EXPENSE_CATEGORY_FILTER_OPTIONS}
+                    keyExtractor={(entry) => entry.value}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={{ gap: Spacing.sm, paddingHorizontal: Spacing.lg }}
                     renderItem={({ item }) => (
-                        <Pressable
-                            style={[
-                                s.catChip,
-                                {
-                                    backgroundColor: cat === item ? colors.primary : colors.surfaceVariant,
-                                    borderColor: cat === item ? colors.primary : colors.border,
-                                },
-                            ]}
-                            onPress={() => setCat(item)}
-                        >
-                            <Text style={{ color: cat === item ? colors.onPrimary : colors.textSecondary, fontWeight: '600', fontSize: 12 }}>
-                                {item === 'ALL' ? 'All' : item.replace(/_/g, ' ')}
-                            </Text>
-                        </Pressable>
+                        <ChipButton
+                            label={item.label}
+                            selected={cat === item.value}
+                            tone={item.value === 'ALL' ? 'info' : 'warning'}
+                            onPress={() => setCat(item.value)}
+                        />
                     )}
                 />
             </View>
@@ -211,7 +223,16 @@ export default function ExpensesScreen() {
                             onToggleSelect={() => setSelectedIds((current) => toggleId(current, item.id))}
                         />
                     )}
-                    ListEmptyComponent={<View style={s.centered}><Text style={{ color: colors.textSecondary }}>No expenses. Add one.</Text></View>}
+                    ListEmptyComponent={(
+                        <EmptyStateCard
+                            icon="cash-minus"
+                            title="No expenses yet"
+                            subtitle="Add an expense entry to start tracking operating costs."
+                            tone="warning"
+                            actionLabel="Add Expense"
+                            onActionPress={() => router.push('/(main)/accounts/expenses/add' as Parameters<typeof router.push>[0])}
+                        />
+                    )}
                     contentContainerStyle={{ paddingBottom: 100 }}
                 />
             )}
@@ -252,11 +273,11 @@ function ExpenseRow({
                 </View>
             ) : null}
             <View style={rowStyles.left}>
-                <Text style={[rowStyles.cat, { color: colors.text }]}>{expense.category.replace(/_/g, ' ')}</Text>
-                <Text style={[rowStyles.desc, { color: colors.textSecondary }]}>{expense.description ?? expense.paymentMode}</Text>
-                <Text style={[rowStyles.date, { color: colors.textSecondary }]}>{format(parseISO(expense.expenseDate), 'dd MMM yyyy')}</Text>
+                <Text style={[rowStyles.cat, { color: colors.text }]}>{getExpenseCategoryLabel(expense)}</Text>
+                <Text style={[rowStyles.desc, { color: colors.textSecondary }]}>{getExpenseDescription(expense)}</Text>
+                <Text style={[rowStyles.date, { color: colors.textSecondary }]}>{formatExpenseDate(expense)}</Text>
             </View>
-            <Text style={[rowStyles.amt, { color: colors.error }]}>{`-INR ${expense.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}</Text>
+            <Text style={[rowStyles.amt, { color: colors.error }]}>{`-INR ${toAmount(expense.amount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}</Text>
         </Pressable>
     );
 }
@@ -327,7 +348,6 @@ const styles = (colors: ColorPalette) =>
             textTransform: 'uppercase',
         },
         catRow: { marginBottom: Spacing.sm },
-        catChip: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
         bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
         bulkLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
         bulkAction: {

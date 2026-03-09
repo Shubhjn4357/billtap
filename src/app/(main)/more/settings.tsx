@@ -1,25 +1,4 @@
-/**
- * Settings — unified, tabbed settings hub.
- *
- * Five tabs group every setting in one place, eliminating the old
- * "App Preferences" separate screen and the INVOICE_PRINT duplication.
- *
- * Tab 1 — App          : Theme, haptics, rich motion, offline mode, currency
- * Tab 2 — Invoicing    : Invoice format, taxes & GST, payment reminders,
- *                        transaction SMS, transaction header, item table,
- *                        more transaction features
- * Tab 3 — Inventory    : Item settings, party settings, godown & stock,
- *                        item masters link
- * Tab 4 — Business     : General, multi-firm, backup, security, printing link
- * Tab 5 — Notifications: Any SMS/reminder sections + digital signature
- *
- * Rules enforced:
- *  - INVOICE_PRINT is hidden from the API section list (handled by Printing page)
- *  - App Preferences page (theme/haptics) is inlined into Tab 1 — no redirect
- *  - Every API section is assigned to exactly one tab — no duplication
- */
-
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
     Pressable,
     RefreshControl,
@@ -32,225 +11,198 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { settingsApi } from '../../../api/endpoints';
-import { Radius, Spacing, type ColorPalette, type ThemePreference, withAlpha } from '../../../constants/theme';
+import {
+    APP_LANGUAGE_OPTIONS,
+    APP_PREFERENCE_GROUPS,
+    APP_PREFERENCE_TOGGLES,
+    INVOICE_TEMPLATE_OPTIONS,
+    THEME_MODE_OPTIONS,
+} from '../../../constants/appPreferences';
+import {
+    SETTINGS_SECTION_ICONS,
+    SETTINGS_SECTION_TAB_MAP,
+    SETTINGS_STATIC_ITEMS,
+    SETTINGS_TABS,
+    type SettingsIconName,
+    type SettingsTabKey,
+} from '../../../constants/settingsOptions';
+import { DESIGN_SPACING, getInsetPanelStyle, getSurfaceStyle } from '../../../constants/designSystem';
+import { Radius, Typography, withAlpha, type ColorPalette } from '../../../constants/theme';
 import { getSettingsSectionLabel } from '../../../constants/settingsSchema';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { ChipButton } from '../../../components/ui/ChipBlocks';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { EmptyStateCard } from '../../../components/ui/ListBlocks';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppColors } from '../../../hooks/useAppColors';
-import { useThemeStore } from '../../../store/themeStore';
-import {
-    DEFAULT_LOCAL_PREFERENCES,
-    getLocalPreferences,
-    patchLocalPreferences,
-    type LocalPreferences,
-} from '../../../services/localPreferences';
+import { useI18n } from '../../../hooks/useI18n';
+import { type LocalPreferences } from '../../../services/localPreferences';
+import { useSettingsSchemaQuery } from '../../../hooks/useSettingsSection';
+import { useAppRuntime } from '../../../components/providers/AppRuntimeProvider';
 
+type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
 
-type TabKey = 'app' | 'invoicing' | 'inventory' | 'business' | 'notifications';
-type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
+type SettingsSearchResult =
+    | { key: string; label: string; fieldCount: number; icon: SettingsIconName; tab: SettingsTabKey; kind: 'section' }
+    | { key: string; label: string; fieldCount: number; icon: SettingsIconName; tab: SettingsTabKey; kind: 'route'; route: string };
 
-// ── Tab definitions ────────────────────────────────────────────────────────────
-const TABS: { key: TabKey; label: string; icon: IconName }[] = [
-    { key: 'app', label: 'App', icon: 'tune-variant' },
-    { key: 'invoicing', label: 'Invoicing', icon: 'file-document-outline' },
-    { key: 'inventory', label: 'Inventory', icon: 'cube-outline' },
-    { key: 'business', label: 'Business', icon: 'office-building-outline' },
-    { key: 'notifications', label: 'Alerts', icon: 'bell-outline' },
-];
-
-// ── Which API sections go in which tab ────────────────────────────────────────
-const SECTION_TAB_MAP: Record<string, TabKey> = {
-    TAXES_AND_GST: 'invoicing',
-    TRANSACTION_SMS: 'notifications',
-    TRANSACTION_HEADER: 'invoicing',
-    ITEM_TABLE: 'invoicing',
-    TAX_DISCOUNT_TOTAL: 'invoicing',
-    MORE_TRANSACTION_FEATURES: 'invoicing',
-    PAYMENT_REMINDERS: 'notifications',
-    ITEM_SETTINGS: 'inventory',
-    PARTY_SETTINGS: 'inventory',
-    GODOWN_AND_STOCK_TRANSFER: 'inventory',
-    GENERAL: 'business',
-    MULTI_FIRM: 'business',
-    BACKUP_SETTINGS: 'business',
-    SECURITY: 'business',
-// INVOICE_PRINT excluded — redirected to Printing page
-};
-
-const SECTION_ICON: Record<string, IconName> = {
-    GENERAL: 'cog-outline',
-    SECURITY: 'shield-lock-outline',
-    TAXES_AND_GST: 'file-percent-outline',
-    BACKUP_SETTINGS: 'cloud-upload-outline',
-    PARTY_SETTINGS: 'account-group-outline',
-    ITEM_SETTINGS: 'cube-outline',
-    MULTI_FIRM: 'office-building-outline',
-    PAYMENT_REMINDERS: 'bell-ring-outline',
-    TRANSACTION_SMS: 'message-text-outline',
-    TRANSACTION_HEADER: 'card-text-outline',
-    ITEM_TABLE: 'table-large',
-    TAX_DISCOUNT_TOTAL: 'percent-outline',
-    MORE_TRANSACTION_FEATURES: 'dots-horizontal',
-    GODOWN_AND_STOCK_TRANSFER: 'warehouse',
-};
-
-// ── Static items always shown in tabs (not from API) ─────────────────────────
-const STATIC_ITEMS: Record<TabKey, { label: string; subtitle: string; icon: IconName; route: string }[]> = {
-    app: [],
-    invoicing: [
-        { label: 'Printing & Templates', subtitle: 'Thermal, PDF layouts and preview', icon: 'printer-outline', route: '/(main)/more/printing' },
-    ],
-    inventory: [
-        { label: 'Item Masters', subtitle: 'Manage item groups and HSN codes', icon: 'format-list-group', route: '/(main)/more/item-masters' },
-    ],
-    business: [
-        { label: 'Staff and Roles', subtitle: 'Invite staff and manage role access', icon: 'account-multiple-outline', route: '/(main)/more/staff' },
-        { label: 'Role Access Control', subtitle: 'Fine-grained module permissions', icon: 'shield-account-outline', route: '/(main)/more/role-access' },
-        { label: 'Subscription', subtitle: 'Manage plan and billing', icon: 'crown-outline', route: '/(main)/more/subscription' },
-        { label: 'Legal Center', subtitle: 'Terms, privacy, changelog', icon: 'file-document-outline', route: '/legal' },
-    ],
-    notifications: [],
-};
-
-const THEME_OPTIONS: { key: ThemePreference; label: string; icon: IconName }[] = [
-    { key: 'system', label: 'System', icon: 'brightness-auto' },
-    { key: 'light', label: 'Light', icon: 'white-balance-sunny' },
-    { key: 'dark', label: 'Dark', icon: 'weather-night' },
-];
-
-// ── Main Component ────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
     const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
     const { selection } = useHaptics();
-    const themeStore = useThemeStore();
+    const { t } = useI18n();
+    const {
+        biometricSupported,
+        localPreferences: prefs,
+        localPreferencesReady,
+        refreshLocalPreferences,
+        updateLocalPreferences,
+    } = useAppRuntime();
 
-    const [activeTab, setActiveTab] = useState<TabKey>('app');
+    const [activeTab, setActiveTab] = useState<SettingsTabKey>('app');
     const [search, setSearch] = useState('');
 
-    // Local preferences (theme / haptics / motion) for App tab
-    const [prefs, setPrefs] = useState<LocalPreferences>(DEFAULT_LOCAL_PREFERENCES);
-    const [prefsLoading, setPrefsLoading] = useState(true);
-
-    useEffect(() => {
-        let active = true;
-        void getLocalPreferences().then((local) => {
-            if (!active) return;
-            setPrefs(local);
-            setPrefsLoading(false);
-        });
-        return () => { active = false; };
-    }, []);
-
-    const updatePrefs = async (patch: Partial<LocalPreferences>) => {
-        const next = await patchLocalPreferences(patch);
-        setPrefs(next);
-        if (patch.themeMode !== undefined) themeStore.setThemeMode(patch.themeMode);
-        if (patch.hapticsEnabled !== undefined) themeStore.setHapticsEnabled(patch.hapticsEnabled);
-        if (patch.richMotionEnabled !== undefined) themeStore.setRichMotionEnabled(patch.richMotionEnabled);
-    };
-
-    // API sections schema
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['settings-schema'],
-        queryFn: () => settingsApi.getSchema(),
-        staleTime: 30 * 60_000,
-    });
+    const { data, isLoading, isRefetching, refetch } = useSettingsSchemaQuery();
 
     const apiSectionsByTab = useMemo(() => {
         const apiSections = data?.sections ?? [];
         const schema = data?.schema ?? {};
-        const EXCLUDED = ['INVOICE_PRINT'];
-
-        const result: Record<TabKey, { key: string; label: string; fieldCount: number; icon: IconName }[]> = {
-            app: [], invoicing: [], inventory: [], business: [], notifications: [],
+        const excluded = new Set(['INVOICE_PRINT']);
+        const result: Record<SettingsTabKey, { key: string; label: string; fieldCount: number; icon: SettingsIconName }[]> = {
+            app: [],
+            invoicing: [],
+            inventory: [],
+            business: [],
+            notifications: [],
         };
 
         for (const section of apiSections) {
-            if (EXCLUDED.includes(section)) continue;
-            const tab: TabKey = SECTION_TAB_MAP[section] ?? 'business';
+            if (excluded.has(section)) continue;
+            const tab: SettingsTabKey = SETTINGS_SECTION_TAB_MAP[section] ?? 'business';
             result[tab].push({
                 key: section,
                 label: getSettingsSectionLabel(section),
                 fieldCount: (schema[section] ?? []).length,
-                icon: SECTION_ICON[section] ?? 'tune-variant',
+                icon: SETTINGS_SECTION_ICONS[section] ?? 'tune-variant',
             });
         }
         return result;
     }, [data]);
 
-    // Global search across all tabs
     const searchResults = useMemo(() => {
         const needle = search.trim().toLowerCase();
         if (!needle) return null;
-        const results: { key: string; label: string; fieldCount: number; icon: IconName; tab: TabKey }[] = [];
 
-        (Object.keys(apiSectionsByTab) as TabKey[]).forEach((tab) => {
+        const results: SettingsSearchResult[] = [];
+        for (const tab of Object.keys(apiSectionsByTab) as SettingsTabKey[]) {
             for (const section of apiSectionsByTab[tab]) {
                 if (`${section.label} ${section.key}`.toLowerCase().includes(needle)) {
-                    results.push({ ...section, tab });
+                    results.push({ ...section, tab, kind: 'section' });
                 }
             }
-            for (const si of STATIC_ITEMS[tab]) {
-                if (`${si.label} ${si.subtitle}`.toLowerCase().includes(needle)) {
-                    results.push({ key: si.label, label: si.label, fieldCount: 0, icon: si.icon, tab });
+            for (const staticItem of SETTINGS_STATIC_ITEMS[tab]) {
+                if (`${staticItem.label} ${staticItem.subtitle}`.toLowerCase().includes(needle)) {
+                    results.push({
+                        key: staticItem.route,
+                        label: staticItem.label,
+                        fieldCount: 0,
+                        icon: staticItem.icon,
+                        tab,
+                        kind: 'route',
+                        route: staticItem.route,
+                    });
                 }
             }
-        });
+        }
+
         return results;
-    }, [search, apiSectionsByTab]);
+    }, [apiSectionsByTab, search]);
 
     const navigateToSection = (key: string) =>
         router.push(`/(main)/more/settings/${key}` as Parameters<typeof router.push>[0]);
 
-    const ActiveTabContent = () => {
+    const renderActiveTabContent = () => {
         if (activeTab === 'app') {
             return (
-                <ScrollView contentContainerStyle={s.tabContent} refreshControl={<RefreshControl tintColor={colors.primary} refreshing={false} onRefresh={() => { }} />}>
-                    <AppBlock colors={colors} prefs={prefs} loading={prefsLoading} onUpdate={updatePrefs} />
+                <ScrollView
+                    contentContainerStyle={s.tabContent}
+                    refreshControl={(
+                        <RefreshControl
+                            tintColor={colors.primary}
+                            refreshing={false}
+                            onRefresh={() => {
+                                void refreshLocalPreferences();
+                            }}
+                        />
+                    )}
+                >
+                    <AppBlock
+                        biometricSupported={biometricSupported}
+                        colors={colors}
+                        loading={!localPreferencesReady}
+                        onUpdate={updateLocalPreferences}
+                        prefs={prefs}
+                        t={t}
+                    />
                 </ScrollView>
             );
         }
 
         const apiRows = apiSectionsByTab[activeTab] ?? [];
-        const staticRows = STATIC_ITEMS[activeTab] ?? [];
+        const staticRows = SETTINGS_STATIC_ITEMS[activeTab] ?? [];
 
         return (
-            <ScrollView contentContainerStyle={s.tabContent} refreshControl={<RefreshControl tintColor={colors.primary} refreshing={isRefetching && !isLoading} onRefresh={() => { void refetch(); }} />}>
+            <ScrollView
+                contentContainerStyle={s.tabContent}
+                refreshControl={(
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefetching && !isLoading}
+                        onRefresh={() => {
+                            void refetch();
+                        }}
+                    />
+                )}
+            >
                 {isLoading ? <ListSkeleton rows={5} /> : (
                     <>
                         {apiRows.map((section) => (
                             <SettingRow
                                 key={section.key}
+                                colors={colors}
                                 icon={section.icon}
                                 label={section.label}
-                                meta={`${section.fieldCount} fields`}
-                                colors={colors}
-                                onPress={() => { void selection(); navigateToSection(section.key); }}
+                                meta={`${section.fieldCount} ${section.fieldCount === 1 ? 'field' : 'fields'}`}
+                                onPress={() => {
+                                    void selection();
+                                    navigateToSection(section.key);
+                                }}
                             />
                         ))}
-                        {staticRows.map((si) => (
+                        {staticRows.map((item) => (
                             <SettingRow
-                                key={si.label}
-                                icon={si.icon}
-                                label={si.label}
-                                meta={si.subtitle}
+                                key={item.route}
                                 colors={colors}
-                                onPress={() => { void selection(); router.push(si.route as Parameters<typeof router.push>[0]); }}
+                                icon={item.icon}
+                                label={item.label}
+                                meta={item.subtitle}
+                                onPress={() => {
+                                    void selection();
+                                    router.push(item.route as Parameters<typeof router.push>[0]);
+                                }}
                             />
                         ))}
                         {apiRows.length === 0 && staticRows.length === 0 ? (
-                            <View style={s.empty}>
-                                <MaterialCommunityIcons name="tune-variant" size={32} color={colors.textSecondary} />
-                                <Text style={[s.emptyTitle, { color: colors.text }]}>No settings here</Text>
-                                <Text style={[s.emptyMeta, { color: colors.textSecondary }]}>This category has no configurable options.</Text>
-                            </View>
+                            <EmptyStateCard
+                                icon="tune-variant"
+                                title={t('settings.no_settings')}
+                                subtitle={t('settings.no_settings_subtitle')}
+                                tone="info"
+                            />
                         ) : null}
                     </>
                 )}
@@ -260,166 +212,445 @@ export default function SettingsScreen() {
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
-            <AppTopBar title="Settings" subtitle="All preferences in one place" onBackPress={smartBack} />
+            <AppTopBar
+                title={t('settings.title')}
+                subtitle={t('settings.subtitle')}
+                onBackPress={smartBack}
+            />
 
-            {/* Search bar */}
-            <View style={s.searchWrap}>
-                <AppSearchBar value={search} onChangeText={setSearch} placeholder="Search any setting..." />
+            <View style={s.heroWrap}>
+                <UtilityHero
+                    title={t('settings.hub_title')}
+                    subtitle={t('settings.hub_subtitle')}
+                    icon="cog-outline"
+                    tone="info"
+                />
             </View>
 
-            {/* Global search results */}
+            <View style={s.searchWrap}>
+                <AppSearchBar
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder={t('settings.search_placeholder')}
+                />
+            </View>
+
             {searchResults ? (
                 <ScrollView contentContainerStyle={s.tabContent}>
                     {searchResults.length === 0 ? (
-                        <View style={s.empty}>
-                            <MaterialCommunityIcons name="file-search-outline" size={28} color={colors.textSecondary} />
-                            <Text style={[s.emptyTitle, { color: colors.text }]}>No results</Text>
-                        </View>
-                    ) : searchResults.map((r) => (
+                        <EmptyStateCard
+                            icon="file-search-outline"
+                            title={t('settings.no_results')}
+                            subtitle={t('settings.no_results_subtitle')}
+                            tone="info"
+                        />
+                    ) : searchResults.map((result) => (
                         <SettingRow
-                            key={r.key + r.tab}
-                            icon={r.icon}
-                            label={r.label}
-                            meta={TABS.find((t) => t.key === r.tab)?.label ?? r.tab}
+                            key={`${result.kind}-${result.tab}-${result.key}`}
                             colors={colors}
-                            onPress={() => { void selection(); navigateToSection(r.key); }}
+                            icon={result.icon}
+                            label={result.label}
+                            meta={SETTINGS_TABS.find((tab) => tab.key === result.tab)?.label ?? result.tab}
+                            onPress={() => {
+                                void selection();
+                                if (result.kind === 'route') {
+                                    router.push(result.route as Parameters<typeof router.push>[0]);
+                                    return;
+                                }
+                                navigateToSection(result.key);
+                            }}
                         />
                     ))}
                 </ScrollView>
             ) : (
                 <>
-                    {/* Tab Bar */}
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBarScroll} contentContainerStyle={s.tabBar}>
-                        {TABS.map((tab) => {
-                            const sel = activeTab === tab.key;
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={s.tabBarScroll}
+                        contentContainerStyle={s.tabBar}
+                    >
+                        {SETTINGS_TABS.map((tab) => {
+                            const selected = activeTab === tab.key;
                             return (
-                                <Pressable key={tab.key} style={[s.tabChip, sel && { backgroundColor: colors.primary }]}
-                                    onPress={() => { void selection(); setActiveTab(tab.key); }}>
-                                    <MaterialCommunityIcons name={tab.icon} size={13} color={sel ? colors.onPrimary : colors.textSecondary} />
-                                    <Text style={[s.tabChipText, { color: sel ? colors.onPrimary : colors.textSecondary, fontWeight: sel ? '700' : '500' }]}>{tab.label}</Text>
-                                </Pressable>
+                                <ChipButton
+                                    key={tab.key}
+                                    icon={tab.icon}
+                                    label={tab.label}
+                                    onPress={() => {
+                                        void selection();
+                                        setActiveTab(tab.key);
+                                    }}
+                                    selected={selected}
+                                    tone="info"
+                                />
                             );
                         })}
-                        </ScrollView>
+                    </ScrollView>
 
-                        {/* Tab indicator dot */}
-                        <View style={s.tabUnderline}>
-                            {TABS.map((tab) => (
-                                <View key={tab.key} style={[s.tabDot, { backgroundColor: activeTab === tab.key ? colors.primary : 'transparent' }]} />
-                            ))}
+                    <View style={s.tabUnderline}>
+                        {SETTINGS_TABS.map((tab) => (
+                            <View
+                                key={tab.key}
+                                style={[
+                                    s.tabDot,
+                                    { backgroundColor: activeTab === tab.key ? colors.primary : 'transparent' },
+                                ]}
+                            />
+                        ))}
                     </View>
 
-                    <ActiveTabContent />
+                    {renderActiveTabContent()}
                 </>
             )}
         </SafeAreaView>
     );
 }
 
-// ── App Tab ────────────────────────────────────────────────────────────────────
-function AppBlock({ colors, prefs, loading, onUpdate }: { colors: ColorPalette; prefs: LocalPreferences; loading: boolean; onUpdate: (patch: Partial<LocalPreferences>) => void }) {
+function AppBlock({
+    biometricSupported,
+    colors,
+    loading,
+    onUpdate,
+    prefs,
+    t,
+}: {
+    biometricSupported: boolean;
+    colors: ColorPalette;
+    loading: boolean;
+    onUpdate: (patch: Partial<LocalPreferences>) => void | Promise<unknown>;
+    prefs: LocalPreferences;
+    t: TranslateFn;
+}) {
     const s = blockStyles(colors);
 
-    if (loading) return <ListSkeleton rows={3} />;
+    if (loading) return <ListSkeleton rows={4} />;
+
+    const groupedToggles = APP_PREFERENCE_TOGGLES.reduce<Record<string, (typeof APP_PREFERENCE_TOGGLES)[number][]>>((result, item) => {
+        const current = result[item.group] ?? [];
+        result[item.group] = [...current, item];
+        return result;
+    }, {});
 
     return (
         <>
-            {/* Theme */}
-            <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>THEME MODE</Text>
-                <View style={s.chipRow}>
-                    {THEME_OPTIONS.map((opt) => {
-                        const sel = prefs.themeMode === opt.key;
-                        return (
-                            <Pressable key={opt.key} style={[s.themeChip, { borderColor: sel ? colors.primary : colors.border, backgroundColor: sel ? withAlpha(colors.primary, '18') : 'transparent' }]}
-                                onPress={() => onUpdate({ themeMode: opt.key })}>
-                                <MaterialCommunityIcons name={opt.icon} size={15} color={sel ? colors.primary : colors.textSecondary} />
-                                <Text style={{ color: sel ? colors.primary : colors.textSecondary, fontWeight: sel ? '700' : '500', fontSize: 12 }}>{opt.label}</Text>
-                            </Pressable>
-                        );
-                    })}
-                </View>
-            </View>
+            {APP_PREFERENCE_GROUPS.map((group) => {
+                if (group.key === 'appearance') {
+                    return (
+                        <View key={group.key} style={s.groupCard}>
+                            <Text style={s.groupTitle}>{t(group.titleKey)}</Text>
+                            <View style={s.preferenceBlock}>
+                                <Text style={s.preferenceLabel}>{t('settings.theme_mode')}</Text>
+                                <View style={s.chipRow}>
+                                    {THEME_MODE_OPTIONS.map((option) => (
+                                        <ChipButton
+                                            key={option.key}
+                                            icon={option.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                                            label={t(`theme.${option.key}`)}
+                                            onPress={() => {
+                                                void onUpdate({ themeMode: option.key });
+                                            }}
+                                            selected={prefs.themeMode === option.key}
+                                            tone="info"
+                                        />
+                                    ))}
+                                </View>
+                            </View>
 
-            {/* Interaction */}
-            <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>INTERACTION</Text>
-                {[
-                    { label: 'Rich Motion', sub: 'Richer transitions and animations', key: 'richMotionEnabled' as const },
-                    { label: 'Haptics', sub: 'Tactile feedback on taps and actions', key: 'hapticsEnabled' as const },
-                ].map((item) => (
-                    <View key={item.key} style={s.toggleRow}>
-                        <View style={{ flex: 1 }}>
-                            <Text style={[s.toggleLabel, { color: colors.text }]}>{item.label}</Text>
-                            <Text style={[s.toggleSub, { color: colors.textSecondary }]}>{item.sub}</Text>
+                            <View style={s.preferenceBlock}>
+                                <Text style={s.preferenceLabel}>{t('settings.language')}</Text>
+                                <Text style={s.preferenceSub}>{t('settings.language_sub')}</Text>
+                                <View style={s.chipRow}>
+                                    {APP_LANGUAGE_OPTIONS.map((option) => (
+                                        <ChipButton
+                                            key={option.key}
+                                            label={t(`language.${option.key}`)}
+                                            onPress={() => {
+                                                void onUpdate({ appLanguage: option.key });
+                                            }}
+                                            selected={prefs.appLanguage === option.key}
+                                            tone="info"
+                                        />
+                                    ))}
+                                </View>
+                            </View>
                         </View>
-                        <Switch
-                            value={prefs[item.key] as boolean}
-                            onValueChange={(v) => onUpdate({ [item.key]: v })}
-                            trackColor={{ true: colors.primary, false: colors.border }}
-                            thumbColor={colors.onPrimary}
-                        />
-                    </View>
-                ))}
-            </View>
+                    );
+                }
 
-            {/* Info note */}
-            <View style={[s.infoCard, { backgroundColor: withAlpha(colors.info, '12'), borderColor: withAlpha(colors.info, '30') }]}>
-                <MaterialCommunityIcons name="information-outline" size={15} color={colors.info} />
-                <Text style={[s.infoText, { color: colors.textSecondary }]}>Theme and interaction preferences are stored locally on this device only.</Text>
+                if (group.key === 'documents') {
+                    return (
+                        <View key={group.key} style={s.groupCard}>
+                            <Text style={s.groupTitle}>{t(group.titleKey)}</Text>
+                            <View style={s.preferenceBlock}>
+                                <Text style={s.preferenceLabel}>{t('settings.invoice_template')}</Text>
+                                <Text style={s.preferenceSub}>{t('settings.invoice_template_sub')}</Text>
+                                <View style={s.templateStack}>
+                                    {INVOICE_TEMPLATE_OPTIONS.map((option) => {
+                                        const selected = prefs.invoiceTemplateMode === option.key;
+                                        return (
+                                            <Pressable
+                                                key={option.key}
+                                                style={({ pressed }) => [
+                                                    s.templateCard,
+                                                    getInsetPanelStyle(colors, selected ? colors.primary : undefined),
+                                                    {
+                                                        opacity: pressed ? 0.9 : 1,
+                                                        borderColor: selected ? withAlpha(colors.primary, '42') : withAlpha(colors.border, 'B8'),
+                                                        backgroundColor: selected ? withAlpha(colors.primary, '0C') : colors.surface,
+                                                    },
+                                                ]}
+                                                onPress={() => {
+                                                    void onUpdate({ invoiceTemplateMode: option.key });
+                                                }}
+                                            >
+                                                <View style={s.templateHeader}>
+                                                    <Text style={[s.templateTitle, { color: selected ? colors.primary : colors.text }]}>
+                                                        {t(`invoice_template.${option.key.toLowerCase()}`)}
+                                                    </Text>
+                                                    {selected ? (
+                                                        <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} />
+                                                    ) : null}
+                                                </View>
+                                                <Text style={s.templateDescription}>{option.description}</Text>
+                                            </Pressable>
+                                        );
+                                    })}
+                                </View>
+                            </View>
+                        </View>
+                    );
+                }
+
+                const toggles = groupedToggles[group.key] ?? [];
+                if (toggles.length === 0) return null;
+
+                return (
+                    <View key={group.key} style={s.groupCard}>
+                        <Text style={s.groupTitle}>{t(group.titleKey)}</Text>
+                        {toggles.map((toggle, index) => {
+                            const disabled = toggle.key === 'biometricLockEnabled' && !biometricSupported;
+                            return (
+                                <View
+                                    key={toggle.key}
+                                    style={[
+                                        s.toggleRow,
+                                        index > 0 ? s.toggleRowBorder : null,
+                                        { borderColor: withAlpha(colors.border, '80') },
+                                    ]}
+                                >
+                                    <View style={s.toggleTextBlock}>
+                                        <Text style={s.toggleLabel}>{t(toggle.titleKey)}</Text>
+                                        <Text style={s.toggleSub}>
+                                            {disabled ? t('lock.unavailable') : t(toggle.descriptionKey)}
+                                        </Text>
+                                    </View>
+                                    <Switch
+                                        disabled={disabled}
+                                        value={Boolean(prefs[toggle.key])}
+                                        onValueChange={(value) => {
+                                            void onUpdate({ [toggle.key]: value } as Partial<LocalPreferences>);
+                                        }}
+                                        trackColor={{ true: colors.primary, false: colors.border }}
+                                        thumbColor={colors.onPrimary}
+                                    />
+                                </View>
+                            );
+                        })}
+                    </View>
+                );
+            })}
+
+            <View style={s.infoCard}>
+                <MaterialCommunityIcons name="information-outline" size={16} color={colors.info} />
+                <Text style={s.infoText}>{t('settings.local_note')}</Text>
             </View>
         </>
     );
 }
 
-// ── Shared Row Component ───────────────────────────────────────────────────────
-function SettingRow({ icon, label, meta, colors, onPress }: { icon: IconName; label: string; meta: string; colors: ColorPalette; onPress: () => void }) {
+function SettingRow({
+    colors,
+    icon,
+    label,
+    meta,
+    onPress,
+}: {
+    colors: ColorPalette;
+    icon: SettingsIconName;
+    label: string;
+    meta: string;
+    onPress: () => void;
+}) {
     return (
-        <Pressable style={({ pressed }) => [rowStyles.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.82 : 1 }]} onPress={onPress}>
-            <View style={[rowStyles.iconWrap, { backgroundColor: withAlpha(colors.primary, '16') }]}>
+        <Pressable
+            style={({ pressed }) => [
+                rowStyles.row,
+                getSurfaceStyle(colors, { elevated: true }),
+                { opacity: pressed ? 0.84 : 1 },
+            ]}
+            onPress={onPress}
+        >
+            <View style={[rowStyles.iconWrap, { backgroundColor: withAlpha(colors.primary, '12') }]}>
                 <MaterialCommunityIcons name={icon} size={16} color={colors.primary} />
             </View>
             <View style={rowStyles.info}>
                 <Text style={[rowStyles.label, { color: colors.text }]}>{label}</Text>
-                <Text style={[rowStyles.meta, { color: colors.textSecondary }]} numberOfLines={1}>{meta}</Text>
+                <Text style={[rowStyles.meta, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {meta}
+                </Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
         </Pressable>
     );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────────
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs },
+    heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    searchWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
     tabBarScroll: { flexGrow: 0 },
-    tabBar: { paddingHorizontal: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.sm },
-    tabChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: Spacing.md, borderRadius: Radius.pill, backgroundColor: colors.surfaceVariant, borderWidth: 1, borderColor: colors.border },
-    tabChipText: { fontSize: 12 },
-    tabUnderline: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: Spacing.sm },
+    tabBar: {
+        paddingHorizontal: DESIGN_SPACING.screenX,
+        gap: DESIGN_SPACING.cardGap,
+        paddingBottom: DESIGN_SPACING.cardGap,
+    },
+    tabUnderline: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 6,
+        marginBottom: DESIGN_SPACING.cardGap,
+    },
     tabDot: { width: 6, height: 6, borderRadius: 3 },
-    tabContent: { paddingHorizontal: Spacing.lg, gap: Spacing.sm, paddingBottom: 120 },
-    empty: { paddingTop: 60, alignItems: 'center', gap: 8 },
-    emptyTitle: { fontWeight: '700', fontSize: 15 },
-    emptyMeta: { fontSize: 12, textAlign: 'center' },
+    tabContent: {
+        paddingHorizontal: DESIGN_SPACING.screenX,
+        gap: DESIGN_SPACING.cardGap,
+        paddingBottom: 120,
+    },
 });
 
 const blockStyles = (colors: ColorPalette) => StyleSheet.create({
-    card: { borderWidth: 1, borderRadius: Radius.card, padding: Spacing.md, gap: Spacing.sm },
-    sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-    chipRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-    themeChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 7 },
-    toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: Spacing.sm, paddingVertical: 2 },
-    toggleLabel: { fontSize: 14, fontWeight: '700' },
-    toggleSub: { fontSize: 12, marginTop: 2 },
-    infoCard: { borderWidth: 1, borderRadius: Radius.card, padding: Spacing.sm, flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
-    infoText: { flex: 1, fontSize: 12, fontWeight: '500' },
+    groupCard: {
+        padding: DESIGN_SPACING.sectionGap,
+        gap: DESIGN_SPACING.cardGap,
+        ...getSurfaceStyle(colors, { elevated: true }),
+    },
+    groupTitle: {
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+        color: colors.primary,
+    },
+    preferenceBlock: {
+        gap: 6,
+    },
+    preferenceLabel: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+        color: colors.text,
+    },
+    preferenceSub: {
+        fontSize: Typography.caption.size,
+        lineHeight: Typography.caption.lineHeight,
+        color: colors.textSecondary,
+    },
+    chipRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: DESIGN_SPACING.cardGap,
+    },
+    templateStack: {
+        gap: DESIGN_SPACING.cardGap,
+        marginTop: 2,
+    },
+    templateCard: {
+        padding: DESIGN_SPACING.sectionGap,
+        gap: 6,
+        borderRadius: Radius.card,
+        borderWidth: 1,
+    },
+    templateHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: DESIGN_SPACING.cardGap,
+    },
+    templateTitle: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+    },
+    templateDescription: {
+        fontSize: Typography.caption.size,
+        lineHeight: Typography.caption.lineHeight,
+        color: colors.textSecondary,
+    },
+    toggleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: DESIGN_SPACING.cardGap,
+        paddingVertical: DESIGN_SPACING.cardGap,
+    },
+    toggleRowBorder: {
+        borderTopWidth: 1,
+        paddingTop: DESIGN_SPACING.sectionGap,
+    },
+    toggleTextBlock: {
+        flex: 1,
+        gap: 2,
+    },
+    toggleLabel: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+        color: colors.text,
+    },
+    toggleSub: {
+        fontSize: Typography.caption.size,
+        lineHeight: Typography.caption.lineHeight,
+        color: colors.textSecondary,
+    },
+    infoCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: DESIGN_SPACING.cardGap,
+        paddingHorizontal: DESIGN_SPACING.sectionGap,
+        paddingVertical: DESIGN_SPACING.cardGap,
+        borderRadius: Radius.card,
+        borderWidth: 1,
+        borderColor: withAlpha(colors.info, '30'),
+        backgroundColor: withAlpha(colors.info, '12'),
+    },
+    infoText: {
+        flex: 1,
+        fontSize: Typography.caption.size,
+        lineHeight: Typography.caption.lineHeight,
+        color: colors.textSecondary,
+        fontWeight: '600',
+    },
 });
 
 const rowStyles = StyleSheet.create({
-    row: { borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-    iconWrap: { width: 34, height: 34, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+    row: {
+        paddingHorizontal: DESIGN_SPACING.sectionGap,
+        paddingVertical: DESIGN_SPACING.sectionGap,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: DESIGN_SPACING.cardGap,
+    },
+    iconWrap: {
+        width: 36,
+        height: 36,
+        borderRadius: Radius.pill,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     info: { flex: 1 },
-    label: { fontSize: 14, fontWeight: '600' },
-    meta: { fontSize: 12, marginTop: 2 },
+    label: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+    },
+    meta: {
+        fontSize: Typography.caption.size,
+        marginTop: 2,
+    },
 });

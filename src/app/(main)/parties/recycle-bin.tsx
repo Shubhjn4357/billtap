@@ -4,46 +4,23 @@ import {
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { partyApi } from '../../../api/endpoints';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
-import type { Party } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { usePartyMutations } from '../../../hooks/usePartyMutations';
+import { usePartyRecycleBin } from '../../../hooks/useParties';
 
 export default function PartyRecycleBinScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/parties');
-    const queryClient = useQueryClient();
     const [processingId, setProcessingId] = useState<string | null>(null);
+    const { restoreParty, permanentlyDeleteParty } = usePartyMutations();
 
-    const { data, isLoading, isRefetching, refetch } = useQuery({
-        queryKey: ['parties-recycle-bin'],
-        queryFn: () => partyApi.recycleBin({ limit: 250 }),
-        staleTime: 15_000,
-    });
-
-    const rows: Party[] = data?.data ?? [];
-
-    const { mutateAsync: restore } = useMutation({
-        mutationFn: (id: string) => partyApi.restore(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['parties'] });
-            queryClient.invalidateQueries({ queryKey: ['parties-recycle-bin'] });
-        },
-    });
-
-    const { mutateAsync: permanentDelete } = useMutation({
-        mutationFn: (id: string) => partyApi.permanentDelete(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['parties'] });
-            queryClient.invalidateQueries({ queryKey: ['parties-recycle-bin'] });
-        },
-    });
+    const { parties: rows, isLoading, isRefetching, refetch } = usePartyRecycleBin({ limit: 250 });
 
     const confirmRestore = (id: string) => {
         dialog.alert('Restore party', 'Move this party back to active list?', [
@@ -53,7 +30,7 @@ export default function PartyRecycleBinScreen() {
                 onPress: async () => {
                     try {
                         setProcessingId(id);
-                        await restore(id);
+                        await restoreParty(id);
                     } catch (error) {
                         dialog.alert('Restore failed', error instanceof Error ? error.message : 'Unable to restore party.');
                     } finally {
@@ -73,7 +50,7 @@ export default function PartyRecycleBinScreen() {
                 onPress: async () => {
                     try {
                         setProcessingId(id);
-                        await permanentDelete(id);
+                        await permanentlyDeleteParty(id);
                     } catch (error) {
                         dialog.alert('Delete failed', error instanceof Error ? error.message : 'Unable to delete party.');
                     } finally {
