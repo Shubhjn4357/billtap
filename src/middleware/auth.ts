@@ -19,6 +19,10 @@ export type Bindings = {
     SUPPORT_ADMINS?: string;
     READ_ONLY_ADMINS?: string;
     DEVELOPER_ADMIN_EMAILS?: string;
+    DEV_AUTH_BYPASS?: string;
+    DEV_BYPASS_SUBSCRIPTION_GUARDS?: string;
+    DEV_BYPASS_USER_ID?: string;
+    DEV_BYPASS_BUSINESS_ID?: string;
 };
 
 export type AdminAccessRole = 'SUPER_ADMIN' | 'SUPPORT_ADMIN' | 'READ_ONLY_ADMIN' | null;
@@ -42,6 +46,11 @@ export type AppEnv = {
     Variables: AppVariables;
 };
 
+declare global {
+    // eslint-disable-next-line no-var
+    var __VAHI_DEV_BYPASS_SUBSCRIPTION_GUARDS__: string | undefined;
+}
+
 export type AppContext = Context<AppEnv>;
 
 const parseAdmins = (value?: string): string[] => {
@@ -64,6 +73,19 @@ const parseAdmins = (value?: string): string[] => {
         .filter(Boolean);
 };
 
+const isTruthyFlag = (value?: string | null) => /^(1|true|yes|on)$/i.test(String(value ?? '').trim());
+
+const isDevAuthBypassEnabled = (bindings: Bindings) =>
+    isTruthyFlag(bindings.DEV_AUTH_BYPASS)
+    || isTruthyFlag(process.env.DEV_AUTH_BYPASS);
+
+const syncRuntimeDevFlags = (bindings: Bindings) => {
+    globalThis.__VAHI_DEV_BYPASS_SUBSCRIPTION_GUARDS__ =
+        bindings.DEV_BYPASS_SUBSCRIPTION_GUARDS
+        ?? process.env.DEV_BYPASS_SUBSCRIPTION_GUARDS
+        ?? globalThis.__VAHI_DEV_BYPASS_SUBSCRIPTION_GUARDS__;
+};
+
 const getBearerToken = (authHeader: string | undefined) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
     return authHeader.slice('Bearer '.length).trim() || null;
@@ -74,6 +96,51 @@ const getRequestedBusinessId = (c: AppContext): string | null => {
     const fromQuery = c.req.query('organizationId') ?? c.req.query('businessId');
     const value = (fromHeader ?? fromQuery ?? '').trim();
     return value || null;
+};
+
+const getDevBypassContext = async (
+    c: AppContext,
+    db: DrizzleClient
+): Promise<{ user: UserRow; businessId: string | null } | null> => {
+    if (!isDevAuthBypassEnabled(c.env)) return null;
+
+    const explicitBusinessId =
+        c.env.DEV_BYPASS_BUSINESS_ID?.trim()
+        || process.env.DEV_BYPASS_BUSINESS_ID?.trim()
+        || getRequestedBusinessId(c)
+        || null;
+    const explicitUserId =
+        c.env.DEV_BYPASS_USER_ID?.trim()
+        || process.env.DEV_BYPASS_USER_ID?.trim()
+        || null;
+
+    const businessRows = explicitBusinessId
+        ? await db
+            .select()
+            .from(businesses)
+            .where(and(eq(businesses.id, explicitBusinessId), eq(businesses.isActive, true)))
+            .limit(1)
+        : await db
+            .select()
+            .from(businesses)
+            .where(eq(businesses.isActive, true))
+            .limit(1);
+
+    const business = businessRows[0] ?? null;
+
+    const userRows = explicitUserId
+        ? await db.select().from(users).where(eq(users.id, explicitUserId)).limit(1)
+        : business
+            ? await db.select().from(users).where(eq(users.id, business.ownerUserId)).limit(1)
+            : await db.select().from(users).limit(1);
+
+    const user = userRows[0] ?? null;
+    if (!user) return null;
+
+    return {
+        user,
+        businessId: business?.id ?? null,
+    };
 };
 
 const isUsersStorageSchemaError = (error: unknown) => {
@@ -400,6 +467,7 @@ const setAuthenticatedContext = async (
 };
 
 export const optionalAuth = async (c: AppContext, next: Next) => {
+    syncRuntimeDevFlags(c.env);
     const db = c.get('db');
     const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
     let authUser: UserRow | null = null;
@@ -410,6 +478,13 @@ export const optionalAuth = async (c: AppContext, next: Next) => {
     }
 
     if (!authUser) {
+        const bypass = await getDevBypassContext(c, db);
+        if (bypass) {
+            const adminRole = resolveAdminRole(bypass.user, c.env);
+            await setAuthenticatedContext(c, db, bypass.user, adminRole, bypass.businessId);
+            await next();
+            return;
+        }
         setAnonymousContext(c);
         await next();
         return;
@@ -427,6 +502,7 @@ export const optionalAuth = async (c: AppContext, next: Next) => {
 };
 
 export const requireAuth = async (c: AppContext, next: Next) => {
+    syncRuntimeDevFlags(c.env);
     const db = c.get('db');
     const jwtSecret = c.env.JWT_SECRET ?? c.env.API_JWT_SECRET;
     let authUser: UserRow | null = null;
@@ -445,6 +521,13 @@ export const requireAuth = async (c: AppContext, next: Next) => {
     }
 
     if (!authUser) {
+        const bypass = await getDevBypassContext(c, db);
+        if (bypass) {
+            const adminRole = resolveAdminRole(bypass.user, c.env);
+            await setAuthenticatedContext(c, db, bypass.user, adminRole, bypass.businessId);
+            await next();
+            return;
+        }
         return c.json({
             ok: false,
             message: 'Unauthorized.',

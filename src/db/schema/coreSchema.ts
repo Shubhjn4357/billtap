@@ -9,6 +9,7 @@ import {
     pgTable,
     text,
     timestamp,
+    uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import {
     accountTypeEnum,
@@ -463,7 +464,7 @@ export const godownStock = pgTable('godown_stock', {
     quantity: doublePrecision('quantity').default(0).notNull(),
     ...createTimestamps(),
 }, (table) => ({
-    godownItemIdx: index('godown_stock_godown_item_idx').on(table.godownId, table.itemId),
+    godownItemUniqueIdx: uniqueIndex('godown_stock_godown_item_uidx').on(table.godownId, table.itemId),
     businessIdx: index('godown_stock_business_idx').on(table.businessId),
 }));
 

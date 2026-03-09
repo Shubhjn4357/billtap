@@ -30,6 +30,7 @@ import {
     assertSubscriptionWriteAllowed,
     bumpMonthlyBillUsage,
 } from '../services/subscriptionPolicy';
+import { withTransaction } from '../db/transaction';
 
 const transactionsRoute = new Hono<AppEnv>();
 
@@ -168,6 +169,14 @@ const toInvoiceType = (
     return 'TAX_INVOICE';
 };
 
+const isNonPostingInvoiceType = (invoiceType: typeof invoices.$inferSelect['invoiceType']) =>
+    invoiceType === 'ESTIMATE' || invoiceType === 'PROFORMA';
+
+const isNonPostingPayload = (payload: z.infer<typeof createTransactionSchema>) =>
+    payload.billMode === 'ESTIMATE'
+    || payload.invoiceType === 'ESTIMATE'
+    || payload.invoiceType === 'PROFORMA';
+
 const asSettingsRecord = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     return value as Record<string, unknown>;
@@ -190,6 +199,90 @@ const asSettingNumber = (value: unknown, fallback = 0) => {
         if (Number.isFinite(parsed)) return parsed;
     }
     return fallback;
+};
+
+const getTransportLineGodowns = (value: unknown): Record<string, string> => {
+    const transport = asMetadataRecord(value);
+    const raw = asMetadataRecord(transport.lineGodowns);
+    return Object.entries(raw).reduce<Record<string, string>>((acc, [key, entry]) => {
+        if (typeof entry === 'string' && entry.trim()) {
+            acc[key] = entry.trim();
+        }
+        return acc;
+    }, {});
+};
+
+const getTransportDefaultGodownId = (value: unknown): string | null => {
+    const transport = asMetadataRecord(value);
+    const raw = transport.defaultGodownId;
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+};
+
+const repairLegacyGodownPosting = async (params: {
+    db: AppEnv['Variables']['db'];
+    businessId: string;
+    invoice: typeof invoices.$inferSelect;
+    payload: z.infer<typeof createTransactionSchema>;
+}) => {
+    const { db, businessId, invoice, payload } = params;
+    if (isNonPostingInvoiceType(invoice.invoiceType)) return;
+
+    const existingLineGodowns = getTransportLineGodowns(invoice.transportDetails);
+    if (Object.keys(existingLineGodowns).length > 0) return;
+
+    const defaultGodownId = getTransportDefaultGodownId(invoice.transportDetails)
+        ?? payload.godownId?.trim()
+        ?? null;
+    if (!defaultGodownId && !payload.items.some((entry) => entry.godownId?.trim())) {
+        return;
+    }
+
+    const delta = resolveTypeDelta(deriveTransactionType(invoice));
+    const now = new Date();
+
+    await withTransaction(db, async (tx) => {
+        const storedLines = await tx
+            .select()
+            .from(invoiceItems)
+            .where(eq(invoiceItems.invoiceId, invoice.id))
+            .orderBy(asc(invoiceItems.createdAt));
+        if (storedLines.length === 0) return;
+
+        const nextLineGodowns: Record<string, string> = {};
+        for (const [index, line] of storedLines.entries()) {
+            const requestedLine = payload.items[index];
+            const postingGodownId = requestedLine?.godownId?.trim() || defaultGodownId;
+            if (!postingGodownId) continue;
+            nextLineGodowns[line.id] = postingGodownId;
+
+            if (!line.itemId) continue;
+            const quantity = Number(line.quantity ?? 0);
+            await tx.insert(godownStock).values({
+                id: `gstk_${nanoid(16)}`,
+                businessId,
+                godownId: postingGodownId,
+                itemId: line.itemId,
+                quantity: delta * quantity,
+                createdAt: now,
+                updatedAt: now,
+            }).onConflictDoUpdate({
+                target: [godownStock.godownId, godownStock.itemId],
+                set: {
+                    quantity: sql`${godownStock.quantity} + ${delta * quantity}`,
+                    updatedAt: now,
+                },
+            });
+        }
+
+        await tx.update(invoices).set({
+            transportDetails: {
+                ...asMetadataRecord(invoice.transportDetails),
+                defaultGodownId,
+                lineGodowns: nextLineGodowns,
+            },
+            updatedAt: now,
+        }).where(and(eq(invoices.id, invoice.id), eq(invoices.businessId, businessId)));
+    });
 };
 
 transactionsRoute.use('/*', requireAuth);
@@ -242,7 +335,6 @@ transactionsRoute.post('/', async (c) => {
         if (payload.type === 'PURCHASE' || payload.type === 'RETURN_INWARD') {
             assertFeatureFlag(subscription, 'PURCHASE_MODULE');
         }
-        await assertBillCreationAllowed(db, business.id, subscription, payload.billDate);
         const now = new Date();
         const requestedGodownIds = Array.from(new Set([
             payload.godownId?.trim(),
@@ -260,29 +352,46 @@ transactionsRoute.post('/', async (c) => {
             return c.json({ ok: false, message: 'One or more selected godowns are invalid.' }, 400);
         }
         const defaultGodownId = payload.godownId?.trim() || null;
-
-        let partyId = payload.partyId ?? null;
-        if (!partyId && payload.partyName) {
-            const newPartyId = `pty_${nanoid(16)}`;
-            await db.insert(parties).values({
-                id: newPartyId,
-                businessId: business.id,
-                type: payload.type === 'PURCHASE' ? 'SUPPLIER' : 'CUSTOMER',
-                name: payload.partyName,
-                nameLowercase: payload.partyName.toLowerCase(),
-                phone: payload.partyPhone ?? null,
-                email: null,
-                billingAddress: null,
-                shippingAddress: null,
-                gstin: null,
-                openingBalance: 0,
-                creditLimit: 0,
-                isActive: true,
-                createdAt: now,
-                updatedAt: now,
-            });
-            partyId = newPartyId;
+        const requestedItemIds = Array.from(new Set(
+            payload.items
+                .map((entry) => entry.id?.trim())
+                .filter((entry): entry is string => Boolean(entry))
+        ));
+        const itemRows = requestedItemIds.length > 0
+            ? await db.select().from(items).where(and(
+                eq(items.businessId, business.id),
+                inArray(items.id, requestedItemIds),
+            ))
+            : [];
+        if (itemRows.length !== requestedItemIds.length) {
+            return c.json({ ok: false, message: 'One or more selected items are invalid.' }, 400);
         }
+        const itemStockById = new Map(itemRows.map((entry) => [entry.id, Number(entry.stock ?? 0)]));
+
+        const requestedInvoiceId = payload.id?.trim();
+        if (requestedInvoiceId) {
+            const existingRows = await db
+                .select()
+                .from(invoices)
+                .where(and(
+                    eq(invoices.id, requestedInvoiceId),
+                    eq(invoices.businessId, business.id),
+                    eq(invoices.isDeleted, false),
+                ))
+                .limit(1);
+            const existingInvoice = existingRows[0];
+            if (existingInvoice) {
+                await repairLegacyGodownPosting({
+                    db,
+                    businessId: business.id,
+                    invoice: existingInvoice,
+                    payload,
+                });
+                return c.json({ ok: true, id: existingInvoice.id, idempotent: true });
+            }
+        }
+
+        await assertBillCreationAllowed(db, business.id, subscription, payload.billDate);
 
         const invoiceId = payload.id?.trim() || `inv_${nanoid(18)}`;
         const invoiceNumber = payload.billNumber?.trim() || generateInvoiceNumber();
@@ -310,9 +419,7 @@ transactionsRoute.post('/', async (c) => {
         const tdsAmount = tdsEnabled ? asSettingNumber(payload.tdsAmount, 0) : 0;
         const totalTaxAmount = Number(payload.taxAmount ?? 0);
         const totalInvoiceValue = Number(payload.totalAmount ?? 0) + tcsAmount - tdsAmount;
-        const isNonPostingDoc = payload.billMode === 'ESTIMATE'
-            || payload.invoiceType === 'ESTIMATE'
-            || payload.invoiceType === 'PROFORMA';
+        const isNonPostingDoc = isNonPostingPayload(payload);
         const complianceMeta: Record<string, unknown> = {
             transactionType: payload.type,
             documentKind: payload.documentKind ?? payload.invoiceType ?? payload.type,
@@ -330,135 +437,151 @@ transactionsRoute.post('/', async (c) => {
             lineGodowns: {},
         };
 
-        await db.insert(invoices).values({
-            id: invoiceId,
-            businessId: business.id,
-            invoiceType: toInvoiceType(payload.billMode, payload.invoiceType as 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'ESTIMATE' | 'PROFORMA' | 'CREDIT_NOTE_DOC' | 'DEBIT_NOTE_DOC' | 'DELIVERY_CHALLAN_DOC' | 'POS_BILL' | undefined),
-            invoiceNumber,
-            invoiceDate: billDate,
-            partyId,
-            placeOfSupply,
-            totalTaxableValue: Number(payload.totalAmount ?? 0) - totalTaxAmount,
-            totalTaxAmount,
-            totalInvoiceValue,
-            discountAmount: payload.discountAmount ?? 0,
-            roundOffAmount: 0,
-            additionalCharges: 0,
-            reverseCharge: payload.reverseCharge ?? false,
-            gstRateBreakupJson: complianceMeta,
-            eInvoiceIrn: payload.eInvoiceIrn ?? null,
-            eInvoiceStatus: payload.eInvoiceStatus ?? null,
-            eWayBillNumber: payload.eWayBillNumber ?? null,
-            paymentStatus: toCanonicalPaymentStatus(payload.paymentStatus),
-            paidAmount: payload.paidAmount ?? 0,
-            dueDate: payload.dueDate ?? null,
-            notes: payload.remark ?? null,
-            transportDetails,
-            isDeleted: false,
-            createdByUserId: authUser.id,
-            createdAt: now,
-            updatedAt: now,
-        });
-
         const delta = resolveTypeDelta(payload.type);
-
         const lineGodowns: Record<string, string> = {};
-        for (const entry of payload.items) {
-            assertAllowedGstRate(entry.tax);
-            const lineTaxableValue = entry.price * entry.quantity;
-            const lineTaxAmount = lineTaxableValue * (entry.tax / 100);
-            const cgstRate = isInterStateSupply ? 0 : (entry.tax > 0 ? entry.tax / 2 : 0);
-            const sgstRate = isInterStateSupply ? 0 : (entry.tax > 0 ? entry.tax / 2 : 0);
-            const igstRate = isInterStateSupply ? entry.tax : 0;
-            const cgstAmount = isInterStateSupply ? 0 : lineTaxAmount / 2;
-            const sgstAmount = isInterStateSupply ? 0 : lineTaxAmount / 2;
-            const igstAmount = isInterStateSupply ? lineTaxAmount : 0;
-            const lineItemId = `invi_${nanoid(16)}`;
-            const postingGodownId = entry.godownId?.trim() || defaultGodownId;
-
-            await db.insert(invoiceItems).values({
-                id: lineItemId,
-                invoiceId,
-                itemId: entry.id ?? null,
-                description: entry.name,
-                quantity: entry.quantity,
-                unit: 'pcs',
-                rate: entry.price,
-                discountPercent: 0,
-                taxableValue: lineTaxableValue,
-                cgstRate,
-                cgstAmount,
-                sgstRate,
-                sgstAmount,
-                igstRate,
-                igstAmount,
-                cessRate: 0,
-                cessAmount: 0,
-            });
-            if (postingGodownId) {
-                lineGodowns[lineItemId] = postingGodownId;
+        await withTransaction(db, async (tx) => {
+            let partyId = payload.partyId ?? null;
+            if (!partyId && payload.partyName) {
+                const newPartyId = `pty_${nanoid(16)}`;
+                await tx.insert(parties).values({
+                    id: newPartyId,
+                    businessId: business.id,
+                    type: payload.type === 'PURCHASE' ? 'SUPPLIER' : 'CUSTOMER',
+                    name: payload.partyName,
+                    nameLowercase: payload.partyName.toLowerCase(),
+                    phone: payload.partyPhone ?? null,
+                    email: null,
+                    billingAddress: null,
+                    shippingAddress: null,
+                    gstin: null,
+                    openingBalance: 0,
+                    creditLimit: 0,
+                    isActive: true,
+                    createdAt: now,
+                    updatedAt: now,
+                });
+                partyId = newPartyId;
             }
 
-            if (entry.id && !isNonPostingDoc) {
-                const itemRows = await db
-                    .select()
-                    .from(items)
-                    .where(and(eq(items.id, entry.id), eq(items.businessId, business.id)))
-                    .limit(1);
+            await tx.insert(invoices).values({
+                id: invoiceId,
+                businessId: business.id,
+                invoiceType: toInvoiceType(payload.billMode, payload.invoiceType as 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'ESTIMATE' | 'PROFORMA' | 'CREDIT_NOTE_DOC' | 'DEBIT_NOTE_DOC' | 'DELIVERY_CHALLAN_DOC' | 'POS_BILL' | undefined),
+                invoiceNumber,
+                invoiceDate: billDate,
+                partyId,
+                placeOfSupply,
+                totalTaxableValue: Number(payload.totalAmount ?? 0) - totalTaxAmount,
+                totalTaxAmount,
+                totalInvoiceValue,
+                discountAmount: payload.discountAmount ?? 0,
+                roundOffAmount: 0,
+                additionalCharges: 0,
+                reverseCharge: payload.reverseCharge ?? false,
+                gstRateBreakupJson: complianceMeta,
+                eInvoiceIrn: payload.eInvoiceIrn ?? null,
+                eInvoiceStatus: payload.eInvoiceStatus ?? null,
+                eWayBillNumber: payload.eWayBillNumber ?? null,
+                paymentStatus: toCanonicalPaymentStatus(payload.paymentStatus),
+                paidAmount: payload.paidAmount ?? 0,
+                dueDate: payload.dueDate ?? null,
+                notes: payload.remark ?? null,
+                transportDetails,
+                isDeleted: false,
+                createdByUserId: authUser.id,
+                createdAt: now,
+                updatedAt: now,
+            });
 
-                const item = itemRows[0];
-                if (item) {
-                    const currentStock = Number(item.stock ?? 0);
-                    const nextStock = currentStock + (delta * entry.quantity);
+            for (const entry of payload.items) {
+                assertAllowedGstRate(entry.tax);
+                const lineTaxableValue = entry.price * entry.quantity;
+                const lineTaxAmount = lineTaxableValue * (entry.tax / 100);
+                const cgstRate = isInterStateSupply ? 0 : (entry.tax > 0 ? entry.tax / 2 : 0);
+                const sgstRate = isInterStateSupply ? 0 : (entry.tax > 0 ? entry.tax / 2 : 0);
+                const igstRate = isInterStateSupply ? entry.tax : 0;
+                const cgstAmount = isInterStateSupply ? 0 : lineTaxAmount / 2;
+                const sgstAmount = isInterStateSupply ? 0 : lineTaxAmount / 2;
+                const igstAmount = isInterStateSupply ? lineTaxAmount : 0;
+                const lineItemId = `invi_${nanoid(16)}`;
+                const postingGodownId = entry.godownId?.trim() || defaultGodownId;
 
-                    await db.update(items).set({
-                        stock: nextStock,
-                        updatedAt: now,
-                    }).where(and(eq(items.id, entry.id), eq(items.businessId, business.id)));
+                await tx.insert(invoiceItems).values({
+                    id: lineItemId,
+                    invoiceId,
+                    itemId: entry.id ?? null,
+                    description: entry.name,
+                    quantity: entry.quantity,
+                    unit: 'pcs',
+                    rate: entry.price,
+                    discountPercent: 0,
+                    taxableValue: lineTaxableValue,
+                    cgstRate,
+                    cgstAmount,
+                    sgstRate,
+                    sgstAmount,
+                    igstRate,
+                    igstAmount,
+                    cessRate: 0,
+                    cessAmount: 0,
+                });
+                if (postingGodownId) {
+                    lineGodowns[lineItemId] = postingGodownId;
+                }
 
-                    await db.insert(inventoryMovements).values({
-                        id: `mov_${nanoid(16)}`,
+                if (!entry.id || isNonPostingDoc) continue;
+
+                const currentStock = itemStockById.get(entry.id) ?? 0;
+                const nextStock = currentStock + (delta * entry.quantity);
+                itemStockById.set(entry.id, nextStock);
+
+                await tx.update(items).set({
+                    stock: nextStock,
+                    updatedAt: now,
+                }).where(and(eq(items.id, entry.id), eq(items.businessId, business.id)));
+
+                await tx.insert(inventoryMovements).values({
+                    id: `mov_${nanoid(16)}`,
+                    businessId: business.id,
+                    itemId: entry.id,
+                    movementType: delta >= 0 ? 'IN' : 'OUT',
+                    quantity: entry.quantity,
+                    balanceAfter: nextStock,
+                    reason: payload.type,
+                    referenceId: invoiceId,
+                    createdByUserId: authUser.id,
+                    createdAt: now,
+                });
+
+                if (postingGodownId && godownById.has(postingGodownId)) {
+                    await tx.insert(godownStock).values({
+                        id: `gstk_${nanoid(16)}`,
                         businessId: business.id,
+                        godownId: postingGodownId,
                         itemId: entry.id,
-                        movementType: delta >= 0 ? 'IN' : 'OUT',
-                        quantity: entry.quantity,
-                        balanceAfter: nextStock,
-                        reason: payload.type,
-                        referenceId: invoiceId,
-                        createdByUserId: authUser.id,
+                        quantity: delta * entry.quantity,
                         createdAt: now,
-                    });
-
-                    if (postingGodownId && godownById.has(postingGodownId)) {
-                        await db.insert(godownStock).values({
-                            id: `gstk_${nanoid(16)}`,
-                            businessId: business.id,
-                            godownId: postingGodownId,
-                            itemId: entry.id,
-                            quantity: delta * entry.quantity,
-                            createdAt: now,
+                        updatedAt: now,
+                    }).onConflictDoUpdate({
+                        target: [godownStock.godownId, godownStock.itemId],
+                        set: {
+                            quantity: sql`${godownStock.quantity} + ${delta * entry.quantity}`,
                             updatedAt: now,
-                        }).onConflictDoUpdate({
-                            target: [godownStock.godownId, godownStock.itemId],
-                            set: {
-                                quantity: sql`${godownStock.quantity} + ${delta * entry.quantity}`,
-                                updatedAt: now,
-                            },
-                        });
-                    }
+                        },
+                    });
                 }
             }
-        }
 
-        await db.update(invoices).set({
-            transportDetails: {
-                defaultGodownId,
-                lineGodowns,
-            },
-            updatedAt: now,
-        }).where(and(eq(invoices.id, invoiceId), eq(invoices.businessId, business.id)));
+            await tx.update(invoices).set({
+                transportDetails: {
+                    defaultGodownId,
+                    lineGodowns,
+                },
+                updatedAt: now,
+            }).where(and(eq(invoices.id, invoiceId), eq(invoices.businessId, business.id)));
 
-        await bumpMonthlyBillUsage(db, business.id, subscription, billDate);
+            await bumpMonthlyBillUsage(tx, business.id, subscription, billDate);
+        });
 
         return c.json({ ok: true, id: invoiceId });
     } catch (error) {
@@ -827,8 +950,11 @@ transactionsRoute.delete('/:id', async (c) => {
         if (invoice.isDeleted) return c.json({ ok: false, message: 'Transaction already deleted.' }, 400);
 
         const transactionType = deriveTransactionType(invoice);
-        const isNonPostingDoc = invoice.invoiceType === 'ESTIMATE' || invoice.invoiceType === 'PROFORMA';
+        const isNonPostingDoc = isNonPostingInvoiceType(invoice.invoiceType);
         const now = new Date();
+        const transportDetails = asMetadataRecord(invoice.transportDetails);
+        const lineGodowns = getTransportLineGodowns(transportDetails);
+        const defaultGodownId = getTransportDefaultGodownId(transportDetails);
 
         await db.transaction(async (tx) => {
             if (!isNonPostingDoc) {
@@ -867,6 +993,28 @@ transactionsRoute.delete('/:id', async (c) => {
                         createdByUserId: authUser.id,
                         createdAt: now,
                     });
+
+                    const postingGodownId = typeof lineGodowns[line.id] === 'string'
+                        ? lineGodowns[line.id]
+                        : defaultGodownId;
+                    if (postingGodownId) {
+                        const adjustment = -(delta * quantity);
+                        await tx.insert(godownStock).values({
+                            id: `gstk_${nanoid(16)}`,
+                            businessId: business.id,
+                            godownId: postingGodownId,
+                            itemId: line.itemId,
+                            quantity: adjustment,
+                            createdAt: now,
+                            updatedAt: now,
+                        }).onConflictDoUpdate({
+                            target: [godownStock.godownId, godownStock.itemId],
+                            set: {
+                                quantity: sql`${godownStock.quantity} + ${adjustment}`,
+                                updatedAt: now,
+                            },
+                        });
+                    }
                 }
             }
 

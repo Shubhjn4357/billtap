@@ -3,8 +3,14 @@ import { z } from 'zod';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { godowns, godownStock, stockTransfers, items } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { getAccessibleBusiness, getRequestedBusinessId } from './helpers';
+import {
+    getAccessibleBusiness,
+    getRequestedBusinessId,
+    getActiveSubscription,
+    requireOrganizationCapability,
+} from './helpers';
 import { nanoid } from 'nanoid';
+import { assertModuleEnabled, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
 
 const godownsRoute = new Hono<AppEnv>();
 
@@ -37,10 +43,26 @@ godownsRoute.post('/', async (c) => {
 
     try {
         const body = z.object({
+            id: z.string().trim().min(1).optional(),
             name: z.string().min(1).max(200),
             address: z.string().max(500).optional(),
             isDefault: z.boolean().optional().default(false),
         }).parse(await c.req.json());
+        const denied = requireOrganizationCapability(c, 'inventory.write');
+        if (denied) return denied;
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'inventory');
+
+        if (body.id) {
+            const existing = await db.select().from(godowns).where(and(
+                eq(godowns.id, body.id),
+                eq(godowns.businessId, business.id),
+            )).limit(1);
+            if (existing[0]) {
+                return c.json({ ok: true, data: existing[0] });
+            }
+        }
 
         const now = new Date();
         if (body.isDefault) {
@@ -49,7 +71,7 @@ godownsRoute.post('/', async (c) => {
         }
 
         const [godown] = await db.insert(godowns).values({
-            id: `gdwn_${nanoid(16)}`,
+            id: body.id?.trim() || `gdwn_${nanoid(16)}`,
             businessId: business.id,
             name: body.name,
             address: body.address,
@@ -74,6 +96,11 @@ godownsRoute.put('/:id', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.write');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'inventory');
 
     const id = c.req.param('id');
     try {
@@ -106,6 +133,11 @@ godownsRoute.delete('/:id', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.write');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'inventory');
 
     const id = c.req.param('id');
     await db.update(godowns).set({ isActive: false, updatedAt: new Date() })
@@ -149,6 +181,11 @@ godownsRoute.post('/transfer', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.write');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'inventory');
 
     try {
         const body = z.object({

@@ -12,6 +12,8 @@ import type { BusinessRow, SubscriptionRow } from '../db/schema';
 import type { DrizzleClient } from '../db/client';
 import { AppError } from './apiError';
 
+type MutationCapableDb = Pick<DrizzleClient, 'select' | 'update' | 'insert'>;
+
 export const GST_RATE_SLABS = [0, 0.25, 3, 5, 18, 40] as const;
 
 const asRecord = (value: unknown): Record<string, unknown> => {
@@ -33,6 +35,14 @@ const getMonthRange = (value: Date) => {
 };
 
 const nowDateOnly = () => toDateOnly(new Date());
+
+const isTruthyFlag = (value?: string | null) => /^(1|true|yes|on)$/i.test(String(value ?? '').trim());
+
+const isDevSubscriptionBypassEnabled = () =>
+    isTruthyFlag(
+        globalThis.__VAHI_DEV_BYPASS_SUBSCRIPTION_GUARDS__
+        ?? process.env.DEV_BYPASS_SUBSCRIPTION_GUARDS
+    );
 
 export const isAllowedGstRate = (value: number) => {
     return GST_RATE_SLABS.some((entry) => Math.abs(entry - value) < 0.000001);
@@ -102,6 +112,9 @@ const assertSubscriptionWritableByStatus = (subscription: SubscriptionRow | null
 };
 
 export const assertSubscriptionWriteAllowed = (subscription: SubscriptionRow | null) => {
+    if (isDevSubscriptionBypassEnabled()) {
+        return;
+    }
     assertSubscriptionWritableByStatus(subscription);
     if (!subscription) return;
     if (subscription.offlineOnly || !subscription.cloudSyncAllowed) {
@@ -119,6 +132,9 @@ export const hasFeatureFlag = (subscription: SubscriptionRow | null, featureFlag
 };
 
 export const assertFeatureFlag = (subscription: SubscriptionRow | null, featureFlag: string) => {
+    if (isDevSubscriptionBypassEnabled()) {
+        return;
+    }
     if (!hasFeatureFlag(subscription, featureFlag)) {
         throw new AppError(
             'FEATURE_NOT_ENABLED',
@@ -134,6 +150,9 @@ export const assertBillCreationAllowed = async (
     subscription: SubscriptionRow | null,
     billDateInput?: Date
 ) => {
+    if (isDevSubscriptionBypassEnabled()) {
+        return;
+    }
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'GST_INVOICES');
 
@@ -175,11 +194,14 @@ export const assertBillCreationAllowed = async (
 };
 
 export const bumpMonthlyBillUsage = async (
-    db: DrizzleClient,
+    db: MutationCapableDb,
     businessId: string,
     subscription: SubscriptionRow | null,
     billDateInput?: Date
 ) => {
+    if (isDevSubscriptionBypassEnabled()) {
+        return;
+    }
     if (!subscription) return;
 
     const billDate = billDateInput ? new Date(billDateInput) : new Date();
@@ -226,6 +248,9 @@ export const assertStaffCreationAllowed = async (
     businessId: string,
     subscription: SubscriptionRow | null
 ) => {
+    if (isDevSubscriptionBypassEnabled()) {
+        return;
+    }
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'STAFF_USERS');
 
@@ -254,6 +279,9 @@ export const assertDeviceRegistrationAllowed = async (
     businessId: string,
     subscription: SubscriptionRow | null
 ) => {
+    if (isDevSubscriptionBypassEnabled()) {
+        return;
+    }
     assertSubscriptionWriteAllowed(subscription);
     assertFeatureFlag(subscription, 'MULTI_DEVICE');
 
@@ -278,6 +306,9 @@ export const assertBusinessCreationAllowed = async (
     userId: string,
     referenceBusinessId?: string | null
 ) => {
+    if (isDevSubscriptionBypassEnabled()) {
+        return;
+    }
     const ownedBusinesses = await db
         .select({ id: businesses.id })
         .from(businesses)

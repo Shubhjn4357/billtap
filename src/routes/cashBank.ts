@@ -3,8 +3,14 @@ import { z } from 'zod';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { accounts, voucherLines, vouchers } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { getAccessibleBusiness, getRequestedBusinessId, requireOrganizationCapability } from './helpers';
+import {
+    getAccessibleBusiness,
+    getRequestedBusinessId,
+    getActiveSubscription,
+    requireOrganizationCapability,
+} from './helpers';
 import { nanoid } from 'nanoid';
+import { assertModuleEnabled, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
 
 const cashBankRoute = new Hono<AppEnv>();
 
@@ -77,21 +83,37 @@ const resolveNarration = (
     fallback: string
 ) => body.narration?.trim() || body.description?.trim() || fallback;
 
-const assertAuthBusiness = async (c: Parameters<typeof requireAuth>[0], capability?: string) => {
+const assertAuthBusiness = async (
+    c: Parameters<typeof requireAuth>[0],
+    capability?: string,
+    options?: {
+        requireWrite?: boolean;
+        moduleKey?: 'accounts' | 'inventory' | 'settings' | 'operations' | 'billing' | 'staff' | 'reports' | 'parties' | 'home';
+    }
+) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
     if (!authUser) {
-        return { error: c.json({ ok: false, message: 'Unauthorized.' }, 401), db: null, business: null, authUser: null };
+        return { error: c.json({ ok: false, message: 'Unauthorized.' }, 401), db: null, business: null, authUser: null, subscription: null };
     }
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) {
-        return { error: c.json({ ok: false, message: 'Business not found.' }, 404), db: null, business: null, authUser: null };
+        return { error: c.json({ ok: false, message: 'Business not found.' }, 404), db: null, business: null, authUser: null, subscription: null };
     }
     if (capability) {
         const denied = requireOrganizationCapability(c, capability);
-        if (denied) return { error: denied, db: null, business: null, authUser: null };
+        if (denied) return { error: denied, db: null, business: null, authUser: null, subscription: null };
     }
-    return { error: null, db, business, authUser };
+    if (options?.moduleKey) {
+        assertModuleEnabled(business, options.moduleKey);
+    }
+    const subscription = options?.requireWrite
+        ? await getActiveSubscription(db, business.id)
+        : null;
+    if (subscription) {
+        assertSubscriptionWriteAllowed(subscription);
+    }
+    return { error: null, db, business, authUser, subscription };
 };
 
 const getBusinessAssetAccounts = async (db: AppEnv['Variables']['db'], businessId: string) => {
@@ -227,7 +249,7 @@ cashBankRoute.get('/operations', async (c) => {
 
 // Get cash & bank account balances
 cashBankRoute.get('/balances', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.read');
+    const context = await assertAuthBusiness(c, 'cashbank.read', { moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business) return context.error!;
 
     const cashBankAccounts = await getBusinessAssetAccounts(context.db, context.business.id);
@@ -243,7 +265,7 @@ cashBankRoute.get('/balances', async (c) => {
 });
 
 cashBankRoute.get('/summary', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.read');
+    const context = await assertAuthBusiness(c, 'cashbank.read', { moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business) return context.error!;
 
     const accountsList = await getBusinessAssetAccounts(context.db, context.business.id);
@@ -279,7 +301,7 @@ cashBankRoute.get('/summary', async (c) => {
 
 // Contra entry
 cashBankRoute.post('/contra', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.write');
+    const context = await assertAuthBusiness(c, 'cashbank.write', { requireWrite: true, moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business || !context.authUser) return context.error!;
 
     try {
@@ -323,7 +345,7 @@ cashBankRoute.post('/contra', async (c) => {
 
 // Alias transfer -> contra
 cashBankRoute.post('/transfer', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.write');
+    const context = await assertAuthBusiness(c, 'cashbank.write', { requireWrite: true, moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business || !context.authUser) return context.error!;
 
     try {
@@ -367,7 +389,7 @@ cashBankRoute.post('/transfer', async (c) => {
 
 // Deposit
 cashBankRoute.post('/deposit', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.write');
+    const context = await assertAuthBusiness(c, 'cashbank.write', { requireWrite: true, moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business || !context.authUser) return context.error!;
 
     try {
@@ -410,7 +432,7 @@ cashBankRoute.post('/deposit', async (c) => {
 
 // Withdrawal
 cashBankRoute.post('/withdraw', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.write');
+    const context = await assertAuthBusiness(c, 'cashbank.write', { requireWrite: true, moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business || !context.authUser) return context.error!;
 
     try {
@@ -451,7 +473,7 @@ cashBankRoute.post('/withdraw', async (c) => {
 });
 
 cashBankRoute.post('/cheques/receive', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.write');
+    const context = await assertAuthBusiness(c, 'cashbank.write', { requireWrite: true, moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business || !context.authUser) return context.error!;
 
     try {
@@ -499,7 +521,7 @@ cashBankRoute.post('/cheques/receive', async (c) => {
 });
 
 cashBankRoute.post('/cheques/deposit', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.write');
+    const context = await assertAuthBusiness(c, 'cashbank.write', { requireWrite: true, moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business || !context.authUser) return context.error!;
 
     try {
@@ -538,7 +560,7 @@ cashBankRoute.post('/cheques/deposit', async (c) => {
 });
 
 cashBankRoute.post('/cheques/bounce', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.write');
+    const context = await assertAuthBusiness(c, 'cashbank.write', { requireWrite: true, moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business || !context.authUser) return context.error!;
 
     try {
@@ -578,7 +600,7 @@ cashBankRoute.post('/cheques/bounce', async (c) => {
 
 // Account ledger
 cashBankRoute.get('/ledger/:accountId', async (c) => {
-    const context = await assertAuthBusiness(c, 'cashbank.read');
+    const context = await assertAuthBusiness(c, 'cashbank.read', { moduleKey: 'accounts' });
     if (context.error || !context.db || !context.business) return context.error!;
 
     const accountId = c.req.param('accountId');

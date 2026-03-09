@@ -3,14 +3,21 @@ import { z } from 'zod';
 import { eq, and, desc } from 'drizzle-orm';
 import { loans, loanTransactions } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { getAccessibleBusiness, getRequestedBusinessId, requireOrganizationCapability } from './helpers';
+import {
+    getAccessibleBusiness,
+    getRequestedBusinessId,
+    getActiveSubscription,
+    requireOrganizationCapability,
+} from './helpers';
 import { nanoid } from 'nanoid';
+import { assertModuleEnabled, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
 
 const loansRoute = new Hono<AppEnv>();
 
 loansRoute.use('/*', requireAuth);
 
 const createLoanSchema = z.object({
+    id: z.string().trim().min(1).optional(),
     lenderBorrowerName: z.string().min(1).max(200),
     loanType: z.enum(['BORROWED', 'GIVEN']),
     openingDate: z.string().date(),
@@ -39,6 +46,7 @@ loansRoute.get('/', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'loans.read');
     if (denied) return denied;
+    assertModuleEnabled(business, 'accounts');
 
     const rows = await db.select().from(loans)
         .where(and(eq(loans.businessId, business.id), eq(loans.isActive, true)))
@@ -57,6 +65,7 @@ loansRoute.get('/:id', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'loans.read');
     if (denied) return denied;
+    assertModuleEnabled(business, 'accounts');
 
     const id = c.req.param('id');
     const [loan] = await db.select().from(loans).where(and(eq(loans.id, id), eq(loans.businessId, business.id)));
@@ -79,11 +88,23 @@ loansRoute.post('/', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'loans.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     try {
         const body = createLoanSchema.parse(await c.req.json());
         const now = new Date();
-        const id = `loan_${nanoid(16)}`;
+        if (body.id) {
+            const existing = await db.select().from(loans).where(and(
+                eq(loans.id, body.id),
+                eq(loans.businessId, business.id),
+            )).limit(1);
+            if (existing[0]) {
+                return c.json({ ok: true, data: existing[0] });
+            }
+        }
+        const id = body.id?.trim() || `loan_${nanoid(16)}`;
 
         const [loan] = await db.insert(loans).values({
             id,
@@ -120,6 +141,9 @@ loansRoute.put('/:id', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'loans.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     const id = c.req.param('id');
     try {
@@ -145,6 +169,9 @@ loansRoute.delete('/:id', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'loans.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     const id = c.req.param('id');
     await db.update(loans).set({ isActive: false, updatedAt: new Date() })
@@ -162,6 +189,9 @@ loansRoute.post('/:id/transactions', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'loans.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     const loanId = c.req.param('id');
     const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), eq(loans.businessId, business.id)));

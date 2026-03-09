@@ -3,14 +3,21 @@ import { z } from 'zod';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { expenses } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
-import { getAccessibleBusiness, getRequestedBusinessId, requireOrganizationCapability } from './helpers';
+import {
+    getAccessibleBusiness,
+    getRequestedBusinessId,
+    getActiveSubscription,
+    requireOrganizationCapability,
+} from './helpers';
 import { nanoid } from 'nanoid';
+import { assertModuleEnabled, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
 
 const expensesRoute = new Hono<AppEnv>();
 
 expensesRoute.use('/*', requireAuth);
 
 const createExpenseSchema = z.object({
+    id: z.string().trim().min(1).optional(),
     category: z.enum([
         'MANUFACTURING', 'PETROL', 'RENT', 'SALARY',
         'TEA_AND_REFRESHMENTS', 'TRANSPORT', 'MISCELLANEOUS',
@@ -34,6 +41,7 @@ expensesRoute.get('/', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'expenses.read');
     if (denied) return denied;
+    assertModuleEnabled(business, 'accounts');
 
     const from = c.req.query('from');
     const to = c.req.query('to');
@@ -69,6 +77,7 @@ expensesRoute.get('/:id', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'expenses.read');
     if (denied) return denied;
+    assertModuleEnabled(business, 'accounts');
 
     const id = c.req.param('id');
     if (id === 'recycle-bin') {
@@ -95,11 +104,23 @@ expensesRoute.post('/', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'expenses.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     try {
         const body = createExpenseSchema.parse(await c.req.json());
         const now = new Date();
-        const id = `exp_${nanoid(18)}`;
+        if (body.id) {
+            const existing = await db.select().from(expenses).where(and(
+                eq(expenses.id, body.id),
+                eq(expenses.businessId, business.id),
+            )).limit(1);
+            if (existing[0]) {
+                return c.json({ ok: true, data: existing[0] });
+            }
+        }
+        const id = body.id?.trim() || `exp_${nanoid(18)}`;
 
         const [expense] = await db.insert(expenses).values({
             id,
@@ -134,6 +155,9 @@ expensesRoute.put('/:id', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'expenses.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     const id = c.req.param('id');
     const [existing] = await db.select().from(expenses).where(and(eq(expenses.id, id), eq(expenses.businessId, business.id)));
@@ -163,6 +187,9 @@ expensesRoute.delete('/:id', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'expenses.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     const id = c.req.param('id');
     const [existing] = await db.select().from(expenses).where(and(eq(expenses.id, id), eq(expenses.businessId, business.id)));
@@ -182,6 +209,9 @@ expensesRoute.post('/:id/restore', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'expenses.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     const id = c.req.param('id');
     const [existing] = await db.select().from(expenses).where(and(eq(expenses.id, id), eq(expenses.businessId, business.id)));
@@ -201,6 +231,9 @@ expensesRoute.delete('/:id/permanent', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'expenses.write');
     if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertSubscriptionWriteAllowed(subscription);
+    assertModuleEnabled(business, 'accounts');
 
     const id = c.req.param('id');
     await db.delete(expenses).where(and(
@@ -221,6 +254,7 @@ expensesRoute.get('/reports/by-category', async (c) => {
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
     const denied = requireOrganizationCapability(c, 'expenses.read');
     if (denied) return denied;
+    assertModuleEnabled(business, 'accounts');
 
     const from = c.req.query('from');
     const to = c.req.query('to');

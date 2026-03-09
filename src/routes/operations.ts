@@ -13,8 +13,12 @@ import {
     requireOrganizationCapability,
 } from './helpers';
 import { assertModuleEnabled, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
+import { toApiErrorPayload } from '../services/apiError';
 
 const operationsRoute = new Hono<AppEnv>();
+
+const asResponseStatus = (status: number) =>
+    status as 400 | 401 | 403 | 404 | 409 | 422 | 500;
 
 const controlsSchema = z.object({
     makerCheckerEnabled: z.boolean().optional(),
@@ -315,7 +319,12 @@ operationsRoute.put('/controls', async (c) => {
 
         return c.json({ ok: true, controls: nextControls });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update controls.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'OPERATIONS_CONTROLS_UPDATE_FAILED',
+            message: 'Failed to update controls.',
+            status: 400,
+        });
+        return c.json({ ok: false, message: mapped.error.message, error: mapped.error }, asResponseStatus(mapped.status));
     }
 });
 
@@ -347,6 +356,9 @@ operationsRoute.post('/approvals', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
             ?? await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'operations');
         const payload = z.object({
             actionType: z.enum(['UPDATE_CONTROLS', 'LOCK_PERIOD', 'CLOSE_PERIOD', 'REOPEN_PERIOD', 'CUSTOM']),
             module: z.string().trim().default('operations'),
@@ -373,7 +385,12 @@ operationsRoute.post('/approvals', async (c) => {
         await appendApproval(db, business.id, settings, approval);
         return c.json({ ok: true, approvalId: approval.id });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to create approval.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'OPERATIONS_APPROVAL_CREATE_FAILED',
+            message: 'Failed to create approval.',
+            status: 400,
+        });
+        return c.json({ ok: false, message: mapped.error.message, error: mapped.error }, asResponseStatus(mapped.status));
     }
 });
 
@@ -387,6 +404,9 @@ operationsRoute.post('/approvals/:id/approve', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
             ?? await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'operations');
         const settings = (business.settings ?? {}) as Record<string, unknown>;
         const approvalId = c.req.param('id');
         const approvals = getApprovals(settings);
@@ -422,7 +442,12 @@ operationsRoute.post('/approvals/:id/approve', async (c) => {
 
         return c.json({ ok: true, approval: updated });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to approve request.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'OPERATIONS_APPROVAL_APPROVE_FAILED',
+            message: 'Failed to approve request.',
+            status: 400,
+        });
+        return c.json({ ok: false, message: mapped.error.message, error: mapped.error }, asResponseStatus(mapped.status));
     }
 });
 
@@ -436,6 +461,9 @@ operationsRoute.post('/approvals/:id/reject', async (c) => {
 
         const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
             ?? await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertModuleEnabled(business, 'operations');
         const settings = (business.settings ?? {}) as Record<string, unknown>;
         const approvalId = c.req.param('id');
         const notePayload = z.object({ note: z.string().trim().optional() }).safeParse(await c.req.json().catch(() => ({})));
@@ -462,7 +490,12 @@ operationsRoute.post('/approvals/:id/reject', async (c) => {
 
         return c.json({ ok: true, approval: updated });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to reject request.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'OPERATIONS_APPROVAL_REJECT_FAILED',
+            message: 'Failed to reject request.',
+            status: 400,
+        });
+        return c.json({ ok: false, message: mapped.error.message, error: mapped.error }, asResponseStatus(mapped.status));
     }
 });
 
@@ -573,7 +606,12 @@ operationsRoute.post('/periods/lock', async (c) => {
         await upsertFinancialPeriods(db, business.id, settings, [nextPeriod, ...current]);
         return c.json({ ok: true, id, period: nextPeriod });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to lock period.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'OPERATIONS_PERIOD_LOCK_FAILED',
+            message: 'Failed to lock period.',
+            status: 400,
+        });
+        return c.json({ ok: false, message: mapped.error.message, error: mapped.error }, asResponseStatus(mapped.status));
     }
 });
 
@@ -631,7 +669,12 @@ operationsRoute.post('/periods/:id/close', async (c) => {
         await upsertFinancialPeriods(db, business.id, settings, next);
         return c.json({ ok: true, period: updated });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to close period.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'OPERATIONS_PERIOD_CLOSE_FAILED',
+            message: 'Failed to close period.',
+            status: 400,
+        });
+        return c.json({ ok: false, message: mapped.error.message, error: mapped.error }, asResponseStatus(mapped.status));
     }
 });
 
@@ -689,7 +732,12 @@ operationsRoute.post('/periods/:id/reopen', async (c) => {
         await upsertFinancialPeriods(db, business.id, settings, next);
         return c.json({ ok: true, period: updated });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to reopen period.' }, 400);
+        const mapped = toApiErrorPayload(error, {
+            code: 'OPERATIONS_PERIOD_REOPEN_FAILED',
+            message: 'Failed to reopen period.',
+            status: 400,
+        });
+        return c.json({ ok: false, message: mapped.error.message, error: mapped.error }, asResponseStatus(mapped.status));
     }
 });
 

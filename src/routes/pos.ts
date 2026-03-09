@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { invoices, invoiceItems, items, subscriptions, planUsage } from '../db/schema';
+import { invoices, invoiceItems, items } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     getAccessibleBusiness,
@@ -9,7 +9,12 @@ import {
     requireOrganizationAction,
     requireOrganizationCapability,
 } from './helpers';
-import { assertAllowedGstRate, assertFeatureFlag, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
+import {
+    assertAllowedGstRate,
+    assertFeatureFlag,
+    assertSubscriptionWriteAllowed,
+    bumpMonthlyBillUsage,
+} from '../services/subscriptionPolicy';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 
@@ -162,25 +167,7 @@ posRoute.post('/sale', async (c) => {
                 }
             }
 
-            // Track plan usage
-            const month = now.getMonth() + 1;
-            const year = now.getFullYear();
-            await tx.insert(planUsage).values({
-                id: `pu_${nanoid(16)}`,
-                businessId: business.id,
-                subscriptionId: subscription?.id ?? 'unknown',
-                month,
-                year,
-                billsCreatedInMonth: 1,
-                storageUsedMb: 0,
-                staffUsersCount: 0,
-                devicesCount: 0,
-                createdAt: now,
-                updatedAt: now,
-            }).onConflictDoUpdate({
-                target: [planUsage.businessId],
-                set: { billsCreatedInMonth: sql`${planUsage.billsCreatedInMonth} + 1`, updatedAt: now },
-            });
+            await bumpMonthlyBillUsage(tx, business.id, subscription, invoiceDate);
         });
 
         const [created] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));

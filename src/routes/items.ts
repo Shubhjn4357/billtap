@@ -12,6 +12,7 @@ import {
     requireOrganizationAction,
     requireOrganizationCapability,
 } from './helpers';
+import { toApiErrorPayload } from '../services/apiError';
 import {
     assertAllowedGstRate,
     assertFeatureFlag,
@@ -231,7 +232,13 @@ itemsRoute.post('/', async (c) => {
         const authUser = c.get('authUser');
         if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        const business = await ensurePrimaryBusiness(db, authUser);
+        const requestedBusinessId = getRequestedBusinessId(c);
+        const business =
+            await getAccessibleBusiness(db, authUser.id, requestedBusinessId)
+            ?? (requestedBusinessId ? null : await ensurePrimaryBusiness(db, authUser));
+        if (!business) {
+            return c.json({ ok: false, message: 'Business not found.' }, 404);
+        }
         const denied = requireOrganizationCapability(c, 'inventory.write');
         if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
@@ -325,7 +332,12 @@ itemsRoute.post('/', async (c) => {
 
         return c.json({ ok: true, id });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to save item.' }, 400);
+        const { status, error: payload } = toApiErrorPayload(error, {
+            code: 'ITEM_SAVE_FAILED',
+            message: 'Failed to save item.',
+            status: 400,
+        });
+        return c.json({ ok: false, ...payload }, status as 400 | 401 | 403 | 404 | 409 | 422 | 500);
     }
 });
 
@@ -376,7 +388,12 @@ itemsRoute.patch('/:id', async (c) => {
 
         return c.json({ ok: true });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update item.' }, 400);
+        const { status, error: payload } = toApiErrorPayload(error, {
+            code: 'ITEM_UPDATE_FAILED',
+            message: 'Failed to update item.',
+            status: 400,
+        });
+        return c.json({ ok: false, ...payload }, status as 400 | 401 | 403 | 404 | 409 | 422 | 500);
     }
 });
 
@@ -441,7 +458,12 @@ itemsRoute.post('/:id/adjust', async (c) => {
 
         return c.json({ ok: true });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to adjust stock.' }, 400);
+        const { status, error: payload } = toApiErrorPayload(error, {
+            code: 'ITEM_ADJUST_FAILED',
+            message: 'Failed to adjust stock.',
+            status: 400,
+        });
+        return c.json({ ok: false, ...payload }, status as 400 | 401 | 403 | 404 | 409 | 422 | 500);
     }
 });
 

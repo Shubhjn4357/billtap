@@ -12,6 +12,7 @@ import {
     requireOrganizationAction,
     requireOrganizationCapability,
 } from './helpers';
+import { toApiErrorPayload } from '../services/apiError';
 import {
     assertFeatureFlag,
     assertModuleEnabled,
@@ -127,7 +128,13 @@ partiesRoute.post('/', async (c) => {
         const authUser = c.get('authUser');
         if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        const business = await ensurePrimaryBusiness(db, authUser);
+        const requestedBusinessId = getRequestedBusinessId(c);
+        const business =
+            await getAccessibleBusiness(db, authUser.id, requestedBusinessId)
+            ?? (requestedBusinessId ? null : await ensurePrimaryBusiness(db, authUser));
+        if (!business) {
+            return c.json({ ok: false, message: 'Business not found.' }, 404);
+        }
         const denied = requireOrganizationCapability(c, 'parties.write');
         if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
@@ -184,7 +191,15 @@ partiesRoute.post('/', async (c) => {
 
         return c.json({ ok: true, id });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to save party.' }, 400);
+        const { status, error: payload } = toApiErrorPayload(error, {
+            code: 'PARTY_SAVE_FAILED',
+            message: 'Failed to save party.',
+            status: 400,
+        });
+        return c.json(
+            { ok: false, ...payload },
+            status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 
@@ -270,7 +285,15 @@ partiesRoute.patch('/:id', async (c) => {
 
         return c.json({ ok: true });
     } catch (error) {
-        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update party.' }, 400);
+        const { status, error: payload } = toApiErrorPayload(error, {
+            code: 'PARTY_UPDATE_FAILED',
+            message: 'Failed to update party.',
+            status: 400,
+        });
+        return c.json(
+            { ok: false, ...payload },
+            status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+        );
     }
 });
 
