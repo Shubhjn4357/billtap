@@ -10,6 +10,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toUserMessage } from '../../../api/client';
+import { DESIGN_SPACING } from '../../../constants/designSystem';
 import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { PartyType } from '../../../constants/enums';
 import { PARTY_TYPE_OPTIONS } from '../../../constants/formOptions';
@@ -429,9 +430,9 @@ const styles = (colors: ColorPalette) =>
         safe: { flex: 1, backgroundColor: colors.background },
         flex: { flex: 1 },
         loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        typeRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-        form: { paddingHorizontal: Spacing.lg, gap: Spacing.md },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
+        typeRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.md },
+        form: { paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.md },
         inputWrap: { marginBottom: Spacing.xs },
         multiline: { minHeight: 80 },
         phoneRow: { flexDirection: 'row', gap: Spacing.sm },

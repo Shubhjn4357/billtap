@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FeatureFlag } from '../../../constants/enums';
 import { MORE_SCREEN_SECTIONS } from '../../../constants/utilityNavigation';
-import { DESIGN_SPACING, getInsetPanelStyle } from '../../../constants/designSystem';
+import { DESIGN_SPACING, getInsetPanelStyle, getPillStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { canAccessModule, getEffectiveFeatureFlags } from '../../../utils/accessControl';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -173,7 +173,7 @@ export default function MoreScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        header: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+        header: { paddingHorizontal: DESIGN_SPACING.screenX, paddingVertical: Spacing.md },
         title: { fontSize: Typography.headline.size, fontWeight: '700', color: colors.text },
         searchWrap: {
             paddingHorizontal: DESIGN_SPACING.screenX,
@@ -202,6 +202,6 @@ const styles = (colors: ColorPalette) =>
             fontWeight: '600',
         },
         section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap },
-        signOutBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center' },
+        signOutBtn: { ...getPillStyle(colors, colors.error), borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center' },
         signOutText: { fontWeight: '700', fontSize: 14 },
     });

@@ -5,7 +5,8 @@ import { router } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ACCOUNTS_HUB_LINKS } from '../../../constants/accountsOptions';
-import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import type { Expense, Loan } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -169,7 +170,11 @@ export default function AccountsScreen() {
                     {balancesLoading ? <ActivityIndicator color={colors.primary} /> : filteredAccounts.length === 0 ? (
                         <Text style={s.emptyText}>No accounts set up</Text>
                     ) : filteredAccounts.slice(0, 3).map((account) => (
-                        <View key={account.id} style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+                        <Pressable
+                            key={account.id}
+                            style={({ pressed }) => [s.row, getSurfaceStyle(colors, { elevated: true }), { opacity: pressed ? 0.86 : 1 }]}
+                            onPress={() => router.push(`/(main)/accounts/cash-bank/${account.id}` as Parameters<typeof router.push>[0])}
+                        >
                             <Text style={s.rowName}>{account.name}</Text>
                             <View style={s.rowRight}>
                                 <Text style={[s.rowBalance, { color: (account.balance ?? 0) >= 0 ? colors.success : colors.error }]}>
@@ -177,7 +182,7 @@ export default function AccountsScreen() {
                                 </Text>
                                 <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
                             </View>
-                        </View>
+                        </Pressable>
                     ))}
                 </View>
 
@@ -192,7 +197,7 @@ export default function AccountsScreen() {
                     {expensesLoading ? <ActivityIndicator color={colors.primary} /> : filteredExpenses.length === 0 ? (
                         <Text style={s.emptyText}>No expenses recorded</Text>
                     ) : filteredExpenses.slice(0, 5).map((expense) => (
-                        <View key={expense.id} style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+                        <View key={expense.id} style={[s.row, getSurfaceStyle(colors, { elevated: true })]}> 
                             <View>
                                 <Text style={s.rowName}>{expense.category}</Text>
                                 <Text style={s.rowSub}>{getExpenseDescription(expense)}</Text>
@@ -219,7 +224,11 @@ export default function AccountsScreen() {
                     {loansLoading ? <ActivityIndicator color={colors.primary} /> : filteredLoans.length === 0 ? (
                         <Text style={s.emptyText}>No loans added</Text>
                     ) : filteredLoans.slice(0, 5).map((loan) => (
-                        <Pressable key={loan.id} style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push(`/(main)/accounts/loans/${loan.id}` as Parameters<typeof router.push>[0])}>
+                        <Pressable
+                            key={loan.id}
+                            style={({ pressed }) => [s.row, getSurfaceStyle(colors, { elevated: true }), { opacity: pressed ? 0.86 : 1 }]}
+                            onPress={() => router.push(`/(main)/accounts/loans/${loan.id}` as Parameters<typeof router.push>[0])}
+                        >
                             <View>
                                 <Text style={s.rowName}>{getLoanName(loan)}</Text>
                                 <Text style={s.rowSub}>{getLoanType(loan)} | {getLoanRate(loan)}%</Text>
@@ -247,30 +256,32 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         searchWrap: {
-            paddingHorizontal: Spacing.lg,
-            marginBottom: Spacing.sm,
+            paddingHorizontal: DESIGN_SPACING.screenX,
+            marginBottom: DESIGN_SPACING.cardGap,
         },
         heroWrap: {
-            paddingHorizontal: Spacing.lg,
-            marginBottom: Spacing.md,
+            paddingHorizontal: DESIGN_SPACING.screenX,
+            marginBottom: DESIGN_SPACING.sectionGap,
         },
-        section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
+        section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap },
         metricsRow: {
             flexDirection: 'row',
             gap: Spacing.sm,
             flexWrap: 'wrap',
-            paddingHorizontal: Spacing.lg,
-            marginBottom: Spacing.md,
+            paddingHorizontal: DESIGN_SPACING.screenX,
+            marginBottom: DESIGN_SPACING.sectionGap,
         },
         sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.sm },
         sectionTitle: { fontWeight: '700', fontSize: Typography.title.size, color: colors.text },
         sectionCount: {
             minWidth: 22,
             textAlign: 'center',
-            borderRadius: Radius.pill,
             paddingHorizontal: 6,
             paddingVertical: 2,
-            backgroundColor: withAlpha(colors.primary, '12'),
+            borderRadius: Radius.pill,
+            borderWidth: 1,
+            borderColor: `${colors.primary}33`,
+            backgroundColor: `${colors.primary}12`,
             color: colors.primary,
             fontSize: Typography.caption.size,
             fontWeight: '700',
@@ -281,17 +292,16 @@ const styles = (colors: ColorPalette) =>
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
-            borderRadius: Radius.card,
             padding: Spacing.md,
             marginBottom: Spacing.sm,
-            borderWidth: 1,
+            borderRadius: Radius.card,
         },
         rowName: { color: colors.text, fontWeight: '600', fontSize: 14 },
         rowSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
         rowBalance: { fontWeight: '700', fontSize: 14 },
         rowRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
         emptyText: { color: colors.textSecondary, fontSize: 13, marginBottom: Spacing.sm },
-        outlineButton: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center', marginTop: Spacing.sm },
+        outlineButton: { ...getPillStyle(colors, colors.primary), borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center', marginTop: Spacing.sm },
         outlineText: { fontWeight: '600', fontSize: 13 },
     });
 

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
@@ -26,8 +27,10 @@ export function AuthHero({ eyebrow, title, subtitle, icon, children }: AuthHeroP
             style={[
                 styles.hero,
                 {
-                    backgroundColor: colors.card,
-                    borderColor: withAlpha(colors.primary, '18'),
+                    ...getSurfaceStyle(colors, {
+                        accent: colors.primary,
+                        elevated: true,
+                    }),
                 },
             ]}
         >
@@ -54,8 +57,9 @@ export function AuthPanel({ title, description, children }: AuthPanelProps) {
             style={[
                 styles.panel,
                 {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
+                    ...getSurfaceStyle(colors, {
+                        elevated: true,
+                    }),
                 },
             ]}
         >
@@ -78,8 +82,8 @@ export function AuthChip({ icon, label }: { icon: keyof typeof MaterialCommunity
             style={[
                 styles.chip,
                 {
-                    backgroundColor: colors.backgroundElement,
-                    borderColor: withAlpha(colors.primary, '16'),
+                    ...getPillStyle(colors, colors.primary),
+                    backgroundColor: withAlpha(colors.primary, '10'),
                 },
             ]}
         >
@@ -91,15 +95,9 @@ export function AuthChip({ icon, label }: { icon: keyof typeof MaterialCommunity
 
 const styles = StyleSheet.create({
     hero: {
-        borderWidth: 1,
         borderRadius: 28,
         padding: Spacing.lg,
         gap: Spacing.md,
-        shadowColor: '#000000',
-        shadowOpacity: 0.06,
-        shadowRadius: 18,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 4,
     },
     heroHeader: {
         flexDirection: 'row',
@@ -138,15 +136,9 @@ const styles = StyleSheet.create({
         gap: Spacing.xs,
     },
     panel: {
-        borderWidth: 1,
         borderRadius: Radius.card,
         padding: Spacing.md,
         gap: Spacing.sm,
-        shadowColor: '#000000',
-        shadowOpacity: 0.04,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 6 },
-        elevation: 2,
     },
     panelHeader: {
         gap: 2,
@@ -161,7 +153,6 @@ const styles = StyleSheet.create({
     },
     chip: {
         minHeight: 32,
-        borderWidth: 1,
         borderRadius: Radius.pill,
         paddingHorizontal: Spacing.sm,
         paddingVertical: 6,

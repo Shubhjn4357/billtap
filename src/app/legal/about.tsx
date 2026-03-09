@@ -3,9 +3,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../hooks/useSmartBack';
 import Constants from 'expo-constants';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { AppTopBar } from '../../components/ui/AppTopBar';
+import { UtilityHero } from '../../components/ui/UtilityBlocks';
 
 export default function AboutScreen() {
     const colors = useAppColors();
@@ -23,14 +25,14 @@ export default function AboutScreen() {
             />
 
             <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-                <View style={[s.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                    <Text style={[s.appName, { color: colors.text }]}>Vahi</Text>
-                    <Text style={[s.appTagline, { color: colors.textSecondary }]}>
-                        GST billing, inventory, POS, and accounting for Indian businesses.
-                    </Text>
-                </View>
+                <UtilityHero
+                    title="About Vahi"
+                    subtitle="GST billing, inventory, POS, and accounting for Indian businesses."
+                    icon="information-outline"
+                    tone="info"
+                />
 
-                <View style={[s.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                <View style={[s.card, getSurfaceStyle(colors, { elevated: true })]}>
                     <View style={s.metaRow}>
                         <Text style={[s.metaLabel, { color: colors.textSecondary }]}>Version</Text>
                         <Text style={[s.metaValue, { color: colors.text }]}>{version}</Text>
@@ -45,7 +47,7 @@ export default function AboutScreen() {
                     </View>
                 </View>
 
-                <View style={[s.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                <View style={[s.card, getSurfaceStyle(colors, { elevated: true })]}>
                     <Text style={[s.linkHeader, { color: colors.text }]}>Quick Links</Text>
                     <Pressable onPress={() => router.push('/legal/terms')} style={s.linkItem}>
                         <Text style={[s.linkText, { color: colors.primary }]}>Terms of Service</Text>
@@ -67,9 +69,8 @@ export default function AboutScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, gap: DESIGN_SPACING.cardGap },
         card: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,

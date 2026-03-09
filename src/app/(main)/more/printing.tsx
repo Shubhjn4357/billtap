@@ -15,6 +15,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { SettingsSection } from '../../../constants/enums';
 import { PRINT_LAYOUT_TYPE_OPTIONS, PRINTER_CONNECTION_OPTIONS, PRINT_TAB_OPTIONS, STANDARD_LAYOUT_OPTIONS, THERMAL_PRESET_OPTIONS, type PrintLayoutType, type PrintTab } from '../../../constants/printingOptions';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
@@ -149,7 +150,7 @@ export default function PrintingScreen() {
                         {activeTab === 'thermal' ? (
                             <>
                                 {/* Layout Type */}
-                                <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={s.card}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>PRINT LAYOUT</Text>
                                     <View style={s.chipsRow}>
                                         {PRINT_LAYOUT_TYPE_OPTIONS.map((layout) => {
@@ -167,7 +168,7 @@ export default function PrintingScreen() {
                                 </View>
 
                                 {/* Thermal Preset */}
-                                <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={s.card}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>PAPER SIZE / PRESET</Text>
                                     {THERMAL_PRESET_OPTIONS.map((preset) => {
                                         const sel = thermalPreset === preset.key;
@@ -186,7 +187,7 @@ export default function PrintingScreen() {
                                 </View>
 
                                 {/* Connection */}
-                                <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={s.card}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>CONNECTION TYPE</Text>
                                     <View style={s.chipsRow}>
                                         {PRINTER_CONNECTION_OPTIONS.map((conn) => {
@@ -214,7 +215,7 @@ export default function PrintingScreen() {
                                 </View>
 
                                 {/* Live Preview */}
-                                <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={s.card}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>LIVE PREVIEW</Text>
                                     <View style={[s.previewPaper, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                                         <Text style={[s.previewBizName, { color: colors.text, fontSize: preview.textSize + 1 }]}>{business?.name ?? 'YOUR BUSINESS'}</Text>
@@ -230,7 +231,7 @@ export default function PrintingScreen() {
                         ) : (
                             <>
                                 {/* Standard Layout */}
-                                <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={s.card}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>INVOICE LAYOUT</Text>
                                     {STANDARD_LAYOUT_OPTIONS.map((layout) => {
                                         const sel = standardLayout === layout.key;
@@ -249,7 +250,7 @@ export default function PrintingScreen() {
                                 </View>
 
                                 {/* Options */}
-                                <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={s.card}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>OPTIONS</Text>
                                     {[
                                         { label: 'Show Business Logo', value: showLogo, onChange: setShowLogo },
@@ -265,7 +266,7 @@ export default function PrintingScreen() {
                                 </View>
 
                                 {/* Footer & Terms */}
-                                <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={s.card}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>FOOTER & TERMS</Text>
                                     <Text style={[s.inputLabel, { color: colors.textSecondary }]}>Footer Text</Text>
                                     <AppInput value={footerText} onChangeText={setFooterText} placeholder="e.g. Thank you for your business!" containerStyle={s.inputWrap} multiline />
@@ -274,7 +275,7 @@ export default function PrintingScreen() {
                                 </View>
 
                                 {/* Standard Preview Card */}
-                                <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={s.card}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>INVOICE PREVIEW</Text>
                                     <View style={[s.standardPreview, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                                         <View style={[s.standardPreviewHeader, { borderBottomColor: colors.primary, backgroundColor: withAlpha(colors.primary, '10') }]}>
@@ -307,22 +308,22 @@ export default function PrintingScreen() {
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     flex: { flex: 1 },
-    saveBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', minWidth: 34, justifyContent: 'center' },
-    tabRow: { flexDirection: 'row', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.sm },
-    tab: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderRadius: Radius.pill, backgroundColor: colors.surfaceVariant, borderWidth: 1, borderColor: colors.border },
+    saveBtn: { ...getPillStyle(colors, colors.primary), borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', minWidth: 34, justifyContent: 'center' },
+    tabRow: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.sm },
+    tab: { ...getPillStyle(colors), flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderRadius: Radius.pill, backgroundColor: colors.surfaceVariant },
     tabText: { fontSize: 12 },
-    content: { paddingHorizontal: Spacing.lg, paddingBottom: 120, gap: Spacing.sm },
-    card: { borderWidth: 1, borderRadius: Radius.card, padding: Spacing.md, gap: Spacing.sm },
+    content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120, gap: DESIGN_SPACING.cardGap },
+    card: { ...getSurfaceStyle(colors, { elevated: true }), borderRadius: Radius.card, padding: Spacing.md, gap: Spacing.sm },
     sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
     chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    presetRow: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    presetRow: { ...getSurfaceStyle(colors), borderRadius: Radius.md, padding: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     presetRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
     presetRadioInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.onPrimary },
     inputLabel: { fontSize: 11, fontWeight: '600', marginTop: 4 },
     inputWrap: { marginTop: 2 },
-    testBtn: { borderWidth: 1, borderRadius: Radius.pill, alignSelf: 'flex-start', paddingHorizontal: Spacing.md, paddingVertical: 7, marginTop: 2 },
+    testBtn: { ...getPillStyle(colors, colors.primary), borderRadius: Radius.pill, alignSelf: 'flex-start', paddingHorizontal: Spacing.md, paddingVertical: 7, marginTop: 2 },
     testBtnText: { fontSize: 12, fontWeight: '700' },
-    previewPaper: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing.sm, gap: 2 },
+    previewPaper: { ...getSurfaceStyle(colors), borderRadius: Radius.md, padding: Spacing.sm, gap: 2 },
     previewBizName: { fontWeight: '800', textAlign: 'center', marginBottom: 2 },
     previewMeta: { textAlign: 'center' },
     previewLine: { textAlign: 'center', marginVertical: 2, letterSpacing: 0.5 },
@@ -331,11 +332,11 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     toggleLabel: { fontSize: 13, fontWeight: '600' },
     toggle: { width: 42, height: 24, borderRadius: 12, borderWidth: 1, justifyContent: 'center' },
     toggleThumb: { position: 'absolute', width: 18, height: 18, borderRadius: 9 },
-    standardPreview: { borderWidth: 1, borderRadius: Radius.md, overflow: 'hidden' },
+    standardPreview: { ...getSurfaceStyle(colors), borderRadius: Radius.md, overflow: 'hidden' },
     standardPreviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 2, padding: 8 },
     stdBizName: { fontWeight: '800', fontSize: 12 },
     stdBizSub: { fontSize: 9, marginTop: 1 },
-    stdLogoPh: { width: 28, height: 28, borderRadius: 4, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+    stdLogoPh: { ...getSurfaceStyle(colors), width: 28, height: 28, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
     stdDivider: { height: 1, marginVertical: 2 },
 });
 

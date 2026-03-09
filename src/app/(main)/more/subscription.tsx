@@ -20,6 +20,7 @@ import {
     type BillingCycleTab,
     type MockCheckoutOutcome,
 } from '../../../constants/subscriptionOptions';
+import { DESIGN_SPACING, getPillStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useSubscriptionMutations } from '../../../hooks/useSubscriptionMutations';
@@ -406,7 +407,7 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         flex: { flex: 1 },
-        content: { paddingHorizontal: Spacing.lg, paddingBottom: 80, gap: Spacing.md },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 80, gap: DESIGN_SPACING.sectionGap },
         modeTitle: { fontSize: 14, fontWeight: '700' },
         modeMeta: { fontSize: 12, marginTop: 4 },
         modeChips: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
@@ -418,6 +419,7 @@ const styles = (colors: ColorPalette) =>
         discountRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
         discountInputWrap: { flex: 1 },
         validateBtn: {
+            ...getPillStyle(colors, colors.primary),
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.sm,
@@ -433,12 +435,14 @@ const styles = (colors: ColorPalette) =>
         planDescription: { marginTop: 4, fontSize: 12 },
         planMeta: { marginTop: 6, fontSize: 11, fontWeight: '600' },
         currentPill: {
+            ...getPillStyle(colors, colors.primary),
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
         },
         currentPillText: { color: colors.onPrimary, fontSize: 11, fontWeight: '700' },
         upgradeBtn: {
+            ...getPillStyle(colors, colors.primary),
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.sm,

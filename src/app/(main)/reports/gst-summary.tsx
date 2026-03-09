@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } f
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GST_PERIOD_OPTIONS } from '../../../constants/reportOptions';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -76,9 +77,9 @@ export default function GstSummaryScreen() {
                             }}
                         />
                     )}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     ListHeaderComponent={
-                        <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[s.summaryCard, getSurfaceStyle(colors, { elevated: true })]}>
                             <View style={s.summaryHeader}>
                                 <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>PERIOD</Text>
                                 <Text style={[s.periodBadge, { color: colors.primary, backgroundColor: withAlpha(colors.primary, '14') }]}>
@@ -102,7 +103,7 @@ export default function GstSummaryScreen() {
                         </View>
                     }
                     renderItem={({ item }) => (
-                        <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
                             <View style={{ flex: 1 }}>
                                 <View style={s.rowTitleWrap}>
                                     <Text style={s.rowTitle}>{item.gstRate}% GST</Text>
@@ -121,7 +122,7 @@ export default function GstSummaryScreen() {
                         </View>
                     )}
                     ListEmptyComponent={(
-                        <View style={[s.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[s.emptyState, getSurfaceStyle(colors, { muted: true })]}>
                             <MaterialCommunityIcons name="file-search-outline" size={22} color={colors.textSecondary} />
                             <Text style={[s.emptyTitle, { color: colors.text }]}>No GST data found</Text>
                             <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Create invoices to generate GST totals.</Text>
@@ -136,10 +137,9 @@ export default function GstSummaryScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        filters: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+        filters: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         summaryCard: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             padding: Spacing.md,
             marginBottom: Spacing.md,
@@ -163,7 +163,6 @@ const styles = (colors: ColorPalette) =>
         summaryCaption: { fontSize: Typography.caption.size, fontWeight: '600' },
         summaryValue: { color: colors.text, fontSize: Typography.title.size, fontWeight: '800', marginTop: 2 },
         row: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,
@@ -186,7 +185,6 @@ const styles = (colors: ColorPalette) =>
         rowValue: { color: colors.textSecondary, fontWeight: '600', fontSize: 11 },
         totalTax: { color: colors.primary, fontWeight: '700', fontSize: 11, marginTop: 2 },
         emptyState: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingVertical: Spacing.lg,
             alignItems: 'center',

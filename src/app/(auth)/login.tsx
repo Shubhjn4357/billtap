@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../constants/designSystem';
 import { authRepository } from '../../repositories/authRepository';
 import {
     configureNativeGoogleSignIn,
@@ -208,24 +209,20 @@ const styles = (colors: ColorPalette) =>
         safe: { flex: 1, backgroundColor: colors.background },
         container: {
             flex: 1,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingTop: Spacing.lg,
             paddingBottom: Spacing.xl,
-            gap: Spacing.md,
+            gap: DESIGN_SPACING.sectionGap,
         },
         brandCard: {
+            ...getSurfaceStyle(colors, {
+                accent: colors.primary,
+                elevated: true,
+            }),
             alignItems: 'center',
-            backgroundColor: colors.card,
             borderRadius: 28,
-            borderWidth: 1,
-            borderColor: withAlpha(colors.primary, '14'),
             paddingVertical: Spacing.lg,
             paddingHorizontal: Spacing.md,
-            shadowColor: colors.text,
-            shadowOpacity: 0.04,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 2,
         },
         logoFrame: {
             width: 84,

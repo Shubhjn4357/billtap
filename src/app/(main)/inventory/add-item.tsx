@@ -9,6 +9,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toUserMessage } from '../../../api/client';
+import { DESIGN_SPACING } from '../../../constants/designSystem';
 import { SettingsSection } from '../../../constants/enums';
 import { ITEM_GST_RATE_OPTIONS } from '../../../constants/formOptions';
 import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
@@ -705,16 +706,16 @@ const styles = (colors: ColorPalette) =>
         flex: { flex: 1 },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         content: { paddingBottom: Spacing.xl },
-        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        helperWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
+        helperWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
         permissionHintWrap: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingBottom: Spacing.sm,
         },
         permissionHint: {
             fontSize: 12,
         },
-        section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+        section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.md },
         inputWrap: { marginBottom: Spacing.xs },
         row: { flexDirection: 'row', gap: Spacing.sm },
         suggestionList: { marginTop: Spacing.xs },

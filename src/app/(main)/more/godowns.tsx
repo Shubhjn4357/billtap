@@ -3,9 +3,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { EmptyStateCard } from '../../../components/ui/ListBlocks';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useGodowns } from '../../../hooks/useGodowns';
 import { useGodownMutations } from '../../../hooks/useGodownMutations';
@@ -28,7 +31,7 @@ export default function GodownsScreen() {
                 rightAction={(
                     <View style={s.topActions}>
                         <Pressable
-                            style={[s.secondaryBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                            style={s.secondaryBtn}
                             onPress={() => router.push('/(main)/more/godowns/transfer' as Parameters<typeof router.push>[0])}
                         >
                             <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.text} />
@@ -45,22 +48,29 @@ export default function GodownsScreen() {
                 )}
             />
 
+            <View style={s.heroWrap}>
+                <UtilityHero
+                    title="Stock Locations"
+                    subtitle="Manage warehouses, view stock by location, and transfer inventory between godowns."
+                    icon="warehouse"
+                    tone="info"
+                />
+            </View>
+
             {isLoading ? (
                 <View style={s.centered}>
                     <ActivityIndicator color={colors.primary} />
                 </View>
             ) : godowns.length === 0 ? (
                 <View style={s.centered}>
-                    <MaterialCommunityIcons name="warehouse" size={52} color={colors.textSecondary} />
-                    <Text style={[s.emptyTitle, { color: colors.text }]}>No godowns configured</Text>
-                    <Text style={[s.emptyMeta, { color: colors.textSecondary }]}>Add warehouses to track stock location and transfers.</Text>
-                    <Pressable
-                        style={[s.emptyBtn, { backgroundColor: colors.primary }]}
-                        onPress={() => router.push('/(main)/more/godowns/add')}
-                    >
-                        <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
-                        <Text style={s.emptyBtnText}>Add Godown</Text>
-                    </Pressable>
+                    <EmptyStateCard
+                        icon="warehouse"
+                        title="No godowns configured"
+                        subtitle="Add warehouses to track stock location and transfers."
+                        tone="info"
+                        actionLabel="Add Godown"
+                        onActionPress={() => router.push('/(main)/more/godowns/add')}
+                    />
                 </View>
             ) : (
                 <FlatList
@@ -75,10 +85,10 @@ export default function GodownsScreen() {
                             }}
                         />
                     )}
-                    contentContainerStyle={{ paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     renderItem={({ item }) => (
                         <Pressable
-                            style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}
+                            style={[s.row, getSurfaceStyle(colors, { elevated: true })]}
                             onPress={() => router.push(`/(main)/more/godowns/${item.id}`)}
                             onLongPress={() => dialog.alert('Delete Godown', `Delete "${item.name}"?`, [
                                 { text: 'Cancel', style: 'cancel' },
@@ -125,7 +135,7 @@ const styles = (colors: ColorPalette) =>
             flex: 1,
             alignItems: 'center',
             justifyContent: 'center',
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             gap: Spacing.sm,
         },
         addBtn: {
@@ -142,14 +152,15 @@ const styles = (colors: ColorPalette) =>
             gap: Spacing.xs,
         },
         secondaryBtn: {
+            ...getPillStyle(colors),
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
-            borderWidth: 1,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 4,
         },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap },
         addBtnText: { color: colors.onPrimary, fontSize: Typography.caption.size, fontWeight: '700' },
         secondaryBtnText: { fontSize: Typography.caption.size, fontWeight: '700' },
         emptyTitle: { fontSize: Typography.title.size, fontWeight: '700' },
@@ -165,10 +176,8 @@ const styles = (colors: ColorPalette) =>
         },
         emptyBtnText: { color: colors.onPrimary, fontSize: Typography.body.size, fontWeight: '700' },
         row: {
-            marginHorizontal: Spacing.lg,
             marginBottom: Spacing.sm,
             borderRadius: Radius.card,
-            borderWidth: 1,
             padding: Spacing.md,
             flexDirection: 'row',
             alignItems: 'center',

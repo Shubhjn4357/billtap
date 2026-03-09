@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useAuthStore } from '../../store/authStore';
@@ -205,8 +206,6 @@ export function GoToPalette() {
                     style={[
                         s.sheet,
                         {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.border,
                             paddingBottom: Math.max(insets.bottom + Spacing.lg, Spacing.xl),
                         },
                     ]}
@@ -231,7 +230,7 @@ export function GoToPalette() {
                             {smartEntries.length > 0 ? (
                                 <View style={s.block}>
                                     <Text style={[s.blockTitle, { color: colors.textSecondary }]}>SMART LINKS</Text>
-                                    <View style={[s.group, { backgroundColor: colors.card }]}>
+                                    <View style={[s.group, getSurfaceStyle(colors, { elevated: true })]}>
                                         {smartEntries.map((entry, index) => (
                                             <Pressable
                                                 key={entry.label}
@@ -255,7 +254,7 @@ export function GoToPalette() {
 
                             <View style={s.block}>
                                 <Text style={[s.blockTitle, { color: colors.textSecondary }]}>ALL ROUTES</Text>
-                                <View style={[s.group, { backgroundColor: colors.card }]}>
+                                <View style={[s.group, getSurfaceStyle(colors, { elevated: true })]}>
                                     {visibleRoutes.map((entry, index) => (
                                         <Pressable
                                             key={entry.label}
@@ -300,12 +299,12 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     sheet: {
         borderTopLeftRadius: Radius.lg,
         borderTopRightRadius: Radius.lg,
-        borderWidth: 1,
         borderBottomWidth: 0,
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: DESIGN_SPACING.screenX,
         paddingTop: Spacing.md,
         gap: Spacing.sm,
         minHeight: '96%',
+        ...getSurfaceStyle(colors, { floating: true }),
     },
     sheetHeader: {
         flexDirection: 'row',
@@ -322,7 +321,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     },
     searchInput: {
         borderRadius: Radius.pill,
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.sm,
         fontSize: Typography.body.size,
     },

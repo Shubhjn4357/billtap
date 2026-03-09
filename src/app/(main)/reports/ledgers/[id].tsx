@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
@@ -64,7 +65,7 @@ export default function LedgerDetailScreen() {
                             }}
                         />
                     )}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <>
                             <View style={s.heroWrap}>
@@ -81,7 +82,7 @@ export default function LedgerDetailScreen() {
                                 <HubMetricCard label="Visible" value={String(filteredEntries.length)} meta="After filters" tone="warning" />
                             </View>
 
-                            <View style={[s.filterCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[s.filterCard, getSurfaceStyle(colors, { elevated: true })]}>
                                 <Text style={s.filterTitle}>Filters</Text>
                                 <DateField value={fromDate} onChange={setFromDate} placeholder="From date" />
                                 <DateField value={toDate} onChange={setToDate} placeholder="To date" />
@@ -99,7 +100,7 @@ export default function LedgerDetailScreen() {
                         </>
                     }
                     renderItem={({ item }) => (
-                        <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
                             <View style={{ flex: 1 }}>
                                 <View style={s.rowTitleWrap}>
                                     <Text style={s.rowTitle}>{item.voucherNumber}</Text>
@@ -135,7 +136,6 @@ const styles = (colors: ColorPalette) =>
         heroWrap: { marginBottom: Spacing.sm },
         statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.md },
         filterCard: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             padding: Spacing.md,
             marginBottom: Spacing.md,
@@ -144,7 +144,6 @@ const styles = (colors: ColorPalette) =>
         filterTitle: { color: colors.text, fontSize: Typography.caption.size, fontWeight: '700', letterSpacing: 0.8 },
         filterCount: { fontSize: 11, marginTop: 2 },
         row: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,

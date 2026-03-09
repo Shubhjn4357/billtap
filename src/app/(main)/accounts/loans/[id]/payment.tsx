@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../../hooks/useSmartBack';
+import { DESIGN_SPACING, getPillStyle } from '../../../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../../../constants/theme';
 import { useAppColors } from '../../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../../components/ui/AppTopBar';
@@ -105,15 +106,15 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         saveBtn: {
+            ...getPillStyle(colors),
             minHeight: 34,
             minWidth: 56,
-            borderWidth: 1,
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
             paddingHorizontal: Spacing.md,
         },
-        content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.sm },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingTop: Spacing.sm, gap: DESIGN_SPACING.cardGap },
         heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.xs },
         notesInput: { minHeight: 64, textAlignVertical: 'top' },

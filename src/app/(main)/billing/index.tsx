@@ -243,7 +243,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     fabText: { fontSize: 28, lineHeight: 30, fontWeight: '700' },
     modalRoot: { flex: 1, justifyContent: 'flex-end' },
     backdrop: { ...StyleSheet.absoluteFillObject },
-    sheet: { borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, borderBottomWidth: 0, paddingHorizontal: Spacing.lg, paddingBottom: 32, paddingTop: Spacing.sm, maxHeight: '80%', ...getSurfaceStyle(colors, { floating: true, elevated: true }) },
+    sheet: { borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, borderBottomWidth: 0, paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 32, paddingTop: Spacing.sm, maxHeight: '80%', ...getSurfaceStyle(colors, { floating: true, elevated: true }) },
     sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: Spacing.sm },
     sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
     sheetTitle: { fontSize: Typography.title.size, fontWeight: '700' },
@@ -254,7 +254,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
 });
 
 const rowStyles = StyleSheet.create({
-    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderRadius: Radius.card },
+    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm, borderRadius: Radius.card },
     left: { flex: 1 },
     right: { alignItems: 'flex-end' },
     topRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: 2 },

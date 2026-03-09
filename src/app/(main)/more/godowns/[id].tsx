@@ -4,9 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { EmptyStateCard } from '../../../../components/ui/ListBlocks';
+import { UtilityHero } from '../../../../components/ui/UtilityBlocks';
 import { useGodownStock } from '../../../../hooks/useGodowns';
 
 export default function GodownDetailScreen() {
@@ -57,15 +60,29 @@ export default function GodownDetailScreen() {
                             }}
                         />
                     )}
-                    contentContainerStyle={{ paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
+                    ListHeaderComponent={(
+                        <View style={s.heroWrap}>
+                            <UtilityHero
+                                title="Location Inventory"
+                                subtitle={`${stock.length} item ${stock.length === 1 ? 'entry' : 'entries'} tracked at this godown.`}
+                                icon="warehouse"
+                                tone="info"
+                            />
+                        </View>
+                    )}
                     ListEmptyComponent={(
                         <View style={s.centered}>
-                            <MaterialCommunityIcons name="inbox-outline" size={42} color={colors.textSecondary} />
-                            <Text style={[s.emptyText, { color: colors.textSecondary }]}>No stock entries found.</Text>
+                            <EmptyStateCard
+                                icon="inbox-outline"
+                                title="No stock entries found"
+                                subtitle="This location has no visible stock movements yet."
+                                tone="info"
+                            />
                         </View>
                     )}
                     renderItem={({ item }) => (
-                        <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
                             <View style={[s.iconWrap, { backgroundColor: withAlpha(colors.primary, '16') }]}>
                                 <MaterialCommunityIcons name="package-variant-closed" size={16} color={colors.primary} />
                             </View>
@@ -92,17 +109,15 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         centered: {
-            flex: 1,
             alignItems: 'center',
             justifyContent: 'center',
+            paddingTop: 64,
             gap: Spacing.sm,
         },
         emptyText: { fontSize: Typography.body.size },
         row: {
-            marginHorizontal: Spacing.lg,
             marginBottom: Spacing.sm,
             borderRadius: Radius.card,
-            borderWidth: 1,
             padding: Spacing.md,
             flexDirection: 'row',
             alignItems: 'center',
@@ -116,6 +131,8 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
         },
         transferBtn: {
+            ...getPillStyle(colors, colors.primary),
+            backgroundColor: colors.primary,
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
@@ -128,6 +145,7 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
             fontWeight: '700',
         },
+        heroWrap: { marginBottom: DESIGN_SPACING.sectionGap },
         itemName: { fontSize: Typography.body.size, fontWeight: '700' },
         meta: { fontSize: Typography.caption.size, marginTop: 2 },
         qty: { fontSize: Typography.body.size, fontWeight: '700' },

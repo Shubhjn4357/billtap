@@ -2,10 +2,12 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../hooks/useSmartBack';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { CHANGELOG_ENTRIES } from '../../constants/legal';
 import { AppTopBar } from '../../components/ui/AppTopBar';
+import { UtilityHero } from '../../components/ui/UtilityBlocks';
 
 export default function ChangelogScreen() {
     const colors = useAppColors();
@@ -21,8 +23,14 @@ export default function ChangelogScreen() {
             />
 
             <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+                <UtilityHero
+                    title="Changelog"
+                    subtitle="Version history, release notes, and major improvements across billing, sync, and reporting."
+                    icon="history"
+                    tone="info"
+                />
                 {CHANGELOG_ENTRIES.map((entry) => (
-                    <View key={`${entry.version}-${entry.date}`} style={[s.sectionCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <View key={`${entry.version}-${entry.date}`} style={[s.sectionCard, getSurfaceStyle(colors, { elevated: true })]}>
                         <View style={s.versionRow}>
                             <Text style={[s.version, { color: colors.text }]}>v{entry.version}</Text>
                             <Text style={[s.date, { color: colors.textSecondary }]}>{entry.date}</Text>
@@ -44,9 +52,8 @@ export default function ChangelogScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, gap: DESIGN_SPACING.cardGap },
         sectionCard: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,

@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { INVENTORY_SORT_OPTIONS, INVENTORY_STOCK_FILTER_OPTIONS } from '../../../constants/inventoryOptions';
-import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useScannerMode } from '../../../hooks/useScannerMode';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -145,7 +145,7 @@ export default function InventoryScreen() {
                 subtitle={`${stats.total} items - Rs ${stats.stockValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
                 rightAction={(
                     <View style={s.topActions}>
-                        <Pressable style={[s.topIconBtn, { borderColor: colors.border }]} onPress={() => setShowSortSheet(true)}>
+                        <Pressable style={s.topIconBtn} onPress={() => setShowSortSheet(true)}>
                             <MaterialCommunityIcons name="sort-variant" size={16} color={activeFilters > 0 ? colors.primary : colors.textSecondary} />
                             {activeFilters > 0 ? (
                                 <View style={[s.filterBadge, { backgroundColor: colors.primary }]}>
@@ -380,7 +380,6 @@ function ItemRow({ item, colors, selectionMode, selected, onToggleSelect, onOpen
                         backgroundColor: selected ? withAlpha(colors.primary, '20') : colors.card,
                         opacity: pressed ? 0.82 : 1,
                         borderColor: selected ? colors.primary : colors.border,
-                        borderWidth: 1,
                     },
                 ]}
                 onPress={selectionMode ? onToggleSelect : onOpen}
@@ -420,7 +419,7 @@ function ItemRow({ item, colors, selectionMode, selected, onToggleSelect, onOpen
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     topActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-    topIconBtn: { width: 34, height: 34, borderWidth: 1, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+    topIconBtn: { ...getPillStyle(colors), width: 34, height: 34, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
     filterBadge: { position: 'absolute', top: -4, right: -4, width: 14, height: 14, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
     filterBadgeText: { color: colors.onPrimary, fontSize: 9, fontWeight: '800' },
     heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
@@ -431,7 +430,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     actionRow: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.xs },
     bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
     bulkLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
-    bulkAction: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5, backgroundColor: colors.surface },
+    bulkAction: { ...getPillStyle(colors), borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
     sortBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: withAlpha(colors.text, '66'), justifyContent: 'flex-end' },
     sortSheet: { borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, padding: Spacing.lg, gap: Spacing.sm, ...getSurfaceStyle(colors, { floating: true, elevated: true }) },
     sortTitle: { fontSize: 15, fontWeight: '800', marginBottom: Spacing.xs },
@@ -442,7 +441,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
 });
 
 const rowStyles = StyleSheet.create({
-    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderRadius: Radius.card, gap: Spacing.md },
+    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm, borderRadius: Radius.card, gap: Spacing.md },
     selector: { width: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', paddingVertical: 4, borderWidth: 1 },
     info: { flex: 1, gap: 2 },
     right: { alignItems: 'flex-end', minWidth: 110 },

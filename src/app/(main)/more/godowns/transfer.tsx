@@ -13,10 +13,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { toUserMessage } from '../../../../api/client';
+import { DESIGN_SPACING } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
-import { FormSectionCard } from '../../../../components/ui/FormBlocks';
+import { FormHero, FormSectionCard } from '../../../../components/ui/FormBlocks';
 import { SelectField, type SelectOption } from '../../../../components/ui/SelectField';
 import { AppInput } from '../../../../components/ui/AppInput';
 import { useGodowns } from '../../../../hooks/useGodowns';
@@ -135,12 +136,20 @@ export default function GodownTransferScreen() {
                     />
                 )}
             >
-                <View style={s.section}>
-                    <FormSectionCard
-                        title="Transfer Details"
-                        description="Choose source and destination godowns, then move the selected item quantity."
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title="Transfer Stock"
+                        subtitle="Move item quantities between godowns without leaving the stock workflow."
+                        icon="swap-horizontal"
                         tone="info"
-                    >
+                    />
+                </View>
+
+                <FormSectionCard
+                    title="Transfer Details"
+                    description="Choose source and destination godowns, then move the selected item quantity."
+                    tone="info"
+                >
                         <SelectField
                             value={fromGodownId}
                             onChange={(value) => {
@@ -234,8 +243,7 @@ export default function GodownTransferScreen() {
                                 </>
                             )}
                         </Pressable>
-                    </FormSectionCard>
-                </View>
+                </FormSectionCard>
             </ScrollView>
         </SafeAreaView>
     );
@@ -250,12 +258,12 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
         },
         content: {
-            paddingBottom: Spacing.xl,
-        },
-        section: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingTop: Spacing.sm,
+            paddingBottom: Spacing.xl,
+            gap: DESIGN_SPACING.cardGap,
         },
+        heroWrap: { marginBottom: Spacing.xs },
         submitBtn: {
             marginTop: Spacing.sm,
             borderRadius: Radius.pill,

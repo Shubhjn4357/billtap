@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import type { Party } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -118,10 +118,7 @@ export default function PartiesScreen() {
                 subtitle="Customers, suppliers and balances"
                 rightAction={(
                     <View style={s.topActions}>
-                        <Pressable
-                            style={[s.topIconBtn, { borderColor: colors.border }]}
-                            onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}
-                        >
+                        <Pressable style={s.topIconBtn} onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
                             <MaterialCommunityIcons name="compass-outline" size={18} color={colors.primary} />
                         </Pressable>
                         <Pressable
@@ -216,10 +213,10 @@ export default function PartiesScreen() {
             {selectionMode ? (
                 <View style={s.bulkRow}>
                     <Text style={[s.bulkLabel, { color: colors.textSecondary }]}>Selected: {selectedCount}</Text>
-                    <Pressable style={[s.bulkAction, { borderColor: colors.primary }]} onPress={requestBulkResetLimit} disabled={selectedCount === 0 || bulkUpdating}>
+                    <Pressable style={[s.bulkAction, { ...getPillStyle(colors, colors.primary) }]} onPress={requestBulkResetLimit} disabled={selectedCount === 0 || bulkUpdating}>
                         <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 11 }}>{bulkUpdating ? 'Applying...' : 'Reset Limit'}</Text>
                     </Pressable>
-                    <Pressable style={[s.bulkAction, { borderColor: colors.error }]} onPress={requestBulkDelete} disabled={selectedCount === 0 || bulkDeleting}>
+                    <Pressable style={[s.bulkAction, { ...getPillStyle(colors, colors.error) }]} onPress={requestBulkDelete} disabled={selectedCount === 0 || bulkDeleting}>
                         <Text style={{ color: colors.error, fontWeight: '700', fontSize: 11 }}>{bulkDeleting ? 'Archiving...' : 'Archive'}</Text>
                     </Pressable>
                 </View>
@@ -331,7 +328,7 @@ function PartyRow({
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     topActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-    topIconBtn: { width: 34, height: 34, borderWidth: 1, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+    topIconBtn: { ...getPillStyle(colors), width: 34, height: 34, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
     heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
     tabBar: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.xs },
     statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: DESIGN_SPACING.screenX, paddingVertical: Spacing.xs, gap: Spacing.sm },
@@ -339,11 +336,11 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     actionBar: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.xs },
     bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xs },
     bulkLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
-    bulkAction: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6, backgroundColor: colors.surface },
+    bulkAction: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
 });
 
 const rowS = StyleSheet.create({
-    row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.xs, borderRadius: Radius.card, gap: Spacing.md },
+    row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xs, borderRadius: Radius.card, gap: Spacing.md },
     selector: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
     avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     avatarText: { fontSize: 18, fontWeight: '700' },

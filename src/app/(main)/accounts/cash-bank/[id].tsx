@@ -5,7 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../../constants/theme';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../../constants/designSystem';
+import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import type { Account } from '../../../../types/domain';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
@@ -86,7 +87,7 @@ export default function CashBankAccountDetailScreen() {
                             }}
                         />
                     )}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <>
                             <View style={s.heroWrap}>
@@ -107,28 +108,28 @@ export default function CashBankAccountDetailScreen() {
                                 <View style={s.sectionWrap}>
                                     <View style={s.actionRow}>
                                         <Pressable
-                                            style={[s.actionBtn, { backgroundColor: colors.success }]}
+                                            style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.success, elevated: true, muted: true })]}
                                             onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/deposit', params: { accountId: id } })}
                                         >
-                                            <Text style={s.actionBtnText}>Deposit</Text>
+                                            <Text style={[s.actionBtnText, { color: colors.success }]}>Deposit</Text>
                                         </Pressable>
                                         <Pressable
-                                            style={[s.actionBtn, { backgroundColor: colors.error }]}
+                                            style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.error, elevated: true, muted: true })]}
                                             onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/withdraw', params: { accountId: id } })}
                                         >
-                                            <Text style={s.actionBtnText}>Withdraw</Text>
+                                            <Text style={[s.actionBtnText, { color: colors.error }]}>Withdraw</Text>
                                         </Pressable>
                                         <Pressable
-                                            style={[s.actionBtn, { backgroundColor: colors.primaryVariant }]}
+                                            style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.primaryVariant, elevated: true, muted: true })]}
                                             onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/transfer', params: { fromAccountId: id } })}
                                         >
-                                            <Text style={s.actionBtnText}>Transfer</Text>
+                                            <Text style={[s.actionBtnText, { color: colors.primaryVariant }]}>Transfer</Text>
                                         </Pressable>
                                     </View>
 
                                     <View style={s.actionRow}>
                                         <Pressable
-                                            style={[s.actionBtn, { backgroundColor: withAlpha(colors.error, '22') }]}
+                                            style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.error, elevated: true, muted: true })]}
                                             onPress={() => dialog.alert('Deactivate account', 'Hide this account from active balances?', [
                                                 { text: 'Cancel', style: 'cancel' },
                                                 {
@@ -162,7 +163,7 @@ export default function CashBankAccountDetailScreen() {
                     }
                     renderItem={({ item }) => (
                         <View style={s.sectionWrap}>
-                            <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[s.rowTitle, { color: colors.text }]}>
                                         {String(item.voucherType ?? 'ENTRY')} {item.voucherNumber ? `#${item.voucherNumber}` : ''}
@@ -189,24 +190,23 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         iconBtn: {
+            ...getPillStyle(colors),
             width: 34,
             height: 34,
-            borderWidth: 1,
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: colors.surfaceVariant,
         },
         centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xl },
-        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.md },
-        sectionWrap: { paddingHorizontal: Spacing.lg },
-        emptyWrap: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xl },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.md },
+        sectionWrap: { paddingHorizontal: DESIGN_SPACING.screenX },
+        emptyWrap: { paddingHorizontal: DESIGN_SPACING.screenX, paddingVertical: Spacing.xl },
         actionRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
-        actionBtn: { flex: 1, borderRadius: Radius.pill, alignItems: 'center', paddingVertical: Spacing.sm },
-        actionBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
+        actionBtn: { flex: 1, borderRadius: Radius.card, alignItems: 'center', paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm },
+        actionBtnText: { fontSize: 12, fontWeight: '700' },
         row: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,

@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -41,7 +42,7 @@ export const AppTopBar = memo(function AppTopBar({
     };
 
     return (
-        <View style={[s.wrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={s.wrap}>
             <View style={s.leftRow}>
                 {leftMode === 'none' ? (
                     <View style={s.iconPlaceholder} />
@@ -96,21 +97,16 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         wrap: {
             minHeight: 60,
-            borderWidth: 1,
             borderRadius: Radius.card,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
             paddingHorizontal: Spacing.sm,
-            marginHorizontal: Spacing.lg,
+            marginHorizontal: DESIGN_SPACING.screenX,
             marginTop: Spacing.sm,
             marginBottom: Spacing.sm,
             gap: Spacing.sm,
-            shadowColor: colors.primary,
-            shadowOpacity: 0.08,
-            shadowRadius: 16,
-            shadowOffset: { width: 0, height: 8 },
-            elevation: 3,
+            ...getSurfaceStyle(colors, { floating: true, elevated: true }),
         },
         leftRow: {
             flex: 1,
@@ -119,14 +115,13 @@ const styles = (colors: ColorPalette) =>
             gap: Spacing.xs,
         },
         iconBtn: {
+            ...getPillStyle(colors, colors.primary),
             width: 38,
             height: 38,
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.card,
-            borderWidth: 1,
-            borderColor: withAlpha(colors.primary, '22'),
+            backgroundColor: withAlpha(colors.primary, colors.isDark ? '12' : '0A'),
         },
         iconPlaceholder: {
             width: 36,

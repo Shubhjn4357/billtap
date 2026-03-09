@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { getPillStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { AppInput } from './AppInput';
@@ -39,7 +40,7 @@ export const AppSearchBar = memo(function AppSearchBar({
             />
             {showScanAction ? (
                 <Pressable
-                    style={[s.scanBtn, { backgroundColor: colors.card, borderColor: withAlpha(colors.primary, '18') }]}
+                    style={[s.scanBtn, getPillStyle(colors, colors.primary), { backgroundColor: colors.surfaceVariant, borderColor: withAlpha(colors.primary, '20') }]}
                     onPress={() => {
                         void selection();
                         onScanPress?.();
@@ -65,7 +66,6 @@ const styles = (colors: ColorPalette) =>
         scanBtn: {
             minHeight: 48,
             borderRadius: Radius.md,
-            borderWidth: 1,
             paddingHorizontal: Spacing.md,
             flexDirection: 'row',
             alignItems: 'center',

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { format } from 'date-fns';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useOrganizationRole } from '../../../store/authStore';
@@ -14,6 +15,7 @@ import { DateField } from '../../../components/ui/DateField';
 import { AppInput } from '../../../components/ui/AppInput';
 import type { OperationsControls } from '../../../types/domain';
 import { useAppDialog } from '@/components/providers/DialogProvider';
+import { UtilityEmptyState, UtilityHero, UtilitySection } from '../../../components/ui/UtilityBlocks';
 import { useOperationsOverview } from '../../../hooks/useOperations';
 import { useOperationsMutations } from '../../../hooks/useOperationsMutations';
 
@@ -196,7 +198,17 @@ export default function OperationsScreen() {
                     )}
                     ListHeaderComponent={
                         <>
-                            <View style={[s.card, { backgroundColor: colors.card }]}>
+                            <View style={s.heroWrap}>
+                                <UtilityHero
+                                    title="Operations Controls"
+                                    subtitle="Manage approval rules, period locking, and close-reopen actions from one operational console."
+                                    icon="shield-lock-outline"
+                                    tone="warning"
+                                />
+                            </View>
+
+                            <UtilitySection title="Workflow Controls">
+                            <View style={[s.card, getSurfaceStyle(colors, { elevated: true })]}>
                                 <Text style={[s.sectionTitle, { color: colors.text }]}>Workflow Controls</Text>
                                 <ControlRow
                                     label="Maker checker"
@@ -227,17 +239,23 @@ export default function OperationsScreen() {
                                     disabled={savingControls}
                                 />
                             </View>
+                            </UtilitySection>
 
-                            <View style={[s.card, { backgroundColor: colors.card }]}>
+                            <UtilitySection title="Pending Approvals" count={pendingApprovals.length}>
+                            <View style={[s.card, getSurfaceStyle(colors, { elevated: true })]}>
                                 <View style={s.pendingHeader}>
                                     <Text style={[s.sectionTitle, { color: colors.text }]}>Pending Approvals</Text>
                                     <Text style={[s.pendingCount, { color: colors.textSecondary }]}>{pendingApprovals.length}</Text>
                                 </View>
                                 {pendingApprovals.length === 0 ? (
-                                    <Text style={[s.meta, { color: colors.textSecondary }]}>No pending approvals.</Text>
+                                    <UtilityEmptyState
+                                        icon="check-decagram-outline"
+                                        title="No pending approvals"
+                                        description="Control changes and period requests waiting for review will appear here."
+                                    />
                                 ) : (
                                     pendingApprovals.map((approval) => (
-                                        <View key={approval.id} style={[s.approvalCard, { borderColor: colors.border }]}>
+                                        <View key={approval.id} style={[s.approvalCard, getSurfaceStyle(colors)]}>
                                             <View style={{ flex: 1 }}>
                                                 <Text style={[s.approvalTitle, { color: colors.text }]}>
                                                     {APPROVAL_ACTION_LABEL[approval.actionType] ?? approval.actionType}
@@ -249,14 +267,14 @@ export default function OperationsScreen() {
                                             {canReviewApprovals && (
                                                 <View style={s.approvalActions}>
                                                     <Pressable
-                                                        style={[s.inlineBtn, { borderColor: colors.primary }]}
+                                                        style={[s.inlineBtn, getPillStyle(colors, colors.primary)]}
                                                         onPress={() => onApprove(approval.id)}
                                                         disabled={busyApprovals}
                                                     >
                                                         <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>Approve</Text>
                                                     </Pressable>
                                                     <Pressable
-                                                        style={[s.inlineBtn, { borderColor: colors.error }]}
+                                                        style={[s.inlineBtn, getPillStyle(colors, colors.error)]}
                                                         onPress={() => onReject(approval.id)}
                                                         disabled={busyApprovals}
                                                     >
@@ -268,8 +286,10 @@ export default function OperationsScreen() {
                                     ))
                                 )}
                             </View>
+                            </UtilitySection>
 
-                            <View style={[s.card, { backgroundColor: colors.card }]}>
+                            <UtilitySection title="Lock New Financial Period">
+                            <View style={[s.card, getSurfaceStyle(colors, { elevated: true })]}>
                                 <Text style={[s.sectionTitle, { color: colors.text }]}>Lock New Financial Period</Text>
                                 <DateField
                                     value={periodStart}
@@ -297,6 +317,7 @@ export default function OperationsScreen() {
                                     {lockingPeriod ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Lock Period</Text>}
                                 </Pressable>
                             </View>
+                            </UtilitySection>
 
                             <View style={s.listHeaderWrap}>
                                 <Text style={[s.blockTitle, { color: colors.textSecondary }]}>Existing Periods</Text>
@@ -310,7 +331,7 @@ export default function OperationsScreen() {
                         const disableActions = closingPeriod || reopeningPeriod;
 
                         return (
-                            <View style={[s.periodRow, { backgroundColor: colors.card }]}>
+                            <View style={[s.periodRow, getSurfaceStyle(colors, { elevated: true })]}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[s.periodRange, { color: colors.text }]}>{`${start} - ${end}`}</Text>
                                     <Text style={[s.meta, { color: colors.textSecondary }]}>{item.notes ?? 'No notes'}</Text>
@@ -318,11 +339,11 @@ export default function OperationsScreen() {
                                 <View style={s.periodActions}>
                                     <Text style={[s.statusTag, { color: statusColor }]}>{item.status}</Text>
                                     {item.status !== 'CLOSED' ? (
-                                        <Pressable style={[s.inlineBtn, { borderColor: colors.error }]} onPress={() => onClose(item.id)} disabled={disableActions}>
+                                        <Pressable style={[s.inlineBtn, getPillStyle(colors, colors.error)]} onPress={() => onClose(item.id)} disabled={disableActions}>
                                             <Text style={{ color: colors.error, fontWeight: '700', fontSize: 12 }}>Close</Text>
                                         </Pressable>
                                     ) : (
-                                        <Pressable style={[s.inlineBtn, { borderColor: colors.primary }]} onPress={() => onReopen(item.id)} disabled={disableActions}>
+                                        <Pressable style={[s.inlineBtn, getPillStyle(colors, colors.primary)]} onPress={() => onReopen(item.id)} disabled={disableActions}>
                                             <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>Reopen</Text>
                                         </Pressable>
                                     )}
@@ -373,12 +394,12 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        card: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
+        heroWrap: { marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.md },
+        card: { marginHorizontal: DESIGN_SPACING.screenX, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
         sectionTitle: { fontWeight: '700', fontSize: 14, marginBottom: Spacing.sm },
         pendingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
         pendingCount: { fontWeight: '700', fontSize: 13 },
         approvalCard: {
-            borderWidth: 1,
             borderRadius: Radius.md,
             padding: Spacing.sm,
             marginBottom: Spacing.sm,
@@ -392,10 +413,10 @@ const styles = (colors: ColorPalette) =>
         notesInput: { minHeight: 72, textAlignVertical: 'top' },
         primaryBtn: { borderRadius: Radius.pill, alignItems: 'center', paddingVertical: Spacing.sm, marginTop: 4 },
         primaryBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
-        listHeaderWrap: { marginHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+        listHeaderWrap: { marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
         blockTitle: { fontWeight: '700', fontSize: 12, textTransform: 'uppercase' },
         periodRow: {
-            marginHorizontal: Spacing.lg,
+            marginHorizontal: DESIGN_SPACING.screenX,
             marginBottom: Spacing.sm,
             borderRadius: Radius.card,
             padding: Spacing.md,
@@ -407,6 +428,6 @@ const styles = (colors: ColorPalette) =>
         meta: { fontSize: 12, marginTop: 2 },
         periodActions: { alignItems: 'flex-end', gap: 6 },
         statusTag: { fontWeight: '700', fontSize: 12 },
-        inlineBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
-        emptyText: { marginHorizontal: Spacing.lg, fontSize: 13 },
+        inlineBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
+        emptyText: { marginHorizontal: DESIGN_SPACING.screenX, fontSize: 13 },
     });

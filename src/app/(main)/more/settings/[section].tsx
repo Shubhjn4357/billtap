@@ -16,6 +16,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getSettingsSectionLabel } from '../../../../constants/settingsSchema';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { useSettingsSection } from '../../../../hooks/useSettingsSection';
@@ -322,7 +323,7 @@ export default function SettingsSectionEditorScreen() {
                             onChangeText={setFieldSearch}
                             placeholder="Search fields..."
                         />
-                        <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[s.summaryCard, getSurfaceStyle(colors, { elevated: true })]}>
                             <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>SECTION STATUS</Text>
                             <Text style={s.summaryValue}>{filteredFields.length}</Text>
                             <Text style={[s.summaryMeta, { color: colors.textSecondary }]}>
@@ -334,7 +335,7 @@ export default function SettingsSectionEditorScreen() {
                             const value = draft[field.key];
                             const resolvedInputType = inputTypeForField(field);
                             return (
-                                <View key={field.key} style={[s.fieldCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View key={field.key} style={[s.fieldCard, getSurfaceStyle(colors, { elevated: true })]}>
                                     <Text style={[s.fieldLabel, { color: colors.text }]}>{field.label}</Text>
                                     {field.type === 'boolean' ? (
                                         <Switch
@@ -402,7 +403,7 @@ export default function SettingsSectionEditorScreen() {
                                             />
                                             {section === 'GENERAL' && field.key === 'payment_upi_id' ? (
                                                 <Pressable
-                                                    style={[s.inlineAction, { borderColor: colors.border }]}
+                                                    style={[s.inlineAction, getPillStyle(colors)]}
                                                     onPress={() => router.push({
                                                         pathname: '/scan',
                                                         params: {
@@ -417,21 +418,21 @@ export default function SettingsSectionEditorScreen() {
                                             {section === 'GENERAL' && field.key === 'signature_url' ? (
                                                 <View style={s.signatureRow}>
                                                     <Pressable
-                                                        style={[s.inlineAction, { borderColor: colors.border }]}
+                                                        style={[s.inlineAction, getPillStyle(colors)]}
                                                         onPress={() => setSignatureCaptureVisible(true)}
                                                     >
                                                         <Text style={[s.inlineActionText, { color: colors.primary }]}>Draw Signature</Text>
                                                     </Pressable>
                                                     {value ? (
                                                         <Pressable
-                                                            style={[s.inlineAction, { borderColor: colors.border }]}
+                                                            style={[s.inlineAction, getPillStyle(colors, colors.error)]}
                                                             onPress={() => setDraft((prev) => ({ ...prev, [field.key]: '' }))}
                                                         >
                                                             <Text style={[s.inlineActionText, { color: colors.error }]}>Clear</Text>
                                                         </Pressable>
                                                     ) : null}
                                                     {value ? (
-                                                        <View style={[s.signaturePreviewWrap, { borderColor: colors.border }]}>
+                                                        <View style={[s.signaturePreviewWrap, getSurfaceStyle(colors)]}>
                                                             <Image
                                                                 source={{ uri: String(value) }}
                                                                 style={s.signaturePreview}
@@ -448,7 +449,7 @@ export default function SettingsSectionEditorScreen() {
                         })}
 
                         {invoicePrintPreview ? (
-                            <View style={[s.previewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[s.previewCard, getSurfaceStyle(colors, { elevated: true })]}>
                                 <Text style={[s.previewTitle, { color: colors.text }]}>Live Print Preview</Text>
                                 <Text style={[s.previewMeta, { color: colors.textSecondary }]}>
                                     {invoicePrintPreview.printLayoutType} | {invoicePrintPreview.pageSize} | {invoicePrintPreview.orientation}
@@ -498,7 +499,7 @@ export default function SettingsSectionEditorScreen() {
                         ) : null}
 
                         {filteredFields.length === 0 ? (
-                            <View style={[s.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[s.emptyState, getSurfaceStyle(colors, { muted: true })]}>
                                 <Text style={[s.emptyTitle, { color: colors.text }]}>No fields found</Text>
                                 <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Try another search term.</Text>
                             </View>
@@ -526,15 +527,14 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         minHeight: 34,
         minWidth: 56,
         borderRadius: Radius.pill,
-        borderWidth: 1,
+        ...getPillStyle(colors),
         paddingHorizontal: Spacing.md,
         alignItems: 'center',
         justifyContent: 'center',
     },
     centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
+    content: { paddingHorizontal: DESIGN_SPACING.screenX, gap: DESIGN_SPACING.cardGap },
     summaryCard: {
-        borderWidth: 1,
         borderRadius: Radius.card,
         paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.md,
@@ -543,7 +543,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     summaryValue: { marginTop: 4, color: colors.text, fontSize: Typography.headline.size, fontWeight: '800' },
     summaryMeta: { marginTop: 2, fontSize: Typography.caption.size },
     fieldCard: {
-        borderWidth: 1,
         borderRadius: Radius.card,
         paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.md,
@@ -557,7 +556,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     },
     inlineAction: {
         alignSelf: 'flex-start',
-        borderWidth: 1,
         borderRadius: Radius.pill,
         paddingHorizontal: Spacing.sm,
         paddingVertical: 6,
@@ -567,7 +565,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         gap: Spacing.xs,
     },
     signaturePreviewWrap: {
-        borderWidth: 1,
         borderRadius: Radius.md,
         backgroundColor: colors.surface,
         overflow: 'hidden',
@@ -577,7 +574,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         height: 110,
     },
     previewCard: {
-        borderWidth: 1,
         borderRadius: Radius.card,
         paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.md,
@@ -592,7 +588,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         marginBottom: Spacing.xs,
     },
     previewPaper: {
-        borderWidth: 1,
+        ...getSurfaceStyle(colors),
         borderRadius: Radius.md,
         paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.sm,
@@ -613,7 +609,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         fontWeight: '800',
     },
     emptyState: {
-        borderWidth: 1,
         borderRadius: Radius.card,
         paddingVertical: Spacing.lg,
         alignItems: 'center',
@@ -625,7 +620,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: Spacing.xs,
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: DESIGN_SPACING.screenX,
         paddingVertical: Spacing.sm,
     },
     offlineBannerText: { color: colors.onPrimary, fontSize: 12, fontWeight: '600', flex: 1 },

@@ -3,10 +3,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
 import { Spacing, Radius, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import type { Loan } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { EmptyStateCard } from '../../../components/ui/ListBlocks';
+import { SwipeableRow } from '../../../components/ui/SwipeableRow';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useLoans } from '../../../hooks/useLoans';
 
 const toAmount = (value: unknown) => {
@@ -50,6 +54,15 @@ export default function LoansScreen() {
                 )}
             />
 
+            <View style={s.heroWrap}>
+                <UtilityHero
+                    title="Loan Ledger"
+                    subtitle="Track borrowed and given balances, due status, and interest profiles from one list."
+                    icon="hand-coin-outline"
+                    tone="info"
+                />
+            </View>
+
             <View style={s.summaryRow}>
                 <View style={[s.summaryCard, { backgroundColor: withAlpha(colors.error, '18') }]}>
                     <Text style={[s.sumLabel, { color: colors.textSecondary }]}>Borrowed</Text>
@@ -61,12 +74,12 @@ export default function LoansScreen() {
                 </View>
             </View>
 
-            <View style={s.statsRow}>
-                <View style={[s.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={s.statsRow}>
+                <View style={[s.statCard, getSurfaceStyle(colors, { elevated: true })]}>
                     <Text style={[s.statLabel, { color: colors.textSecondary }]}>Accounts</Text>
                     <Text style={[s.statValue, { color: colors.text }]}>{loans.length}</Text>
                 </View>
-                <View style={[s.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[s.statCard, getSurfaceStyle(colors, { elevated: true })]}>
                     <Text style={[s.statLabel, { color: colors.textSecondary }]}>Due Marked</Text>
                     <Text style={[s.statValue, { color: colors.warning }]}>{dueLoans}</Text>
                 </View>
@@ -90,12 +103,14 @@ export default function LoansScreen() {
                     )}
                     renderItem={({ item: loan }) => <LoanRow loan={loan} colors={colors} />}
                     ListEmptyComponent={
-                        <View style={s.centered}>
-                            <Text style={{ color: colors.textSecondary, marginBottom: Spacing.sm }}>No loans. Add a loan.</Text>
-                            <Pressable style={[s.emptyAddBtn, { backgroundColor: colors.primary }]} onPress={() => router.push('/(main)/accounts/loans/add' as Parameters<typeof router.push>[0])}>
-                                <Text style={s.emptyAddBtnText}>Add Loan</Text>
-                            </Pressable>
-                        </View>
+                        <EmptyStateCard
+                            icon="hand-coin-outline"
+                            title="No loans yet"
+                            subtitle="Add a loan account to track borrowed and given balances."
+                            tone="info"
+                            actionLabel="Add Loan"
+                            onActionPress={() => router.push('/(main)/accounts/loans/add' as Parameters<typeof router.push>[0])}
+                        />
                     }
                     contentContainerStyle={{ paddingBottom: 100 }}
                 />
@@ -110,25 +125,31 @@ function LoanRow({ loan, colors }: { loan: Loan; colors: ColorPalette }) {
     const dueDateLabel = formatDueDate(loan.dueDate);
 
     return (
-        <Pressable
-            style={[rowStyles.row, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push(`/(main)/accounts/loans/${loan.id}` as Parameters<typeof router.push>[0])}
+        <SwipeableRow
+            leftActions={[
+                { label: 'Open', icon: 'arrow-top-right', onPress: () => router.push(`/(main)/accounts/loans/${loan.id}` as Parameters<typeof router.push>[0]), tone: 'info' },
+            ]}
         >
-            <View style={[rowStyles.badge, { backgroundColor: withAlpha(color, '22') }]}>
-                <Text style={{ color, fontWeight: '700', fontSize: 11 }}>{isOut ? 'GIVEN' : 'BORROWED'}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-                <Text style={[rowStyles.name, { color: colors.text }]}>{getLoanName(loan)}</Text>
-                <Text style={[rowStyles.meta, { color: colors.textSecondary }]}>{getInterestRate(loan)}% p.a. - {getInterestType(loan)}</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[rowStyles.bal, { color }]}>Rs {toAmount(loan.currentBalance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-                {dueDateLabel ? (
-                    <Text style={[rowStyles.due, { color: colors.textSecondary }]}>Due: {dueDateLabel}</Text>
-                ) : null}
-                <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} style={rowStyles.chevron} />
-            </View>
-        </Pressable>
+            <Pressable
+                style={({ pressed }) => [rowStyles.row, getSurfaceStyle(colors, { elevated: true }), { opacity: pressed ? 0.86 : 1 }]}
+                onPress={() => router.push(`/(main)/accounts/loans/${loan.id}` as Parameters<typeof router.push>[0])}
+            >
+                <View style={[rowStyles.badge, { backgroundColor: withAlpha(color, '22') }]}>
+                    <Text style={{ color, fontWeight: '700', fontSize: 11 }}>{isOut ? 'GIVEN' : 'BORROWED'}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                    <Text style={[rowStyles.name, { color: colors.text }]}>{getLoanName(loan)}</Text>
+                    <Text style={[rowStyles.meta, { color: colors.textSecondary }]}>{getInterestRate(loan)}% p.a. - {getInterestType(loan)}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[rowStyles.bal, { color }]}>Rs {toAmount(loan.currentBalance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                    {dueDateLabel ? (
+                        <Text style={[rowStyles.due, { color: colors.textSecondary }]}>Due: {dueDateLabel}</Text>
+                    ) : null}
+                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} style={rowStyles.chevron} />
+                </View>
+            </Pressable>
+        </SwipeableRow>
     );
 }
 
@@ -137,10 +158,9 @@ const rowStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         padding: Spacing.md,
-        marginHorizontal: Spacing.lg,
+        marginHorizontal: DESIGN_SPACING.screenX,
         marginBottom: Spacing.sm,
         borderRadius: Radius.card,
-        borderWidth: 1,
         gap: Spacing.sm,
     },
     badge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 4 },
@@ -153,6 +173,7 @@ const rowStyles = StyleSheet.create({
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
+    heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
     addBtn: {
         backgroundColor: colors.primary,
         borderRadius: Radius.pill,
@@ -161,27 +182,25 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    summaryRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+    summaryRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap },
     summaryCard: { flex: 1, borderRadius: Radius.card, padding: Spacing.lg },
     sumLabel: { fontSize: 12, marginBottom: 4 },
     sumVal: { fontSize: 20, fontWeight: '700' },
     statsRow: {
         flexDirection: 'row',
         gap: Spacing.sm,
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: DESIGN_SPACING.screenX,
         marginBottom: Spacing.sm,
     },
     statCard: {
         flex: 1,
-        borderWidth: 1,
-        borderRadius: Radius.md,
         paddingHorizontal: Spacing.sm,
         paddingVertical: Spacing.sm,
     },
     statLabel: { fontSize: Typography.caption.size, fontWeight: '600' },
     statValue: { marginTop: 2, fontSize: Typography.title.size, fontWeight: '800' },
     sectionLabel: {
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: DESIGN_SPACING.screenX,
         marginBottom: Spacing.xs,
         fontSize: Typography.caption.size,
         fontWeight: '700',
@@ -191,7 +210,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     centered: { paddingTop: 80, alignItems: 'center' },
     emptyAddBtn: {
         borderRadius: Radius.pill,
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.sm,
     },
     emptyAddBtnText: {

@@ -1,4 +1,5 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
@@ -105,24 +106,17 @@ const styles = (colors: ColorPalette) =>
         root: {
             flex: 1,
             justifyContent: 'center',
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
         },
         backdrop: {
             ...StyleSheet.absoluteFillObject,
         },
         sheet: {
-            borderWidth: 1,
-            borderColor: colors.border,
             borderRadius: 24,
-            backgroundColor: colors.card,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,
             gap: Spacing.sm,
-            shadowColor: colors.text,
-            shadowOpacity: 0.08,
-            shadowRadius: 18,
-            shadowOffset: { width: 0, height: 10 },
-            elevation: 8,
+            ...getSurfaceStyle(colors, { floating: true, elevated: true }),
         },
         handle: {
             alignSelf: 'center',

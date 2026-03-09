@@ -90,7 +90,6 @@ const styles = StyleSheet.create({
         flex: 1,
         minWidth: '30%',
         borderRadius: Radius.card,
-        borderWidth: 1,
         paddingHorizontal: Spacing.sm,
         paddingVertical: Spacing.sm,
         gap: 2,
@@ -110,7 +109,6 @@ const styles = StyleSheet.create({
     actionCard: {
         minWidth: '47%',
         flex: 1,
-        borderWidth: 1,
         borderRadius: Radius.card,
         padding: Spacing.md,
         flexDirection: 'row',

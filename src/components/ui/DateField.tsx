@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getPillStyle, getShadowStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
@@ -79,7 +80,10 @@ export function DateField({
                 accessibilityLabel={accessibilityLabel ?? title ?? placeholder}
                 style={[
                     s.input,
-                    { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+                    {
+                        backgroundColor: colors.surface,
+                        borderColor: withAlpha(colors.border, 'C8'),
+                    },
                     disabled && { opacity: 0.6 },
                 ]}
                 onPress={openPicker}
@@ -98,7 +102,7 @@ export function DateField({
             >
                 <View style={s.modalRoot}>
                     <Pressable style={s.backdrop} onPress={() => setOpen(false)} />
-                    <View style={[s.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={s.sheet}>
                         <View style={s.handle} />
                         <Text style={[s.title, { color: colors.text }]}>{title}</Text>
 
@@ -116,7 +120,7 @@ export function DateField({
                         <View style={s.actions}>
                             {allowClear ? (
                                 <Pressable
-                                    style={[s.actionBtn, { borderColor: colors.border }]}
+                                    style={s.actionBtn}
                                     onPress={() => {
                                         onChange(null);
                                         setOpen(false);
@@ -126,7 +130,7 @@ export function DateField({
                                 </Pressable>
                             ) : null}
                             <Pressable
-                                style={[s.actionBtn, { borderColor: colors.border }]}
+                                style={s.actionBtn}
                                 onPress={() => setOpen(false)}
                             >
                                 <Text style={[s.actionText, { color: colors.textSecondary }]}>Cancel</Text>
@@ -155,6 +159,7 @@ const styles = (colors: ColorPalette) =>
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
+            ...getShadowStyle(colors, 'soft'),
         },
         inputText: {
             fontSize: Typography.body.size,
@@ -171,18 +176,12 @@ const styles = (colors: ColorPalette) =>
         sheet: {
             borderTopLeftRadius: 28,
             borderTopRightRadius: 28,
-            borderWidth: 1,
             borderBottomWidth: 0,
-            backgroundColor: colors.card,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingTop: Spacing.md,
             paddingBottom: Spacing.xl,
             gap: Spacing.md,
-            shadowColor: colors.text,
-            shadowOpacity: 0.08,
-            shadowRadius: 18,
-            shadowOffset: { width: 0, height: -8 },
-            elevation: 10,
+            ...getSurfaceStyle(colors, { floating: true }),
         },
         handle: {
             alignSelf: 'center',
@@ -201,8 +200,8 @@ const styles = (colors: ColorPalette) =>
             gap: Spacing.sm,
         },
         actionBtn: {
+            ...getPillStyle(colors),
             minWidth: 72,
-            borderWidth: 1,
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.sm,

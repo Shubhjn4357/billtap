@@ -113,7 +113,7 @@ export default function HomeScreen() {
             >
                 {blockedCount > 0 ? (
                     <Pressable
-                        style={[s.banner, { borderColor: colors.warning, backgroundColor: withAlpha(colors.warning, '14') }]}
+                        style={[s.banner, getSurfaceStyle(colors, { accent: colors.warning, elevated: true, muted: true }), { borderColor: colors.warning, backgroundColor: withAlpha(colors.warning, '14') }]}
                         onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
                     >
                         <MaterialCommunityIcons name="cloud-alert-outline" size={15} color={colors.warning} />
@@ -176,7 +176,7 @@ export default function HomeScreen() {
                         {offers.slice(0, 2).map((offer) => (
                             <Pressable
                                 key={offer.id}
-                                style={[s.offerCard, { backgroundColor: withAlpha(colors.primary, '10'), borderColor: withAlpha(colors.primary, '30') }]}
+                                style={[s.offerCard, getSurfaceStyle(colors, { accent: colors.primary, elevated: true, muted: true }), { backgroundColor: withAlpha(colors.primary, '10'), borderColor: withAlpha(colors.primary, '30') }]}
                                 onPress={() => { if (offer.ctaRoute) router.push(offer.ctaRoute as Parameters<typeof router.push>[0]); }}
                             >
                                 <MaterialCommunityIcons name="star-four-points-outline" size={14} color={colors.primary} />
@@ -293,14 +293,14 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     tierBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 4, ...getInsetPanelStyle(colors, colors.primary) },
     tierText: { fontWeight: '800', fontSize: 11 },
-    banner: { marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.sm, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
+    banner: { marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm, borderRadius: Radius.card, paddingHorizontal: Spacing.sm, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
     bannerText: { fontSize: 12, fontWeight: '600', flex: 1 },
     section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap },
     sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
     statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
     invoiceRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
     row: { flexDirection: 'row', gap: Spacing.sm },
-    offerCard: { borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
+    offerCard: { borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
     offerTitle: { fontWeight: '700', fontSize: 13 },
     offerMessage: { fontSize: 11, marginTop: 1 },
     quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
@@ -313,7 +313,7 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
 });
 
 const cardStyles = StyleSheet.create({
-    card: { flex: 1, minWidth: '45%', borderWidth: 1, borderRadius: Radius.card, padding: Spacing.sm, gap: 2 },
+    card: { flex: 1, minWidth: '45%', borderRadius: Radius.card, padding: Spacing.sm, gap: 2 },
     label: { fontSize: 11, fontWeight: '600' },
     skeleton: { height: 18, borderRadius: 4, marginTop: 4 },
     value: { fontSize: Typography.title.size, fontWeight: '800' },
@@ -322,13 +322,13 @@ const cardStyles = StyleSheet.create({
 });
 
 const chipStyles = StyleSheet.create({
-    chip: { flex: 1, borderWidth: 1, borderRadius: Radius.card, padding: Spacing.sm, alignItems: 'center', gap: 2 },
+    chip: { flex: 1, borderRadius: Radius.card, padding: Spacing.sm, alignItems: 'center', gap: 2 },
     chipVal: { fontWeight: '800', fontSize: 16 },
     chipLabel: { fontSize: 10, fontWeight: '600' },
 });
 
 const outStyles = StyleSheet.create({
-    card: { flex: 1, borderWidth: 1, borderRadius: Radius.card, padding: Spacing.md, gap: 2 },
+    card: { flex: 1, borderRadius: Radius.card, padding: Spacing.md, gap: 2 },
     label: { fontSize: 11, fontWeight: '600' },
     skeleton: { height: 20, borderRadius: 4, marginTop: 4 },
     value: { fontSize: 18, fontWeight: '800', marginTop: 4 },

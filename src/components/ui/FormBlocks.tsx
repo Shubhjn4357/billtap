@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { UtilityTone } from '../../constants/utilityNavigation';
+import { getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { UtilityHero } from './UtilityBlocks';
@@ -47,8 +48,12 @@ export function FormSectionCard({
             style={[
                 styles.sectionCard,
                 {
+                    ...getSurfaceStyle(colors, {
+                        accent: tone === 'default' ? undefined : accent,
+                        elevated: true,
+                        muted: tone !== 'default',
+                    }),
                     backgroundColor: tone === 'default' ? colors.card : withAlpha(accent, '0c'),
-                    borderColor: tone === 'default' ? colors.border : withAlpha(accent, '38'),
                 },
             ]}
         >
@@ -65,15 +70,9 @@ export function FormSectionCard({
 
 const styles = StyleSheet.create({
     sectionCard: {
-        borderWidth: 1,
         borderRadius: Radius.card,
         padding: Spacing.md,
         gap: Spacing.sm,
-        shadowColor: '#000000',
-        shadowOpacity: 0.04,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 1,
     },
     header: {
         gap: 2,

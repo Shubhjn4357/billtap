@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
 import { AppInput } from '../../../../components/ui/AppInput';
+import { FormHero, FormSectionCard } from '../../../../components/ui/FormBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useInvoiceBuilderStore } from '../../../../store/invoiceBuilderStore';
 import { useGodownMutations } from '../../../../hooks/useGodownMutations';
@@ -60,38 +62,54 @@ export default function AddGodownScreen() {
                 )}
             />
 
-            <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <AppInput
-                    label="Godown Name"
-                    inputType="name"
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="Main warehouse"
-                />
-
-                <AppInput
-                    label="Address"
-                    inputType="text"
-                    value={address}
-                    onChangeText={setAddress}
-                    placeholder="Address (optional)"
-                    multiline
-                    numberOfLines={3}
-                    style={s.multilineInput}
-                />
-
-                <View style={s.switchRow}>
-                    <View style={{ flex: 1 }}>
-                        <Text style={[s.switchTitle, { color: colors.text }]}>Set As Default</Text>
-                        <Text style={[s.switchMeta, { color: colors.textSecondary }]}>Used as the default stock location for new entries.</Text>
-                    </View>
-                    <Switch
-                        value={isDefault}
-                        onValueChange={setIsDefault}
-                        trackColor={{ true: colors.primary, false: colors.border }}
+            <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title="Create Godown"
+                        subtitle="Add a warehouse or stock location and optionally set it as the default for new stock entries."
+                        icon="warehouse"
+                        tone="info"
                     />
                 </View>
-            </View>
+
+                <FormSectionCard
+                    title="Location Details"
+                    description="Define the godown name, address, and whether it should become the default location."
+                    tone="info"
+                >
+                    <AppInput
+                        label="Godown Name"
+                        inputType="name"
+                        value={name}
+                        onChangeText={setName}
+                        placeholder="Main warehouse"
+                    />
+
+                    <AppInput
+                        label="Address"
+                        inputType="text"
+                        value={address}
+                        onChangeText={setAddress}
+                        placeholder="Address (optional)"
+                        multiline
+                        numberOfLines={3}
+                        style={s.multilineInput}
+                    />
+
+                    <View style={s.switchRow}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[s.switchTitle, { color: colors.text }]}>Set As Default</Text>
+                            <Text style={[s.switchMeta, { color: colors.textSecondary }]}>Used as the default stock location for new entries.</Text>
+                        </View>
+                        <Switch
+                            value={isDefault}
+                            onValueChange={setIsDefault}
+                            trackColor={{ true: colors.primary, false: colors.border }}
+                        />
+                    </View>
+                </FormSectionCard>
+                <View style={{ height: 80 }} />
+            </ScrollView>
         </SafeAreaView>
     );
 }
@@ -107,14 +125,8 @@ const styles = (colors: ColorPalette) =>
             minWidth: 44,
             justifyContent: 'center',
         },
-        card: {
-            marginHorizontal: Spacing.lg,
-            marginTop: Spacing.sm,
-            borderRadius: Radius.card,
-            borderWidth: 1,
-            padding: Spacing.md,
-            gap: Spacing.md,
-        },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingTop: Spacing.sm, gap: DESIGN_SPACING.cardGap },
+        heroWrap: { marginBottom: Spacing.xs },
         multilineInput: { minHeight: 72, textAlignVertical: 'top' },
         switchRow: {
             flexDirection: 'row',

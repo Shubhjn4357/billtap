@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { VahiTabBar } from '../../components/VahiTabBar';
 import { GoToPalette } from '../../components/navigation/GoToPalette';
 import { AppDrawerLayout } from '../../components/layout/AppDrawerLayout';
+import { DESIGN_SPACING } from '../../constants/designSystem';
 import { Colors, Radius, Spacing, Typography } from '../../constants/theme';
 
 export default function MainLayout() {
@@ -80,7 +81,7 @@ const s = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: DESIGN_SPACING.screenX,
         gap: Spacing.sm,
     },
     errorTitle: {
@@ -98,7 +99,7 @@ const s = StyleSheet.create({
         marginTop: Spacing.sm,
         minHeight: 44,
         minWidth: 140,
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: Spacing.md,
         borderRadius: Radius.pill,
         alignItems: 'center',
         justifyContent: 'center',
@@ -112,7 +113,7 @@ const s = StyleSheet.create({
     errorSecondaryButton: {
         minHeight: 44,
         minWidth: 200,
-        paddingHorizontal: Spacing.lg,
+        paddingHorizontal: Spacing.md,
         borderRadius: Radius.pill,
         alignItems: 'center',
         justifyContent: 'center',

@@ -10,11 +10,13 @@ import { AppInput } from '../../../components/ui/AppInput';
 import { SettingsSection } from '../../../constants/enums';
 import { offlineSyncService } from '../../../services/offlineSyncService';
 import { toUserMessage } from '../../../api/client';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useAppRuntime } from '../../../components/providers/AppRuntimeProvider';
 import { ChipButton } from '../../../components/ui/ChipBlocks';
+import { UtilityEmptyState, UtilityHero, UtilitySection } from '../../../components/ui/UtilityBlocks';
 import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
 import { useOfflineSyncQueue } from '../../../hooks/useOfflineSyncQueue';
 import { useSyncQueueActions } from '../../../hooks/useSyncQueueActions';
@@ -131,99 +133,122 @@ export default function SyncDiagnosticsScreen() {
                     <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>
                 ) : (
                     <FlatList
-                    data={queue}
-                    keyExtractor={(item) => item.id}
-                    refreshControl={(
-                        <RefreshControl
-                            tintColor={colors.primary}
-                            refreshing={isRefreshing}
-                            onRefresh={() => {
-                                void Promise.all([refetchQueue(), refetchSettings(), refreshSyncState()]);
-                            }}
-                        />
-                    )}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
-                    ListHeaderComponent={
-                        <>
-                            <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
-                                <Text style={s.cardTitle}>Queue Overview</Text>
-                                <Text style={s.cardLine}>Storage: {storageBackend}</Text>
-                                <Text style={s.cardLine}>Pending: {syncStats.pendingCount}</Text>
-                                <Text style={s.cardLine}>Blocked (upgrade): {syncStats.blockedCount}</Text>
-                                <Text style={s.cardLine}>Oldest: {formatDate(syncStats.oldestCreatedAt ?? undefined)}</Text>
-                                {lastSyncError ? <Text style={s.errorLine}>Last sync error: {lastSyncError}</Text> : null}
-                                <View style={s.actionRow}>
-                                    <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => {
-                                        void flushNow()
-                                            .then(async (result) => {
-                                                await refetchQueue();
-                                                dialog.alert('Sync complete', `Processed: ${result.processed}, Remaining: ${result.remaining}`);
-                                            })
-                                            .catch((error) => {
-                                                console.error('[sync-diagnostics] flush failed', { error });
-                                                dialog.alert('Sync failed', toUserMessage(error, 'Unable to flush queue.'));
-                                            });
-                                    }} disabled={isFlushing}>
-                                        <Text style={s.actionBtnText}>{isFlushing ? 'Syncing...' : 'Flush Now'}</Text>
-                                    </Pressable>
-                                    <Pressable style={[s.actionBtn, { backgroundColor: colors.surfaceVariant }]} onPress={() => {
-                                        void Promise.all([refetchQueue(), refreshSyncState()]);
-                                    }}>
-                                        <Text style={[s.actionBtnText, { color: colors.text }]}>Refresh</Text>
-                                    </Pressable>
-                                </View>
-                            </View>
-
-                            <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
-                                <Text style={s.cardTitle}>Conflict Resolution</Text>
-                                <View style={s.optionRow}>
-                                    <ChipButton
-                                        label="Last Write Wins"
-                                        selected={conflictPolicy === 'LAST_WRITE_WINS'}
+                        data={queue}
+                        keyExtractor={(item) => item.id}
+                        refreshControl={(
+                            <RefreshControl
+                                tintColor={colors.primary}
+                                refreshing={isRefreshing}
+                                onRefresh={() => {
+                                    void Promise.all([refetchQueue(), refetchSettings(), refreshSyncState()]);
+                                }}
+                            />
+                        )}
+                        contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120, gap: DESIGN_SPACING.sectionGap }}
+                        ListHeaderComponent={
+                            <>
+                                <View style={s.heroWrap}>
+                                    <UtilityHero
+                                        title="Sync Queue Control"
+                                        subtitle="Inspect pending mutations, blocked upgrade items, retry timing, and conflict policy from one place."
+                                        icon="cloud-sync-outline"
                                         tone="info"
-                                        onPress={() => savePolicy('LAST_WRITE_WINS')}
-                                        disabled={savingPolicy}
-                                    />
-                                    <ChipButton
-                                        label="Server Wins"
-                                        selected={conflictPolicy === 'SERVER_WINS'}
-                                        tone="info"
-                                        onPress={() => savePolicy('SERVER_WINS')}
-                                        disabled={savingPolicy}
                                     />
                                 </View>
-                            </View>
 
-                            <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
-                                <Text style={s.cardTitle}>Auto Sync Interval (seconds)</Text>
-                                <AppInput
-                                    inputType="number"
-                                    value={intervalInput}
-                                    onChangeText={setIntervalInput}
-                                    placeholder="60"
-                                    containerStyle={s.intervalInputWrap}
-                                />
-                                <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => saveInterval()} disabled={savingInterval}>
-                                    <Text style={s.actionBtnText}>{savingInterval ? 'Saving...' : 'Save Interval'}</Text>
-                                </Pressable>
-                            </View>
+                                <UtilitySection title="Queue Overview">
+                                    <View style={[s.card, getSurfaceStyle(colors, { elevated: true })]}>
+                                        <Text style={s.cardTitle}>Queue Overview</Text>
+                                        <Text style={s.cardLine}>Storage: {storageBackend}</Text>
+                                        <Text style={s.cardLine}>Pending: {syncStats.pendingCount}</Text>
+                                        <Text style={s.cardLine}>Blocked (upgrade): {syncStats.blockedCount}</Text>
+                                        <Text style={s.cardLine}>Oldest: {formatDate(syncStats.oldestCreatedAt ?? undefined)}</Text>
+                                        {lastSyncError ? <Text style={s.errorLine}>Last sync error: {lastSyncError}</Text> : null}
+                                        <View style={s.actionRow}>
+                                            <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => {
+                                                void flushNow()
+                                                    .then(async (result) => {
+                                                        await refetchQueue();
+                                                        dialog.alert('Sync complete', `Processed: ${result.processed}, Remaining: ${result.remaining}`);
+                                                    })
+                                                    .catch((error) => {
+                                                        console.error('[sync-diagnostics] flush failed', { error });
+                                                        dialog.alert('Sync failed', toUserMessage(error, 'Unable to flush queue.'));
+                                                    });
+                                            }} disabled={isFlushing}>
+                                                <Text style={s.actionBtnText}>{isFlushing ? 'Syncing...' : 'Flush Now'}</Text>
+                                            </Pressable>
+                                            <Pressable style={[s.actionBtn, getSurfaceStyle(colors, { muted: true })]} onPress={() => {
+                                                void Promise.all([refetchQueue(), refreshSyncState()]);
+                                            }}>
+                                                <Text style={[s.actionBtnText, { color: colors.text }]}>Refresh</Text>
+                                            </Pressable>
+                                        </View>
+                                    </View>
+                                </UtilitySection>
 
-                            <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>Pending Queue Entries</Text>
-                        </>
-                    }
-                    renderItem={({ item }) => (
-                        <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}> 
-                            <Text style={s.rowType}>{item.type}</Text>
-                            <Text style={s.rowMeta}>Status: {item.status ?? 'pending'}</Text>
-                            <Text style={s.rowMeta}>Created: {formatDate(item.createdAt)}</Text>
-                            <Text style={s.rowMeta}>Attempts: {item.attemptCount}</Text>
-                            <Text style={s.rowMeta}>Next retry: {formatRetryAt(item.nextRetryAt)}</Text>
-                            {item.lastErrorCode ? <Text style={s.rowMeta}>Code: {item.lastErrorCode}</Text> : null}
-                            {item.lastError ? <Text style={s.rowError}>Error: {item.lastError}</Text> : null}
-                        </View>
-                    )}
-                    ListEmptyComponent={<Text style={{ color: colors.textSecondary }}>Queue is empty.</Text>}
-                />
+                                <UtilitySection title="Conflict Resolution">
+                                    <View style={[s.card, getSurfaceStyle(colors, { elevated: true })]}>
+                                        <Text style={s.cardTitle}>Conflict Resolution</Text>
+                                        <View style={s.optionRow}>
+                                            <ChipButton
+                                                label="Last Write Wins"
+                                                selected={conflictPolicy === 'LAST_WRITE_WINS'}
+                                                tone="info"
+                                                onPress={() => savePolicy('LAST_WRITE_WINS')}
+                                                disabled={savingPolicy}
+                                            />
+                                            <ChipButton
+                                                label="Server Wins"
+                                                selected={conflictPolicy === 'SERVER_WINS'}
+                                                tone="info"
+                                                onPress={() => savePolicy('SERVER_WINS')}
+                                                disabled={savingPolicy}
+                                            />
+                                        </View>
+                                    </View>
+                                </UtilitySection>
+
+                                <UtilitySection title="Auto Sync Interval">
+                                    <View style={[s.card, getSurfaceStyle(colors, { elevated: true })]}>
+                                        <Text style={s.cardTitle}>Auto Sync Interval (seconds)</Text>
+                                        <AppInput
+                                            inputType="number"
+                                            value={intervalInput}
+                                            onChangeText={setIntervalInput}
+                                            placeholder="60"
+                                            containerStyle={s.intervalInputWrap}
+                                        />
+                                        <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => saveInterval()} disabled={savingInterval}>
+                                            <Text style={s.actionBtnText}>{savingInterval ? 'Saving...' : 'Save Interval'}</Text>
+                                        </Pressable>
+                                    </View>
+                                </UtilitySection>
+
+                                <UtilitySection title="Pending Queue Entries" count={queue.length}>
+                                    <View />
+                                </UtilitySection>
+                            </>
+                        }
+                        renderItem={({ item }) => (
+                            <View style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
+                                <Text style={s.rowType}>{item.type}</Text>
+                                <Text style={s.rowMeta}>Status: {item.status ?? 'pending'}</Text>
+                                <Text style={s.rowMeta}>Created: {formatDate(item.createdAt)}</Text>
+                                <Text style={s.rowMeta}>Attempts: {item.attemptCount}</Text>
+                                <Text style={s.rowMeta}>Next retry: {formatRetryAt(item.nextRetryAt)}</Text>
+                                {item.lastErrorCode ? <Text style={s.rowMeta}>Code: {item.lastErrorCode}</Text> : null}
+                                {item.lastError ? <Text style={s.rowError}>Error: {item.lastError}</Text> : null}
+                            </View>
+                        )}
+                        ListEmptyComponent={(
+                            <UtilityEmptyState
+                                icon="cloud-check-outline"
+                                title="Queue is empty"
+                                description="There are no pending offline mutations waiting for cloud sync."
+                            />
+                        )}
+                    />
                 )}
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -235,8 +260,8 @@ const styles = (colors: ColorPalette) =>
         safe: { flex: 1, backgroundColor: colors.background },
         flex: { flex: 1 },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+        heroWrap: { marginBottom: DESIGN_SPACING.cardGap },
         card: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             padding: Spacing.md,
             marginBottom: Spacing.md,
@@ -252,13 +277,12 @@ const styles = (colors: ColorPalette) =>
             paddingVertical: Spacing.sm,
             alignItems: 'center',
             justifyContent: 'center',
+            minHeight: 42,
         },
         actionBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
         optionRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap', marginTop: Spacing.xs },
         intervalInputWrap: { marginTop: Spacing.xs, marginBottom: Spacing.sm },
-        sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
         row: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.sm,

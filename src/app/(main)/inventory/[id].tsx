@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toUserMessage } from '../../../api/client';
+import { DESIGN_SPACING, getPillStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -286,21 +287,20 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         iconBtn: {
+            ...getPillStyle(colors),
             width: 34,
             height: 34,
-            borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.surfaceVariant,
         },
         topActions: {
             flexDirection: 'row',
             alignItems: 'center',
             gap: Spacing.xs,
         },
-        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.md },
-        card: { marginHorizontal: Spacing.lg, marginBottom: Spacing.md },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.md },
+        card: { marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.md },
         quickRow: { flexDirection: 'row', gap: Spacing.sm },
         helperText: { fontSize: 11, marginBottom: Spacing.sm },
         quickBtn: { flex: 1, borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center' },

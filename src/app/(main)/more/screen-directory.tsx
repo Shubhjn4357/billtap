@@ -10,11 +10,12 @@ import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { SCREEN_DIRECTORY_SECTIONS, type UtilityScreenSection } from '../../../constants/utilityNavigation';
 import { useAppColors } from '../../../hooks/useAppColors';
+import { DESIGN_SPACING } from '../../../constants/designSystem';
 import { Spacing, Typography, type ColorPalette } from '../../../constants/theme';
 import { useAuthStore } from '../../../store/authStore';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
-import { UtilityEmptyState, UtilityPanel, UtilityRow, UtilitySection } from '../../../components/ui/UtilityBlocks';
+import { UtilityEmptyState, UtilityHero, UtilityPanel, UtilityRow, UtilitySection } from '../../../components/ui/UtilityBlocks';
 import { canAccessModule, canUsePos, hasFeatureAccess, type AppModule } from '../../../utils/accessControl';
 import { useItemCatalog } from '../../../hooks/useInventory';
 import { useLoans } from '../../../hooks/useLoans';
@@ -179,6 +180,15 @@ export default function ScreenDirectoryScreen() {
                 />
             </View>
 
+            <View style={s.heroWrap}>
+                <UtilityHero
+                    title="Navigation Directory"
+                    subtitle="Jump directly into the latest records and module entry points across the app."
+                    icon="compass-outline"
+                    tone="info"
+                />
+            </View>
+
             <ScrollView
                 contentContainerStyle={s.content}
                 showsVerticalScrollIndicator={false}
@@ -260,8 +270,9 @@ export default function ScreenDirectoryScreen() {
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-    content: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg, gap: Spacing.md },
+    searchWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
+    content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: Spacing.lg, gap: DESIGN_SPACING.sectionGap },
     section: { gap: Spacing.sm },
     sectionTitle: {
         color: colors.textSecondary,

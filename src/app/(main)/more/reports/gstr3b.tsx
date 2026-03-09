@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
@@ -44,13 +45,13 @@ export default function Gstr3bReportScreen() {
             />
 
             <View style={s.periodRow}>
-                <Pressable style={[s.periodBtn, { borderColor: colors.border }]} onPress={() => changeMonth(-1)}>
+                <Pressable style={[s.periodBtn, getPillStyle(colors)]} onPress={() => changeMonth(-1)}>
                     <MaterialCommunityIcons name="chevron-left" size={18} color={colors.textSecondary} />
                 </Pressable>
                 <Text style={[s.periodText, { color: colors.text }]}>
                     {formatMonthYear(month, year)}
                 </Text>
-                <Pressable style={[s.periodBtn, { borderColor: colors.border }]} onPress={() => changeMonth(1)}>
+                <Pressable style={[s.periodBtn, getPillStyle(colors)]} onPress={() => changeMonth(1)}>
                     <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
                 </Pressable>
             </View>
@@ -86,7 +87,7 @@ export default function Gstr3bReportScreen() {
                             }}
                         />
                     )}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     ListEmptyComponent={(
                         <View style={s.centered}>
                             <Text style={{ color: colors.textSecondary }}>No GST rows found for this period.</Text>
@@ -101,7 +102,7 @@ export default function Gstr3bReportScreen() {
                         const igst = item.igstAmount;
 
                         return (
-                            <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[s.rowTitle, { color: colors.text }]}>GST {rate}%</Text>
                                     <Text style={[s.rowMeta, { color: colors.textSecondary }]}>
@@ -141,7 +142,6 @@ const styles = (colors: ColorPalette) =>
             marginTop: Spacing.xs,
         },
         periodBtn: {
-            borderWidth: 1,
             width: 34,
             height: 34,
             borderRadius: 17,
@@ -151,7 +151,7 @@ const styles = (colors: ColorPalette) =>
         },
         periodText: { fontSize: Typography.title.size, fontWeight: '700', minWidth: 100, textAlign: 'center' },
         summaryCard: {
-            marginHorizontal: Spacing.lg,
+            marginHorizontal: DESIGN_SPACING.screenX,
             marginBottom: Spacing.md,
             borderRadius: Radius.card,
             padding: Spacing.lg,
@@ -161,7 +161,6 @@ const styles = (colors: ColorPalette) =>
         summaryMeta: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: Typography.caption.size, marginTop: 4 },
         centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xl },
         row: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,

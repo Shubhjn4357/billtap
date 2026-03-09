@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { type InvoiceCreateInput } from '../../repositories/invoiceRepository';
 import type { BillingDocumentConfig } from '../../constants/billingDocumentOptions';
+import { DESIGN_SPACING } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { GST_SLABS, INDIAN_STATE_LIST } from '../../constants/gstRates';
@@ -711,9 +712,9 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
         },
         scrollContent: { paddingBottom: 120, gap: Spacing.sm },
-        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xs },
         helperCard: {
-            marginHorizontal: Spacing.lg,
+            marginHorizontal: DESIGN_SPACING.screenX,
             borderRadius: Radius.card,
             padding: Spacing.md,
             marginBottom: Spacing.xs,
@@ -764,7 +765,7 @@ const styles = (colors: ColorPalette) =>
         },
         partyName: { fontWeight: '600', fontSize: 14 },
         partyPlaceholder: { fontSize: 14 },
-        section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+        section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.md },
         addLineBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center', marginTop: Spacing.sm },
         addLineBtnText: { fontWeight: '600', fontSize: 13 },
         addItemRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },

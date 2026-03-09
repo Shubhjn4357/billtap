@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { TAB_BAR_QUICK_ACTIONS, type NavigationShortcut } from '../constants/navigationOptions';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../constants/theme';
-import { getInsetPanelStyle, getShadowStyle, getSurfaceStyle } from '../constants/designSystem';
+import { DESIGN_SPACING, getInsetPanelStyle, getPillStyle, getShadowStyle, getSurfaceStyle } from '../constants/designSystem';
 import { useAppColors } from '../hooks/useAppColors';
 import { useI18n } from '../hooks/useI18n';
 import { canAccessModule, canPerformAction, canUsePos } from '../utils/accessControl';
@@ -420,9 +420,7 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: colors.primary,
-            borderWidth: 1,
-            borderColor: withAlpha(colors.onPrimary, '54'),
-            ...getShadowStyle(colors, 'raised'),
+            ...getShadowStyle(colors, 'soft'),
         },
         modalRoot: {
             flex: 1,
@@ -435,15 +433,12 @@ const styles = (colors: ColorPalette) =>
         sheet: {
             borderTopLeftRadius: 32,
             borderTopRightRadius: 32,
-            borderWidth: 1,
             borderBottomWidth: 0,
-            borderColor: colors.border,
-            backgroundColor: colors.card,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingTop: Spacing.sm,
             paddingBottom: Spacing.xl,
             gap: Spacing.sm,
-            ...getShadowStyle(colors, 'floating'),
+            ...getSurfaceStyle(colors, { floating: true }),
         },
         sheetHandle: {
             alignSelf: 'center',
@@ -482,11 +477,10 @@ const styles = (colors: ColorPalette) =>
             lineHeight: 18,
         },
         sheetCloseButton: {
+            ...getPillStyle(colors, colors.primary),
             minHeight: 34,
             minWidth: 62,
             borderRadius: Radius.pill,
-            borderWidth: 1,
-            borderColor: withAlpha(colors.primary, '18'),
             backgroundColor: withAlpha(colors.primary, '08'),
             alignItems: 'center',
             justifyContent: 'center',

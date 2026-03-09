@@ -8,6 +8,7 @@ import {
     View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getPillStyle, getShadowStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { AppInput } from './AppInput';
 import { useAppColors } from '../../hooks/useAppColors';
@@ -72,7 +73,10 @@ export function SelectField({
                 accessibilityLabel={accessibilityLabel ?? title ?? placeholder}
                 style={[
                     s.input,
-                    { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+                    {
+                        backgroundColor: colors.surface,
+                        borderColor: withAlpha(colors.border, 'C8'),
+                    },
                     disabled && { opacity: 0.6 },
                 ]}
                 onPress={() => {
@@ -95,7 +99,7 @@ export function SelectField({
             >
                 <View style={s.modalRoot}>
                     <Pressable style={s.backdrop} onPress={() => setOpen(false)} />
-                    <View style={[s.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={s.sheet}>
                         <View style={s.headerRow}>
                             <Text style={[s.title, { color: colors.text }]}>{title}</Text>
                             <Pressable onPress={() => setOpen(false)}>
@@ -124,7 +128,10 @@ export function SelectField({
                                     <Pressable
                                         style={[
                                             s.option,
-                                            { borderColor: colors.border },
+                                            getSurfaceStyle(colors, {
+                                                accent: isSelected ? colors.primary : undefined,
+                                                muted: isSelected,
+                                            }),
                                             isSelected && { backgroundColor: colors.surfaceVariant },
                                         ]}
                                         onPress={() => {
@@ -184,11 +191,7 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: Spacing.sm,
-            shadowColor: colors.primary,
-            shadowOpacity: 0.04,
-            shadowRadius: 10,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 1,
+            ...getShadowStyle(colors, 'soft'),
         },
         inputText: {
             flex: 1,
@@ -210,18 +213,13 @@ const styles = (colors: ColorPalette) =>
         sheet: {
             borderTopLeftRadius: Radius.lg,
             borderTopRightRadius: Radius.lg,
-            borderWidth: 1,
             borderBottomWidth: 0,
             maxHeight: '80%',
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingTop: Spacing.md,
             paddingBottom: Spacing.xl,
             gap: Spacing.sm,
-            shadowColor: colors.text,
-            shadowOpacity: 0.12,
-            shadowRadius: 20,
-            shadowOffset: { width: 0, height: -6 },
-            elevation: 10,
+            ...getSurfaceStyle(colors, { floating: true }),
         },
         headerRow: {
             flexDirection: 'row',
@@ -240,7 +238,6 @@ const styles = (colors: ColorPalette) =>
             marginBottom: Spacing.xs,
         },
         option: {
-            borderWidth: 1,
             borderRadius: Radius.md,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.sm,
@@ -248,7 +245,6 @@ const styles = (colors: ColorPalette) =>
             flexDirection: 'row',
             alignItems: 'center',
             gap: Spacing.sm,
-            backgroundColor: colors.card,
         },
         optionLabel: {
             fontSize: Typography.body.size,
@@ -266,8 +262,7 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.body.size,
         },
         clearBtn: {
-            borderWidth: 1,
-            borderRadius: Radius.pill,
+            ...getPillStyle(colors),
             alignItems: 'center',
             paddingVertical: Spacing.sm,
         },

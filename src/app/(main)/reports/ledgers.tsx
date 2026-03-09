@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toUserMessage } from '../../../api/client';
 import { LEDGER_SORT_OPTIONS, LEDGER_TYPE_FILTER_OPTIONS, type LedgerSortKey, type LedgerTypeFilter } from '../../../constants/reportOptions';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -60,7 +61,7 @@ export default function LedgersListScreen() {
         const reason = canDeactivate(item);
         return (
             <Pressable
-                style={({ pressed }) => [s.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.84 : 1 }]}
+                style={({ pressed }) => [s.row, getSurfaceStyle(colors, { elevated: true }), { opacity: pressed ? 0.84 : 1 }]}
                 onPress={() => { void selection(); router.push(`/(main)/reports/ledgers/${item.id}` as Parameters<typeof router.push>[0]); }}
             >
                 <View style={{ flex: 1, gap: 3 }}>
@@ -79,7 +80,7 @@ export default function LedgersListScreen() {
                     <Text style={[s.balance, { color: colors.textSecondary }]}>Bal {Number(item.balance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
                 </View>
                 <Pressable
-                    style={[s.deactivateBtn, { borderColor: reason ? colors.border : colors.error }]}
+                    style={[s.deactivateBtn, reason ? getPillStyle(colors) : getPillStyle(colors, colors.error)]}
                     onPress={(ev) => {
                         ev.stopPropagation();
                         if (reason) { dialog.alert('Cannot deactivate', reason); return; }
@@ -149,7 +150,7 @@ export default function LedgersListScreen() {
                         <ChipButton key={so.key} label={so.label} selected={sel} tone="info" onPress={() => setSortBy(so.key)} />
                     );
                 })}
-                <View style={[s.totalsBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[s.totalsBadge, getPillStyle(colors)]}>
                     <Text style={[s.totalsText, { color: colors.textSecondary }]}>{totals.count}/{totals.allCount} ledgers</Text>
                 </View>
             </ScrollView>
@@ -173,7 +174,7 @@ export default function LedgersListScreen() {
                             </View>
                         );
                     }}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     refreshControl={<RefreshControl tintColor={colors.primary} refreshing={isRefetching} onRefresh={() => { void refetch(); }} />}
                     ListEmptyComponent={<LedgerEmpty colors={colors} />}
                 />
@@ -182,10 +183,10 @@ export default function LedgersListScreen() {
                     data={rows}
                     keyExtractor={(item) => item.id}
                     renderItem={renderLedgerRow}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     refreshControl={<RefreshControl tintColor={colors.primary} refreshing={isRefetching || isDeactivatingAccount} onRefresh={() => { void refetch(); }} />}
                     ListHeaderComponent={(
-                        <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[s.summaryCard, getSurfaceStyle(colors, { elevated: true })]}>
                             <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>LEDGERS</Text>
                             <Text style={[s.summaryValue, { color: colors.text }]}>{totals.count}</Text>
                         </View>
@@ -210,19 +211,19 @@ function LedgerEmpty({ colors }: { colors: ColorPalette }) {
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs },
+    searchWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xs },
     typeScroll: { flexGrow: 0 },
-    typeRow: { paddingHorizontal: Spacing.lg, gap: Spacing.xs, paddingVertical: 4 },
-    totalsBadge: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
+    typeRow: { paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.xs, paddingVertical: 4 },
+    totalsBadge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
     totalsText: { fontSize: 11, fontWeight: '600' },
-    groupToggle: { width: 32, height: 32, borderWidth: 1, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
-    summaryCard: { borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginBottom: Spacing.sm },
+    groupToggle: { ...getPillStyle(colors), width: 32, height: 32, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+    summaryCard: { borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginBottom: Spacing.sm },
     summaryLabel: { fontSize: Typography.caption.size, fontWeight: '700', letterSpacing: 0.8 },
     summaryValue: { marginTop: 2, fontSize: Typography.headline.size, fontWeight: '800' },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: 6, borderRadius: Radius.md, marginBottom: Spacing.xs, marginTop: Spacing.sm },
     sectionHeaderText: { flex: 1, fontWeight: '700', fontSize: 12, letterSpacing: 0.5 },
     sectionHeaderBalance: { fontWeight: '700', fontSize: 12 },
-    row: { borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, marginBottom: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    row: { borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, marginBottom: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     rowTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flexWrap: 'wrap' },
     rowTitle: { fontWeight: '700', fontSize: 13 },
     typeBadge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.xs, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 3 },
@@ -232,5 +233,5 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     dr: { fontWeight: '700', fontSize: 11 },
     cr: { fontWeight: '700', fontSize: 11 },
     balance: { fontWeight: '700', fontSize: 11 },
-    deactivateBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.xs, paddingVertical: 6, alignItems: 'center', justifyContent: 'center' },
+    deactivateBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.xs, paddingVertical: 6, alignItems: 'center', justifyContent: 'center' },
 });

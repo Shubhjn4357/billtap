@@ -6,6 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 
 import { usePosStore } from '../../../store/posStore';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
 import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { GST_SLABS } from '../../../constants/gstRates';
@@ -195,8 +196,8 @@ export default function PosScreen() {
                             <Pressable
                                 style={({ pressed }) => [
                                     s.catalogItem,
+                                    getSurfaceStyle(colors, { elevated: true }),
                                     {
-                                        backgroundColor: colors.card,
                                         opacity: item.stock <= 0 ? 0.5 : pressed ? 0.8 : 1,
                                     },
                                 ]}
@@ -277,9 +278,9 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         backgroundColor: colors.surfaceVariant,
     },
     layout: { flex: 1, flexDirection: 'column' },
-    catalog: { flex: 1, paddingHorizontal: Spacing.sm, gap: Spacing.sm },
-    heroWrap: { paddingHorizontal: Spacing.sm, paddingTop: Spacing.xs },
-    metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: Spacing.sm },
+    catalog: { flex: 1, paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm },
+    heroWrap: { paddingTop: Spacing.xs },
+    metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
     catalogItem: { flex: 1, borderRadius: Radius.card, padding: Spacing.sm, minHeight: 86, justifyContent: 'space-between' },
     itemName: { fontWeight: '600', fontSize: 13 },
     itemPrice: { fontWeight: '700', fontSize: 16, marginTop: 4 },

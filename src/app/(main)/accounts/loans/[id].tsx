@@ -3,11 +3,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../../constants/designSystem';
 import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { format, parseISO } from 'date-fns';
 import type { LoanTransaction } from '../../../../types/domain';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { HubMetricCard } from '../../../../components/ui/HubBlocks';
+import { UtilityEmptyState, UtilityHero, UtilitySection } from '../../../../components/ui/UtilityBlocks';
 import { useLoanDetails } from '../../../../hooks/useLoans';
 
 const toAmount = (value: unknown) => {
@@ -69,6 +72,7 @@ export default function LoanDetailScreen() {
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
+                contentContainerStyle={s.content}
                 refreshControl={(
                     <RefreshControl
                         tintColor={colors.primary}
@@ -79,44 +83,81 @@ export default function LoanDetailScreen() {
                     />
                 )}
             >
-                <View style={[s.summaryCard, { backgroundColor: color }]}>
-                    <Text style={s.sumType}>{isLent ? 'Given' : 'Borrowed'}</Text>
-                    <Text style={s.sumName}>{getLoanName(loan)}</Text>
-                    <View style={s.sumRow}>
-                        <View style={s.sumCell}>
-                            <Text style={s.sumCellLabel}>Principal</Text>
-                            <Text style={s.sumCellVal}>Rs {toAmount(loan.principalAmount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-                        </View>
-                        <View style={s.sumCell}>
-                            <Text style={s.sumCellLabel}>Balance</Text>
-                            <Text style={s.sumCellVal}>Rs {toAmount(loan.currentBalance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-                        </View>
-                        <View style={s.sumCell}>
-                            <Text style={s.sumCellLabel}>Rate</Text>
-                            <Text style={s.sumCellVal}>{getInterestRate(loan)}%</Text>
-                        </View>
+                <View style={s.heroWrap}>
+                    <UtilityHero
+                        title={getLoanName(loan)}
+                        subtitle={isLent ? 'Money given out and tracked with repayments.' : 'Borrowed money with running balance and interest.'}
+                        icon={isLent ? 'cash-fast' : 'cash-clock'}
+                        tone={isLent ? 'success' : 'warning'}
+                        footer={(
+                            <>
+                                <View style={[s.statusChip, { backgroundColor: withAlpha(color, '14') }]}>
+                                    <Text style={[s.statusChipText, { color }]}>{isLent ? 'GIVEN' : 'BORROWED'}</Text>
+                                </View>
+                                {loan.dueDate ? (
+                                    <View style={[s.statusChip, { backgroundColor: withAlpha(colors.primary, '10') }]}>
+                                        <Text style={[s.statusChipText, { color: colors.primary }]}>
+                                            Due {formatDisplayDate(loan.dueDate)}
+                                        </Text>
+                                    </View>
+                                ) : null}
+                            </>
+                        )}
+                    />
+                </View>
+
+                <View style={s.statsRow}>
+                    <HubMetricCard
+                        label="Principal"
+                        value={`Rs ${toAmount(loan.principalAmount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                        meta="Original amount"
+                        tone={isLent ? 'success' : 'warning'}
+                    />
+                    <HubMetricCard
+                        label="Balance"
+                        value={`Rs ${toAmount(loan.currentBalance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                        meta="Outstanding amount"
+                        tone={toAmount(loan.currentBalance) > 0 ? 'info' : 'default'}
+                    />
+                    <HubMetricCard
+                        label="Interest"
+                        value={`${getInterestRate(loan)}%`}
+                        meta="Configured rate"
+                        tone="default"
+                    />
+                </View>
+
+                <UtilitySection title="Quick Actions" count={2}>
+                    <View style={s.actionsRow}>
+                        <Pressable
+                            style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.success, elevated: true, muted: true })]}
+                            onPress={() => router.push(`/(main)/accounts/loans/${id}/payment` as Parameters<typeof router.push>[0])}
+                        >
+                            <MaterialCommunityIcons name="cash-plus" size={16} color={colors.success} />
+                            <Text style={[s.actionBtnText, { color: colors.success }]}>Add Payment</Text>
+                        </Pressable>
+                        <Pressable
+                            style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.warning, elevated: true, muted: true })]}
+                            onPress={() => router.push(`/(main)/accounts/loans/${id}/interest` as Parameters<typeof router.push>[0])}
+                        >
+                            <MaterialCommunityIcons name="percent-outline" size={16} color={colors.warning} />
+                            <Text style={[s.actionBtnText, { color: colors.warning }]}>Add Interest</Text>
+                        </Pressable>
                     </View>
-                    {loan.dueDate ? <Text style={s.dueDate}>Due: {formatDisplayDate(loan.dueDate)}</Text> : null}
-                </View>
+                </UtilitySection>
 
-                <View style={s.actionsRow}>
-                    <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => router.push(`/(main)/accounts/loans/${id}/payment` as Parameters<typeof router.push>[0])}>
-                        <MaterialCommunityIcons name="cash-plus" size={16} color={colors.onPrimary} />
-                        <Text style={s.actionBtnText}>Add Payment</Text>
-                    </Pressable>
-                    <Pressable style={[s.actionBtn, { backgroundColor: colors.warning }]} onPress={() => router.push(`/(main)/accounts/loans/${id}/interest` as Parameters<typeof router.push>[0])}>
-                        <MaterialCommunityIcons name="percent-outline" size={16} color={colors.onPrimary} />
-                        <Text style={s.actionBtnText}>Add Interest</Text>
-                    </Pressable>
-                </View>
-
-                <View style={s.txnSection}>
-                    <Text style={[s.txnTitle, { color: colors.textSecondary }]}>TRANSACTION HISTORY</Text>
+                <UtilitySection title="Transaction History" count={transactions.length}>
                     {transactions.length === 0 ? (
-                        <Text style={{ color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.lg }}>No transactions yet.</Text>
+                        <View style={s.emptyWrap}>
+                            <UtilityEmptyState
+                                icon="file-document-outline"
+                                title="No transactions yet"
+                                description="Repayments and interest postings will appear here after you record them."
+                            />
+                        </View>
                     ) : (
                         transactions.map((txn) => (
-                            <View key={txn.id} style={[s.txnRow, { backgroundColor: colors.card }]}>
+                            <View key={txn.id} style={[s.txnRow, getSurfaceStyle(colors, { elevated: true })]}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[s.txnType, { color: colors.text }]}>{getTransactionType(txn).replace(/_/g, ' ')}</Text>
                                     <Text style={[s.txnDate, { color: colors.textSecondary }]}>{formatDisplayDate(txn.date)}</Text>
@@ -131,7 +172,7 @@ export default function LoanDetailScreen() {
                             </View>
                         ))
                     )}
-                </View>
+                </UtilitySection>
 
                 <View style={{ height: 80 }} />
             </ScrollView>
@@ -142,27 +183,37 @@ export default function LoanDetailScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        summaryCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.xl, marginBottom: Spacing.md },
-        sumType: { color: withAlpha(colors.onPrimary, 'bb'), fontSize: 12, fontWeight: '600' },
-        sumName: { color: colors.onPrimary, fontWeight: '800', fontSize: 22, marginTop: 4, marginBottom: Spacing.md },
-        sumRow: { flexDirection: 'row', gap: Spacing.md },
-        sumCell: { flex: 1 },
-        sumCellLabel: { color: withAlpha(colors.onPrimary, 'bb'), fontSize: 11 },
-        sumCellVal: { color: colors.onPrimary, fontWeight: '700', fontSize: 16, marginTop: 2 },
-        dueDate: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: 12, marginTop: Spacing.md },
-        actionsRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+        content: {
+            paddingHorizontal: DESIGN_SPACING.screenX,
+            paddingBottom: 80,
+            gap: DESIGN_SPACING.sectionGap,
+        },
+        heroWrap: { marginTop: Spacing.sm },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+        statusChip: {
+            minHeight: 32,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.sm,
+            paddingVertical: 6,
+            justifyContent: 'center',
+        },
+        statusChipText: {
+            fontSize: 12,
+            fontWeight: '700',
+        },
+        actionsRow: { flexDirection: 'row', gap: Spacing.sm },
         actionBtn: {
             flex: 1,
-            borderRadius: Radius.pill,
-            paddingVertical: Spacing.sm,
+            borderRadius: Radius.card,
+            paddingVertical: Spacing.md,
+            paddingHorizontal: Spacing.sm,
             alignItems: 'center',
             justifyContent: 'center',
             flexDirection: 'row',
             gap: 6,
         },
-        actionBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
-        txnSection: { paddingHorizontal: Spacing.lg },
-        txnTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
+        actionBtnText: { fontWeight: '700', fontSize: 13 },
+        emptyWrap: { paddingVertical: Spacing.lg },
         txnRow: { borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.sm, flexDirection: 'row', alignItems: 'flex-start' },
         txnType: { fontWeight: '600', fontSize: 14 },
         txnDate: { fontSize: 11, marginTop: 2 },

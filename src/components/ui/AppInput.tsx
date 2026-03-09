@@ -10,6 +10,7 @@ import {
     type ViewStyle,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { getShadowStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -202,17 +203,13 @@ const styles = (colors: ColorPalette) =>
             minHeight: 48,
             borderRadius: Radius.md,
             borderWidth: 1,
-            borderColor: withAlpha(colors.primary, '22'),
-            backgroundColor: colors.card,
+            borderColor: withAlpha(colors.border, 'C8'),
+            backgroundColor: colors.surface,
             paddingHorizontal: Spacing.sm,
             flexDirection: 'row',
             alignItems: 'center',
             gap: Spacing.xs,
-            shadowColor: colors.primary,
-            shadowOpacity: 0.04,
-            shadowRadius: 10,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 1,
+            ...getShadowStyle(colors, 'soft'),
         },
         input: {
             flex: 1,

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel, getVoucherReferenceHint } from '../../../constants/accountingInputOptions';
+import { DESIGN_SPACING } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -208,7 +209,7 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        content: { paddingHorizontal: Spacing.lg, paddingBottom: 40, gap: Spacing.sm },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingTop: Spacing.sm, paddingBottom: 40, gap: DESIGN_SPACING.cardGap },
         heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '600' },
         modeHint: { fontSize: 12 },

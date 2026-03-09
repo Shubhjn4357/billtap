@@ -8,10 +8,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toUserMessage } from '../../../api/client';
 import { SettingsSection } from '../../../constants/enums';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
+import { FormHero } from '../../../components/ui/FormBlocks';
 import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
 import { selectItemSettings } from '../../../selectors/settingsSelectors';
 import {
@@ -148,6 +150,15 @@ export default function ItemMastersScreen() {
                     />
                 )}
             >
+                <View style={s.heroWrap}>
+                    <FormHero
+                        title="Item Masters"
+                        subtitle="Keep reusable item categories and units consistent across inventory, billing, and reporting."
+                        icon="shape-outline"
+                        tone="info"
+                    />
+                </View>
+
                 <View style={[s.card, focus === 'categories' ? s.focusedCard : null]}>
                     <Text style={s.cardTitle}>Categories</Text>
                     <Text style={s.meta}>
@@ -233,18 +244,17 @@ const styles = (colors: ColorPalette) =>
             minWidth: 44,
             justifyContent: 'center',
         },
-        content: { paddingHorizontal: Spacing.lg, gap: Spacing.md },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingTop: Spacing.sm, gap: DESIGN_SPACING.cardGap },
+        heroWrap: { marginBottom: Spacing.xs },
         card: {
-            backgroundColor: colors.card,
+            ...getSurfaceStyle(colors, { elevated: true }),
             borderRadius: Radius.card,
             padding: Spacing.md,
-            borderWidth: 1,
-            borderColor: colors.border,
             gap: Spacing.sm,
         },
         focusedCard: {
             borderColor: colors.primary,
-            borderWidth: 2,
+            borderWidth: 1.5,
         },
         cardTitle: {
             fontSize: 14,
@@ -279,6 +289,7 @@ const styles = (colors: ColorPalette) =>
             gap: Spacing.xs,
         },
         tag: {
+            ...getPillStyle(colors),
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,

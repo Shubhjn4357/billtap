@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartBack } from '../../../../hooks/useSmartBack';
 import { CASH_BANK_ACCOUNT_KIND_OPTIONS, type CashBankAccountKind } from '../../../../constants/accountingInputOptions';
+import { DESIGN_SPACING, getInsetPanelStyle, getPillStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
@@ -243,7 +244,7 @@ export default function AddCashBankAccountScreen() {
                 </FormSectionCard>
 
                 <FormSectionCard title="Usage Notes" description="Understand how this account behaves in accounting and transfer flows." tone={currentKind === 'CHEQUE' ? 'warning' : 'default'}>
-                    <View style={[s.noteBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <View style={[s.noteBox, getInsetPanelStyle(colors, currentKind === 'CHEQUE' ? colors.warning : undefined)]}>
                         <Text style={[s.note, { color: colors.textSecondary }]}>
                             {currentKind === 'CHEQUE'
                                 ? 'Use cheque accounts for received or issued cheques awaiting clearance. Move balances between cheque and bank with deposit or bounce flows.'
@@ -265,21 +266,20 @@ const styles = (colors: ColorPalette) =>
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         saveBtn: {
+            ...getPillStyle(colors),
             minHeight: 34,
             minWidth: 56,
-            borderWidth: 1,
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
             paddingHorizontal: Spacing.md,
         },
-        content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.sm },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingTop: Spacing.sm, gap: DESIGN_SPACING.cardGap },
         heroWrap: { marginBottom: Spacing.xs },
         label: { fontSize: 12, fontWeight: '700', marginTop: Spacing.sm },
         kindsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
         kindHelp: { fontSize: 12, marginTop: -4 },
         noteBox: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             padding: Spacing.md,
             marginTop: Spacing.sm,

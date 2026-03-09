@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, CameraView, type BarcodeScanningResult } from 'expo-camera';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../hooks/useSmartBack';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../constants/theme';
 import { useAppColors } from '../hooks/useAppColors';
 import { AppTopBar } from '../components/ui/AppTopBar';
@@ -177,20 +178,18 @@ const styles = (colors: ColorPalette) =>
         title: { fontWeight: '700', fontSize: 18 },
         cameraWrap: {
             flex: 1,
+            ...getSurfaceStyle(colors, { accent: colors.primary, elevated: true }),
             borderRadius: Radius.card,
             overflow: 'hidden',
-            marginHorizontal: Spacing.lg,
+            marginHorizontal: DESIGN_SPACING.screenX,
             marginBottom: Spacing.md,
-            borderWidth: 1,
-            borderColor: withAlpha(colors.primary, '16'),
-            backgroundColor: colors.card,
         },
         scanOverlay: {
             ...StyleSheet.absoluteFillObject,
             justifyContent: 'space-between',
             alignItems: 'center',
             paddingVertical: Spacing.xl,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
         },
         frameWrap: {
             width: '76%',
@@ -240,8 +239,8 @@ const styles = (colors: ColorPalette) =>
         },
         guideCard: {
             width: '100%',
+            ...getSurfaceStyle(colors, { floating: true }),
             borderRadius: Radius.card,
-            borderWidth: 1,
             borderColor: withAlpha('#ffffff', '18'),
             backgroundColor: withAlpha(colors.surface, 'D9'),
             flexDirection: 'row',
@@ -249,11 +248,6 @@ const styles = (colors: ColorPalette) =>
             gap: Spacing.sm,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,
-            shadowColor: colors.text,
-            shadowOpacity: 0.08,
-            shadowRadius: 14,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 4,
         },
         guideText: {
             flex: 1,
@@ -261,12 +255,10 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
             lineHeight: 18,
         },
-        footer: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+        footer: { paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: Spacing.lg },
         footerCard: {
+            ...getSurfaceStyle(colors, { elevated: true }),
             borderRadius: Radius.card,
-            borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.card,
             padding: Spacing.md,
             gap: Spacing.sm,
         },
@@ -284,7 +276,7 @@ const styles = (colors: ColorPalette) =>
             lineHeight: 18,
         },
         secondaryBtn: {
-            borderWidth: 1,
+            ...getPillStyle(colors),
             borderRadius: Radius.pill,
             paddingVertical: Spacing.sm,
             alignItems: 'center',
@@ -295,13 +287,13 @@ const styles = (colors: ColorPalette) =>
             flex: 1,
             justifyContent: 'center',
             alignItems: 'center',
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             gap: Spacing.sm,
         },
         helpText: { textAlign: 'center', fontSize: 13 },
         actionBtn: {
             borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.sm,
             marginTop: Spacing.sm,
         },

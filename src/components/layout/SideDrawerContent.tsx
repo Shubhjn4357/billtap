@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DESIGN_SPACING, getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { DESIGN_SPACING, getInsetPanelStyle, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { SIDE_DRAWER_ACTIONS } from '../../constants/navigationOptions';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
@@ -160,13 +160,12 @@ const styles = (colors: ColorPalette) =>
             fontWeight: '700',
         },
         closeButton: {
+            ...getPillStyle(colors, colors.primary),
             width: 36,
             height: 36,
             borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
-            borderWidth: 1,
-            borderColor: withAlpha(colors.primary, '18'),
         },
         header: {
             flexDirection: 'row',

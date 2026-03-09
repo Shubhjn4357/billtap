@@ -12,12 +12,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useInvoiceBuilderStore } from '../../../store/invoiceBuilderStore';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useParties } from '../../../hooks/useParties';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
+import { EmptyStateCard } from '../../../components/ui/ListBlocks';
 
 export default function PartySelectScreen() {
     const colors = useAppColors();
@@ -114,17 +116,21 @@ export default function PartySelectScreen() {
                             }}
                         />
                     )}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     ListEmptyComponent={
-                        <View style={s.centered}>
-                            <Text style={[s.empty, { color: colors.textSecondary }]}>No party found.</Text>
-                        </View>
+                        <EmptyStateCard
+                            icon="account-search-outline"
+                            title="No party found"
+                            subtitle="Create a new party or change the search to continue building this document."
+                            tone="info"
+                        />
                     }
                     renderItem={({ item }) => (
                         <Pressable
                             style={({ pressed }) => [
                                 s.row,
-                                { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.8 : 1 },
+                                getSurfaceStyle(colors, { elevated: true }),
+                                { opacity: pressed ? 0.8 : 1 },
                             ]}
                             onPress={() => onSelect(item)}
                         >
@@ -150,25 +156,23 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         clearBtn: {
+            ...getPillStyle(colors, colors.error),
             width: 36,
             height: 36,
-            borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.surfaceVariant,
         },
-        searchWrap: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md },
+        searchWrap: { paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: Spacing.md },
         createPartyWrap: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingBottom: Spacing.sm,
         },
         createPartyBtn: {
-            borderWidth: 1,
+            ...getPillStyle(colors, colors.primary),
             borderRadius: Radius.pill,
             minHeight: 40,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.card,
         },
         createPartyRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
         createPartyText: {
@@ -178,7 +182,6 @@ const styles = (colors: ColorPalette) =>
         centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xxl },
         empty: { fontSize: 13 },
         row: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,

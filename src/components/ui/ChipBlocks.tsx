@@ -96,7 +96,6 @@ export function ChipButton({
 const styles = StyleSheet.create({
     wrap: {
         minHeight: 34,
-        borderWidth: 1,
         borderRadius: Radius.pill,
         paddingHorizontal: Spacing.sm,
         flexDirection: 'row',

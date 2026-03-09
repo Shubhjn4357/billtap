@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { toApiError, toUserMessage } from '../../../api/client';
 import { STAFF_ROLE_OPTIONS, type StaffInviteRole } from '../../../constants/formOptions';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useAuthStore } from '../../../store/authStore';
@@ -14,7 +15,7 @@ import { AppInput } from '../../../components/ui/AppInput';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 import { SelectField } from '../../../components/ui/SelectField';
 import { HubMetricCard } from '../../../components/ui/HubBlocks';
-import { UtilityHero, UtilitySection } from '../../../components/ui/UtilityBlocks';
+import { UtilityEmptyState, UtilityHero, UtilitySection } from '../../../components/ui/UtilityBlocks';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
@@ -155,7 +156,7 @@ export default function StaffScreen() {
                     <HubMetricCard label="Invite Access" value={canInviteStaff ? 'Enabled' : 'Blocked'} meta="Role-based permission" tone={canInviteStaff ? 'success' : 'danger'} />
                 </View>
 
-                <View style={[s.inviteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[s.inviteCard, getSurfaceStyle(colors, { elevated: true })]}>
                     <Text style={[s.sectionTitle, { color: colors.text }]}>Invite Staff</Text>
                     {!canInviteStaff ? (
                         <Text style={[s.accessHint, { color: colors.textSecondary }]}>
@@ -213,7 +214,7 @@ export default function StaffScreen() {
                                         <Text style={[s.emptyText, { color: colors.textSecondary }]}>No staff members yet.</Text>
                                     ) : (
                                         filteredMembers.map((member) => (
-                                            <View key={member.uid} style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                            <View key={member.uid} style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
                                                 <View style={{ flex: 1 }}>
                                                     <View style={s.nameRow}>
                                                         <Text style={[s.name, { color: colors.text }]}>{member.displayName ?? member.phoneNumber ?? member.uid}</Text>
@@ -224,7 +225,7 @@ export default function StaffScreen() {
                                                     <Text style={[s.meta, { color: colors.textSecondary }]}>{member.phoneNumber ?? member.email ?? '-'}</Text>
                                                 </View>
                                                 <Pressable
-                                                    style={[s.inlineBtn, { borderColor: colors.error }]}
+                                                    style={[s.inlineBtn, getPillStyle(colors, colors.error)]}
                                                     onPress={() => {
                                                         void selection();
                                                         confirmRemoveStaff(member.uid, member.displayName);
@@ -245,10 +246,14 @@ export default function StaffScreen() {
                             <UtilitySection title="Pending Invites" count={filteredInvites.length}>
                                 <View style={s.block}>
                                 {filteredInvites.length === 0 ? (
-                                    <Text style={[s.emptyText, { color: colors.textSecondary }]}>No pending invites.</Text>
+                                    <UtilityEmptyState
+                                        icon="account-clock-outline"
+                                        title="No pending invites"
+                                        description="Open invite codes will appear here once you create them."
+                                    />
                                 ) : (
                                     filteredInvites.map((invite) => (
-                                        <View key={invite.id} style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                        <View key={invite.id} style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
                                             <View style={{ flex: 1 }}>
                                                 <View style={s.nameRow}>
                                                     <Text style={[s.name, { color: colors.text }]}>{invite.phoneNumber}</Text>
@@ -259,7 +264,7 @@ export default function StaffScreen() {
                                                 <Text style={[s.meta, { color: colors.textSecondary }]}>Code: {invite.code}</Text>
                                             </View>
                                             <Pressable
-                                                style={[s.inlineBtn, { borderColor: colors.error }]}
+                                                style={[s.inlineBtn, getPillStyle(colors, colors.error)]}
                                                 onPress={() => {
                                                     void selection();
                                                     confirmDeleteInvite(invite.id);
@@ -287,10 +292,10 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         flex: { flex: 1 },
-        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        searchWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        inviteCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, borderWidth: 1, padding: Spacing.md, marginBottom: Spacing.md },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
+        searchWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
+        inviteCard: { marginHorizontal: DESIGN_SPACING.screenX, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
         sectionTitle: { fontWeight: '700', fontSize: 14, marginBottom: Spacing.sm },
         accessHint: { fontSize: 12, marginBottom: Spacing.xs },
         inviteRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
@@ -302,9 +307,8 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
         },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-        block: { marginHorizontal: Spacing.lg, marginBottom: Spacing.lg },
+        block: { marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.lg },
         row: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             padding: Spacing.md,
             flexDirection: 'row',
@@ -322,6 +326,6 @@ const styles = (colors: ColorPalette) =>
         },
         roleBadgeText: { fontSize: Typography.caption.size, fontWeight: '700' },
         meta: { fontSize: 12, marginTop: 2 },
-        inlineBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
+        inlineBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
         emptyText: { fontSize: 13 },
     });

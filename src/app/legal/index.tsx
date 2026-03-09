@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSmartBack } from '../../hooks/useSmartBack';
 import Constants from 'expo-constants';
 import { LEGAL_CENTER_LINKS } from '../../constants/appShellOptions';
+import { DESIGN_SPACING, getPillStyle } from '../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { AppTopBar } from '../../components/ui/AppTopBar';
@@ -68,10 +69,10 @@ export default function LegalCenterScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        content: { paddingHorizontal: Spacing.lg, gap: Spacing.sm },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, gap: DESIGN_SPACING.cardGap },
         versionBadge: {
+            ...getPillStyle(colors, colors.primary),
             borderRadius: Radius.pill,
-            borderWidth: 1,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
         },

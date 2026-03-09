@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getPnlRangePresets, PNL_METRIC_OPTIONS } from '../../../../constants/reportOptions';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
@@ -96,13 +97,13 @@ export default function PnLReportScreen() {
                 </View>
 
                 <View style={s.topStats}>
-                    <View style={[s.topStatCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={s.topStatCard}>
                         <Text style={[s.topStatLabel, { color: colors.textSecondary }]}>Sales vs Expenses</Text>
                         <Text style={[s.topStatValue, { color: colors.text }]}>
                             Rs {toNumber(metrics.totalSales).toLocaleString('en-IN', { maximumFractionDigits: 0 })} / Rs {toNumber(metrics.totalExpenses).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                         </Text>
                     </View>
-                    <View style={[s.topStatCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={s.topStatCard}>
                         <Text style={[s.topStatLabel, { color: colors.textSecondary }]}>Receivable vs Payable</Text>
                         <Text style={[s.topStatValue, { color: colors.text }]}>
                             Rs {toNumber(metrics.outstandingReceivables).toLocaleString('en-IN', { maximumFractionDigits: 0 })} / Rs {toNumber(metrics.outstandingPayables).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
@@ -115,7 +116,7 @@ export default function PnLReportScreen() {
                         const value = toNumber(metrics[metric.key]);
                         const toneColor = getMetricColor(colors, metric.tone);
                         return (
-                            <View key={metric.key} style={[s.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View key={metric.key} style={s.metricCard}>
                                 <MaterialCommunityIcons name={metric.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={18} color={toneColor} />
                                 <Text style={[s.metricLabel, { color: colors.textSecondary }]}>{metric.label}</Text>
                                 {isLoading ? (
@@ -138,7 +139,7 @@ export default function PnLReportScreen() {
                     ] satisfies readonly { label: string; route: string; icon: IconName }[]).map((entry) => (
                         <Pressable
                             key={entry.label}
-                            style={[s.reportLink, { backgroundColor: colors.card, borderColor: colors.border }]}
+                            style={s.reportLink}
                             onPress={() => router.push(entry.route as Parameters<typeof router.push>[0])}
                         >
                             <MaterialCommunityIcons name={entry.icon} size={18} color={colors.primary} />
@@ -158,12 +159,12 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         chipsRow: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             gap: Spacing.sm,
             paddingBottom: Spacing.md,
         },
         heroCard: {
-            marginHorizontal: Spacing.lg,
+            marginHorizontal: DESIGN_SPACING.screenX,
             marginBottom: Spacing.md,
             borderRadius: Radius.lg,
             padding: Spacing.xl,
@@ -173,13 +174,13 @@ const styles = (colors: ColorPalette) =>
         heroValue: { color: colors.onPrimary, fontWeight: '900', fontSize: 34, marginTop: Spacing.sm },
         heroRange: { color: withAlpha(colors.onPrimary, 'cc'), fontSize: Typography.caption.size, marginTop: Spacing.xs },
         topStats: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             gap: Spacing.sm,
             marginBottom: Spacing.md,
         },
         topStatCard: {
+            ...getSurfaceStyle(colors, { elevated: true }),
             borderRadius: Radius.card,
-            borderWidth: 1,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.sm,
         },
@@ -189,12 +190,12 @@ const styles = (colors: ColorPalette) =>
             flexDirection: 'row',
             flexWrap: 'wrap',
             gap: Spacing.sm,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             marginBottom: Spacing.md,
         },
         metricCard: {
+            ...getSurfaceStyle(colors, { elevated: true }),
             borderRadius: Radius.card,
-            borderWidth: 1,
             padding: Spacing.md,
             width: '47%',
             minHeight: 92,
@@ -202,14 +203,14 @@ const styles = (colors: ColorPalette) =>
         metricLabel: { fontSize: Typography.caption.size, marginTop: 4 },
         metricValue: { fontSize: Typography.title.size, fontWeight: '700', marginTop: 4 },
         skeleton: { height: 24, borderRadius: 4, marginTop: 4 },
-        section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+        section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.md },
         sectionTitle: { fontSize: Typography.caption.size, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
         reportLink: {
+            ...getSurfaceStyle(colors, { elevated: true }),
             flexDirection: 'row',
             alignItems: 'center',
             padding: Spacing.md,
             borderRadius: Radius.card,
-            borderWidth: 1,
             marginBottom: Spacing.sm,
             gap: Spacing.sm,
         },

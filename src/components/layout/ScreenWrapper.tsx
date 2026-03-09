@@ -11,6 +11,7 @@ import {
     type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, type Edge, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DESIGN_SPACING } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
@@ -108,7 +109,7 @@ const styles = (colors: ColorPalette) =>
         flex: { flex: 1 },
         header: {
             minHeight: 52,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingVertical: Spacing.sm,
             flexDirection: 'row',
             alignItems: 'center',
@@ -137,13 +138,12 @@ const styles = (colors: ColorPalette) =>
             fontWeight: '700',
         },
         scrollContent: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             gap: Spacing.sm,
         },
         nonScrollContent: {
             flex: 1,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             gap: Spacing.sm,
         },
     });
-

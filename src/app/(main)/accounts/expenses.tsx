@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { format, parseISO } from 'date-fns';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Spacing, Radius, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { ExpenseCategory } from '../../../constants/enums';
@@ -14,6 +15,8 @@ import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { ChipButton } from '../../../components/ui/ChipBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { EmptyStateCard } from '../../../components/ui/ListBlocks';
+import { SwipeableRow } from '../../../components/ui/SwipeableRow';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useExpenses, type ExpenseCategoryFilter } from '../../../hooks/useExpenses';
 import { useExpenseMutations } from '../../../hooks/useExpenseMutations';
 
@@ -115,7 +118,7 @@ export default function ExpensesScreen() {
                 rightAction={(
                     <View style={s.topActionRow}>
                         <Pressable
-                            style={[s.iconBtn, { borderColor: colors.border }]}
+                            style={s.iconBtn}
                             onPress={() => {
                                 setSelectionMode((current) => !current);
                                 setSelectedIds([]);
@@ -128,7 +131,7 @@ export default function ExpensesScreen() {
                             />
                         </Pressable>
                         <Pressable
-                            style={[s.iconBtn, { borderColor: colors.border }]}
+                            style={s.iconBtn}
                             onPress={() => router.push('/(main)/accounts/expenses/recycle-bin' as Parameters<typeof router.push>[0])}
                         >
                             <MaterialCommunityIcons name="delete-outline" size={18} color={colors.textSecondary} />
@@ -140,21 +143,30 @@ export default function ExpensesScreen() {
                 )}
             />
 
-            <View style={[s.totalCard, { backgroundColor: withAlpha(colors.error, '18') }]}>
+            <View style={s.heroWrap}>
+                <UtilityHero
+                    title="Expense Tracker"
+                    subtitle="Filter spending by category, manage bulk actions, and keep operating costs tidy."
+                    icon="cash-minus"
+                    tone="warning"
+                />
+            </View>
+
+            <View style={[s.totalCard, getSurfaceStyle(colors, { accent: colors.error, elevated: true, muted: true })]}>
                 <Text style={[s.totalLabel, { color: colors.textSecondary }]}>Total Expenses (filtered)</Text>
                 <Text style={[s.totalVal, { color: colors.error }]}>{`INR ${total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}</Text>
             </View>
 
             <View style={s.statsRow}>
-                <View style={[s.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={s.statCard}>
                     <Text style={[s.statLabel, { color: colors.textSecondary }]}>Entries</Text>
                     <Text style={[s.statValue, { color: colors.text }]}>{expenses.length}</Text>
                 </View>
-                <View style={[s.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={s.statCard}>
                     <Text style={[s.statLabel, { color: colors.textSecondary }]}>Average</Text>
                     <Text style={[s.statValue, { color: colors.warning }]}>Rs {average.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
                 </View>
-                <View style={[s.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={s.statCard}>
                     <Text style={[s.statLabel, { color: colors.textSecondary }]}>Categories</Text>
                     <Text style={[s.statValue, { color: colors.primary }]}>{categoriesUsed}</Text>
                 </View>
@@ -167,7 +179,7 @@ export default function ExpensesScreen() {
                     data={EXPENSE_CATEGORY_FILTER_OPTIONS}
                     keyExtractor={(entry) => entry.value}
                     showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: Spacing.sm, paddingHorizontal: Spacing.lg }}
+                    contentContainerStyle={{ gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX }}
                     renderItem={({ item }) => (
                         <ChipButton
                             label={item.label}
@@ -184,12 +196,12 @@ export default function ExpensesScreen() {
                     <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>Bulk Actions</Text>
                 <View style={s.bulkRow}>
                     <Text style={[s.bulkLabel, { color: colors.textSecondary }]}>Selected: {selectedCount}</Text>
-                    <Pressable style={[s.bulkAction, { borderColor: colors.primary }]} onPress={requestBulkSetMisc} disabled={selectedCount === 0 || bulkUpdating}>
+                    <Pressable style={[s.bulkAction, { ...getPillStyle(colors, colors.primary) }]} onPress={requestBulkSetMisc} disabled={selectedCount === 0 || bulkUpdating}>
                         <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 11 }}>
                             {bulkUpdating ? 'Applying...' : 'Set Misc'}
                         </Text>
                     </Pressable>
-                    <Pressable style={[s.bulkAction, { borderColor: colors.error }]} onPress={requestBulkDelete} disabled={selectedCount === 0 || bulkDeleting}>
+                    <Pressable style={[s.bulkAction, { ...getPillStyle(colors, colors.error) }]} onPress={requestBulkDelete} disabled={selectedCount === 0 || bulkDeleting}>
                         <Text style={{ color: colors.error, fontWeight: '700', fontSize: 11 }}>
                             {bulkDeleting ? 'Archiving...' : 'Archive'}
                         </Text>
@@ -221,6 +233,10 @@ export default function ExpensesScreen() {
                             selectionMode={selectionMode}
                             selected={selectedIds.includes(item.id)}
                             onToggleSelect={() => setSelectedIds((current) => toggleId(current, item.id))}
+                            onSelectAction={() => {
+                                setSelectionMode(true);
+                                setSelectedIds((current) => toggleId(current, item.id));
+                            }}
                         />
                     )}
                     ListEmptyComponent={(
@@ -245,40 +261,49 @@ function ExpenseRow({
     colors,
     selectionMode,
     selected,
+    onSelectAction,
     onToggleSelect,
 }: {
     expense: Expense;
     colors: ColorPalette;
     selectionMode: boolean;
     selected: boolean;
+    onSelectAction: () => void;
     onToggleSelect: () => void;
 }) {
     return (
-        <Pressable
-            style={[
-                rowStyles.row,
-                {
-                    backgroundColor: selected ? withAlpha(colors.primary, '20') : colors.card,
-                    borderColor: selected ? colors.primary : colors.border,
-                    borderWidth: 1,
-                },
+        <SwipeableRow
+            enabled={!selectionMode}
+            leftActions={[
+                { label: 'Select', icon: 'check-circle-outline', onPress: onSelectAction, tone: 'warning' },
             ]}
-            onPress={selectionMode ? onToggleSelect : undefined}
         >
-            {selectionMode ? (
-                <View style={[rowStyles.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' }]}>
-                    <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '700' }}>
-                        {selected ? 'ON' : 'OFF'}
-                    </Text>
+            <Pressable
+                style={[
+                    rowStyles.row,
+                    getSurfaceStyle(colors, { elevated: true }),
+                    {
+                        backgroundColor: selected ? withAlpha(colors.primary, '20') : colors.card,
+                        borderColor: selected ? colors.primary : colors.border,
+                    },
+                ]}
+                onPress={selectionMode ? onToggleSelect : undefined}
+            >
+                {selectionMode ? (
+                    <View style={[rowStyles.selector, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? withAlpha(colors.primary, '22') : 'transparent' }]}>
+                        <Text style={{ color: selected ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '700' }}>
+                            {selected ? 'ON' : 'OFF'}
+                        </Text>
+                    </View>
+                ) : null}
+                <View style={rowStyles.left}>
+                    <Text style={[rowStyles.cat, { color: colors.text }]}>{getExpenseCategoryLabel(expense)}</Text>
+                    <Text style={[rowStyles.desc, { color: colors.textSecondary }]}>{getExpenseDescription(expense)}</Text>
+                    <Text style={[rowStyles.date, { color: colors.textSecondary }]}>{formatExpenseDate(expense)}</Text>
                 </View>
-            ) : null}
-            <View style={rowStyles.left}>
-                <Text style={[rowStyles.cat, { color: colors.text }]}>{getExpenseCategoryLabel(expense)}</Text>
-                <Text style={[rowStyles.desc, { color: colors.textSecondary }]}>{getExpenseDescription(expense)}</Text>
-                <Text style={[rowStyles.date, { color: colors.textSecondary }]}>{formatExpenseDate(expense)}</Text>
-            </View>
-            <Text style={[rowStyles.amt, { color: colors.error }]}>{`-INR ${toAmount(expense.amount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}</Text>
-        </Pressable>
+                <Text style={[rowStyles.amt, { color: colors.error }]}>{`-INR ${toAmount(expense.amount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}</Text>
+            </Pressable>
+        </SwipeableRow>
     );
 }
 
@@ -288,7 +313,7 @@ const rowStyles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'flex-start',
         padding: Spacing.md,
-        marginHorizontal: Spacing.lg,
+        marginHorizontal: DESIGN_SPACING.screenX,
         marginBottom: Spacing.sm,
         borderRadius: Radius.card,
         gap: Spacing.sm,
@@ -311,9 +336,10 @@ const rowStyles = StyleSheet.create({
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
         topActionRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
         iconBtn: {
-            borderWidth: 1,
+            ...getPillStyle(colors),
             width: 34,
             height: 34,
             borderRadius: 17,
@@ -321,26 +347,25 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
         },
         addBtn: { backgroundColor: colors.primary, borderRadius: Radius.pill, width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-        totalCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.sm },
+        totalCard: { marginHorizontal: DESIGN_SPACING.screenX, borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.sm },
         totalLabel: { fontSize: 12 },
         totalVal: { fontSize: 24, fontWeight: '800', marginTop: 4 },
         statsRow: {
             flexDirection: 'row',
             gap: Spacing.sm,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             marginBottom: Spacing.sm,
         },
         statCard: {
             flex: 1,
-            borderWidth: 1,
-            borderRadius: Radius.md,
             paddingHorizontal: Spacing.sm,
             paddingVertical: Spacing.sm,
+            ...getSurfaceStyle(colors, { elevated: true }),
         },
         statLabel: { fontSize: Typography.caption.size, fontWeight: '600' },
         statValue: { marginTop: 2, fontSize: Typography.title.size, fontWeight: '800' },
         sectionLabel: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             marginBottom: Spacing.xs,
             fontSize: Typography.caption.size,
             fontWeight: '700',
@@ -348,10 +373,9 @@ const styles = (colors: ColorPalette) =>
             textTransform: 'uppercase',
         },
         catRow: { marginBottom: Spacing.sm },
-        bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+        bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
         bulkLabel: { flex: 1, fontSize: 12, fontWeight: '700' },
         bulkAction: {
-            borderWidth: 1,
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,

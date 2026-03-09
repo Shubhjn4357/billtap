@@ -4,10 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { CASH_BANK_QUICK_ACTIONS } from '../../../constants/navigationOptions';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { HubActionCard, HubMetricCard } from '../../../components/ui/HubBlocks';
+import { SwipeableRow } from '../../../components/ui/SwipeableRow';
 import { UtilityEmptyState, UtilityHero, UtilitySection } from '../../../components/ui/UtilityBlocks';
 import { getCashBankKindLabel, useCashBankAccounts } from '../../../hooks/useCashBankAccounts';
 
@@ -99,26 +101,37 @@ export default function CashBankScreen() {
                                 />
                             )}
                             renderItem={({ item: account }) => (
-                                <Pressable
-                                    style={[s.accountCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                    onPress={() => router.push(`/(main)/accounts/cash-bank/${account.id}` as Parameters<typeof router.push>[0])}
+                                <SwipeableRow
+                                    leftActions={[
+                                        {
+                                            label: 'Open',
+                                            icon: 'arrow-top-right',
+                                            onPress: () => router.push(`/(main)/accounts/cash-bank/${account.id}` as Parameters<typeof router.push>[0]),
+                                            tone: 'info',
+                                        },
+                                    ]}
                                 >
-                                    <View style={[s.accountIcon, { backgroundColor: withAlpha(colors.primary, '22') }]}>
-                                        <MaterialCommunityIcons
-                                            name={getCashBankKindLabel(account) === 'BANK' ? 'bank' : getCashBankKindLabel(account) === 'CHEQUE' ? 'checkbook' : 'cash'}
-                                            size={18}
-                                            color={colors.primary}
-                                        />
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={[s.accountName, { color: colors.text }]}>{account.name}</Text>
-                                        <Text style={[s.accountMeta, { color: colors.textSecondary }]}>{getCashBankKindLabel(account)}</Text>
-                                    </View>
-                                    <Text style={[s.accountBalance, { color: (account.balance ?? 0) >= 0 ? colors.success : colors.error }]}>
-                                        Rs {(account.balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                    </Text>
-                                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
-                                </Pressable>
+                                    <Pressable
+                                        style={({ pressed }) => [s.accountCard, getSurfaceStyle(colors, { elevated: true }), { opacity: pressed ? 0.86 : 1 }]}
+                                        onPress={() => router.push(`/(main)/accounts/cash-bank/${account.id}` as Parameters<typeof router.push>[0])}
+                                    >
+                                        <View style={[s.accountIcon, { backgroundColor: withAlpha(colors.primary, '22') }]}>
+                                            <MaterialCommunityIcons
+                                                name={getCashBankKindLabel(account) === 'BANK' ? 'bank' : getCashBankKindLabel(account) === 'CHEQUE' ? 'checkbook' : 'cash'}
+                                                size={18}
+                                                color={colors.primary}
+                                            />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[s.accountName, { color: colors.text }]}>{account.name}</Text>
+                                            <Text style={[s.accountMeta, { color: colors.textSecondary }]}>{getCashBankKindLabel(account)}</Text>
+                                        </View>
+                                        <Text style={[s.accountBalance, { color: (account.balance ?? 0) >= 0 ? colors.success : colors.error }]}>
+                                            Rs {(account.balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </Text>
+                                        <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
+                                    </Pressable>
+                                </SwipeableRow>
                             )}
                             contentContainerStyle={{ paddingBottom: 100 }}
                         />
@@ -132,29 +145,28 @@ export default function CashBankScreen() {
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
-        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
         statsRow: {
             flexDirection: 'row',
             flexWrap: 'wrap',
             gap: Spacing.sm,
-            paddingHorizontal: Spacing.lg,
-            marginBottom: Spacing.sm,
+            paddingHorizontal: DESIGN_SPACING.screenX,
+            marginBottom: DESIGN_SPACING.cardGap,
         },
         sectionWrap: {
-            marginHorizontal: Spacing.lg,
+            marginHorizontal: DESIGN_SPACING.screenX,
             marginBottom: Spacing.md,
         },
         actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         emptyWrap: { minHeight: 220, alignItems: 'center', justifyContent: 'center' },
-        addAccBtn: { borderRadius: Radius.pill, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+        addAccBtn: { ...getPillStyle(colors, colors.primary), backgroundColor: colors.primary, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
         accountCard: {
             flexDirection: 'row',
             alignItems: 'center',
             padding: Spacing.md,
             marginBottom: Spacing.sm,
             borderRadius: Radius.card,
-            borderWidth: 1,
             gap: Spacing.md,
         },
         accountIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },

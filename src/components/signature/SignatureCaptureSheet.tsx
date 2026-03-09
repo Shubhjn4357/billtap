@@ -1,5 +1,6 @@
 import { useMemo, type ComponentType } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useAppDialog } from '@/components/providers/DialogProvider';
@@ -306,20 +307,13 @@ const styles = (colors: ColorPalette) =>
         sheet: {
             borderTopLeftRadius: 30,
             borderTopRightRadius: 30,
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingTop: Spacing.md,
             paddingBottom: Spacing.lg,
-            borderWidth: 1,
             borderBottomWidth: 0,
-            borderColor: colors.border,
-            backgroundColor: colors.card,
             gap: Spacing.sm,
             minHeight: '96%',
-            shadowColor: colors.text,
-            shadowOpacity: 0.08,
-            shadowRadius: 18,
-            shadowOffset: { width: 0, height: -8 },
-            elevation: 12,
+            ...getSurfaceStyle(colors, { floating: true }),
         },
         handle: {
             alignSelf: 'center',
@@ -373,8 +367,7 @@ const styles = (colors: ColorPalette) =>
             paddingHorizontal: Spacing.lg,
         },
         secondaryBtn: {
-            borderWidth: 1,
-            borderColor: colors.border,
+            ...getPillStyle(colors),
             backgroundColor: colors.surface,
         },
         secondaryText: {

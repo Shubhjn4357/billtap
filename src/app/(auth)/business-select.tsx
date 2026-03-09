@@ -16,7 +16,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { storeBusinessId, toApiError, toUserMessage } from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
-import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { extractUpiIdFromPayload, isValidUpiId, sanitizeUpiId } from '../../utils/upi';
 import { SignatureCaptureSheet } from '../../components/signature/SignatureCaptureSheet';
@@ -24,7 +25,7 @@ import { AppTopBar } from '../../components/ui/AppTopBar';
 import { AppInput } from '../../components/ui/AppInput';
 import { DateField } from '../../components/ui/DateField';
 import { SelectField } from '../../components/ui/SelectField';
-import { AuthChip, AuthHero } from '../../components/ui/AuthBlocks';
+import { AuthChip, AuthHero, AuthPanel } from '../../components/ui/AuthBlocks';
 import { CURRENCY_OPTIONS, DEFAULT_CURRENCY_CODE } from '../../constants/countryOptions';
 import { INDIAN_STATE_LIST } from '../../constants/gstRates';
 import { useAppDialog } from '../../components/providers/DialogProvider';
@@ -393,14 +394,16 @@ export default function BusinessSelectScreen() {
                         <AuthChip icon="cloud-sync-outline" label="Sync later" />
                     </AuthHero>
 
-                    <View style={s.section}>
-                        <Text style={s.sectionTitle}>Your Businesses</Text>
+                    <AuthPanel
+                        title="Your Businesses"
+                        description="Switch the active workspace, continue where you left off, or remove an unused organization."
+                    >
                         {isLoading ? (
-                            <View style={s.loadingBox}>
+                            <View style={[s.loadingBox, getSurfaceStyle(colors)]}>
                                 <ActivityIndicator color={colors.primary} />
                             </View>
                         ) : organizations.length === 0 ? (
-                            <View style={s.emptyBox}>
+                            <View style={[s.emptyBox, getSurfaceStyle(colors, { muted: true })]}>
                                 <Text style={s.emptyText}>No business found yet. Create one below.</Text>
                             </View>
                         ) : (
@@ -413,8 +416,12 @@ export default function BusinessSelectScreen() {
                                         key={org.id}
                                         style={[
                                             s.orgCard,
+                                            getSurfaceStyle(colors, {
+                                                accent: isActive ? colors.primary : undefined,
+                                                elevated: true,
+                                                muted: isActive,
+                                            }),
                                             isActive && {
-                                                borderColor: colors.primary,
                                                 backgroundColor: colors.surfaceVariant,
                                             },
                                         ]}
@@ -422,7 +429,7 @@ export default function BusinessSelectScreen() {
                                     >
                                         <View style={s.orgRow}>
                                             <Text style={s.orgName}>{org.name}</Text>
-                                            <View style={[s.roleChip, { backgroundColor: colors.backgroundElement }]}>
+                                            <View style={[s.roleChip, getPillStyle(colors)]}>
                                                 <Text style={s.roleChipText}>{(org.role ?? 'owner').toUpperCase()}</Text>
                                             </View>
                                         </View>
@@ -452,6 +459,7 @@ export default function BusinessSelectScreen() {
                                         <Pressable
                                             style={[
                                                 s.dangerButton,
+                                                getPillStyle(colors, colors.error),
                                                 (!canDelete || isSwitching || isDeletingOrganization) && s.buttonDisabled,
                                             ]}
                                             onPress={() => handleDeleteBusiness(org)}
@@ -466,11 +474,13 @@ export default function BusinessSelectScreen() {
                                 );
                             })
                         )}
-                    </View>
+                    </AuthPanel>
 
-                    <View style={s.section}>
-                        <Text style={s.sectionTitle}>Create New Business</Text>
-                        <View style={s.formCard}>
+                    <AuthPanel
+                        title="Create New Business"
+                        description="Set up company identity, opening books, and optional payment profile in one pass."
+                    >
+                        <View style={[s.formCard, getSurfaceStyle(colors, { accent: colors.primary, elevated: true })]}>
                             <Text style={s.inputLabel}>Business Name</Text>
                             <AppInput
                                 value={businessName}
@@ -644,14 +654,14 @@ export default function BusinessSelectScreen() {
                             />
                             <View style={s.signatureActions}>
                                 <Pressable
-                                    style={[s.secondaryInlineButton, { borderColor: colors.border }]}
+                                    style={[s.secondaryInlineButton, getPillStyle(colors)]}
                                     onPress={() => setSignatureCaptureVisible(true)}
                                 >
                                     <Text style={[s.secondaryInlineButtonText, { color: colors.primary }]}>Draw Signature</Text>
                                 </Pressable>
                                 {signatureUrl ? (
                                     <Pressable
-                                        style={[s.secondaryInlineButton, { borderColor: colors.border }]}
+                                        style={[s.secondaryInlineButton, getPillStyle(colors, colors.error)]}
                                         onPress={() => setSignatureUrl('')}
                                     >
                                         <Text style={[s.secondaryInlineButtonText, { color: colors.error }]}>Clear</Text>
@@ -659,7 +669,7 @@ export default function BusinessSelectScreen() {
                                 ) : null}
                             </View>
                             {signatureUrl ? (
-                                <View style={s.signaturePreviewWrap}>
+                                <View style={[s.signaturePreviewWrap, getSurfaceStyle(colors)]}>
                                     <Image source={{ uri: signatureUrl }} style={s.signaturePreview} resizeMode="contain" />
                                 </View>
                             ) : null}
@@ -677,7 +687,7 @@ export default function BusinessSelectScreen() {
                                 )}
                             </Pressable>
                         </View>
-                    </View>
+                    </AuthPanel>
 
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -698,14 +708,13 @@ const styles = (colors: ColorPalette) =>
         safe: { flex: 1, backgroundColor: colors.background },
         flex: { flex: 1 },
         container: {
-            paddingHorizontal: Spacing.lg,
+            paddingHorizontal: DESIGN_SPACING.screenX,
             paddingTop: Spacing.sm,
             paddingBottom: Spacing.xl,
-            gap: Spacing.lg,
+            gap: DESIGN_SPACING.sectionGap,
         },
         signOutTopBtn: {
-            borderWidth: 1,
-            borderRadius: Radius.pill,
+            ...getPillStyle(colors),
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
             flexDirection: 'row',
@@ -716,30 +725,14 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
             fontWeight: '700',
         },
-        section: {
-            gap: Spacing.sm,
-        },
-        sectionTitle: {
-            fontSize: Typography.label.size,
-            fontWeight: '700',
-            color: colors.textSecondary,
-            letterSpacing: 0.6,
-            textTransform: 'uppercase',
-        },
         loadingBox: {
-            backgroundColor: colors.surface,
             borderRadius: Radius.card,
-            borderWidth: 1,
-            borderColor: colors.border,
             paddingVertical: Spacing.lg,
             alignItems: 'center',
             justifyContent: 'center',
         },
         emptyBox: {
-            backgroundColor: colors.surface,
             borderRadius: Radius.card,
-            borderWidth: 1,
-            borderColor: colors.border,
             padding: Spacing.lg,
         },
         emptyText: {
@@ -747,18 +740,10 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.body.size,
         },
         orgCard: {
-            backgroundColor: colors.card,
             borderRadius: Radius.card,
-            borderWidth: 1,
-            borderColor: colors.border,
             padding: Spacing.md,
             gap: Spacing.sm,
             marginBottom: Spacing.sm,
-            shadowColor: colors.text,
-            shadowOpacity: 0.04,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 2,
         },
         orgRow: {
             flexDirection: 'row',
@@ -788,17 +773,9 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
         },
         formCard: {
-            backgroundColor: colors.card,
             borderRadius: 24,
-            borderWidth: 1,
-            borderColor: withAlpha(colors.primary, '16'),
             padding: Spacing.md,
             gap: Spacing.sm,
-            shadowColor: colors.text,
-            shadowOpacity: 0.04,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 2,
         },
         inputLabel: {
             color: colors.textSecondary,
@@ -819,7 +796,6 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
         },
         secondaryInlineButton: {
-            borderWidth: 1,
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 6,
@@ -829,11 +805,8 @@ const styles = (colors: ColorPalette) =>
             fontWeight: '700',
         },
         signaturePreviewWrap: {
-            borderWidth: 1,
-            borderColor: colors.border,
             borderRadius: Radius.md,
             overflow: 'hidden',
-            backgroundColor: colors.surface,
             marginTop: Spacing.xs,
         },
         signaturePreview: {
@@ -857,8 +830,8 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'center',
             marginTop: Spacing.xs,
             shadowColor: colors.primary,
-            shadowOpacity: 0.16,
-            shadowRadius: 14,
+            shadowOpacity: 0.14,
+            shadowRadius: 12,
             shadowOffset: { width: 0, height: 8 },
             elevation: 4,
         },
@@ -873,9 +846,6 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'center',
             marginTop: Spacing.xs,
-            borderWidth: 1,
-            borderColor: colors.error,
-            backgroundColor: colors.surface,
             flexDirection: 'row',
             gap: Spacing.xs,
         },

@@ -6,12 +6,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { toUserMessage } from '../../../api/client';
 import { SettingsSection } from '../../../constants/enums';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useAuthStore } from '../../../store/authStore';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 import { ChipButton } from '../../../components/ui/ChipBlocks';
+import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
 import { selectSecuritySettings } from '../../../selectors/settingsSelectors';
 import {
@@ -261,13 +263,19 @@ export default function RoleAccessScreen() {
                     />
                 )}
             >
+                <UtilityHero
+                    title="Role Access Controls"
+                    subtitle="Define module visibility and action overrides for each organization role."
+                    icon="shield-account-outline"
+                    tone="info"
+                />
                 <AppSearchBar
                     value={search}
                     onChangeText={setSearch}
                     placeholder="Search modules or actions..."
                 />
 
-                <View style={[s.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[s.summaryCard, getSurfaceStyle(colors, { elevated: true })]}>
                     <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>ROLE ACCESS SUMMARY</Text>
                     <Text style={s.summaryValue}>{ROLE_LABELS[selectedRole]}</Text>
                     <Text style={[s.summaryMeta, { color: colors.textSecondary }]}>
@@ -295,7 +303,7 @@ export default function RoleAccessScreen() {
 
                 <View style={s.toolsRow}>
                     <Pressable
-                        style={[s.toolBtn, { borderColor: colors.border }]}
+                        style={[s.toolBtn, getPillStyle(colors)]}
                         onPress={resetToDefault}
                         disabled={!canEditSettings}
                     >
@@ -303,7 +311,7 @@ export default function RoleAccessScreen() {
                     </Pressable>
                 </View>
 
-                <View key={selectedRole} style={[s.roleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View key={selectedRole} style={[s.roleCard, getSurfaceStyle(colors, { elevated: true })]}>
                     <Text style={[s.roleTitle, { color: colors.text }]}>{ROLE_LABELS[selectedRole]}</Text>
 
                     <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>Module Access</Text>
@@ -356,7 +364,7 @@ export default function RoleAccessScreen() {
                             );
                         })}
                     {visibleModules.length === 0 && visibleActions.length === 0 ? (
-                        <View style={[s.emptyState, { borderColor: colors.border }]}>
+                        <View style={[s.emptyState, getSurfaceStyle(colors, { muted: true })]}>
                             <Text style={[s.emptyTitle, { color: colors.text }]}>No matching access controls</Text>
                             <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Try a different search term.</Text>
                         </View>
@@ -374,6 +382,7 @@ const styles = (colors: ColorPalette) =>
         safe: { flex: 1, backgroundColor: colors.background },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         saveBtn: {
+            ...getPillStyle(colors),
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.sm,
             paddingVertical: 7,
@@ -381,11 +390,10 @@ const styles = (colors: ColorPalette) =>
             minWidth: 44,
             justifyContent: 'center',
         },
-        readOnlyBanner: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
+        readOnlyBanner: { paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: Spacing.sm },
         readOnlyText: { fontSize: 12 },
-        content: { paddingHorizontal: Spacing.lg, gap: Spacing.md },
+        content: { paddingHorizontal: DESIGN_SPACING.screenX, gap: DESIGN_SPACING.sectionGap },
         summaryCard: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,
@@ -396,14 +404,12 @@ const styles = (colors: ColorPalette) =>
         roleChipsRow: { gap: Spacing.sm },
         toolsRow: { flexDirection: 'row', justifyContent: 'flex-end' },
         toolBtn: {
-            borderWidth: 1,
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.sm,
         },
         toolBtnText: { fontSize: 12, fontWeight: '700' },
         roleCard: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             padding: Spacing.md,
             gap: Spacing.sm,
@@ -415,7 +421,6 @@ const styles = (colors: ColorPalette) =>
         rowLabel: { fontSize: 13, fontWeight: '600' },
         rowMeta: { fontSize: 11, marginTop: 2 },
         emptyState: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingVertical: Spacing.md,
             alignItems: 'center',

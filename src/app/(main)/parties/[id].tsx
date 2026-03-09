@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { format, parseISO } from 'date-fns';
@@ -84,7 +85,7 @@ export default function PartyDetailScreen() {
                 </View>
 
                 <UtilitySection title="Profile Details" count={null}>
-                    <View style={[s.infoCard, { backgroundColor: colors.card }]}>
+                    <View style={[s.infoCard, getSurfaceStyle(colors, { elevated: true })]}>
                         {party.phone ? <InfoRow icon="phone-outline" label="Phone" value={party.phone} colors={colors} /> : null}
                         {party.email ? <InfoRow icon="email-outline" label="Email" value={party.email} colors={colors} /> : null}
                         {party.billingAddress ? <InfoRow icon="map-marker-outline" label="Address" value={party.billingAddress} colors={colors} /> : null}
@@ -101,7 +102,7 @@ export default function PartyDetailScreen() {
                             invoices.slice(0, 8).map((inv) => (
                                 <Pressable
                                     key={inv.id}
-                                    style={[s.txnRow, { backgroundColor: colors.card }]}
+                                    style={[s.txnRow, getSurfaceStyle(colors, { elevated: true })]}
                                     onPress={() => router.push(`/(main)/billing/${inv.id}` as Parameters<typeof router.push>[0])}
                                 >
                                     <View style={{ flex: 1 }}>
@@ -118,9 +119,9 @@ export default function PartyDetailScreen() {
                     </View>
                 </UtilitySection>
 
-                <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.xxl }}>
+                <View style={{ paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xxl }}>
                     <Pressable
-                        style={[s.deleteBtn, { borderColor: colors.error }]}
+                        style={[s.deleteBtn, { ...getPillStyle(colors, colors.error) }]}
                         onPress={() => dialog.alert('Delete Party', `Delete ${party.name}?`, [
                             { text: 'Cancel', style: 'cancel' },
                             {
@@ -168,26 +169,25 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         iconBtn: {
+            ...getPillStyle(colors),
             width: 34,
             height: 34,
-            borderRadius: Radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.surfaceVariant,
         },
-        heroWrap: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-        statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.md },
-        infoCard: { marginHorizontal: Spacing.lg, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
-        quickRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+        heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
+        statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.md },
+        infoCard: { marginHorizontal: DESIGN_SPACING.screenX, borderRadius: Radius.card, padding: Spacing.md, marginBottom: Spacing.md },
+        quickRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.md },
         quickBtn: { flex: 1, borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center' },
         quickBtnText: { color: colors.onPrimary, fontWeight: '600', fontSize: 13 },
-        section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+        section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.md },
         txnRow: { flexDirection: 'row', padding: Spacing.md, borderRadius: Radius.card, marginBottom: Spacing.sm },
         txnNum: { fontWeight: '600', fontSize: 13 },
         txnDate: { fontSize: 11 },
         txnAmt: { fontWeight: '700', fontSize: 14 },
         txnStatus: { fontSize: 11, fontWeight: '600' },
-        deleteBtn: { borderWidth: 1, borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.md },
+        deleteBtn: { borderRadius: Radius.pill, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.md },
         deleteBtnText: { fontWeight: '700', fontSize: 14 },
         centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     });

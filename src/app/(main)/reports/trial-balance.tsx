@@ -1,5 +1,6 @@
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -38,7 +39,7 @@ export default function TrialBalanceScreen() {
                             }}
                         />
                     )}
-                    contentContainerStyle={{ paddingHorizontal: Spacing.lg, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 120 }}
                     ListHeaderComponent={
                         <>
                             <View style={s.heroWrap}>
@@ -57,7 +58,7 @@ export default function TrialBalanceScreen() {
                         </>
                     }
                     renderItem={({ item }) => (
-                        <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[s.row, getSurfaceStyle(colors, { elevated: true })]}>
                             <View style={{ flex: 1 }}>
                                 <Text style={s.rowTitle}>{item.accountName}</Text>
                                 <Text style={s.rowMeta}>{item.accountType}</Text>
@@ -86,7 +87,6 @@ const styles = (colors: ColorPalette) =>
         heroWrap: { marginBottom: Spacing.sm },
         statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.md },
         row: {
-            borderWidth: 1,
             borderRadius: Radius.card,
             paddingHorizontal: Spacing.md,
             paddingVertical: Spacing.md,
