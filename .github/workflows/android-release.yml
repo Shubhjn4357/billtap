@@ -72,13 +72,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
@@ -120,6 +113,13 @@ jobs:
         
       - name: Prebuild Android
         run: pnpm exec expo prebuild --platform android --no-install --clean
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
 
       - name: Decode Keystore and Extract Hashes (Inline)
         id: signing
