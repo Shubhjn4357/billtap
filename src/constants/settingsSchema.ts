@@ -54,12 +54,13 @@ export interface SettingsFieldDefinition {
 
 export const SETTINGS_SCHEMA: Record<SettingsSection, SettingsFieldDefinition[]> = {
     GENERAL: [
-        { key: 'app_language', label: 'App Language', type: 'enum', enumValues: ['ENGLISH'] },
+        { key: 'app_language', label: 'App Language', type: 'enum', enumValues: ['ENGLISH', 'HINDI'], default: 'ENGLISH' },
         { key: 'business_currency', label: 'Business Currency', type: 'string', default: 'INR' },
         { key: 'decimal_places', label: 'Decimal Places', type: 'integer', default: 2, min: 0, max: 4 },
         { key: 'date_format', label: 'Date Format', type: 'enum', enumValues: ['DD_MM_YYYY', 'DD_MMM_YYYY'], default: 'DD_MM_YYYY' },
         { key: 'warn_unsaved_changes', label: 'Warn Unsaved Changes', type: 'boolean', default: true },
         { key: 'theme_mode', label: 'Theme Mode', type: 'enum', enumValues: ['LIGHT', 'DARK', 'SYSTEM'], default: 'SYSTEM' },
+        { key: 'invoice_template_mode', label: 'Invoice Template Mode', type: 'enum', enumValues: ['BUSINESS', 'BRANDED'], default: 'BUSINESS' },
         { key: 'payment_upi_id', label: 'Payment UPI ID', type: 'string', nullable: true },
         { key: 'payment_receiver_name', label: 'UPI Receiver Name', type: 'string', nullable: true },
         { key: 'signature_url', label: 'Signature Image URL', type: 'string', nullable: true },
