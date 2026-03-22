@@ -75,6 +75,10 @@ const resolveBusiness = async (c: Parameters<typeof requireAuth>[0]) => {
     return getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
 };
 
+const assertAccountsModuleAccess = (business: Awaited<ReturnType<typeof resolveBusiness>>) => {
+    assertModuleEnabled(business, 'accounts');
+};
+
 accountingRoute.use('/*', requireAuth);
 
 accountingRoute.get('/accounts', async (c) => {
@@ -86,7 +90,7 @@ accountingRoute.get('/accounts', async (c) => {
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const type = c.req.query('type');
 
     const rows = type
@@ -124,7 +128,7 @@ accountingRoute.get('/ledgers', async (c) => {
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
 
     const includeInactive = c.req.query('includeInactive') === 'true';
     const ledgerAccounts = includeInactive
@@ -180,7 +184,7 @@ accountingRoute.get('/ledgers/:accountId', async (c) => {
 
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
 
     const accountId = c.req.param('accountId');
     const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
@@ -247,7 +251,7 @@ accountingRoute.post('/accounts', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const payload = accountSchema.parse(await c.req.json());
 
         const now = new Date();
@@ -283,7 +287,7 @@ accountingRoute.patch('/accounts/:id', async (c) => {
         const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'accounting');
+        assertAccountsModuleAccess(business);
 
         const accountId = c.req.param('id');
         const payload = accountPatchSchema.parse(await c.req.json());
@@ -323,7 +327,7 @@ accountingRoute.post('/accounts/:id/deactivate', async (c) => {
         const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'accounting');
+        assertAccountsModuleAccess(business);
 
         const accountId = c.req.param('id');
         const rows = await db.select().from(accounts)
@@ -374,7 +378,7 @@ accountingRoute.post('/accounts/seed-default', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
 
     const existing = await db.select().from(accounts).where(eq(accounts.businessId, business.id)).limit(1);
     if (existing[0]) {
@@ -410,7 +414,7 @@ accountingRoute.post('/journals', async (c) => {
         const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'accounting');
+        assertAccountsModuleAccess(business);
         const payload = journalSchema.parse(await c.req.json());
 
         const debitTotal = payload.lines.reduce((sum, line) => sum + Number(line.debit ?? 0), 0);
@@ -462,7 +466,7 @@ accountingRoute.get('/trial-balance', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
 
     const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
     const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
@@ -514,7 +518,7 @@ accountingRoute.get('/gst/summary', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'GST_REPORTS');
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const invoiceRows = await db.select({ id: invoices.id }).from(invoices).where(eq(invoices.businessId, business.id));
     const invoiceIds = invoiceRows.map((entry) => entry.id);
     const lines = invoiceIds.length === 0
@@ -577,7 +581,7 @@ accountingRoute.get('/profit-loss', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
     const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
     const voucherIds = voucherRows.map((entry) => entry.id);
@@ -640,7 +644,7 @@ accountingRoute.get('/balance-sheet', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
     const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
     const voucherIds = voucherRows.map((entry) => entry.id);
@@ -698,7 +702,7 @@ accountingRoute.get('/inventory/valuation', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const rows = await db.select().from(items).where(eq(items.businessId, business.id));
 
     const entries = rows.map((entry) => ({
@@ -726,7 +730,7 @@ accountingRoute.get('/inventory/reorder-suggestions', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const rows = await db.select().from(items).where(eq(items.businessId, business.id));
 
     const suggestions = rows
@@ -752,7 +756,7 @@ accountingRoute.get('/inventory/stock-aging', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const rows = await db.select().from(items).where(eq(items.businessId, business.id));
     const movementRows = await db
         .select()
@@ -792,7 +796,7 @@ accountingRoute.get('/stock-ledger/:itemId', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'accounting');
+    assertAccountsModuleAccess(business);
     const itemId = c.req.param('itemId');
     const limit = Math.min(Number(c.req.query('limit') ?? 100), 500);
 

@@ -15,6 +15,28 @@ import { AppError } from './apiError';
 type MutationCapableDb = Pick<DrizzleClient, 'select' | 'update' | 'insert'>;
 
 export const GST_RATE_SLABS = [0, 0.25, 3, 5, 18, 40] as const;
+export const CANONICAL_MODULE_KEYS = [
+    'billing',
+    'inventory',
+    'accounts',
+    'reports',
+    'parties',
+    'settings',
+    'operations',
+    'staff',
+] as const;
+
+const MODULE_KEY_ALIASES: Partial<Record<(typeof CANONICAL_MODULE_KEYS)[number], readonly string[]>> = {
+    inventory: ['stock'],
+    accounts: ['accounting'],
+};
+
+const MODULE_KEY_TO_CANONICAL = new Map<string, string>([
+    ...CANONICAL_MODULE_KEYS.map((key) => [key, key] as const),
+    ...Object.entries(MODULE_KEY_ALIASES).flatMap(([canonical, aliases]) =>
+        (aliases ?? []).map((alias) => [alias, canonical] as const)
+    ),
+]);
 
 const asRecord = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -340,22 +362,39 @@ export const assertBusinessCreationAllowed = async (
     }
 };
 
+export const normalizeModuleKey = (moduleKey: string) => {
+    const normalized = moduleKey.trim().toLowerCase();
+    return MODULE_KEY_TO_CANONICAL.get(normalized) ?? normalized;
+};
+
+const getModuleLookupKeys = (moduleKey: string) => {
+    const canonical = normalizeModuleKey(moduleKey);
+    const aliases = MODULE_KEY_ALIASES[canonical as (typeof CANONICAL_MODULE_KEYS)[number]] ?? [];
+    return [canonical, ...aliases];
+};
+
 export const isModuleEnabled = (business: BusinessRow | null, moduleKey: string) => {
     if (!business) return false;
     const settings = asRecord(business.settings);
     const direct = asRecord(settings.appModuleAccess);
     const legacy = asRecord(settings.moduleVisibility);
+    const lookupKeys = getModuleLookupKeys(moduleKey);
 
-    if (typeof direct[moduleKey] === 'boolean') return Boolean(direct[moduleKey]);
-    if (typeof legacy[moduleKey] === 'boolean') return Boolean(legacy[moduleKey]);
+    for (const key of lookupKeys) {
+        if (typeof direct[key] === 'boolean') return Boolean(direct[key]);
+    }
+    for (const key of lookupKeys) {
+        if (typeof legacy[key] === 'boolean') return Boolean(legacy[key]);
+    }
     return true;
 };
 
 export const assertModuleEnabled = (business: BusinessRow | null, moduleKey: string) => {
-    if (!isModuleEnabled(business, moduleKey)) {
+    const normalized = normalizeModuleKey(moduleKey);
+    if (!isModuleEnabled(business, normalized)) {
         throw new AppError(
             'MODULE_DISABLED',
-            `Module "${moduleKey}" is disabled in organization settings.`,
+            `Module "${normalized}" is disabled in organization settings.`,
             403
         );
     }

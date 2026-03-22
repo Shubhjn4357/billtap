@@ -212,11 +212,21 @@ const applyApprovalSideEffect = async (params: {
     }
 };
 
+const assertOperationsModuleAccess = (business: typeof businesses.$inferSelect) => {
+    assertModuleEnabled(business, 'operations');
+};
+
 operationsRoute.use('/*', requireAuth);
 
 operationsRoute.get('/access-matrix', async (c) => {
     const denied = requireOrganizationCapability(c, 'operations.read');
     if (denied) return denied;
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+        ?? await ensurePrimaryBusiness(db, authUser);
+    assertOperationsModuleAccess(business);
 
     return c.json({
         ok: true,
@@ -257,6 +267,7 @@ operationsRoute.get('/controls', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
+    assertOperationsModuleAccess(business);
     const settings = (business.settings ?? {}) as Record<string, unknown>;
     return c.json({
         ok: true,
@@ -276,7 +287,7 @@ operationsRoute.put('/controls', async (c) => {
             ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'settings');
+        assertOperationsModuleAccess(business);
         const payload = controlsSchema.parse(await c.req.json());
 
         const currentSettings = (business.settings ?? {}) as Record<string, unknown>;
@@ -337,6 +348,7 @@ operationsRoute.get('/approvals', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
+    assertOperationsModuleAccess(business);
     const settings = (business.settings ?? {}) as Record<string, unknown>;
     const statusFilter = c.req.query('status')?.toUpperCase();
     const approvals = getApprovals(settings).filter((entry) =>
@@ -358,7 +370,7 @@ operationsRoute.post('/approvals', async (c) => {
             ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'operations');
+        assertOperationsModuleAccess(business);
         const payload = z.object({
             actionType: z.enum(['UPDATE_CONTROLS', 'LOCK_PERIOD', 'CLOSE_PERIOD', 'REOPEN_PERIOD', 'CUSTOM']),
             module: z.string().trim().default('operations'),
@@ -406,7 +418,7 @@ operationsRoute.post('/approvals/:id/approve', async (c) => {
             ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'operations');
+        assertOperationsModuleAccess(business);
         const settings = (business.settings ?? {}) as Record<string, unknown>;
         const approvalId = c.req.param('id');
         const approvals = getApprovals(settings);
@@ -463,7 +475,7 @@ operationsRoute.post('/approvals/:id/reject', async (c) => {
             ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'operations');
+        assertOperationsModuleAccess(business);
         const settings = (business.settings ?? {}) as Record<string, unknown>;
         const approvalId = c.req.param('id');
         const notePayload = z.object({ note: z.string().trim().optional() }).safeParse(await c.req.json().catch(() => ({})));
@@ -504,6 +516,11 @@ operationsRoute.get('/audit-logs', async (c) => {
     if (denied) return denied;
 
     const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+        ?? await ensurePrimaryBusiness(db, authUser);
+    assertOperationsModuleAccess(business);
     const limit = Math.min(Number(c.req.query('limit') ?? 50), 500);
     const rows = await db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(limit);
 
@@ -534,6 +551,7 @@ operationsRoute.get('/periods', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
         ?? await ensurePrimaryBusiness(db, authUser);
+    assertOperationsModuleAccess(business);
     const settings = (business.settings ?? {}) as Record<string, unknown>;
     const periods = getFinancialPeriods(settings)
         .sort((a, b) => (a.periodStart < b.periodStart ? 1 : -1));
@@ -553,7 +571,7 @@ operationsRoute.post('/periods/lock', async (c) => {
             ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'settings');
+        assertOperationsModuleAccess(business);
 
         const payload = lockPeriodSchema.parse(await c.req.json());
         const start = parseDateInput(payload.periodStart) ?? new Date();
@@ -627,7 +645,7 @@ operationsRoute.post('/periods/:id/close', async (c) => {
             ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'settings');
+        assertOperationsModuleAccess(business);
 
         const periodId = c.req.param('id');
         const settings = (business.settings ?? {}) as Record<string, unknown>;
@@ -690,7 +708,7 @@ operationsRoute.post('/periods/:id/reopen', async (c) => {
             ?? await ensurePrimaryBusiness(db, authUser);
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'settings');
+        assertOperationsModuleAccess(business);
 
         const periodId = c.req.param('id');
         const settings = (business.settings ?? {}) as Record<string, unknown>;

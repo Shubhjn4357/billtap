@@ -92,6 +92,14 @@ const toClientItem = (item: typeof items.$inferSelect, userId: string) => ({
     updatedAt: item.updatedAt,
 });
 
+const assertInventoryModuleAccess = (
+    business: Awaited<ReturnType<typeof getAccessibleBusiness>>,
+    subscription: Awaited<ReturnType<typeof getActiveSubscription>>
+) => {
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertModuleEnabled(business, 'inventory');
+};
+
 itemsRoute.use('/*', requireAuth);
 
 itemsRoute.get('/', async (c) => {
@@ -104,8 +112,7 @@ itemsRoute.get('/', async (c) => {
     const denied = requireOrganizationCapability(c, 'inventory.read');
     if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
-    assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'stock');
+    assertInventoryModuleAccess(business, subscription);
 
     const q = c.req.query('q')?.trim();
     const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
@@ -146,8 +153,7 @@ itemsRoute.get('/recycle-bin', async (c) => {
     const denied = requireOrganizationCapability(c, 'inventory.read');
     if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
-    assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'stock');
+    assertInventoryModuleAccess(business, subscription);
 
     const limit = Math.min(Number(c.req.query('limit') ?? 200), 1000);
     const rows = await db
@@ -170,8 +176,7 @@ itemsRoute.get('/:id', async (c) => {
     const denied = requireOrganizationCapability(c, 'inventory.read');
     if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
-    assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'stock');
+    assertInventoryModuleAccess(business, subscription);
 
     const id = c.req.param('id');
     const rows = await db
@@ -199,8 +204,7 @@ itemsRoute.post('/:id/restore', async (c) => {
     if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
-    assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'stock');
+    assertInventoryModuleAccess(business, subscription);
 
     const id = c.req.param('id');
     await db.update(items).set({ isActive: true, updatedAt: new Date() })
@@ -222,8 +226,7 @@ itemsRoute.delete('/:id/permanent', async (c) => {
     if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
-    assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'stock');
+    assertInventoryModuleAccess(business, subscription);
 
     const id = c.req.param('id');
     await db.delete(items).where(and(
@@ -252,8 +255,7 @@ itemsRoute.post('/', async (c) => {
         if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertFeatureFlag(subscription, 'STOCK_MODULE');
-        assertModuleEnabled(business, 'stock');
+        assertInventoryModuleAccess(business, subscription);
         const payload = upsertItemSchema.parse(await c.req.json());
         const normalizedId = payload.id?.trim() ?? null;
         const normalizedGodownId = normalizeGodownId(payload.godownId);
@@ -273,6 +275,7 @@ itemsRoute.post('/', async (c) => {
             assertAllowedGstRate(payload.gstPercentage);
         }
         if (normalizedGodownId) {
+            assertFeatureFlag(subscription, 'MULTI_GODOWN');
             const selectedGodown = await db.select({ id: godowns.id }).from(godowns).where(and(
                 eq(godowns.id, normalizedGodownId),
                 eq(godowns.businessId, business.id),
@@ -425,8 +428,7 @@ itemsRoute.patch('/:id', async (c) => {
         if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertFeatureFlag(subscription, 'STOCK_MODULE');
-        assertModuleEnabled(business, 'stock');
+        assertInventoryModuleAccess(business, subscription);
 
         const id = c.req.param('id');
         const payload = patchItemSchema.parse(await c.req.json());
@@ -481,8 +483,7 @@ itemsRoute.post('/:id/adjust', async (c) => {
         if (deniedAction) return deniedAction;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertFeatureFlag(subscription, 'STOCK_MODULE');
-        assertModuleEnabled(business, 'stock');
+        assertInventoryModuleAccess(business, subscription);
 
         const id = c.req.param('id');
         const payload = adjustStockSchema.parse(await c.req.json());
@@ -499,6 +500,7 @@ itemsRoute.post('/:id/adjust', async (c) => {
             return c.json({ ok: false, message: 'Item not found.' }, 404);
         }
         if (normalizedGodownId) {
+            assertFeatureFlag(subscription, 'MULTI_GODOWN');
             const selectedGodown = await db.select({ id: godowns.id }).from(godowns).where(and(
                 eq(godowns.id, normalizedGodownId),
                 eq(godowns.businessId, business.id),
@@ -619,8 +621,7 @@ itemsRoute.delete('/:id', async (c) => {
     if (deniedAction) return deniedAction;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
-    assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'stock');
+    assertInventoryModuleAccess(business, subscription);
 
     const id = c.req.param('id');
     await db.update(items).set({ isActive: false, updatedAt: new Date() })
@@ -639,8 +640,7 @@ itemsRoute.get('/:id/ledger', async (c) => {
     const denied = requireOrganizationCapability(c, 'inventory.read');
     if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
-    assertFeatureFlag(subscription, 'STOCK_MODULE');
-    assertModuleEnabled(business, 'stock');
+    assertInventoryModuleAccess(business, subscription);
 
     const id = c.req.param('id');
     const limit = Math.min(Number(c.req.query('limit') ?? 100), 500);

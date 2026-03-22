@@ -10,9 +10,22 @@ import {
     requireOrganizationCapability,
 } from './helpers';
 import { nanoid } from 'nanoid';
-import { assertModuleEnabled, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
+import {
+    assertFeatureFlag,
+    assertModuleEnabled,
+    assertSubscriptionWriteAllowed,
+} from '../services/subscriptionPolicy';
 
 const godownsRoute = new Hono<AppEnv>();
+
+const assertGodownModuleAccess = (
+    business: Awaited<ReturnType<typeof getAccessibleBusiness>>,
+    subscription: Awaited<ReturnType<typeof getActiveSubscription>>
+) => {
+    assertFeatureFlag(subscription, 'STOCK_MODULE');
+    assertFeatureFlag(subscription, 'MULTI_GODOWN');
+    assertModuleEnabled(business, 'inventory');
+};
 
 godownsRoute.use('/*', requireAuth);
 
@@ -24,6 +37,10 @@ godownsRoute.get('/', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertGodownModuleAccess(business, subscription);
 
     const rows = await db.select().from(godowns)
         .where(and(eq(godowns.businessId, business.id), eq(godowns.isActive, true)))
@@ -52,7 +69,7 @@ godownsRoute.post('/', async (c) => {
         if (denied) return denied;
         const subscription = await getActiveSubscription(db, business.id);
         assertSubscriptionWriteAllowed(subscription);
-        assertModuleEnabled(business, 'inventory');
+        assertGodownModuleAccess(business, subscription);
 
         if (body.id) {
             const existing = await db.select().from(godowns).where(and(
@@ -100,7 +117,7 @@ godownsRoute.put('/:id', async (c) => {
     if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
-    assertModuleEnabled(business, 'inventory');
+    assertGodownModuleAccess(business, subscription);
 
     const id = c.req.param('id');
     try {
@@ -137,7 +154,7 @@ godownsRoute.delete('/:id', async (c) => {
     if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
-    assertModuleEnabled(business, 'inventory');
+    assertGodownModuleAccess(business, subscription);
 
     const id = c.req.param('id');
     await db.update(godowns).set({ isActive: false, updatedAt: new Date() })
@@ -153,6 +170,10 @@ godownsRoute.get('/:id/stock', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertGodownModuleAccess(business, subscription);
 
     const godownId = c.req.param('id');
     const [gdn] = await db.select().from(godowns).where(and(eq(godowns.id, godownId), eq(godowns.businessId, business.id)));
@@ -185,7 +206,7 @@ godownsRoute.post('/transfer', async (c) => {
     if (denied) return denied;
     const subscription = await getActiveSubscription(db, business.id);
     assertSubscriptionWriteAllowed(subscription);
-    assertModuleEnabled(business, 'inventory');
+    assertGodownModuleAccess(business, subscription);
 
     try {
         const body = z.object({
@@ -258,6 +279,10 @@ godownsRoute.get('/transfers', async (c) => {
 
     const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
     if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
+    const denied = requireOrganizationCapability(c, 'inventory.read');
+    if (denied) return denied;
+    const subscription = await getActiveSubscription(db, business.id);
+    assertGodownModuleAccess(business, subscription);
 
     const limit = Math.min(Number(c.req.query('limit') ?? 20), 100);
     const offset = Number(c.req.query('offset') ?? 0);

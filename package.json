@@ -10,7 +10,7 @@
     "deploy": "wrangler deploy --config wrangler.jsonc --minify",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "verify:ci": "npm run typecheck && npm run test:accounting-invariants && npm run verify:runtime",
+    "verify:ci": "npm run typecheck && npm run test:accounting-invariants && npm run test:module-guard-invariants && npm run verify:module-contract && npm run verify:runtime",
     "verify:runtime": "node ./scripts/run-runtime-smoke-if-configured.mjs",
     "verify:full": "npm run verify:ci && npm run verify:runtime",
     "db:generate": "drizzle-kit generate",
@@ -18,6 +18,8 @@
     "db:push": "npm run db:repair && node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs push",
     "db:studio": "node -r ./scripts/drizzleDnsPatch.cjs ./node_modules/drizzle-kit/bin.cjs studio",
     "test:accounting-invariants": "node ./scripts/accounting-invariants.mjs",
+    "test:module-guard-invariants": "node ./scripts/module-guard-invariants.mjs",
+    "verify:module-contract": "node ../scripts/verify-module-contract.mjs",
     "test:runtime:all": "node ./scripts/runtime-smoke-all.mjs"
   },
   "dependencies": {
