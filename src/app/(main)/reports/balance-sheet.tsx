@@ -188,7 +188,7 @@ function BalanceSection({
                     />
                 ) : rows.map((row, index) => (
                     <View
-                        key={row.accountId}
+                        key={`${title}-${row.accountId || row.accountName}-${index}`}
                         style={[
                             s.row,
                             index < rows.length - 1 && s.rowBorder,

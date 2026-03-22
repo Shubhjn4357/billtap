@@ -84,22 +84,42 @@ export const getIconAccentStyle = (
     colors: ColorPalette,
     accent: string,
     options?: { rounded?: number; mediumGlow?: boolean }
-): ViewStyle => ({
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: options?.rounded ?? Radius.md,
-    borderWidth: 1,
-    borderColor: withAlpha(accent, colors.isDark ? '3A' : '22'),
-    backgroundColor: withAlpha(accent, colors.isDark ? '26' : '12'),
-    ...getGlowStyle(colors, accent, options?.mediumGlow ? 'medium' : 'soft'),
-});
+): ViewStyle => {
+    const mediumGlow = options?.mediumGlow ?? false;
 
-export const getInsetPanelStyle = (colors: ColorPalette, accent?: string): ViewStyle => ({
-    backgroundColor: accent ? withAlpha(accent, colors.isDark ? '18' : '10') : colors.surfaceVariant,
-    borderWidth: 1,
-    borderColor: accent ? withAlpha(accent, '24') : withAlpha(colors.border, '88'),
-    borderRadius: Radius.lg,
-});
+    return {
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: options?.rounded ?? Radius.md,
+        borderWidth: 1,
+        borderColor: withAlpha(accent, colors.isDark ? '28' : '1A'),
+        backgroundColor: withAlpha(accent, colors.isDark ? '18' : '10'),
+        shadowColor: accent,
+        shadowOpacity: mediumGlow
+            ? (colors.isDark ? 0.2 : 0.12)
+            : (colors.isDark ? 0.12 : 0.08),
+        shadowRadius: mediumGlow ? 12 : 7,
+        shadowOffset: { width: 0, height: 0 },
+        elevation: Platform.OS === 'android' ? 0 : 0,
+    };
+};
+
+export const getInsetPanelStyle = (colors: ColorPalette, accent?: string): ViewStyle => {
+    const backgroundColor = accent
+        ? withAlpha(colors.surfaceRaised, colors.isDark ? 'EE' : 'FC')
+        : withAlpha(colors.surfaceVariant, colors.isDark ? 'A8' : '72');
+
+    const borderColor = accent
+        ? withAlpha(accent, colors.isDark ? '1E' : '12')
+        : withAlpha(colors.border, colors.isDark ? '7A' : '5C');
+
+    return {
+        backgroundColor,
+        borderWidth: 0.8,
+        borderColor,
+        borderRadius: Radius.lg,
+    };
+};
 
 export const getPillStyle = (colors: ColorPalette, accent?: string): ViewStyle => ({
     borderRadius: Radius.pill,

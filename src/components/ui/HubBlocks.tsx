@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getIconAccentStyle, getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { getIconAccentStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import type { UtilityTone } from '../../constants/utilityNavigation';
@@ -35,10 +35,7 @@ export function HubMetricCard({
         <View
             style={[
                 styles.metricCard,
-                {
-                    ...getSurfaceStyle(colors, { accent, elevated: true }),
-                    ...getInsetPanelStyle(colors, accent),
-                },
+                getSurfaceStyle(colors, { accent, elevated: true, muted: true }),
             ]}
         >
             <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>

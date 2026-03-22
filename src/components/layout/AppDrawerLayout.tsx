@@ -91,7 +91,7 @@ export function AppDrawerLayout({ children }: AppDrawerLayoutProps) {
     });
     const scale = progress.interpolate({
         inputRange: [0, 1],
-        outputRange: [1, 0.972],
+        outputRange: [1, 0.763],
     });
     const borderRadius = progress.interpolate({
         inputRange: [0, 1],
@@ -99,11 +99,11 @@ export function AppDrawerLayout({ children }: AppDrawerLayoutProps) {
     });
     const rotateZ = progress.interpolate({
         inputRange: [0, 1],
-        outputRange: ['0deg', '-6deg'],
+        outputRange: ['0deg', '-4deg'],
     });
     const rotateY = progress.interpolate({
         inputRange: [0, 1],
-        outputRange: ['0deg', '-8deg'],
+        outputRange: ['0deg', '-10deg'],
     });
     const translateY = progress.interpolate({
         inputRange: [0, 1],
@@ -140,6 +140,7 @@ export function AppDrawerLayout({ children }: AppDrawerLayoutProps) {
                         {
                             backgroundColor: colors.background,
                             borderRadius,
+                            
                             transform: [{ perspective: 1200 }, { translateX }, { translateY }, { rotateY }, { rotateZ }, { scale }],
                         },
                     ]}

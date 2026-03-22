@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getIconAccentStyle, getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { getIconAccentStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
@@ -60,10 +60,7 @@ export function UtilityHero({
         <View
             style={[
                 styles.hero,
-                {
-                    ...getSurfaceStyle(colors, { accent, elevated: true }),
-                    ...getInsetPanelStyle(colors, accent),
-                },
+                getSurfaceStyle(colors, { accent, elevated: true, muted: true }),
             ]}
         >
             <View style={styles.heroTop}>

@@ -155,12 +155,18 @@ jobs:
           set -euo pipefail
           cd android
           chmod +x gradlew
+
+          # `expo prebuild --clean` already generated a fresh Android project.
+          # Running `clean` inside every retry just throws away work and makes
+          # deterministic failures waste hours on CI.
+          ./gradlew --no-daemon --console plain clean
+
           gradle_args=(
             --no-daemon
-            --stacktrace
+            --console
+            plain
             --warning-mode
-            all
-            clean
+            summary
             assembleDebug
             assembleRelease
             -Pandroid.injected.signing.store.file="${{ github.workspace }}/android/app/release.keystore"
@@ -171,14 +177,24 @@ jobs:
 
           max_attempts=3
           attempt=1
+          retryable_pattern='(Could not GET|Read timed out|Connection reset|502 Bad Gateway|503 Service Unavailable|Remote host terminated the handshake|Temporary failure|timeout while downloading)'
           while true; do
-            if ./gradlew "${gradle_args[@]}"; then
+            log_file="../gradle-attempt-${attempt}.log"
+            if ./gradlew "${gradle_args[@]}" 2>&1 | tee "${log_file}"; then
               break
             else
-              exit_code=$?
+              exit_code=${PIPESTATUS[0]}
             fi
+
+            if ! grep -Eqi "${retryable_pattern}" "${log_file}"; then
+              echo "::error::Gradle build failed with a non-transient error on attempt ${attempt}. Not retrying."
+              ./gradlew "${gradle_args[@]}" --stacktrace || true
+              exit "${exit_code}"
+            fi
+
             if [ "${attempt}" -ge "${max_attempts}" ]; then
               echo "::error::Gradle build failed after ${max_attempts} attempts."
+              ./gradlew "${gradle_args[@]}" --stacktrace || true
               exit "${exit_code}"
             fi
 
