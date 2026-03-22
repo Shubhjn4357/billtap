@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { DESIGN_SPACING, getPillStyle, getShadowStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { DESIGN_SPACING, getShadowStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
@@ -64,11 +64,11 @@ export function DateField({
         setOpen(true);
     };
 
-    const applyValue = () => {
+    const commitValue = (nextValue: Date) => {
         if (includeTime) {
-            onChange(draft.toISOString());
+            onChange(nextValue.toISOString());
         } else {
-            onChange(toDateOnly(draft));
+            onChange(toDateOnly(nextValue));
         }
         setOpen(false);
     };
@@ -109,39 +109,29 @@ export function DateField({
                         <DateTimePicker
                             value={draft}
                             mode={includeTime ? 'datetime' : 'date'}
-                            display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                            onChange={(_, selected) => {
-                                if (selected) {
-                                    setDraft(selected);
+                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                            onChange={(event, selected) => {
+                                if (event.type === 'dismissed') {
+                                    setOpen(false);
+                                    return;
                                 }
+                                if (!selected) return;
+                                setDraft(selected);
+                                commitValue(selected);
                             }}
                         />
 
-                        <View style={s.actions}>
-                            {allowClear ? (
-                                <Pressable
-                                    style={s.actionBtn}
-                                    onPress={() => {
-                                        onChange(null);
-                                        setOpen(false);
-                                    }}
-                                >
-                                    <Text style={[s.actionText, { color: colors.error }]}>Clear</Text>
-                                </Pressable>
-                            ) : null}
+                        {allowClear ? (
                             <Pressable
-                                style={s.actionBtn}
-                                onPress={() => setOpen(false)}
+                                style={s.clearBtn}
+                                onPress={() => {
+                                    onChange(null);
+                                    setOpen(false);
+                                }}
                             >
-                                <Text style={[s.actionText, { color: colors.textSecondary }]}>Cancel</Text>
+                                <Text style={[s.clearText, { color: colors.error }]}>Clear date</Text>
                             </Pressable>
-                            <Pressable
-                                style={[s.actionBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                                onPress={applyValue}
-                            >
-                                <Text style={[s.actionText, { color: colors.onPrimary }]}>Apply</Text>
-                            </Pressable>
-                        </View>
+                        ) : null}
                     </View>
                 </View>
             </Modal>
@@ -194,21 +184,12 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.title.size,
             fontWeight: '700',
         },
-        actions: {
-            flexDirection: 'row',
-            justifyContent: 'flex-end',
-            gap: Spacing.sm,
+        clearBtn: {
+            alignSelf: 'flex-start',
+            paddingVertical: Spacing.xs,
         },
-        actionBtn: {
-            ...getPillStyle(colors),
-            minWidth: 72,
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            alignItems: 'center',
-        },
-        actionText: {
-            fontSize: Typography.body.size,
+        clearText: {
+            fontSize: Typography.caption.size,
             fontWeight: '700',
         },
     });

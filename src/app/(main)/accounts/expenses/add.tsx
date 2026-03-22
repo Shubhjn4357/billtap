@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { navigateBackOrReplace, useSmartBack } from '../../../../hooks/useSmartBack';
 import { DESIGN_SPACING, getPillStyle } from '../../../../constants/designSystem';

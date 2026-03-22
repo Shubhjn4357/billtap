@@ -1,6 +1,6 @@
 import { api } from '../api/client';
 import type { ApiResponse, DateRangeParams, SalesTrendPoint } from '../types/api';
-import type { Expense, GodownStockEntry, Invoice, InvoiceItem, Item } from '../types/domain';
+import type { Account, Expense, GodownStockEntry, Invoice, InvoiceItem, Item } from '../types/domain';
 import { offlineSyncService } from '../services/offlineSyncService';
 
 export interface OfflineReportSummary {
@@ -21,6 +21,24 @@ export interface OfflineGstRow {
     sgstAmount: number;
     igstAmount: number;
     totalTax: number;
+}
+
+export interface BalanceSheetRow {
+    accountId: string;
+    accountName: string;
+    accountType: Account['type'];
+    amount: number;
+}
+
+export interface BalanceSheetSummary {
+    assets: BalanceSheetRow[];
+    liabilities: BalanceSheetRow[];
+    equity: BalanceSheetRow[];
+    totals: {
+        assets: number;
+        liabilities: number;
+        equity: number;
+    };
 }
 
 type InvoiceTransactionType = 'SALE' | 'PURCHASE' | 'RETURN_INWARD' | 'RETURN_OUTWARD' | 'NON_POSTING';
@@ -423,6 +441,46 @@ export const buildOfflineGodownStock = async (
     };
 };
 
+export const buildOfflineBalanceSheetFromAccounts = (accounts: Account[]): BalanceSheetSummary => {
+    const assets = accounts
+        .filter((entry) => entry.isActive !== false && entry.type === 'ASSET')
+        .map((entry) => ({
+            accountId: entry.id,
+            accountName: entry.name,
+            accountType: entry.type,
+            amount: Number(entry.balance ?? 0),
+        }));
+
+    const liabilities = accounts
+        .filter((entry) => entry.isActive !== false && entry.type === 'LIABILITY')
+        .map((entry) => ({
+            accountId: entry.id,
+            accountName: entry.name,
+            accountType: entry.type,
+            amount: Math.abs(Number(entry.balance ?? 0)),
+        }));
+
+    const equity = accounts
+        .filter((entry) => entry.isActive !== false && entry.type === 'EQUITY')
+        .map((entry) => ({
+            accountId: entry.id,
+            accountName: entry.name,
+            accountType: entry.type,
+            amount: Math.abs(Number(entry.balance ?? 0)),
+        }));
+
+    return {
+        assets,
+        liabilities,
+        equity,
+        totals: {
+            assets: assets.reduce((sum, row) => sum + row.amount, 0),
+            liabilities: liabilities.reduce((sum, row) => sum + row.amount, 0),
+            equity: equity.reduce((sum, row) => sum + row.amount, 0),
+        },
+    };
+};
+
 const toTrendBucketKey = (date: Date, granularity: 'daily' | 'weekly' | 'monthly') => {
     if (granularity === 'monthly') {
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -495,6 +553,8 @@ type GstRowsResponse = ApiResponse<{
     }[];
 }>;
 
+type BalanceSheetResponse = ApiResponse<BalanceSheetSummary>;
+
 const getRemoteSummary = async (params?: DateRangeParams): Promise<ReportSummaryResponse> => {
     const res = await api.get<{
         ok: boolean;
@@ -545,6 +605,27 @@ const getRemoteGstRows = async (
         ...res,
         data: {
             rows: res.rows ?? [],
+        },
+    };
+};
+
+const getRemoteBalanceSheet = async (): Promise<BalanceSheetResponse> => {
+    const res = await api.get<{
+        ok: boolean;
+        assets?: BalanceSheetRow[];
+        liabilities?: BalanceSheetRow[];
+        equity?: BalanceSheetRow[];
+        totals?: BalanceSheetSummary['totals'];
+        message?: string;
+    }>('/api/reporting/balance-sheet');
+
+    return {
+        ...res,
+        data: {
+            assets: res.assets ?? [],
+            liabilities: res.liabilities ?? [],
+            equity: res.equity ?? [],
+            totals: res.totals ?? { assets: 0, liabilities: 0, equity: 0 },
         },
     };
 };
@@ -626,6 +707,22 @@ export const reportRepository = {
             const offline = await buildOfflineGstSummary(params);
             if (offline.data) {
                 return offline;
+            }
+            throw error;
+        }
+    },
+
+    getBalanceSheet: async (): Promise<BalanceSheetResponse> => {
+        try {
+            return await getRemoteBalanceSheet();
+        } catch (error) {
+            const accounts = await offlineSyncService.getCachedAccountingAccounts();
+            if (accounts.length > 0) {
+                return {
+                    ok: true,
+                    data: buildOfflineBalanceSheetFromAccounts(accounts),
+                    message: 'Loaded from offline data.',
+                };
             }
             throw error;
         }

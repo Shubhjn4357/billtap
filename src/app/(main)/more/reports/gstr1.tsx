@@ -8,8 +8,11 @@ import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../../const
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
 import { AppTopBar } from '../../../../components/ui/AppTopBar';
+import { useAppDialog } from '../../../../components/providers/DialogProvider';
+import { useCurrentBusiness } from '../../../../hooks/useCurrentBusiness';
 import { useGstr1Report } from '../../../../hooks/useReports';
 import { formatInr, formatMonthYear, normalizeGstRows, shiftMonthYear, summarizeGstRows, type NormalizedGstRow } from '../../../../selectors/reportSelectors';
+import { exportReportDocument } from '../../../../utils/reportDocument';
 
 const CURRENT_DATE = new Date();
 const DEFAULT_MONTH = CURRENT_DATE.getMonth() + 1;
@@ -18,7 +21,9 @@ const DEFAULT_YEAR = CURRENT_DATE.getFullYear();
 export default function Gstr1ReportScreen() {
     const colors = useAppColors();
     const s = styles(colors);
+    const dialog = useAppDialog();
     const smartBack = useSmartBack('/(main)/reports');
+    const { business } = useCurrentBusiness();
     const [month, setMonth] = useState(DEFAULT_MONTH);
     const [year, setYear] = useState(DEFAULT_YEAR);
 
@@ -29,11 +34,52 @@ export default function Gstr1ReportScreen() {
 
     const reportRows = useMemo<NormalizedGstRow[]>(() => normalizeGstRows(rows ?? []), [rows]);
     const totals = useMemo(() => summarizeGstRows(reportRows), [reportRows]);
+    const monthLabel = formatMonthYear(month, year);
 
     const changeMonth = (delta: number) => {
         const next = shiftMonthYear(month, year, delta);
         setMonth(next.month);
         setYear(next.year);
+    };
+
+    const handleExport = async () => {
+        try {
+            await exportReportDocument({
+                title: 'GSTR-1',
+                subtitle: `Outward supplies summary for ${monthLabel}.`,
+                businessName: business?.name,
+                contextLabel: monthLabel,
+                summaryMetrics: [
+                    { label: 'Taxable', value: formatInr(totals.taxable) },
+                    { label: 'Tax', value: formatInr(totals.tax) },
+                    { label: 'Slabs', value: String(reportRows.length) },
+                ],
+                sections: [
+                    {
+                        title: 'Outward Supplies',
+                        caption: 'GST-wise outward taxable turnover and tax liability.',
+                        columns: [
+                            { label: 'GST Rate' },
+                            { label: 'Taxable', align: 'right' },
+                            { label: 'CGST', align: 'right' },
+                            { label: 'SGST', align: 'right' },
+                            { label: 'IGST', align: 'right' },
+                            { label: 'Tax', align: 'right' },
+                        ],
+                        rows: reportRows.map((row) => [
+                            `${row.gstRate}%`,
+                            formatInr(row.taxableTurnover),
+                            formatInr(row.cgstAmount),
+                            formatInr(row.sgstAmount),
+                            formatInr(row.igstAmount),
+                            formatInr(row.totalTax),
+                        ]),
+                    },
+                ],
+            });
+        } catch (error) {
+            dialog.alert('Export failed', error instanceof Error ? error.message : 'Unable to export GSTR-1.');
+        }
     };
 
     return (
@@ -42,6 +88,10 @@ export default function Gstr1ReportScreen() {
                 title="GSTR-1"
                 subtitle="Outward supplies summary"
                 onBackPress={smartBack}
+                actions={[
+                    { icon: 'file-pdf-box', label: 'Export GSTR-1', onPress: handleExport, accent: colors.success },
+                ]}
+                contextChip={{ label: monthLabel, accent: colors.success }}
             />
 
             <View style={s.periodRow}>
@@ -49,7 +99,7 @@ export default function Gstr1ReportScreen() {
                     <MaterialCommunityIcons name="chevron-left" size={18} color={colors.textSecondary} />
                 </Pressable>
                 <Text style={[s.periodText, { color: colors.text }]}>
-                    {formatMonthYear(month, year)}
+                    {monthLabel}
                 </Text>
                 <Pressable style={[s.periodBtn, getPillStyle(colors)]} onPress={() => changeMonth(1)}>
                     <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />

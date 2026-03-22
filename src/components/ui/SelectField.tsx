@@ -100,12 +100,7 @@ export function SelectField({
                 <View style={s.modalRoot}>
                     <Pressable style={s.backdrop} onPress={() => setOpen(false)} />
                     <View style={s.sheet}>
-                        <View style={s.headerRow}>
-                            <Text style={[s.title, { color: colors.text }]}>{title}</Text>
-                            <Pressable onPress={() => setOpen(false)}>
-                                <Text style={[s.headerAction, { color: colors.primary }]}>Done</Text>
-                            </Pressable>
-                        </View>
+                        <Text style={[s.title, { color: colors.text }]}>{title}</Text>
 
                         {searchable ? (
                             <AppInput
@@ -228,10 +223,6 @@ const styles = (colors: ColorPalette) =>
         },
         title: {
             fontSize: Typography.title.size,
-            fontWeight: '700',
-        },
-        headerAction: {
-            fontSize: Typography.body.size,
             fontWeight: '700',
         },
         searchWrap: {

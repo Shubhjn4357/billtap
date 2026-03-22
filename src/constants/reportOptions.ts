@@ -114,6 +114,14 @@ export const REPORT_CARDS = [
         tone: 'warning',
     },
     {
+        title: 'Balance Sheet',
+        subtitle: 'Assets, liabilities and equity snapshot',
+        route: '/(main)/reports/balance-sheet',
+        icon: 'safe-square-outline',
+        category: 'Accounting',
+        tone: 'info',
+    },
+    {
         title: 'Ledgers',
         subtitle: 'Drill down voucher-level transactions',
         route: '/(main)/reports/ledgers',

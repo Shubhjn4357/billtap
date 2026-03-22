@@ -19,6 +19,13 @@ export const ACCOUNTS_HUB_LINKS: AccountsHubLink[] = [
         tone: 'warning',
     },
     {
+        title: 'Balance Sheet',
+        subtitle: 'Assets, liability and equity view',
+        route: '/(main)/reports/balance-sheet',
+        icon: 'safe-square-outline',
+        tone: 'success',
+    },
+    {
         title: 'Ledgers',
         subtitle: 'Account-wise drilldown',
         route: '/(main)/reports/ledgers',

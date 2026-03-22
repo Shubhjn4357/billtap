@@ -71,6 +71,7 @@ export const GO_TO_PALETTE_ROUTES: NavigationShortcut[] = [
     { key: 'loans', label: 'Loans', route: '/(main)/accounts/loans', description: 'Loan management', module: 'accounts', icon: 'hand-coin-outline' },
     { key: 'reports', label: 'Reports', route: '/(main)/reports', description: 'Business reports', module: 'reports', icon: 'chart-line' },
     { key: 'trial-balance', label: 'Trial Balance', route: '/(main)/reports/trial-balance', description: 'Debit/credit balancing', module: 'reports', icon: 'scale-balance' },
+    { key: 'balance-sheet', label: 'Balance Sheet', route: '/(main)/reports/balance-sheet', description: 'Assets and liabilities snapshot', module: 'reports', icon: 'safe-square-outline' },
     { key: 'ledgers', label: 'Ledgers', route: '/(main)/reports/ledgers', description: 'Account ledgers', module: 'reports', icon: 'book-outline' },
     { key: 'gst-summary', label: 'GST Summary', route: '/(main)/reports/gst-summary', description: 'GST slab report', module: 'reports', icon: 'file-percent-outline' },
     { key: 'more', label: 'More', route: '/(main)/more', description: 'Utilities and controls', icon: 'dots-horizontal-circle-outline' },

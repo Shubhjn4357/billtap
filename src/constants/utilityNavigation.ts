@@ -120,6 +120,7 @@ export const SCREEN_DIRECTORY_SECTIONS: UtilityScreenSection[] = [
         items: [
             { label: 'GST Summary', route: '/(main)/reports/gst-summary', description: 'Slab-wise GST report', module: 'reports' },
             { label: 'Trial Balance', route: '/(main)/reports/trial-balance', description: 'Dr/Cr integrity check', module: 'reports' },
+            { label: 'Balance Sheet', route: '/(main)/reports/balance-sheet', description: 'Assets vs liability position', module: 'reports' },
             { label: 'Ledgers', route: '/(main)/reports/ledgers', description: 'Ledger list and drilldown', module: 'reports' },
             { label: 'Profit and Loss', route: '/(main)/more/reports/pnl', description: 'Income vs expense report', module: 'reports' },
             { label: 'GSTR-1', route: '/(main)/more/reports/gstr1', description: 'Outward supplies', module: 'reports' },

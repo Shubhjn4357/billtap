@@ -16,7 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { SettingsSection } from '../../../constants/enums';
 import { PRINT_LAYOUT_TYPE_OPTIONS, PRINTER_CONNECTION_OPTIONS, PRINT_TAB_OPTIONS, STANDARD_LAYOUT_OPTIONS, THERMAL_PRESET_OPTIONS, type PrintLayoutType, type PrintTab } from '../../../constants/printingOptions';
 import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
-import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
+import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
 import { ChipButton } from '../../../components/ui/ChipBlocks';
@@ -86,6 +86,24 @@ export default function PrintingScreen() {
         };
     }, [thermalPreset]);
 
+    const templateGallery = useMemo(() => ([
+        {
+            key: 'thermal',
+            label: 'Thermal Slip',
+            subtitle: `${preview.pageLabel} | ${connection}`,
+        },
+        {
+            key: 'invoice',
+            label: 'Invoice Sheet',
+            subtitle: `${standardLayout} | ${showLogo ? 'Logo on' : 'Logo off'}`,
+        },
+        {
+            key: 'business-card',
+            label: 'Business Card',
+            subtitle: 'Counter handout | QR-ready',
+        },
+    ]), [connection, preview.pageLabel, showLogo, standardLayout]);
+
     const { mutate: save, isPending } = useSettingsSectionMutation('INVOICE_PRINT', {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: settingsSectionQueryKey('INVOICE_PRINT') });
@@ -116,6 +134,7 @@ export default function PrintingScreen() {
                 title="Printing & Templates"
                 subtitle="Thermal, PDF and print profiles"
                 onBackPress={smartBack}
+                contextChip={{ label: activeTab === 'thermal' ? 'Thermal' : 'Standard', accent: activeTab === 'thermal' ? colors.primary : colors.info }}
                 rightAction={(
                     <Pressable style={[s.saveBtn, { backgroundColor: colors.primary }]} onPress={savePrintSettings} disabled={isPending}>
                         {isPending ? (
@@ -146,6 +165,65 @@ export default function PrintingScreen() {
             ) : (
                 <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
                     <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={isRefetching && !isLoading} onRefresh={() => { void refetch(); }} tintColor={colors.primary} />}>
+                        <View style={s.card}>
+                            <Text style={[s.sectionTitle, { color: colors.text }]}>TEMPLATE GALLERY</Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.templateRail}>
+                                {templateGallery.map((entry) => (
+                                    <View key={entry.key} style={[s.templateCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                                        <View style={s.templateCardHead}>
+                                            <View>
+                                                <Text style={[s.templateLabel, { color: colors.text }]}>{entry.label}</Text>
+                                                <Text style={[s.templateSubLabel, { color: colors.textSecondary }]}>{entry.subtitle}</Text>
+                                            </View>
+                                            <View style={[s.templateDot, { backgroundColor: entry.key === 'business-card' ? colors.success : entry.key === 'invoice' ? colors.info : colors.primary }]} />
+                                        </View>
+
+                                        {entry.key === 'thermal' ? (
+                                            <View style={s.templateBody}>
+                                                <Text style={[s.previewBizName, { color: colors.text, fontSize: preview.textSize + 1 }]}>{business?.name ?? 'YOUR BUSINESS'}</Text>
+                                                <Text style={[s.previewMeta, { color: colors.textSecondary, fontSize: preview.textSize - 1 }]}>{preview.pageLabel}</Text>
+                                                <Text style={[s.previewLine, { color: colors.border, fontSize: preview.textSize - 1 }]}>{preview.sampleDivider}</Text>
+                                                <Text style={[s.previewRow, { color: colors.text, fontSize: preview.textSize }]}>2 x Item A        Rs 240.00</Text>
+                                                <Text style={[s.previewRow, { color: colors.text, fontSize: preview.textSize }]}>1 x Item B        Rs  60.00</Text>
+                                                <Text style={[s.previewLine, { color: colors.border, fontSize: preview.textSize - 1 }]}>{preview.sampleDivider}</Text>
+                                                <Text style={[s.previewRow, { color: colors.text, fontSize: preview.textSize, fontWeight: '700' }]}>TOTAL             Rs 300.00</Text>
+                                            </View>
+                                        ) : entry.key === 'invoice' ? (
+                                            <View style={s.invoiceTemplateBody}>
+                                                <View style={[s.standardPreviewHeader, { borderBottomColor: colors.primary, backgroundColor: withAlpha(colors.primary, '10') }]}>
+                                                    <View>
+                                                        <Text style={[s.stdBizName, { color: colors.primary }]}>{business?.name ?? 'YOUR BUSINESS'}</Text>
+                                                        <Text style={[s.stdBizSub, { color: colors.textSecondary }]}>{showLogo ? 'Branded invoice layout' : 'Minimal invoice layout'}</Text>
+                                                    </View>
+                                                    {showLogo ? <View style={[s.stdLogoPh, { backgroundColor: withAlpha(colors.primary, '22'), borderColor: colors.primary }]}><Text style={{ color: colors.primary, fontSize: 9, fontWeight: '700' }}>LOGO</Text></View> : null}
+                                                </View>
+                                                <View style={{ padding: 8, gap: 4 }}>
+                                                    <Text style={{ color: colors.textSecondary, fontSize: 10 }}>Invoice No: INV-0001 | Date: 06 Mar 2026</Text>
+                                                    <Text style={{ color: colors.textSecondary, fontSize: 10 }}>Party: Sample Customer</Text>
+                                                    <View style={[s.stdDivider, { backgroundColor: colors.border }]} />
+                                                    <Text style={{ color: colors.text, fontSize: 10 }}>Item A x2 Rs 240 | Item B x1 Rs 60</Text>
+                                                    <View style={[s.stdDivider, { backgroundColor: colors.border }]} />
+                                                    <Text style={{ color: colors.text, fontWeight: '700', fontSize: 11 }}>TOTAL: Rs 300</Text>
+                                                </View>
+                                            </View>
+                                        ) : (
+                                            <View style={[s.businessCardPreview, { borderColor: colors.border, backgroundColor: withAlpha(colors.success, '0F') }]}>
+                                                <Text style={[s.businessCardName, { color: colors.text }]}>{business?.name ?? 'Your Business'}</Text>
+                                                <Text style={[s.businessCardRole, { color: colors.success }]}>Billing • GST • UPI</Text>
+                                                <View style={s.businessCardMetaBlock}>
+                                                    <Text style={[s.businessCardMeta, { color: colors.textSecondary }]}>{business?.phone ?? '+91 98765 43210'}</Text>
+                                                    <Text style={[s.businessCardMeta, { color: colors.textSecondary }]}>{business?.email ?? 'hello@vahi.app'}</Text>
+                                                    <Text style={[s.businessCardMeta, { color: colors.textSecondary }]}>GSTIN {business?.gstin ?? 'Sample GSTIN'}</Text>
+                                                </View>
+                                                <View style={[s.businessCardQr, { borderColor: withAlpha(colors.success, '32') }]}>
+                                                    <Text style={[s.businessCardQrText, { color: colors.success }]}>SCAN</Text>
+                                                </View>
+                                            </View>
+                                        )}
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        </View>
 
                         {activeTab === 'thermal' ? (
                             <>
@@ -316,6 +394,14 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     card: { ...getSurfaceStyle(colors, { elevated: true }), borderRadius: Radius.card, padding: Spacing.md, gap: Spacing.sm },
     sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
     chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+    templateRail: { gap: Spacing.sm, paddingRight: Spacing.sm },
+    templateCard: { width: 264, borderRadius: Radius.card, borderWidth: 1, padding: Spacing.md, gap: Spacing.sm },
+    templateCardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: Spacing.sm },
+    templateLabel: { fontSize: 13, fontWeight: '700' },
+    templateSubLabel: { fontSize: 11, marginTop: 2 },
+    templateDot: { width: 10, height: 10, borderRadius: Radius.pill, marginTop: 4 },
+    templateBody: { borderRadius: Radius.md, padding: Spacing.sm, gap: 2, backgroundColor: colors.surfaceVariant },
+    invoiceTemplateBody: { borderRadius: Radius.md, overflow: 'hidden', backgroundColor: colors.surfaceVariant },
     presetRow: { ...getSurfaceStyle(colors), borderRadius: Radius.md, padding: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     presetRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
     presetRadioInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.onPrimary },
@@ -338,5 +424,12 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     stdBizSub: { fontSize: 9, marginTop: 1 },
     stdLogoPh: { ...getSurfaceStyle(colors), width: 28, height: 28, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
     stdDivider: { height: 1, marginVertical: 2 },
+    businessCardPreview: { borderWidth: 1, borderRadius: Radius.lg, padding: Spacing.md, minHeight: 152, justifyContent: 'space-between' },
+    businessCardName: { fontSize: Typography.title.size, fontWeight: '800' },
+    businessCardRole: { fontSize: Typography.caption.size, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 },
+    businessCardMetaBlock: { gap: 2, marginTop: Spacing.sm },
+    businessCardMeta: { fontSize: 11, fontWeight: '600' },
+    businessCardQr: { alignSelf: 'flex-end', width: 44, height: 44, borderRadius: Radius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+    businessCardQrText: { fontSize: 10, fontWeight: '800' },
 });
 

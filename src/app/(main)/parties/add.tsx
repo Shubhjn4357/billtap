@@ -3,7 +3,7 @@ import {
     ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';

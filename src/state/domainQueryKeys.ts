@@ -151,6 +151,15 @@ export const reportQueryKeys = {
       'trial-balance',
       filters ?? {},
     ] as const,
+  balanceSheet: (
+    businessId?: string | null,
+    filters?: Record<string, unknown>,
+  ) =>
+    [
+      ...reportQueryKeys.all(businessId),
+      'balance-sheet',
+      filters ?? {},
+    ] as const,
   ledgers: (businessId?: string | null, filters?: Record<string, unknown>) =>
     [...reportQueryKeys.all(businessId), 'ledgers', filters ?? {}] as const,
   ledgerDetail: (

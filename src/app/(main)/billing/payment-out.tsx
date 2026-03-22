@@ -9,7 +9,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel, getVoucherReferenceHint } from '../../../constants/accountingInputOptions';
 import { DESIGN_SPACING } from '../../../constants/designSystem';

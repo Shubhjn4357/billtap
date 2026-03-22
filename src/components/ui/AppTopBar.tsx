@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { DESIGN_SPACING, getGlowStyle, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -9,14 +9,27 @@ import { useSyncStatus } from '../../hooks/useSyncStatus';
 import { useAppDrawer } from '../layout/AppDrawerLayout';
 import { openGoToPalette } from '../navigation/GoToPalette';
 
+type AppTopBarAction = {
+    icon: keyof typeof MaterialCommunityIcons.glyphMap;
+    label: string;
+    onPress: () => void;
+    accent?: string;
+};
+
 type AppTopBarProps = {
     title: string;
     subtitle?: string;
     onBackPress?: () => void;
     onMenuPress?: () => void;
     rightAction?: React.ReactNode;
+    actions?: AppTopBarAction[];
     leftMode?: 'auto' | 'none';
     showSearch?: boolean;
+    showSyncStatus?: boolean;
+    contextChip?: {
+        label: string;
+        accent?: string;
+    };
 };
 
 export const AppTopBar = memo(function AppTopBar({
@@ -25,8 +38,11 @@ export const AppTopBar = memo(function AppTopBar({
     onBackPress,
     onMenuPress,
     rightAction,
+    actions,
     leftMode = 'auto',
-    showSearch = true,
+    showSearch = !onBackPress,
+    showSyncStatus = !onBackPress,
+    contextChip,
 }: AppTopBarProps) {
     const colors = useAppColors();
     const s = styles(colors);
@@ -104,21 +120,68 @@ export const AppTopBar = memo(function AppTopBar({
             </View>
 
             <View style={s.rightRow}>
-                <View
-                    style={[
-                        s.syncPill,
-                        {
-                            borderColor: withAlpha(syncMeta.color, '24'),
-                            backgroundColor: withAlpha(syncMeta.color, colors.isDark ? '18' : '10'),
-                        },
-                    ]}
-                >
-                    <View style={[s.syncDot, { backgroundColor: syncMeta.color }]} />
-                    <Text style={[s.syncText, { color: syncMeta.color }]} numberOfLines={1}>
-                        {syncMeta.label}
-                    </Text>
-                </View>
+                {showSyncStatus ? (
+                    <View
+                        style={[
+                            s.syncPill,
+                            {
+                                borderColor: withAlpha(syncMeta.color, '24'),
+                                backgroundColor: withAlpha(syncMeta.color, colors.isDark ? '18' : '10'),
+                            },
+                        ]}
+                    >
+                        <View style={[s.syncDot, { backgroundColor: syncMeta.color }]} />
+                        <Text style={[s.syncText, { color: syncMeta.color }]} numberOfLines={1}>
+                            {syncMeta.label}
+                        </Text>
+                    </View>
+                ) : null}
+                {contextChip ? (
+                    <View
+                        style={[
+                            s.contextChip,
+                            {
+                                borderColor: withAlpha(contextChip.accent ?? colors.primary, colors.isDark ? '38' : '22'),
+                                backgroundColor: withAlpha(contextChip.accent ?? colors.primary, colors.isDark ? '1E' : '10'),
+                            },
+                        ]}
+                    >
+                        <Text
+                            style={[
+                                s.contextChipText,
+                                { color: contextChip.accent ?? colors.primary },
+                            ]}
+                            numberOfLines={1}
+                        >
+                            {contextChip.label}
+                        </Text>
+                    </View>
+                ) : null}
                 {rightAction ? <View>{rightAction}</View> : null}
+                {actions?.map((action) => {
+                    const accent = action.accent ?? colors.primary;
+                    return (
+                        <Pressable
+                            key={`${action.label}-${action.icon}`}
+                            accessibilityRole="button"
+                            accessibilityLabel={action.label}
+                            style={[
+                                s.iconBtn,
+                                {
+                                    borderColor: withAlpha(accent, colors.isDark ? '34' : '20'),
+                                    backgroundColor: withAlpha(accent, colors.isDark ? '20' : '10'),
+                                },
+                                getGlowStyle(colors, accent),
+                            ]}
+                            onPress={() => {
+                                void selection();
+                                action.onPress();
+                            }}
+                        >
+                            <MaterialCommunityIcons name={action.icon} size={18} color={accent} />
+                        </Pressable>
+                    );
+                })}
                 {showSearch ? (
                     <Pressable
                         style={s.iconBtn}
@@ -165,6 +228,7 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: colors.surfaceRaised,
+            ...getGlowStyle(colors),
         },
         iconPlaceholder: {
             width: 40,
@@ -207,5 +271,17 @@ const styles = (colors: ColorPalette) =>
         syncText: {
             fontSize: Typography.caption.size,
             fontWeight: '700',
+        },
+        contextChip: {
+            minHeight: 32,
+            maxWidth: 120,
+            borderRadius: Radius.pill,
+            borderWidth: 1,
+            paddingHorizontal: Spacing.sm,
+            justifyContent: 'center',
+        },
+        contextChipText: {
+            fontSize: Typography.caption.size,
+            fontWeight: '800',
         },
     });

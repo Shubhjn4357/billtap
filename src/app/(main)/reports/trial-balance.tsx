@@ -4,18 +4,59 @@ import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { useAppDialog } from '../../../components/providers/DialogProvider';
 import { HubMetricCard } from '../../../components/ui/HubBlocks';
+import { useCurrentBusiness } from '../../../hooks/useCurrentBusiness';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { UtilityEmptyState, UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useTrialBalance } from '../../../hooks/useAccountingMutations';
+import { exportReportDocument } from '../../../utils/reportDocument';
 
 export default function TrialBalanceScreen() {
     const colors = useAppColors();
     const s = styles(colors);
+    const dialog = useAppDialog();
     const smartBack = useSmartBack('/(main)/reports');
+    const { business } = useCurrentBusiness();
     const { rows, totals, isLoading, isRefetching, refetch } = useTrialBalance({
         staleTime: 60_000,
     });
+
+    const handleExport = async () => {
+        try {
+            await exportReportDocument({
+                title: 'Trial Balance',
+                subtitle: 'Debit and credit integrity across visible accounts.',
+                businessName: business?.name,
+                contextLabel: totals.isBalanced ? 'Books balanced' : 'Mismatch detected',
+                summaryMetrics: [
+                    { label: 'Debit', value: `Rs ${totals.debit.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` },
+                    { label: 'Credit', value: `Rs ${totals.credit.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` },
+                    { label: 'Status', value: totals.isBalanced ? 'Balanced' : 'Mismatch' },
+                ],
+                sections: [
+                    {
+                        title: 'Ledger Position',
+                        caption: 'Visible debit and credit totals by account.',
+                        columns: [
+                            { label: 'Account' },
+                            { label: 'Type' },
+                            { label: 'Debit', align: 'right' },
+                            { label: 'Credit', align: 'right' },
+                        ],
+                        rows: rows.map((row) => [
+                            row.accountName,
+                            row.accountType,
+                            row.debitTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }),
+                            row.creditTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }),
+                        ]),
+                    },
+                ],
+            });
+        } catch (error) {
+            dialog.alert('Export failed', error instanceof Error ? error.message : 'Unable to export trial balance.');
+        }
+    };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
@@ -23,6 +64,10 @@ export default function TrialBalanceScreen() {
                 title="Trial Balance"
                 subtitle="Dr/Cr integrity check"
                 onBackPress={smartBack}
+                actions={[
+                    { icon: 'file-pdf-box', label: 'Export trial balance', onPress: handleExport, accent: colors.warning },
+                ]}
+                contextChip={{ label: totals.isBalanced ? 'Balanced' : 'Review', accent: totals.isBalanced ? colors.success : colors.warning }}
             />
             {isLoading ? (
                 <View style={s.centered}><ActivityIndicator color={colors.primary} /></View>

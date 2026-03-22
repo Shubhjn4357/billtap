@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
-import { Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
+import { getIconAccentStyle, getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { Radius, Spacing, Typography } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import type { UtilityTone } from '../../constants/utilityNavigation';
 
@@ -20,14 +20,16 @@ export function HubMetricCard({
     value,
     meta,
     tone = 'default',
+    accentColor,
 }: {
     label: string;
     value: string;
     meta?: string;
     tone?: UtilityTone;
+    accentColor?: string;
 }) {
     const colors = useAppColors();
-    const accent = toneColor(tone, colors);
+    const accent = accentColor ?? toneColor(tone, colors);
 
     return (
         <View
@@ -51,16 +53,18 @@ export function HubActionCard({
     subtitle,
     icon,
     tone = 'default',
+    accentColor,
     onPress,
 }: {
     title: string;
     subtitle: string;
     icon: HubIconName;
     tone?: UtilityTone;
+    accentColor?: string;
     onPress: (event: GestureResponderEvent) => void;
 }) {
     const colors = useAppColors();
-    const accent = toneColor(tone, colors);
+    const accent = accentColor ?? toneColor(tone, colors);
 
     return (
         <Pressable
@@ -73,7 +77,7 @@ export function HubActionCard({
             ]}
             onPress={onPress}
         >
-            <View style={[styles.actionIconWrap, { backgroundColor: withAlpha(accent, '16') }]}>
+            <View style={[styles.actionIconWrap, getIconAccentStyle(colors, accent, { mediumGlow: true })]}>
                 <MaterialCommunityIcons name={icon} size={18} color={accent} />
             </View>
             <View style={styles.actionBody}>
@@ -93,6 +97,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.md,
         gap: 4,
+        overflow: 'hidden',
     },
     metricLabel: {
         fontSize: Typography.caption.size,
@@ -114,13 +119,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: Spacing.md,
+        overflow: 'hidden',
     },
     actionIconWrap: {
         width: 40,
         height: 40,
         borderRadius: Radius.md,
-        alignItems: 'center',
-        justifyContent: 'center',
     },
     actionBody: {
         flex: 1,

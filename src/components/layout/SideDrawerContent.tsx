@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DESIGN_SPACING, getInsetPanelStyle, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { DESIGN_SPACING, getIconAccentStyle, getInsetPanelStyle, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { SIDE_DRAWER_ACTIONS } from '../../constants/navigationOptions';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
@@ -39,6 +39,21 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
             return action.label.toLowerCase().includes(normalized);
         });
     }, [business, role, search, subscription]);
+
+    const actionAccent = useMemo<Record<string, string>>(() => ({
+        home: colors.primary,
+        billing: colors.info,
+        'sale-invoice': colors.primary,
+        'pos-sale': colors.success,
+        inventory: colors.warning,
+        'add-item': colors.primaryVariant,
+        parties: colors.success,
+        accounts: colors.info,
+        reports: colors.primary,
+        staff: colors.warning,
+        settings: colors.textSecondary,
+        'screen-directory': colors.primary,
+    }), [colors.info, colors.primary, colors.primaryVariant, colors.success, colors.textSecondary, colors.warning]);
 
     return (
         <View style={[s.root, { paddingTop: insets.top + Spacing.md, paddingBottom: insets.bottom + Spacing.md }]}>
@@ -111,8 +126,8 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
                             router.push(action.route as Parameters<typeof router.push>[0]);
                         }}
                     >
-                        <View style={[s.actionIconWrap, { backgroundColor: withAlpha(colors.primary, '12') }]}>
-                            <MaterialCommunityIcons name={action.icon} size={20} color={colors.primary} />
+                        <View style={[s.actionIconWrap, getIconAccentStyle(colors, actionAccent[action.key] ?? colors.primary, { mediumGlow: true })]}>
+                            <MaterialCommunityIcons name={action.icon} size={20} color={actionAccent[action.key] ?? colors.primary} />
                         </View>
                         <View style={s.actionCopy}>
                             <Text style={[s.actionText, { color: colors.text }]}>{action.label}</Text>

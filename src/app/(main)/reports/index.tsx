@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { REPORT_CARDS, type ReportCard } from '../../../constants/reportOptions';
-import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem';
+import { DESIGN_SPACING, getIconAccentStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
@@ -90,7 +90,7 @@ export default function ReportsScreen() {
                                 router.push(card.route as Parameters<typeof router.push>[0]);
                             }}
                         >
-                            <View style={[s.iconWrap, { backgroundColor: withAlpha(accent, '18') }]}>
+                            <View style={[s.iconWrap, getIconAccentStyle(colors, accent, { mediumGlow: true })]}>
                                 <MaterialCommunityIcons name={card.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={18} color={accent} />
                             </View>
                             <View style={s.cardBody}>

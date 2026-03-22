@@ -98,6 +98,64 @@ export default function HomeScreen() {
         [invoices]
     );
 
+    const bannerCards = useMemo(() => ([
+        {
+            key: 'sales',
+            eyebrow: 'Sales Mode',
+            title: `${invoiceSummary.total} invoices this month`,
+            subtitle: `Revenue at Rs ${Math.round(summary?.totalSales ?? 0).toLocaleString('en-IN')}`,
+            icon: 'receipt-text-outline' as const,
+            accent: colors.primary,
+            route: '/(main)/billing',
+        },
+        {
+            key: 'inventory',
+            eyebrow: 'Inventory Pulse',
+            title: `${customerStats?.totalCustomers ?? 0} customer touchpoints`,
+            subtitle: 'Open items, stock updates, and supply movement from one place.',
+            icon: 'archive-outline' as const,
+            accent: colors.info,
+            route: '/(main)/inventory',
+        },
+        {
+            key: 'accounts',
+            eyebrow: 'Collections',
+            title: `Rs ${Math.round(invoiceSummary.outstanding ?? 0).toLocaleString('en-IN')} pending`,
+            subtitle: blockedCount > 0 ? `${blockedCount} sync blockers need a plan update.` : 'Receivables, payables, and ledgers stay in one flow.',
+            icon: 'bank-outline' as const,
+            accent: colors.success,
+            route: '/(main)/accounts',
+        },
+        {
+            key: 'add-mode',
+            eyebrow: 'Add Mode',
+            title: 'Pin another working card',
+            subtitle: 'Choose GST, stock, collections, or settings shortcuts next.',
+            icon: 'plus-circle-outline' as const,
+            accent: colors.warning,
+            route: '/(main)/more/screen-directory',
+        },
+    ]), [
+        blockedCount,
+        colors.info,
+        colors.primary,
+        colors.success,
+        colors.warning,
+        customerStats?.totalCustomers,
+        invoiceSummary.outstanding,
+        invoiceSummary.total,
+        summary?.totalSales,
+    ]);
+
+    const quickActionAccent = useMemo<Record<string, string>>(() => ({
+        'sale-invoice': colors.primary,
+        'pos-sale': colors.success,
+        'purchase-bill': colors.warning,
+        estimate: colors.info,
+        expense: colors.error,
+        'add-item': colors.primaryVariant,
+    }), [colors.error, colors.info, colors.primary, colors.primaryVariant, colors.success, colors.warning]);
+
     const overviewCards = useMemo(() => {
         const syncLabel = blockedCount > 0
             ? `${blockedCount} blocked`
@@ -183,10 +241,10 @@ export default function HomeScreen() {
                 <View style={s.heroCard}>
                     <View style={s.heroRow}>
                         <View style={s.heroCopy}>
-                            <Text style={[s.eyebrow, { color: colors.primary }]}>Overview</Text>
-                            <Text style={[s.heroTitle, { color: colors.text }]}>Simple daily control for billing and operations.</Text>
+                            <Text style={[s.eyebrow, { color: colors.primary }]}>Daily Control</Text>
+                            <Text style={[s.heroTitle, { color: colors.text }]}>Billing, accounts, stock, and sync in one calmer workspace.</Text>
                             <Text style={[s.heroSubtitle, { color: colors.textSecondary }]}>
-                                Revenue, outstanding balances, sync state, and the next actions are all in one place.
+                                Grouped shortcuts, live sync health, and the next actions stay visible without turning the dashboard noisy.
                             </Text>
                         </View>
                         <View style={s.heroBadge}>
@@ -209,6 +267,43 @@ export default function HomeScreen() {
                             </Text>
                         </Pressable>
                     ) : null}
+                </View>
+
+                <View style={s.section}>
+                    <SectionHeading title="Working Cards" meta="Swipe for pinned views" />
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={s.bannerRail}
+                    >
+                        {bannerCards.map((card) => (
+                            <Pressable
+                                key={card.key}
+                                style={[
+                                    s.bannerCard,
+                                    {
+                                        borderColor: withAlpha(card.accent, colors.isDark ? '42' : '24'),
+                                        backgroundColor: withAlpha(card.accent, colors.isDark ? '1C' : '0F'),
+                                    },
+                                ]}
+                                onPress={() => router.push(card.route as Parameters<typeof router.push>[0])}
+                            >
+                                <View style={[s.bannerOrb, { backgroundColor: withAlpha(card.accent, colors.isDark ? '3A' : '18') }]} />
+                                <View style={s.bannerHead}>
+                                    <Text style={[s.bannerEyebrow, { color: card.accent }]}>{card.eyebrow}</Text>
+                                    <View style={[s.bannerIconWrap, { borderColor: withAlpha(card.accent, colors.isDark ? '4C' : '28'), backgroundColor: withAlpha(card.accent, colors.isDark ? '2A' : '14') }]}>
+                                        <MaterialCommunityIcons name={card.icon} size={18} color={card.accent} />
+                                    </View>
+                                </View>
+                                <Text style={[s.bannerTitle, { color: colors.text }]}>{card.title}</Text>
+                                <Text style={[s.bannerSubtitle, { color: colors.textSecondary }]}>{card.subtitle}</Text>
+                                <View style={s.bannerFooter}>
+                                    <Text style={[s.bannerFooterText, { color: card.accent }]}>Open</Text>
+                                    <MaterialCommunityIcons name="arrow-right" size={16} color={card.accent} />
+                                </View>
+                            </Pressable>
+                        ))}
+                    </ScrollView>
                 </View>
 
                 <View style={s.section}>
@@ -236,6 +331,7 @@ export default function HomeScreen() {
                                 subtitle={action.description ?? 'Open workflow'}
                                 icon={action.icon}
                                 tone="info"
+                                accentColor={quickActionAccent[action.key] ?? colors.primary}
                                 onPress={() => router.push(action.route as Parameters<typeof router.push>[0])}
                             />
                         ))}
@@ -452,6 +548,70 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         fontSize: Typography.caption.size,
         fontWeight: '700',
         lineHeight: 18,
+    },
+    bannerRail: {
+        gap: Spacing.sm,
+        paddingRight: Spacing.sm,
+    },
+    bannerCard: {
+        width: 276,
+        minHeight: 172,
+        borderRadius: Radius.card,
+        padding: Spacing.lg,
+        borderWidth: 1,
+        overflow: 'hidden',
+        gap: Spacing.sm,
+    },
+    bannerOrb: {
+        position: 'absolute',
+        width: 136,
+        height: 136,
+        borderRadius: 68,
+        top: -42,
+        right: -24,
+    },
+    bannerHead: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: Spacing.sm,
+    },
+    bannerEyebrow: {
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+    },
+    bannerIconWrap: {
+        width: 38,
+        height: 38,
+        borderRadius: Radius.md,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    bannerTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        lineHeight: 26,
+        maxWidth: '88%',
+    },
+    bannerSubtitle: {
+        fontSize: Typography.body.size,
+        lineHeight: 20,
+        maxWidth: '92%',
+    },
+    bannerFooter: {
+        marginTop: 'auto',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    bannerFooterText: {
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+        letterSpacing: 0.4,
+        textTransform: 'uppercase',
     },
     section: {
         gap: Spacing.sm,

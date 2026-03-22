@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
-import { Radius, Spacing, Typography, withAlpha } from '../../constants/theme';
+import { getIconAccentStyle, getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { Radius, Spacing, Typography } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
 type UtilityTone = 'default' | 'info' | 'success' | 'warning' | 'danger';
@@ -67,7 +67,7 @@ export function UtilityHero({
             ]}
         >
             <View style={styles.heroTop}>
-                <View style={[styles.heroIconWrap, { backgroundColor: withAlpha(accent, '18') }]}>
+                <View style={[styles.heroIconWrap, getIconAccentStyle(colors, accent, { mediumGlow: true })]}>
                     <MaterialCommunityIcons name={icon} size={18} color={accent} />
                 </View>
                 <View style={styles.heroTextWrap}>
@@ -128,7 +128,7 @@ export function UtilityRow({
     const content = (
         <>
             {icon ? (
-                <View style={[styles.rowIconWrap, { backgroundColor: withAlpha(accentColor, '14') }]}>
+                <View style={[styles.rowIconWrap, getIconAccentStyle(colors, accentColor)]}>
                     <MaterialCommunityIcons name={icon} size={16} color={accentColor} />
                 </View>
             ) : null}

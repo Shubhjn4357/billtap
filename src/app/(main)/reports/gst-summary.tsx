@@ -7,17 +7,22 @@ import { DESIGN_SPACING, getSurfaceStyle } from '../../../constants/designSystem
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { useAppDialog } from '../../../components/providers/DialogProvider';
 import { ChipButton } from '../../../components/ui/ChipBlocks';
+import { useCurrentBusiness } from '../../../hooks/useCurrentBusiness';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useGstSummaryReport } from '../../../hooks/useReports';
 import { formatInr, formatMonthYear, normalizeGstRows, summarizeGstRows, type NormalizedGstRow } from '../../../selectors/reportSelectors';
+import { exportReportDocument } from '../../../utils/reportDocument';
 
 export default function GstSummaryScreen() {
     const colors = useAppColors();
     const s = styles(colors);
+    const dialog = useAppDialog();
     const smartBack = useSmartBack('/(main)/reports');
     const { selection } = useHaptics();
+    const { business } = useCurrentBusiness();
 
     const [period, setPeriod] = useState<'current' | 'last'>('current');
     const now = new Date();
@@ -36,12 +41,56 @@ export default function GstSummaryScreen() {
     const totals = useMemo(() => summarizeGstRows(reportRows), [reportRows]);
     const monthLabel = formatMonthYear(month, year);
 
+    const handleExport = async () => {
+        try {
+            await exportReportDocument({
+                title: 'GST Summary',
+                subtitle: `Tax slab position for ${monthLabel}.`,
+                businessName: business?.name,
+                contextLabel: monthLabel,
+                summaryMetrics: [
+                    { label: 'Taxable Turnover', value: formatInr(totals.taxable) },
+                    { label: 'Total Tax', value: formatInr(totals.tax) },
+                    { label: 'GST Slabs', value: String(reportRows.length) },
+                ],
+                sections: [
+                    {
+                        title: 'GST Slab Summary',
+                        caption: 'Taxable turnover and collected tax by slab.',
+                        columns: [
+                            { label: 'GST Rate' },
+                            { label: 'Taxable', align: 'right' },
+                            { label: 'CGST', align: 'right' },
+                            { label: 'SGST', align: 'right' },
+                            { label: 'IGST', align: 'right' },
+                            { label: 'Total Tax', align: 'right' },
+                        ],
+                        rows: reportRows.map((row) => [
+                            `${row.gstRate}%`,
+                            formatInr(row.taxableTurnover),
+                            formatInr(row.cgstAmount),
+                            formatInr(row.sgstAmount),
+                            formatInr(row.igstAmount),
+                            formatInr(row.totalTax),
+                        ]),
+                    },
+                ],
+            });
+        } catch (error) {
+            dialog.alert('Export failed', error instanceof Error ? error.message : 'Unable to export GST summary.');
+        }
+    };
+
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
             <AppTopBar
                 title="GST Summary"
                 subtitle="Slab-wise tax overview"
                 onBackPress={smartBack}
+                actions={[
+                    { icon: 'file-pdf-box', label: 'Export GST summary', onPress: handleExport, accent: colors.info },
+                ]}
+                contextChip={{ label: monthLabel, accent: colors.info }}
             />
 
             <View style={s.filters}>

@@ -125,8 +125,13 @@ export function AppDrawerLayout({ children }: AppDrawerLayoutProps) {
     return (
         <AppDrawerContext.Provider value={contextValue}>
             <View style={s.root} {...(gestureNavigationEnabled ? panResponder.panHandlers : {})}>
-                <View style={[s.drawerLayer, { paddingTop: insets.top + Spacing.sm }]}>
-                    <SideDrawerContent onClose={() => toggleDrawer(false)} />
+                <View
+                    pointerEvents={isOpen ? 'auto' : 'none'}
+                    style={[s.drawerLayer, { paddingTop: insets.top + Spacing.sm }]}
+                >
+                    <View style={s.drawerContentWrap}>
+                        <SideDrawerContent onClose={() => toggleDrawer(false)} />
+                    </View>
                 </View>
 
                 <Animated.View
@@ -161,6 +166,12 @@ const styles = (colors: ColorPalette) =>
             ...StyleSheet.absoluteFill,
             paddingBottom: Spacing.lg,
             paddingHorizontal: Spacing.md,
+            alignItems: 'flex-start',
+        },
+        drawerContentWrap: {
+            width: DRAWER_WIDTH,
+            maxWidth: '100%',
+            flex: 1,
         },
         mainLayer: {
             flex: 1,

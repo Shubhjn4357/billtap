@@ -86,3 +86,24 @@ export function useGstr3bReport(
         rows: query.data?.data?.rows ?? [],
     };
 }
+
+export function useBalanceSheet(options?: { enabled?: boolean; staleTime?: number }) {
+    const businessId = useBusinessQueryScope();
+    const enabled = options?.enabled ?? true;
+    const staleTime = options?.staleTime ?? 60_000;
+
+    const query = useQuery({
+        queryKey: reportQueryKeys.balanceSheet(businessId),
+        queryFn: () => reportRepository.getBalanceSheet(),
+        enabled,
+        staleTime,
+    });
+
+    return {
+        ...query,
+        assets: query.data?.data?.assets ?? [],
+        liabilities: query.data?.data?.liabilities ?? [],
+        equity: query.data?.data?.equity ?? [],
+        totals: query.data?.data?.totals ?? { assets: 0, liabilities: 0, equity: 0 },
+    };
+}

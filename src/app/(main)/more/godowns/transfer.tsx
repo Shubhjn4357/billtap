@@ -9,7 +9,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../../hooks/useSmartBack';
 import { toUserMessage } from '../../../../api/client';

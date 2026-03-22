@@ -1,7 +1,8 @@
 import { Platform, type ViewStyle } from 'react-native';
-import { Radius, Spacing, withAlpha, type ColorPalette } from './theme';
+import { Radius, withAlpha, type ColorPalette } from './theme';
 
 type ShadowLevel = 'soft' | 'raised' | 'floating';
+type GlowLevel = 'soft' | 'medium';
 
 export const DESIGN_SPACING = {
     screenX: 18,
@@ -59,6 +60,39 @@ export const getSurfaceStyle = (
                 : getShadowStyle(colors, 'soft')),
     };
 };
+
+export const getGlowStyle = (
+    colors: ColorPalette,
+    accent?: string,
+    level: GlowLevel = 'soft'
+): ViewStyle => {
+    const glowColor = accent ?? colors.glow;
+    const recipe = level === 'medium'
+        ? { opacity: colors.isDark ? 0.28 : 0.18, radius: 14, y: 6, elevation: 6 }
+        : { opacity: colors.isDark ? 0.18 : 0.12, radius: 9, y: 4, elevation: 3 };
+
+    return {
+        shadowColor: glowColor,
+        shadowOpacity: recipe.opacity,
+        shadowRadius: recipe.radius,
+        shadowOffset: { width: 0, height: recipe.y },
+        elevation: Platform.OS === 'android' ? recipe.elevation : 0,
+    };
+};
+
+export const getIconAccentStyle = (
+    colors: ColorPalette,
+    accent: string,
+    options?: { rounded?: number; mediumGlow?: boolean }
+): ViewStyle => ({
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: options?.rounded ?? Radius.md,
+    borderWidth: 1,
+    borderColor: withAlpha(accent, colors.isDark ? '3A' : '22'),
+    backgroundColor: withAlpha(accent, colors.isDark ? '26' : '12'),
+    ...getGlowStyle(colors, accent, options?.mediumGlow ? 'medium' : 'soft'),
+});
 
 export const getInsetPanelStyle = (colors: ColorPalette, accent?: string): ViewStyle => ({
     backgroundColor: accent ? withAlpha(accent, colors.isDark ? '18' : '10') : colors.surfaceVariant,

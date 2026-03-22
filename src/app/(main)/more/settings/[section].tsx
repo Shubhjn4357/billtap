@@ -454,47 +454,77 @@ export default function SettingsSectionEditorScreen() {
                                 <Text style={[s.previewMeta, { color: colors.textSecondary }]}>
                                     {invoicePrintPreview.printLayoutType} | {invoicePrintPreview.pageSize} | {invoicePrintPreview.orientation}
                                 </Text>
-                                <View style={[s.previewPaper, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                                    {invoicePrintPreview.showCompanyName ? (
-                                        <Text style={[s.previewCompany, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize + 1 }]}>
-                                                {business?.name ?? 'Your Business'}
-                                        </Text>
-                                    ) : null}
-                                    {invoicePrintPreview.showAddress ? (
-                                        <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
-                                                {business?.address ?? 'Business Address'} | GSTIN {business?.gstin ?? 'N/A'}
-                                        </Text>
-                                    ) : null}
-                                    <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
-                                        Invoice # INV-2026-001 | 05 Mar 2026
-                                    </Text>
-                                    <Text style={[s.previewDivider, { color: colors.textSecondary }]}>-----------------------------------</Text>
-                                    <Text style={[s.previewLineText, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize }]}>
-                                        Item A x 2      Rs 240.00
-                                    </Text>
-                                    <Text style={[s.previewLineText, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize }]}>
-                                        Item B x 1      Rs  60.00
-                                    </Text>
-                                    {invoicePrintPreview.showTaxBreakup ? (
-                                        <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 1 }]}>
-                                            GST (18%): Rs 45.76
-                                        </Text>
-                                    ) : null}
-                                    <Text style={[s.previewDivider, { color: colors.textSecondary }]}>-----------------------------------</Text>
-                                    <Text style={[s.previewTotal, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize + 1 }]}>
-                                        TOTAL         Rs 300.00
-                                    </Text>
-                                    {invoicePrintPreview.showTerms ? (
-                                        <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
-                                            Terms: Goods once sold will not be taken back.
-                                        </Text>
-                                    ) : null}
-                                    {invoicePrintPreview.showSignature ? (
-                                        <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
-                                            Authorized Signatory
-                                        </Text>
-                                    ) : null}
-                                </View>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.previewRail}>
+                                    <View style={[s.previewTemplateCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                                        <Text style={[s.previewTemplateTitle, { color: colors.text }]}>Invoice Sheet</Text>
+                                        <View style={[s.previewPaper, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                                            {invoicePrintPreview.showCompanyName ? (
+                                                <Text style={[s.previewCompany, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize + 1 }]}>
+                                                        {business?.name ?? 'Your Business'}
+                                                </Text>
+                                            ) : null}
+                                            {invoicePrintPreview.showAddress ? (
+                                                <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
+                                                        {business?.address ?? 'Business Address'} | GSTIN {business?.gstin ?? 'N/A'}
+                                                </Text>
+                                            ) : null}
+                                            <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
+                                                Invoice # INV-2026-001 | 05 Mar 2026
+                                            </Text>
+                                            <Text style={[s.previewDivider, { color: colors.textSecondary }]}>-----------------------------------</Text>
+                                            <Text style={[s.previewLineText, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize }]}>
+                                                Item A x 2      Rs 240.00
+                                            </Text>
+                                            <Text style={[s.previewLineText, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize }]}>
+                                                Item B x 1      Rs  60.00
+                                            </Text>
+                                            {invoicePrintPreview.showTaxBreakup ? (
+                                                <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 1 }]}>
+                                                    GST (18%): Rs 45.76
+                                                </Text>
+                                            ) : null}
+                                            <Text style={[s.previewDivider, { color: colors.textSecondary }]}>-----------------------------------</Text>
+                                            <Text style={[s.previewTotal, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize + 1 }]}>
+                                                TOTAL         Rs 300.00
+                                            </Text>
+                                            {invoicePrintPreview.showTerms ? (
+                                                <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
+                                                    Terms: Goods once sold will not be taken back.
+                                                </Text>
+                                            ) : null}
+                                            {invoicePrintPreview.showSignature ? (
+                                                <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>
+                                                    Authorized Signatory
+                                                </Text>
+                                            ) : null}
+                                        </View>
+                                    </View>
+                                    <View style={[s.previewTemplateCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                                        <Text style={[s.previewTemplateTitle, { color: colors.text }]}>Thermal Slip</Text>
+                                        <View style={[s.previewPaper, { borderColor: colors.border, backgroundColor: colors.surfaceVariant }]}>
+                                            <Text style={[s.previewCompany, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize }]}>{business?.name ?? 'Your Business'}</Text>
+                                            <Text style={[s.previewLineText, { color: colors.textSecondary, fontSize: invoicePrintPreview.sampleTextSize - 2 }]}>80mm thermal preview</Text>
+                                            <Text style={[s.previewDivider, { color: colors.textSecondary }]}>-----------------------------------</Text>
+                                            <Text style={[s.previewLineText, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize - 1 }]}>2 x Item A        Rs 240.00</Text>
+                                            <Text style={[s.previewLineText, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize - 1 }]}>1 x Item B        Rs  60.00</Text>
+                                            <Text style={[s.previewDivider, { color: colors.textSecondary }]}>-----------------------------------</Text>
+                                            <Text style={[s.previewTotal, { color: colors.text, fontSize: invoicePrintPreview.sampleTextSize }]}>TOTAL             Rs 300.00</Text>
+                                        </View>
+                                    </View>
+                                    <View style={[s.previewTemplateCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                                        <Text style={[s.previewTemplateTitle, { color: colors.text }]}>Business Card</Text>
+                                        <View style={[s.businessCardPreview, { borderColor: colors.border, backgroundColor: colors.surfaceVariant }]}>
+                                            <Text style={[s.businessCardName, { color: colors.text }]}>{business?.name ?? 'Your Business'}</Text>
+                                            <Text style={[s.businessCardRole, { color: colors.primary }]}>Billing • GST • UPI</Text>
+                                            <Text style={[s.businessCardMeta, { color: colors.textSecondary }]}>{business?.phone ?? '+91 98765 43210'}</Text>
+                                            <Text style={[s.businessCardMeta, { color: colors.textSecondary }]}>{business?.email ?? 'hello@vahi.app'}</Text>
+                                            <Text style={[s.businessCardMeta, { color: colors.textSecondary }]}>GSTIN {business?.gstin ?? 'Sample GSTIN'}</Text>
+                                            <View style={[s.businessCardQr, { borderColor: colors.primary }]}>
+                                                <Text style={[s.businessCardQrText, { color: colors.primary }]}>SCAN</Text>
+                                            </View>
+                                        </View>
+                                    </View>
+                                </ScrollView>
                             </View>
                         ) : null}
 
@@ -587,6 +617,21 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         fontSize: Typography.caption.size,
         marginBottom: Spacing.xs,
     },
+    previewRail: {
+        gap: Spacing.sm,
+        paddingRight: Spacing.sm,
+    },
+    previewTemplateCard: {
+        width: 250,
+        borderRadius: Radius.card,
+        borderWidth: 1,
+        padding: Spacing.md,
+        gap: Spacing.sm,
+    },
+    previewTemplateTitle: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+    },
     previewPaper: {
         ...getSurfaceStyle(colors),
         borderRadius: Radius.md,
@@ -606,6 +651,41 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
         textAlign: 'center',
     },
     previewTotal: {
+        fontWeight: '800',
+    },
+    businessCardPreview: {
+        borderRadius: Radius.lg,
+        borderWidth: 1,
+        padding: Spacing.md,
+        minHeight: 160,
+        justifyContent: 'space-between',
+        gap: Spacing.xs,
+    },
+    businessCardName: {
+        fontSize: Typography.title.size,
+        fontWeight: '800',
+    },
+    businessCardRole: {
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    businessCardMeta: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    businessCardQr: {
+        alignSelf: 'flex-end',
+        width: 42,
+        height: 42,
+        borderRadius: Radius.md,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    businessCardQrText: {
+        fontSize: 10,
         fontWeight: '800',
     },
     emptyState: {
