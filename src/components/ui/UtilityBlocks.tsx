@@ -29,7 +29,7 @@ export function UtilitySection({
     return (
         <View style={styles.section}>
             <View style={styles.sectionHead}>
-                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{title.toUpperCase()}</Text>
+                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{title}</Text>
                 {typeof count === 'number' ? (
                     <Text style={[styles.sectionCount, { color: colors.textSecondary }]}>{count}</Text>
                 ) : null}
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: Typography.caption.size,
         fontWeight: '700',
-        letterSpacing: 1,
+        letterSpacing: 0.8,
     },
     sectionCount: {
         fontSize: Typography.caption.size,
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
     hero: {
         borderRadius: Radius.card,
         padding: Spacing.lg,
-        gap: Spacing.sm,
+        gap: Spacing.md,
     },
     heroTop: {
         flexDirection: 'row',
@@ -235,9 +235,9 @@ const styles = StyleSheet.create({
         gap: Spacing.sm,
     },
     heroIconWrap: {
-        width: 40,
-        height: 40,
-        borderRadius: Radius.pill,
+        width: 42,
+        height: 42,
+        borderRadius: Radius.md,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -246,12 +246,12 @@ const styles = StyleSheet.create({
         gap: 2,
     },
     heroTitle: {
-        fontSize: Typography.title.size,
+        fontSize: Typography.headline.size,
         fontWeight: '700',
     },
     heroSubtitle: {
         fontSize: Typography.body.size,
-        lineHeight: Typography.body.lineHeight,
+        lineHeight: 22,
     },
     heroFooter: {
         flexDirection: 'row',
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: Spacing.sm,
         paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.md,
+        paddingVertical: 14,
         backgroundColor: 'transparent',
     },
     rowIconWrap: {
@@ -288,7 +288,8 @@ const styles = StyleSheet.create({
     },
     banner: {
         borderRadius: Radius.card,
-        padding: Spacing.sm,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.sm,
         flexDirection: 'row',
         alignItems: 'center',
         gap: Spacing.sm,
@@ -302,7 +303,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: Spacing.xxl,
-        gap: Spacing.xs,
+        gap: Spacing.sm,
     },
     emptyTitle: {
         fontSize: 15,

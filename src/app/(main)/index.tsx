@@ -9,328 +9,571 @@ import { HOME_QUICK_ACTIONS } from '../../constants/navigationOptions';
 import { DESIGN_SPACING, getInsetPanelStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { AppTopBar } from '../../components/ui/AppTopBar';
-import { useHaptics } from '../../hooks/useHaptics';
-import { useAppDialog } from '@/components/providers/DialogProvider';
+import { HubActionCard, HubMetricCard } from '../../components/ui/HubBlocks';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useAppRuntime } from '../../components/providers/AppRuntimeProvider';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
-import { useInvoices } from '../../hooks/useInvoices';
+import { useInvoices, formatInvoiceDate } from '../../hooks/useInvoices';
 import { useParties } from '../../hooks/useParties';
 import { useReportSummary } from '../../hooks/useReports';
 import { useActiveOffers } from '../../hooks/useOffers';
+import { useSyncStatus } from '../../hooks/useSyncStatus';
 
 export default function HomeScreen() {
     const colors = useAppColors();
     const s = styles(colors);
     const { user, business, tierLabel, subscription, role, refresh } = useCurrentBusiness();
-    const { selection } = useHaptics();
-    const dialog = useAppDialog();
     const { syncStats, refreshSyncState } = useAppRuntime();
+    const syncStatus = useSyncStatus();
     const [upgradePromptShown, setUpgradePromptShown] = useState(false);
 
-    // Compute month range once per mount
     const today = new Date();
     const monthStart = format(startOfMonth(today), 'yyyy-MM-dd');
     const monthEnd = format(endOfMonth(today), 'yyyy-MM-dd');
     const prevMonthStart = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
     const prevMonthEnd = format(endOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
 
-    // Refresh subscription/user on mount to prevent stale FREE-plan display
     useEffect(() => { void refresh(); }, [refresh]);
 
-    // -- Report summary (server aggregated) --
     const {
         summary,
         isLoading: summaryLoading,
         isRefetching: summaryRefetching,
         refetch: refetchSummary,
     } = useReportSummary({ from: monthStart, to: monthEnd }, { staleTime: 5 * 60_000 });
+
     const { summary: prevSummary } = useReportSummary(
         { from: prevMonthStart, to: prevMonthEnd },
         { staleTime: 20 * 60_000 }
     );
 
-    // -- Live invoice stats for this month (from hook) --
-    const { summary: invoiceSummary, isLoading: invoicesLoading, refetch: refetchInvoices } = useInvoices({
+    const {
+        invoices,
+        summary: invoiceSummary,
+        isLoading: invoicesLoading,
+        isRefetching: invoicesRefetching,
+        refetch: refetchInvoices,
+    } = useInvoices({
         dateRange: 'month',
+        limit: 6,
     });
 
-    // -- Live party balance stats (per type) --
-    const { stats: customerStats, isLoading: customerLoading, refetch: refetchCustomers } = useParties({ type: 'CUSTOMER' });
-    const { stats: supplierStats, isLoading: supplierLoading, refetch: refetchSuppliers } = useParties({ type: 'SUPPLIER' });
+    const {
+        stats: customerStats,
+        isRefetching: customerRefetching,
+        refetch: refetchCustomers,
+    } = useParties({ type: 'CUSTOMER' });
+    const {
+        stats: supplierStats,
+        isRefetching: supplierRefetching,
+        refetch: refetchSuppliers,
+    } = useParties({ type: 'SUPPLIER' });
 
-    // -- Offers banner --
-    const stats = summary;
-    const prevStats = prevSummary;
     const { offers } = useActiveOffers({ staleTime: 60_000 });
+
     const blockedCount = syncStats.blockedCount;
-    const isLoading = summaryLoading;
-    const isRefetching = summaryRefetching;
+    const pendingCount = syncStatus.pendingCount;
+    const isLoading = summaryLoading || invoicesLoading;
+    const isRefetching =
+        summaryRefetching
+        || invoicesRefetching
+        || customerRefetching
+        || supplierRefetching;
 
-    const quickActions = HOME_QUICK_ACTIONS.filter((action) => {
-        if (action.requiresPos && !canUsePos(subscription)) return false;
-        if (!action.module) return true;
-        return canAccessModule(role, action.module, subscription);
-    });
-
-    const tierDisplay = tierLabel;
     useEffect(() => {
         if (upgradePromptShown || blockedCount <= 0) return;
         setUpgradePromptShown(true);
-        dialog.alert(
-            'Upgrade needed for cloud sync',
-            `${blockedCount} queued change(s) are saved locally but blocked for cloud sync by current plan.`,
-            [
-                { text: 'Later', style: 'cancel' },
-                { text: 'Upgrade', onPress: () => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0]) },
-            ]
-        );
-    }, [blockedCount, dialog, upgradePromptShown]);
+    }, [blockedCount, upgradePromptShown]);
+
+    const quickActions = useMemo(() => (
+        HOME_QUICK_ACTIONS.filter((action) => {
+            if (action.requiresPos && !canUsePos(subscription)) return false;
+            if (!action.module) return true;
+            return canAccessModule(role, action.module, subscription, business);
+        }).slice(0, 4)
+    ), [business, role, subscription]);
+
+    const recentInvoices = useMemo(
+        () => [...invoices].sort((a, b) => (a.invoiceDate < b.invoiceDate ? 1 : -1)).slice(0, 4),
+        [invoices]
+    );
+
+    const overviewCards = useMemo(() => {
+        const syncLabel = blockedCount > 0
+            ? `${blockedCount} blocked`
+            : pendingCount > 0
+                ? `${pendingCount} queued`
+                : syncStatus.isOnline
+                    ? 'Healthy'
+                    : 'Offline';
+        const syncTone = blockedCount > 0
+            ? 'warning'
+            : pendingCount > 0 || !syncStatus.isOnline
+                ? 'info'
+                : 'success';
+        return [
+            {
+                label: 'Revenue',
+                value: `Rs ${Math.round(summary?.totalSales ?? 0).toLocaleString('en-IN')}`,
+                meta: percentageMeta(summary?.totalSales, prevSummary?.totalSales),
+                tone: 'success' as const,
+            },
+            {
+                label: 'Outstanding',
+                value: `Rs ${Math.round(invoiceSummary.outstanding ?? 0).toLocaleString('en-IN')}`,
+                meta: `${invoiceSummary.overdue} overdue`,
+                tone: invoiceSummary.overdue > 0 ? 'warning' as const : 'info' as const,
+            },
+            {
+                label: 'Sync',
+                value: syncLabel,
+                meta: syncStatus.error ? 'Needs attention' : 'Cloud status',
+                tone: syncTone,
+            },
+            {
+                label: 'Plan',
+                value: tierLabel,
+                meta: subscription?.cloudSyncAllowed ? 'Cloud enabled' : 'Offline-first',
+                tone: 'info' as const,
+            },
+        ] as const;
+    }, [
+        blockedCount,
+        invoiceSummary.outstanding,
+        invoiceSummary.overdue,
+        pendingCount,
+        prevSummary?.totalSales,
+        summary?.totalSales,
+        subscription?.cloudSyncAllowed,
+        syncStatus.error,
+        syncStatus.isOnline,
+        tierLabel,
+    ]);
 
     const doRefresh = () => {
-        void refetchSummary();
-        void refreshSyncState();
-        void refetchInvoices();
-        void refetchCustomers();
-        void refetchSuppliers();
+        void Promise.all([
+            refetchSummary(),
+            refetchInvoices(),
+            refetchCustomers(),
+            refetchSuppliers(),
+            refreshSyncState(),
+        ]);
     };
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>
             <AppTopBar
                 title={business?.name ?? 'Dashboard'}
-                subtitle={`Hello, ${user?.name?.split(' ')[0] ?? 'there'}`}
+                subtitle={`Hello ${user?.name?.split(' ')[0] ?? 'there'}`}
                 rightAction={(
-                    <Pressable style={s.tierBadge} onPress={() => router.push('/(main)/more')}>
-                        <Text style={[s.tierText, { color: colors.primary }]}>{tierDisplay}</Text>
+                    <Pressable
+                        style={s.tierBadge}
+                        onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
+                    >
+                        <Text style={[s.tierText, { color: colors.primary }]}>{tierLabel}</Text>
                     </Pressable>
                 )}
             />
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
+                contentContainerStyle={s.content}
                 refreshControl={<RefreshControl refreshing={isRefetching && !isLoading} onRefresh={doRefresh} tintColor={colors.primary} />}
             >
-                {blockedCount > 0 ? (
-                    <Pressable
-                        style={[s.banner, getSurfaceStyle(colors, { accent: colors.warning, elevated: true, muted: true }), { borderColor: colors.warning, backgroundColor: withAlpha(colors.warning, '14') }]}
-                        onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
-                    >
-                        <MaterialCommunityIcons name="cloud-alert-outline" size={15} color={colors.warning} />
-                        <Text style={[s.bannerText, { color: colors.warning }]}>
-                            {blockedCount} change(s) queued offline - upgrade to sync
-                        </Text>
-                    </Pressable>
-                ) : null}
-                <View style={s.section}>
-                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>THIS MONTH</Text>
-                    <View style={s.statsGrid}>
-                        <StatCard label="Sales" value={stats?.totalSales} prev={prevStats?.totalSales} prefix="Rs " loading={isLoading} color={colors.success} colors={colors} />
-                        <StatCard label="Purchases" value={stats?.totalPurchases} prev={prevStats?.totalPurchases} prefix="Rs " loading={isLoading} color={colors.warning} colors={colors} />
-                        <StatCard label="Expenses" value={stats?.totalExpenses} prev={prevStats?.totalExpenses} prefix="Rs " loading={isLoading} color={colors.error} colors={colors} />
-                        <StatCard label="Net Profit" value={stats?.netProfit} prev={prevStats?.netProfit} prefix="Rs " loading={isLoading} color={colors.primary} colors={colors} />
-                    </View>
-                </View>
-                {!invoicesLoading && invoiceSummary ? (
-                    <View style={s.section}>
-                        <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>INVOICES - THIS MONTH</Text>
-                        <View style={s.invoiceRow}>
-                            <InvoiceChip label="Total" value={invoiceSummary.total} color={colors.primary} colors={colors} />
-                            <InvoiceChip label="Paid" value={invoiceSummary.paid} color={colors.success} colors={colors} />
-                            <InvoiceChip label="Overdue" value={invoiceSummary.overdue} color={colors.error} colors={colors} />
-                            <InvoiceChip
-                                label="Outstanding"
-                                value={invoiceSummary.outstanding}
-                                prefix="Rs "
-                                color={invoiceSummary.outstanding > 0 ? colors.warning : colors.textSecondary}
-                                colors={colors}
-                            />
+                <View style={s.heroCard}>
+                    <View style={s.heroRow}>
+                        <View style={s.heroCopy}>
+                            <Text style={[s.eyebrow, { color: colors.primary }]}>Overview</Text>
+                            <Text style={[s.heroTitle, { color: colors.text }]}>Simple daily control for billing and operations.</Text>
+                            <Text style={[s.heroSubtitle, { color: colors.textSecondary }]}>
+                                Revenue, outstanding balances, sync state, and the next actions are all in one place.
+                            </Text>
+                        </View>
+                        <View style={s.heroBadge}>
+                            <MaterialCommunityIcons name="chart-box-outline" size={20} color={colors.primary} />
                         </View>
                     </View>
-                ) : null}
-                <View style={s.section}>
-                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>OUTSTANDING</Text>
-                    <View style={s.row}>
-                        <OutstandingCard
-                            label="Receivables"
-                            value={customerStats?.totalReceivable ?? stats?.outstandingReceivables}
-                            loading={customerLoading || isLoading}
-                            color={colors.success}
-                            count={customerStats?.totalCustomers}
-                            colors={colors}
-                            onPress={() => router.push('/(main)/parties?tab=customer' as Parameters<typeof router.push>[0])}
-                        />
-                        <OutstandingCard
-                            label="Payables"
-                            value={supplierStats?.totalPayable ?? stats?.outstandingPayables}
-                            loading={supplierLoading || isLoading}
-                            color={colors.error}
-                            count={supplierStats?.totalSuppliers}
-                            colors={colors}
-                            onPress={() => router.push('/(main)/parties?tab=supplier' as Parameters<typeof router.push>[0])}
-                        />
+                    <View style={s.heroMetaRow}>
+                        <MetaPill label={`${customerStats?.totalCustomers ?? 0} customers`} colors={colors} />
+                        <MetaPill label={`${supplierStats?.totalSuppliers ?? 0} suppliers`} colors={colors} />
+                        <MetaPill label={`${invoiceSummary.total} monthly invoices`} colors={colors} />
                     </View>
-                </View>
-                {offers.length > 0 ? (
-                    <View style={s.section}>
-                        {offers.slice(0, 2).map((offer) => (
-                            <Pressable
-                                key={offer.id}
-                                style={[s.offerCard, getSurfaceStyle(colors, { accent: colors.primary, elevated: true, muted: true }), { backgroundColor: withAlpha(colors.primary, '10'), borderColor: withAlpha(colors.primary, '30') }]}
-                                onPress={() => { if (offer.ctaRoute) router.push(offer.ctaRoute as Parameters<typeof router.push>[0]); }}
-                            >
-                                <MaterialCommunityIcons name="star-four-points-outline" size={14} color={colors.primary} />
-                                <View style={{ flex: 1 }}>
-                                    <Text style={[s.offerTitle, { color: colors.primary }]}>{offer.title}</Text>
-                                    <Text style={[s.offerMessage, { color: colors.textSecondary }]}>{offer.message}</Text>
-                                </View>
-                                <MaterialCommunityIcons name="chevron-right" size={16} color={colors.primary} />
-                            </Pressable>
-                        ))}
-                    </View>
-                ) : null}
-                <View style={s.section}>
-                    <Text style={[s.sectionTitle, { color: colors.textSecondary }]}>QUICK CREATE</Text>
-                    <View style={s.quickGrid}>
-                        {quickActions.map((qa) => (
-                            <Pressable
-                                key={qa.label}
-                                style={({ pressed }) => [s.quickCard, { opacity: pressed ? 0.75 : 1 }]}
-                                onPress={() => { void selection(); router.push(qa.route as Parameters<typeof router.push>[0]); }}
-                                accessibilityRole="button"
-                                accessibilityLabel={qa.label}
-                            >
-                                <View style={[s.quickIcon, { backgroundColor: withAlpha(colors.primary, '18') }]}>
-                                    <MaterialCommunityIcons name={qa.icon} size={18} color={colors.primary} />
-                                </View>
-                                <Text style={[s.quickLabel, { color: colors.text }]}>{qa.label}</Text>
-                            </Pressable>
-                        ))}
-                    </View>
-                </View>
-                <View style={s.section}>
-                    <Pressable
-                        style={({ pressed }) => [s.directoryButton, { opacity: pressed ? 0.85 : 1 }]}
-                        onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}
-                    >
-                        <MaterialCommunityIcons name="compass-outline" size={16} color={colors.primary} />
-                        <View style={{ flex: 1 }}>
-                            <Text style={[s.directoryTitle, { color: colors.text }]}>Open Screen Directory</Text>
-                            <Text style={[s.directorySub, { color: colors.textSecondary }]}>Jump to billing, inventory, reports, settings, legal</Text>
-                        </View>
-                        <MaterialCommunityIcons name="chevron-right" size={16} color={colors.textSecondary} />
-                    </Pressable>
+                    {blockedCount > 0 ? (
+                        <Pressable
+                            style={s.syncAlert}
+                            onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
+                        >
+                            <MaterialCommunityIcons name="cloud-alert-outline" size={16} color={colors.warning} />
+                            <Text style={[s.syncAlertText, { color: colors.warning }]}>
+                                {blockedCount} local change(s) are waiting for a sync-capable plan.
+                            </Text>
+                        </Pressable>
+                    ) : null}
                 </View>
 
-                <View style={{ height: 100 }} />
+                <View style={s.section}>
+                    <SectionHeading title="At A Glance" meta="Revenue, sync, plan" />
+                    <View style={s.metricGrid}>
+                        {overviewCards.map((entry) => (
+                            <HubMetricCard
+                                key={entry.label}
+                                label={entry.label}
+                                value={entry.value}
+                                meta={entry.meta}
+                                tone={entry.tone}
+                            />
+                        ))}
+                    </View>
+                </View>
+
+                <View style={s.section}>
+                    <SectionHeading title="Quick Workflows" meta="Most-used routes" />
+                    <View style={s.quickGrid}>
+                        {quickActions.map((action) => (
+                            <HubActionCard
+                                key={action.key}
+                                title={action.label}
+                                subtitle={action.description ?? 'Open workflow'}
+                                icon={action.icon}
+                                tone="info"
+                                onPress={() => router.push(action.route as Parameters<typeof router.push>[0])}
+                            />
+                        ))}
+                    </View>
+                </View>
+
+                <View style={s.section}>
+                    <SectionHeading title="Recent Invoices" meta={recentInvoices.length > 0 ? `${recentInvoices.length} recent` : 'No recent activity'} />
+                    <View style={s.listCard}>
+                        {recentInvoices.length === 0 ? (
+                            <View style={s.emptyCard}>
+                                <MaterialCommunityIcons name="file-document-outline" size={24} color={colors.textSecondary} />
+                                <Text style={[s.emptyTitle, { color: colors.text }]}>No invoices this month</Text>
+                                <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>
+                                    Create your first sale, purchase, or estimate from the quick workflows above.
+                                </Text>
+                            </View>
+                        ) : recentInvoices.map((invoice, index) => (
+                            <Pressable
+                                key={invoice.id}
+                                style={[
+                                    s.invoiceRow,
+                                    index < recentInvoices.length - 1 && { borderBottomWidth: 1, borderBottomColor: withAlpha(colors.border, '88') },
+                                ]}
+                                onPress={() => router.push(`/(main)/billing/${invoice.id}` as Parameters<typeof router.push>[0])}
+                            >
+                                <View style={s.invoiceLeft}>
+                                    <Text style={[s.invoiceNumber, { color: colors.text }]}>{invoice.invoiceNumber}</Text>
+                                    <Text style={[s.invoiceParty, { color: colors.textSecondary }]} numberOfLines={1}>
+                                        {invoice.partySnapshot?.name ?? invoice.party?.name ?? 'Walk-in'} · {formatInvoiceDate(invoice.invoiceDate)}
+                                    </Text>
+                                </View>
+                                <View style={s.invoiceRight}>
+                                    <Text style={[s.invoiceAmount, { color: colors.text }]}>
+                                        Rs {Math.round(invoice.totalInvoiceValue).toLocaleString('en-IN')}
+                                    </Text>
+                                    <Text
+                                        style={[
+                                            s.invoiceStatus,
+                                            {
+                                                color: invoice.paymentStatus === 'PAID'
+                                                    ? colors.success
+                                                    : invoice.paymentStatus === 'OVERDUE'
+                                                        ? colors.error
+                                                        : colors.warning,
+                                            },
+                                        ]}
+                                    >
+                                        {invoice.paymentStatus}
+                                    </Text>
+                                </View>
+                            </Pressable>
+                        ))}
+                    </View>
+                </View>
+
+                <View style={s.section}>
+                    <SectionHeading title="Pending Actions" meta="Items to clear next" />
+                    <View style={s.quickGrid}>
+                        <HubActionCard
+                            title="Outstanding receivables"
+                            subtitle={`Rs ${Math.round(customerStats?.totalReceivable ?? 0).toLocaleString('en-IN')} still open`}
+                            icon="account-cash-outline"
+                            tone={customerStats?.totalReceivable ? 'warning' as const : 'success' as const}
+                            onPress={() => router.push('/(main)/parties?tab=customer' as Parameters<typeof router.push>[0])}
+                        />
+                        <HubActionCard
+                            title="Payables to settle"
+                            subtitle={`Rs ${Math.round(supplierStats?.totalPayable ?? 0).toLocaleString('en-IN')} vendor liability`}
+                            icon="briefcase-outline"
+                            tone={supplierStats?.totalPayable ? 'danger' as const : 'info' as const}
+                            onPress={() => router.push('/(main)/parties?tab=supplier' as Parameters<typeof router.push>[0])}
+                        />
+                        <HubActionCard
+                            title="Sync queue"
+                            subtitle={blockedCount > 0 ? `${blockedCount} blocked change(s)` : `${pendingCount} queued for cloud`}
+                            icon="cloud-sync-outline"
+                            tone={blockedCount > 0 ? 'warning' as const : pendingCount > 0 ? 'info' as const : 'success' as const}
+                            onPress={() => router.push('/(main)/more/sync' as Parameters<typeof router.push>[0])}
+                        />
+                        <HubActionCard
+                            title="Offers & plans"
+                            subtitle={offers[0]?.title ?? 'See plans, offers, and sync upgrades'}
+                            icon="ticket-percent-outline"
+                            tone="info"
+                            onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
+                        />
+                    </View>
+                </View>
+
+                <Pressable
+                    style={s.directoryCard}
+                    onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}
+                >
+                    <View style={s.directoryIcon}>
+                        <MaterialCommunityIcons name="compass-outline" size={18} color={colors.primary} />
+                    </View>
+                    <View style={s.directoryCopy}>
+                        <Text style={[s.directoryTitle, { color: colors.text }]}>Open screen directory</Text>
+                        <Text style={[s.directorySubtitle, { color: colors.textSecondary }]}>
+                            Jump directly into billing, inventory, reports, settings, and legal routes.
+                        </Text>
+                    </View>
+                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
+                </Pressable>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-// ── Sub-components ──────────────────────────────────────────────────────────────
+function percentageMeta(current?: number, previous?: number) {
+    if (!previous || previous === 0 || current === undefined) {
+        return 'Compared with last month';
+    }
+    const delta = ((current - previous) / previous) * 100;
+    const sign = delta >= 0 ? '+' : '-';
+    return `${sign}${Math.abs(delta).toFixed(1)}% vs last month`;
+}
 
-function StatCard({ label, value, prev, prefix = '', loading, color, colors }: {
-    label: string; value?: number; prev?: number; prefix?: string; loading: boolean; color: string; colors: ColorPalette;
-}) {
-    const pct = useMemo(() => {
-        if (!prev || prev === 0 || value === undefined) return null;
-        const p = ((value - prev) / prev) * 100;
-        return { p: Math.abs(p).toFixed(1), up: value >= prev };
-    }, [value, prev]);
+function SectionHeading({ title, meta }: { title: string; meta?: string }) {
+    const colors = useAppColors();
 
     return (
-        <View style={[cardStyles.card, getSurfaceStyle(colors, { elevated: true })]}>
-            <Text style={[cardStyles.label, { color: colors.textSecondary }]}>{label}</Text>
-            {loading ? (
-                <View style={[cardStyles.skeleton, { backgroundColor: colors.skeleton }]} />
-            ) : (
-                    <Text style={[cardStyles.value, { color }]}>
-                        {prefix}{(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </Text>
-            )}
-            {pct ? (
-                <View style={cardStyles.trendRow}>
-                    <MaterialCommunityIcons name={pct.up ? 'trending-up' : 'trending-down'} size={11} color={pct.up ? colors.success : colors.error} />
-                    <Text style={[cardStyles.trendText, { color: pct.up ? colors.success : colors.error }]}>{pct.p}%</Text>
-                </View>
-            ) : null}
+        <View style={sectionStyles.row}>
+            <Text style={[sectionStyles.title, { color: colors.text }]}>{title}</Text>
+            {meta ? <Text style={[sectionStyles.meta, { color: colors.textSecondary }]}>{meta}</Text> : null}
         </View>
     );
 }
 
-function InvoiceChip({ label, value, prefix, color, colors }: {
-    label: string; value: number; prefix?: string; color: string; colors: ColorPalette;
-}) {
+function MetaPill({ label, colors }: { label: string; colors: ColorPalette }) {
     return (
-        <View style={[chipStyles.chip, getSurfaceStyle(colors, { elevated: true })]}>
-            <Text style={[chipStyles.chipVal, { color }]}>{prefix ?? ''}{value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-            <Text style={[chipStyles.chipLabel, { color: colors.textSecondary }]}>{label}</Text>
+        <View style={[metaStyles.pill, getInsetPanelStyle(colors)]}>
+            <Text style={[metaStyles.label, { color: colors.textSecondary }]}>{label}</Text>
         </View>
     );
 }
-
-function OutstandingCard({ label, value, loading, color, count, colors, onPress }: {
-    label: string; value?: number; loading: boolean; color: string; count?: number; colors: ColorPalette; onPress: () => void;
-}) {
-    return (
-        <Pressable style={({ pressed }) => [outStyles.card, getSurfaceStyle(colors, { elevated: true }), { opacity: pressed ? 0.85 : 1 }]} onPress={onPress}>
-            <Text style={[outStyles.label, { color: colors.textSecondary }]}>{label}</Text>
-            {loading ? (
-                <View style={[outStyles.skeleton, { backgroundColor: colors.skeleton }]} />
-            ) : (
-                    <Text style={[outStyles.value, { color }]}>Rs {(value ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
-            )}
-            {count !== undefined ? <Text style={[outStyles.count, { color: colors.textSecondary }]}>{count} parties</Text> : null}
-            <MaterialCommunityIcons name="chevron-right" size={14} color={colors.textSecondary} style={{ alignSelf: 'flex-end', marginTop: 4 }} />
-        </Pressable>
-    );
-}
-
-// ── Styles ──────────────────────────────────────────────────────────────────────
 
 const styles = (colors: ColorPalette) => StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    tierBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 4, ...getInsetPanelStyle(colors, colors.primary) },
-    tierText: { fontWeight: '800', fontSize: 11 },
-    banner: { marginHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm, borderRadius: Radius.card, paddingHorizontal: Spacing.sm, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
-    bannerText: { fontSize: 12, fontWeight: '600', flex: 1 },
-    section: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap },
-    sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: Spacing.sm },
-    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    invoiceRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-    row: { flexDirection: 'row', gap: Spacing.sm },
-    offerCard: { borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
-    offerTitle: { fontWeight: '700', fontSize: 13 },
-    offerMessage: { fontSize: 11, marginTop: 1 },
-    quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    quickCard: { width: '30%', paddingVertical: Spacing.md, alignItems: 'center', gap: 6, ...getSurfaceStyle(colors, { elevated: true }) },
-    quickIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-    quickLabel: { fontSize: 11, fontWeight: '600' },
-    directoryButton: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, ...getSurfaceStyle(colors, { elevated: true }) },
-    directoryTitle: { fontWeight: '700', fontSize: 13 },
-    directorySub: { fontSize: 11, marginTop: 1 },
+    safe: {
+        flex: 1,
+        backgroundColor: colors.background,
+    },
+    content: {
+        paddingHorizontal: DESIGN_SPACING.screenX,
+        paddingBottom: 120,
+        gap: DESIGN_SPACING.sectionGap,
+    },
+    tierBadge: {
+        paddingHorizontal: Spacing.sm,
+        paddingVertical: 6,
+        ...getInsetPanelStyle(colors, colors.primary),
+    },
+    tierText: {
+        fontSize: 11,
+        fontWeight: '800',
+    },
+    heroCard: {
+        borderRadius: Radius.card,
+        padding: Spacing.lg,
+        gap: Spacing.md,
+        ...getSurfaceStyle(colors, { accent: colors.primary }),
+    },
+    heroRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: Spacing.md,
+    },
+    heroCopy: {
+        flex: 1,
+        gap: 4,
+    },
+    eyebrow: {
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+    },
+    heroTitle: {
+        fontSize: Typography.headline.size,
+        fontWeight: '700',
+        lineHeight: 30,
+    },
+    heroSubtitle: {
+        fontSize: Typography.body.size,
+        lineHeight: 22,
+    },
+    heroBadge: {
+        width: 44,
+        height: 44,
+        borderRadius: Radius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: withAlpha(colors.primary, '12'),
+    },
+    heroMetaRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: Spacing.xs,
+    },
+    syncAlert: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        borderRadius: Radius.lg,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.sm,
+        backgroundColor: withAlpha(colors.warning, '12'),
+        borderWidth: 1,
+        borderColor: withAlpha(colors.warning, '24'),
+    },
+    syncAlertText: {
+        flex: 1,
+        fontSize: Typography.caption.size,
+        fontWeight: '700',
+        lineHeight: 18,
+    },
+    section: {
+        gap: Spacing.sm,
+    },
+    metricGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: Spacing.sm,
+    },
+    quickGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: Spacing.sm,
+    },
+    listCard: {
+        borderRadius: Radius.card,
+        overflow: 'hidden',
+        ...getSurfaceStyle(colors),
+    },
+    emptyCard: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: Spacing.lg,
+        paddingVertical: Spacing.xl,
+        gap: Spacing.sm,
+    },
+    emptyTitle: {
+        fontSize: Typography.title.size,
+        fontWeight: '700',
+    },
+    emptySubtitle: {
+        fontSize: Typography.body.size,
+        lineHeight: 20,
+        textAlign: 'center',
+    },
+    invoiceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: Spacing.md,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.md,
+    },
+    invoiceLeft: {
+        flex: 1,
+        gap: 2,
+    },
+    invoiceRight: {
+        alignItems: 'flex-end',
+        gap: 2,
+    },
+    invoiceNumber: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+    },
+    invoiceParty: {
+        fontSize: Typography.caption.size,
+    },
+    invoiceAmount: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+    },
+    invoiceStatus: {
+        fontSize: 11,
+        fontWeight: '800',
+    },
+    directoryCard: {
+        borderRadius: Radius.card,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.md,
+        ...getSurfaceStyle(colors),
+    },
+    directoryIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: Radius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: withAlpha(colors.primary, '12'),
+    },
+    directoryCopy: {
+        flex: 1,
+        gap: 2,
+    },
+    directoryTitle: {
+        fontSize: Typography.body.size,
+        fontWeight: '700',
+    },
+    directorySubtitle: {
+        fontSize: Typography.caption.size,
+        lineHeight: 18,
+    },
 });
 
-const cardStyles = StyleSheet.create({
-    card: { flex: 1, minWidth: '45%', borderRadius: Radius.card, padding: Spacing.sm, gap: 2 },
-    label: { fontSize: 11, fontWeight: '600' },
-    skeleton: { height: 18, borderRadius: 4, marginTop: 4 },
-    value: { fontSize: Typography.title.size, fontWeight: '800' },
-    trendRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
-    trendText: { fontSize: 10, fontWeight: '700' },
+const sectionStyles = StyleSheet.create({
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: Spacing.sm,
+    },
+    title: {
+        fontSize: Typography.title.size,
+        fontWeight: '700',
+    },
+    meta: {
+        fontSize: Typography.caption.size,
+        fontWeight: '600',
+    },
 });
 
-const chipStyles = StyleSheet.create({
-    chip: { flex: 1, borderRadius: Radius.card, padding: Spacing.sm, alignItems: 'center', gap: 2 },
-    chipVal: { fontWeight: '800', fontSize: 16 },
-    chipLabel: { fontSize: 10, fontWeight: '600' },
-});
-
-const outStyles = StyleSheet.create({
-    card: { flex: 1, borderRadius: Radius.card, padding: Spacing.md, gap: 2 },
-    label: { fontSize: 11, fontWeight: '600' },
-    skeleton: { height: 20, borderRadius: 4, marginTop: 4 },
-    value: { fontSize: 18, fontWeight: '800', marginTop: 4 },
-    count: { fontSize: 10, fontWeight: '600' },
+const metaStyles = StyleSheet.create({
+    pill: {
+        borderRadius: Radius.pill,
+        paddingHorizontal: Spacing.sm,
+        paddingVertical: 6,
+    },
+    label: {
+        fontSize: Typography.caption.size,
+        fontWeight: '700',
+    },
 });

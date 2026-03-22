@@ -3,7 +3,7 @@ import {
     View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, ActivityIndicator, Switch, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useSmartBack } from '../../../hooks/useSmartBack';
+import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -64,12 +64,20 @@ export default function AddItemScreen() {
         scanAt?: string | string[];
         scanField?: string | string[];
         returnContext?: string;
+        returnPath?: string | string[];
     }>();
     const editId = params.id;
-    const returnContext = Array.isArray(params.returnContext) ? params.returnContext[0] : params.returnContext;
+    const returnContext = resolveSingleParam(params.returnContext);
+    const returnPath = resolveSingleParam(params.returnPath);
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/inventory');
+    const fallbackRoute = returnPath ?? (returnContext === 'invoice'
+        ? '/(main)/billing'
+        : editId
+            ? `/(main)/inventory/${editId}`
+            : '/(main)/inventory');
+    const smartBack = useSmartBack(fallbackRoute);
     const scanner = useScannerMode();
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
     const { selection } = useHaptics();
@@ -119,7 +127,7 @@ export default function AddItemScreen() {
     } = useSettingsSelector(SettingsSection.ITEM_SETTINGS, selectItemSettings);
     const unitOptions = itemSettingsView.unitOptions;
     const categoryOptions = itemSettingsView.categoryOptions;
-    const canSaveItem = canPerformAction(role, editId ? 'inventory.update' : 'inventory.create', subscription);
+    const canSaveItem = canPerformAction(role, editId ? 'inventory.update' : 'inventory.create', subscription, business);
 
     const selectedUnit = watch('unit');
     const selectedCategory = watch('category');
@@ -282,7 +290,7 @@ export default function AddItemScreen() {
                                             addLineFromItem(raw.item as import('../../../types/domain').Item);
                                         }
                                     }
-                                    router.back();
+                                    navigateBackOrReplace(fallbackRoute);
                                 })
                                 .catch((error) => {
                                     dialog.alert('Error', toUserMessage(error, 'Failed to save item.'));

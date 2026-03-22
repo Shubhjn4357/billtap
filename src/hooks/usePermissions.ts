@@ -33,13 +33,14 @@ export interface Permissions {
 
 export function usePermissions(): Permissions {
     const role = useAuthStore((s) => s.organizationRole);
+    const business = useAuthStore((s) => s.business);
     const subscription = useAuthStore((s) => s.subscription);
 
     return {
         role,
         subscription,
-        canModule: (module: AppModule) => canAccessModule(role, module, subscription),
-        can: (action: AppAction) => canPerformAction(role, action, subscription),
+        canModule: (module: AppModule) => canAccessModule(role, module, subscription, business),
+        can: (action: AppAction) => canPerformAction(role, action, subscription, business),
         canPos: canUsePos(subscription),
         isOwner: role === 'owner',
         isManager: role === 'owner' || role === 'manager',

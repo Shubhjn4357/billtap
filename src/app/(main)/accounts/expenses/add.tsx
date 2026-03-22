@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { navigateBackOrReplace, useSmartBack } from '../../../../hooks/useSmartBack';
 import { DESIGN_SPACING, getPillStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
@@ -62,7 +62,7 @@ export default function AddExpenseScreen() {
         })
             .then(() => {
                 dialog.alert('Saved', 'Expense recorded.');
-                router.back();
+                navigateBackOrReplace('/(main)/accounts/expenses');
             })
             .catch((error) => {
                 dialog.alert('Error', error instanceof Error ? error.message : 'Failed to save expense');

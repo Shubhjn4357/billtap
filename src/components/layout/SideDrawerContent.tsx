@@ -34,11 +34,11 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
         const normalized = search.trim().toLowerCase();
         return SIDE_DRAWER_ACTIONS.filter((action) => {
             if (action.requiresPos && !canUsePos(subscription)) return false;
-            if (action.module && !canAccessModule(role, action.module, subscription)) return false;
+            if (action.module && !canAccessModule(role, action.module, subscription, business)) return false;
             if (!normalized) return true;
             return action.label.toLowerCase().includes(normalized);
         });
-    }, [role, search, subscription]);
+    }, [business, role, search, subscription]);
 
     return (
         <View style={[s.root, { paddingTop: insets.top + Spacing.md, paddingBottom: insets.bottom + Spacing.md }]}>
@@ -132,16 +132,16 @@ const styles = (colors: ColorPalette) =>
             flex: 1,
             width: '100%',
             backgroundColor: colors.surfaceRaised,
-            borderRadius: 28,
+            borderRadius: 32,
             paddingHorizontal: Spacing.md,
-            ...getSurfaceStyle(colors, { floating: true, elevated: true }),
+            ...getSurfaceStyle(colors, { floating: true }),
         },
         headerCard: {
-            padding: Spacing.md,
-            marginBottom: Spacing.sm,
-            gap: Spacing.sm,
+            padding: Spacing.lg,
+            marginBottom: Spacing.md,
+            gap: Spacing.md,
             borderRadius: Radius.xl,
-            ...getSurfaceStyle(colors, { accent: colors.primary, elevated: true }),
+            ...getSurfaceStyle(colors, { accent: colors.primary }),
         },
         headerTop: {
             flexDirection: 'row',
@@ -228,9 +228,9 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             gap: Spacing.md,
             paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
+            paddingVertical: Spacing.md,
             marginBottom: Spacing.xs,
-            ...getSurfaceStyle(colors, { elevated: true }),
+            ...getSurfaceStyle(colors),
         },
         actionIconWrap: {
             width: 40,

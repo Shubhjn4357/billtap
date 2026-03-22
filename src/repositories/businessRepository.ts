@@ -96,10 +96,16 @@ export const businessRepository = {
             const response = await api.get<{
                 ok: boolean;
                 organization?: Record<string, unknown>;
+                context?: {
+                    settings?: Record<string, unknown>;
+                };
                 message?: string;
             }>('/api/organizations/current');
             const organization = requireOrganizationPayload(response, 'Failed to load current business.');
-            const data = mapLegacyOrganizationToBusiness(organization, 'unknown');
+            const data = mapLegacyOrganizationToBusiness({
+                ...organization,
+                settings: response.context?.settings ?? organization.settings,
+            }, 'unknown');
             await writeCachedJson(BUSINESS_CACHE_KEYS.current(currentBusinessId), data);
             return {
                 ok: true,

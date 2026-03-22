@@ -31,11 +31,7 @@ export default function GodownDetailScreen() {
                 rightAction={godownId ? (
                     <Pressable
                         style={[s.transferBtn, { backgroundColor: colors.primary }]}
-                        onPress={() =>
-                            router.push(
-                                (`/(main)/more/godowns/transfer?fromGodownId=${encodeURIComponent(godownId)}`) as Parameters<typeof router.push>[0]
-                            )
-                        }
+                        onPress={() => router.push({ pathname: '/(main)/more/godowns/transfer', params: { fromGodownId: godownId, returnPath: `/(main)/more/godowns/${godownId}` } })}
                     >
                         <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.onPrimary} />
                         <Text style={s.transferBtnText}>Transfer</Text>

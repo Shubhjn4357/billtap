@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../../hooks/useSmartBack';
 import { DESIGN_SPACING, getPillStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
 import { useAppColors } from '../../../../hooks/useAppColors';
@@ -24,12 +24,14 @@ const toAmount = (value: string) => {
 
 export default function TransferScreen() {
     const dialog = useAppDialog();
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/accounts');
-    const params = useLocalSearchParams<{ fromAccountId?: string }>();
+    const params = useLocalSearchParams<{ fromAccountId?: string | string[]; returnPath?: string | string[] }>();
+    const initialFromAccountId = resolveSingleParam(params.fromAccountId) ?? '';
+    const fallbackRoute = resolveSingleParam(params.returnPath) ?? (initialFromAccountId ? `/(main)/accounts/cash-bank/${initialFromAccountId}` : '/(main)/accounts/cash-bank');
+    const smartBack = useSmartBack(fallbackRoute);
 
-    const [fromAccountId, setFromAccountId] = useState(params.fromAccountId ?? '');
+    const [fromAccountId, setFromAccountId] = useState(initialFromAccountId);
     const [toAccountId, setToAccountId] = useState('');
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
@@ -82,7 +84,7 @@ export default function TransferScreen() {
         })
             .then((response) => {
                 dialog.alert('Saved', response.message ?? 'Transfer recorded.');
-                router.back();
+                navigateBackOrReplace(fallbackRoute);
             })
             .catch((error) => {
                 console.error('[cash-bank/transfer] save failed', { fromAccountId, toAccountId, amount, date, error });

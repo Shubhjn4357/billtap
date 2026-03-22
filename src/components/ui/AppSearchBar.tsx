@@ -71,11 +71,6 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'center',
             gap: 6,
-            shadowColor: colors.primary,
-            shadowOpacity: 0.05,
-            shadowRadius: 10,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 1,
             paddingRight: Spacing.md,
         },
         scanIconWrap: {

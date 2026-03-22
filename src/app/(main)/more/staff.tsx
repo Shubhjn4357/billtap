@@ -46,10 +46,11 @@ export default function StaffScreen() {
     const [search, setSearch] = useState('');
     const smartBack = useSmartBack('/(main)/more');
     const { selection } = useHaptics();
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
-    const canInviteStaff = canPerformAction(role, 'staff.invite', subscription);
-    const canRemoveStaffMember = canPerformAction(role, 'staff.remove', subscription);
+    const canInviteStaff = canPerformAction(role, 'staff.invite', subscription, business);
+    const canRemoveStaffMember = canPerformAction(role, 'staff.remove', subscription, business);
 
     const { filteredMembers, filteredInvites, isLoading, isRefetching, refetch } = useStaffDirectory({
         search,

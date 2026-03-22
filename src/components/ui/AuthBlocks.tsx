@@ -95,8 +95,8 @@ export function AuthChip({ icon, label }: { icon: keyof typeof MaterialCommunity
 
 const styles = StyleSheet.create({
     hero: {
-        borderRadius: 28,
-        padding: Spacing.lg,
+        borderRadius: 32,
+        padding: Spacing.xl,
         gap: Spacing.md,
     },
     heroHeader: {
@@ -105,9 +105,9 @@ const styles = StyleSheet.create({
         gap: Spacing.md,
     },
     heroIconWrap: {
-        width: 56,
-        height: 56,
-        borderRadius: 20,
+        width: 60,
+        height: 60,
+        borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
         letterSpacing: 0.8,
     },
     title: {
-        fontSize: 28,
+        fontSize: 32,
         fontWeight: '800',
         letterSpacing: -0.8,
     },
@@ -137,8 +137,8 @@ const styles = StyleSheet.create({
     },
     panel: {
         borderRadius: Radius.card,
-        padding: Spacing.md,
-        gap: Spacing.sm,
+        padding: Spacing.lg,
+        gap: Spacing.md,
     },
     panelHeader: {
         gap: 2,

@@ -3654,3 +3654,11 @@
  HTTP  7/3/2026 6:04:36 pm ::1 Returned 200 in 3 ms
  HTTP  7/3/2026 6:05:05 pm ::1 HEAD /
  HTTP  7/3/2026 6:05:05 pm ::1 Returned 200 in 3 ms
+ HTTP  10/3/2026 2:18:32 pm ::1 GET /assets/assets/images/logo-glow.dbca075a49dc45e550c5d2e3e9601039.png
+ HTTP  10/3/2026 2:18:32 pm ::1 HEAD /
+ HTTP  10/3/2026 2:18:32 pm ::1 HEAD /
+ HTTP  10/3/2026 2:18:32 pm ::1 GET /assets/assets/images/icon.60bae712bdd8adad2bc0ac5d33ad0531.png
+ HTTP  10/3/2026 2:18:32 pm ::1 Returned 404 in 228 ms
+ HTTP  10/3/2026 2:18:32 pm ::1 Returned 404 in 148 ms
+ HTTP  10/3/2026 2:18:32 pm ::1 Returned 200 in 159 ms
+ HTTP  10/3/2026 2:18:32 pm ::1 Returned 200 in 188 ms

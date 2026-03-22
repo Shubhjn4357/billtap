@@ -5,7 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../../hooks/useSmartBack';
 import { CASH_BANK_ACCOUNT_KIND_OPTIONS, type CashBankAccountKind } from '../../../../constants/accountingInputOptions';
 import { DESIGN_SPACING, getInsetPanelStyle, getPillStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
@@ -62,8 +62,10 @@ export default function AddCashBankAccountScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/accounts');
-    const { id } = useLocalSearchParams<{ id?: string }>();
+    const params = useLocalSearchParams<{ id?: string | string[]; returnPath?: string | string[] }>();
+    const id = resolveSingleParam(params.id);
+    const fallbackRoute = resolveSingleParam(params.returnPath) ?? (id ? `/(main)/accounts/cash-bank/${id}` : '/(main)/accounts/cash-bank');
+    const smartBack = useSmartBack(fallbackRoute);
     const isEdit = Boolean(id);
 
     const {
@@ -115,7 +117,7 @@ export default function AddCashBankAccountScreen() {
 
             if (isEdit) {
                 dialog.alert('Saved', 'Cash/Bank account updated.');
-                router.back();
+                navigateBackOrReplace(fallbackRoute);
                 return;
             }
 
@@ -125,7 +127,7 @@ export default function AddCashBankAccountScreen() {
                 router.replace(`/(main)/accounts/cash-bank/${createdId}` as Parameters<typeof router.replace>[0]);
                 return;
             }
-            router.back();
+            navigateBackOrReplace(fallbackRoute);
         } catch (error) {
             dialog.alert(isEdit ? 'Update failed' : 'Create failed', error instanceof Error ? error.message : 'Unable to save account.');
         }

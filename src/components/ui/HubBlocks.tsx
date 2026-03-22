@@ -90,9 +90,9 @@ const styles = StyleSheet.create({
         flex: 1,
         minWidth: '30%',
         borderRadius: Radius.card,
-        paddingHorizontal: Spacing.sm,
-        paddingVertical: Spacing.sm,
-        gap: 2,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.md,
+        gap: 4,
     },
     metricLabel: {
         fontSize: Typography.caption.size,
@@ -113,11 +113,11 @@ const styles = StyleSheet.create({
         padding: Spacing.md,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: Spacing.sm,
+        gap: Spacing.md,
     },
     actionIconWrap: {
-        width: 36,
-        height: 36,
+        width: 40,
+        height: 40,
         borderRadius: Radius.md,
         alignItems: 'center',
         justifyContent: 'center',
@@ -127,10 +127,10 @@ const styles = StyleSheet.create({
         gap: 2,
     },
     actionTitle: {
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: '700',
     },
     actionSubtitle: {
-        fontSize: 11,
+        fontSize: 12,
     },
 });

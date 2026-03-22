@@ -7,6 +7,7 @@ import {
     Image,
     ActivityIndicator,
     Platform,
+    ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -131,11 +132,21 @@ export default function LoginScreen() {
 
     return (
         <SafeAreaView style={s.safe}>
-            <View style={s.container}>
+            <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
+                <View style={s.brandCard}>
+                    <View style={[s.logoFrame, { backgroundColor: withAlpha(colors.primary, '10') }]}>
+                        <Image source={APP_LOGO} style={s.logo} resizeMode="contain" />
+                    </View>
+                    <View style={s.brandCopy}>
+                        <Text style={s.appName}>Vahi</Text>
+                        <Text style={s.tagline}>Minimal, fast, and GST-ready billing for Indian businesses.</Text>
+                    </View>
+                </View>
+
                 <AuthHero
                     eyebrow="Offline-first billing"
-                    title="Run Vahi from anywhere"
-                    subtitle="Sales, stock, GST, and accounting stay available even when the network does not."
+                    title="Run billing, stock, and accounts from one calm workspace."
+                    subtitle="Vahi keeps sales, GST, inventory, and sync workflows readable even on busy days."
                     icon="storefront-outline"
                 >
                     <AuthChip icon="shield-check-outline" label="Business scoped" />
@@ -143,17 +154,9 @@ export default function LoginScreen() {
                     <AuthChip icon="file-percent-outline" label="GST ready" />
                 </AuthHero>
 
-                <View style={s.brandCard}>
-                    <View style={[s.logoFrame, { backgroundColor: withAlpha(colors.primary, '10') }]}>
-                        <Image source={APP_LOGO} style={s.logo} resizeMode="contain" />
-                    </View>
-                    <Text style={s.appName}>Vahi</Text>
-                    <Text style={s.tagline}>Minimal. Fast. GST-ready billing for India.</Text>
-                </View>
-
                 <AuthPanel
                     title="What you get"
-                    description="The app is optimized for quick invoice entry, connected inventory, and stable offline workflow."
+                    description="A simplified shell, focused screens, and offline-safe billing flows."
                 >
                     <View style={s.features}>
                         {LOGIN_FEATURES.map((f) => (
@@ -169,7 +172,7 @@ export default function LoginScreen() {
 
                 <AuthPanel
                     title="Continue"
-                    description="Google sign-in restores your organizations, permissions, and local offline scope."
+                    description="Google sign-in restores your businesses, permissions, and local offline scope."
                 >
                     <Pressable
                         style={({ pressed }) => [s.googleBtn, pressed && s.googleBtnPressed]}
@@ -199,7 +202,7 @@ export default function LoginScreen() {
                         </Pressable>
                     </View>
                 </AuthPanel>
-            </View>
+            </ScrollView>
         </SafeAreaView>
     );
 }
@@ -208,7 +211,6 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         safe: { flex: 1, backgroundColor: colors.background },
         container: {
-            flex: 1,
             paddingHorizontal: DESIGN_SPACING.screenX,
             paddingTop: Spacing.lg,
             paddingBottom: Spacing.xl,
@@ -217,12 +219,13 @@ const styles = (colors: ColorPalette) =>
         brandCard: {
             ...getSurfaceStyle(colors, {
                 accent: colors.primary,
-                elevated: true,
             }),
+            flexDirection: 'row',
             alignItems: 'center',
+            gap: Spacing.md,
             borderRadius: 28,
             paddingVertical: Spacing.lg,
-            paddingHorizontal: Spacing.md,
+            paddingHorizontal: Spacing.lg,
         },
         logoFrame: {
             width: 84,
@@ -230,11 +233,11 @@ const styles = (colors: ColorPalette) =>
             borderRadius: 24,
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: Spacing.md,
         },
+        brandCopy: { flex: 1, gap: 4 },
         logo: { width: 64, height: 64, borderRadius: Radius.lg },
         appName: { fontSize: 34, fontWeight: '800', color: colors.primary, letterSpacing: -1 },
-        tagline: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm, lineHeight: 22 },
+        tagline: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
         features: { gap: Spacing.sm },
         featureRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
         featureIconWrap: {

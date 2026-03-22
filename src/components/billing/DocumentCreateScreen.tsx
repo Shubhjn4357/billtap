@@ -97,9 +97,10 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
     const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/billing');
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
-    const canCreateBilling = canPerformAction(role, 'billing.create', subscription);
+    const canCreateBilling = canPerformAction(role, 'billing.create', subscription, business);
     const preferredPartyType = config.transactionType === 'PURCHASE' || config.transactionType === 'RETURN_INWARD'
         ? 'supplier'
         : 'customer';

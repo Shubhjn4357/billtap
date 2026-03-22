@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { useLocalSearchParams } from 'expo-router';
+import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { DESIGN_SPACING } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
@@ -17,9 +17,10 @@ import { useGodownMutations } from '../../../../hooks/useGodownMutations';
 export default function AddGodownScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
-    const { returnContext } = useLocalSearchParams<{ returnContext?: string }>();
+    const { returnContext, returnPath } = useLocalSearchParams<{ returnContext?: string; returnPath?: string | string[] }>();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more');
+    const fallbackRoute = resolveSingleParam(returnPath) ?? (returnContext === 'invoice' ? '/(main)/billing' : '/(main)/more/godowns');
+    const smartBack = useSmartBack(fallbackRoute);
 
     const [name, setName] = useState('');
     const [address, setAddress] = useState('');
@@ -39,7 +40,7 @@ export default function AddGodownScreen() {
             if (returnContext === 'invoice' && result.data?.id) {
                 setDefaultGodownId(result.data.id);
             }
-            router.back();
+            navigateBackOrReplace(fallbackRoute);
         } catch (error) {
             dialog.alert('Create failed', error instanceof Error ? error.message : 'Unable to create godown.');
         }

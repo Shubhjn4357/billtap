@@ -71,8 +71,8 @@ export function FormSectionCard({
 const styles = StyleSheet.create({
     sectionCard: {
         borderRadius: Radius.card,
-        padding: Spacing.md,
-        gap: Spacing.sm,
+        padding: Spacing.lg,
+        gap: Spacing.md,
     },
     header: {
         gap: 2,

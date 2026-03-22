@@ -56,10 +56,10 @@ export default function MoreScreen() {
                 : item.requiresFeature
                     ? featureFlags.includes(item.requiresFeature)
                     : item.module
-                        ? canAccessModule(role, item.module, subscription)
+                        ? canAccessModule(role, item.module, subscription, business)
                         : true,
         })),
-    })), [featureFlags, role, subscription]);
+    })), [business, featureFlags, role, subscription]);
 
     const filteredSections = useMemo(() => {
         const needle = search.trim().toLowerCase();

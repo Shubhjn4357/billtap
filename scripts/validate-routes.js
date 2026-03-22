@@ -139,27 +139,29 @@ validateLayoutScreens(path.join(appDir, '(auth)', '_layout.tsx'), 'Stack');
 validateLayoutScreens(path.join(appDir, '(main)', '_layout.tsx'), 'Tabs');
 
 const sourceFiles = [...new Set([...walkFiles(srcDir), ...appFiles])];
+
+const routeMatchers = [
+    { regex: /router\.(push|replace|navigate)\(\s*['"]([^'"]+)['"]/g, group: 2, label: 'route' },
+    { regex: /href\s*[:=]\s*['"]([^'"]+)['"]/g, group: 1, label: 'href' },
+    { regex: /pathname\s*:\s*['"]([^'"]+)['"]/g, group: 1, label: 'pathname' },
+    { regex: /route\s*:\s*['"]([^'"]+)['"]/g, group: 1, label: 'route' },
+    { regex: /returnPath\s*:\s*['"]([^'"]+)['"]/g, group: 1, label: 'returnPath' },
+    { regex: /useSmartBack\(\s*['"]([^'"]+)['"]/g, group: 1, label: 'back fallback' },
+    { regex: /navigateBackOrReplace\(\s*['"]([^'"]+)['"]/g, group: 1, label: 'back fallback' },
+];
+
 for (const filePath of sourceFiles) {
     const text = fs.readFileSync(filePath, 'utf8');
     const relPath = normalizedPath(path.relative(projectRoot, filePath));
 
-    const routerRegex = /router\.(push|replace|navigate)\(\s*['"]([^'"]+)['"]/g;
-    for (const match of text.matchAll(routerRegex)) {
-        const target = match[2];
-        if (!target.startsWith('/')) continue;
-        const targetPath = target.split('?')[0];
-        if (!hasRouteForPath(staticRoutes, dynamicRoutePatterns, targetPath)) {
-            issues.push(`${relPath} references unknown route "${target}".`);
-        }
-    }
-
-    const hrefRegex = /href\s*[:=]\s*['"]([^'"]+)['"]/g;
-    for (const match of text.matchAll(hrefRegex)) {
-        const target = match[1];
-        if (!target.startsWith('/')) continue;
-        const targetPath = target.split('?')[0];
-        if (!hasRouteForPath(staticRoutes, dynamicRoutePatterns, targetPath)) {
-            issues.push(`${relPath} references unknown href "${target}".`);
+    for (const matcher of routeMatchers) {
+        for (const match of text.matchAll(matcher.regex)) {
+            const target = match[matcher.group];
+            if (!target.startsWith('/')) continue;
+            const targetPath = target.split('?')[0];
+            if (!hasRouteForPath(staticRoutes, dynamicRoutePatterns, targetPath)) {
+                issues.push(`${relPath} references unknown ${matcher.label} "${target}".`);
+            }
         }
     }
 }

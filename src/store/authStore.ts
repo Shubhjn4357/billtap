@@ -20,6 +20,7 @@ import {
 } from '../services/runtimeSession';
 import {
     mapAuthResponseToSnapshot,
+    normalizeOrganizationRole,
     type OrganizationRole,
 } from '../mappers/authMappers';
 
@@ -55,6 +56,25 @@ type AuthSnapshot = {
 
 const AUTH_SNAPSHOT_KEY = 'vahi_auth_snapshot_v1';
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const normalizeStoredSnapshot = (value: unknown): AuthSnapshot | null => {
+    if (!isRecord(value)) return null;
+    const user = value.user ?? null;
+    const business = value.business ?? null;
+    const subscription = value.subscription ?? null;
+
+    return {
+        user: isRecord(user) || user === null ? user as User | null : null,
+        business: isRecord(business) || business === null ? business as Business | null : null,
+        subscription: isRecord(subscription) || subscription === null ? subscription as Subscription | null : null,
+        organizationRole: normalizeOrganizationRole(
+            value.organizationRole ?? (isRecord(user) ? user.role : undefined)
+        ),
+    };
+};
+
 const persistSnapshot = async (snapshot: AuthSnapshot) => {
     await secureStorage.setItemAsync(AUTH_SNAPSHOT_KEY, JSON.stringify(snapshot));
 };
@@ -63,8 +83,13 @@ const readSnapshot = async (): Promise<AuthSnapshot | null> => {
     const raw = await secureStorage.getItemAsync(AUTH_SNAPSHOT_KEY);
     if (!raw) return null;
     try {
-        const parsed = JSON.parse(raw) as AuthSnapshot;
-        return parsed;
+        const parsed = JSON.parse(raw) as unknown;
+        const snapshot = normalizeStoredSnapshot(parsed);
+        if (!snapshot) {
+            await secureStorage.deleteItemAsync(AUTH_SNAPSHOT_KEY);
+            return null;
+        }
+        return snapshot;
     } catch {
         await secureStorage.deleteItemAsync(AUTH_SNAPSHOT_KEY);
         return null;

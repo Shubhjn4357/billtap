@@ -25,7 +25,7 @@ const AppDrawerContext = createContext<AppDrawerContextValue | null>(null);
 export const useAppDrawer = () => useContext(AppDrawerContext);
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const DRAWER_WIDTH = Math.min(344, Math.max(292, SCREEN_WIDTH * 0.8));
+const DRAWER_WIDTH = Math.min(336, Math.max(292, SCREEN_WIDTH * 0.78));
 
 type AppDrawerLayoutProps = {
     children: ReactNode;
@@ -91,19 +91,27 @@ export function AppDrawerLayout({ children }: AppDrawerLayoutProps) {
     });
     const scale = progress.interpolate({
         inputRange: [0, 1],
-        outputRange: [1, 0.945],
+        outputRange: [1, 0.972],
     });
     const borderRadius = progress.interpolate({
         inputRange: [0, 1],
-        outputRange: [0, 28],
+        outputRange: [0, 24],
+    });
+    const rotateZ = progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['0deg', '-6deg'],
+    });
+    const rotateY = progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['0deg', '-8deg'],
     });
     const translateY = progress.interpolate({
         inputRange: [0, 1],
-        outputRange: [0, 10],
+        outputRange: [0, 8],
     });
     const overlayOpacity = progress.interpolate({
         inputRange: [0, 1],
-        outputRange: [0, 0.42],
+        outputRange: [0, 0.3],
     });
 
     const contextValue = useMemo(
@@ -127,7 +135,7 @@ export function AppDrawerLayout({ children }: AppDrawerLayoutProps) {
                         {
                             backgroundColor: colors.background,
                             borderRadius,
-                            transform: [{ translateX }, { translateY }, { scale }],
+                            transform: [{ perspective: 1200 }, { translateX }, { translateY }, { rotateY }, { rotateZ }, { scale }],
                         },
                     ]}
                 >
@@ -147,21 +155,21 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         root: {
             flex: 1,
-            backgroundColor: withAlpha(colors.surfaceVariant, colors.isDark ? 'F6' : 'FC'),
+            backgroundColor: withAlpha(colors.backgroundElement, colors.isDark ? 'F4' : 'FC'),
         },
         drawerLayer: {
             ...StyleSheet.absoluteFill,
             paddingBottom: Spacing.lg,
-            paddingHorizontal: Spacing.sm,
+            paddingHorizontal: Spacing.md,
         },
         mainLayer: {
             flex: 1,
             overflow: 'hidden',
-            ...getSurfaceStyle(colors, { floating: true, elevated: true }),
-            ...getShadowStyle(colors, 'floating'),
+            ...getSurfaceStyle(colors, { floating: true }),
+            ...getShadowStyle(colors, 'raised'),
         },
         overlay: {
             flex: 1,
-            backgroundColor: withAlpha(colors.backdrop, colors.isDark ? '52' : '24'),
+            backgroundColor: withAlpha(colors.backdrop, colors.isDark ? '4A' : '20'),
         },
     });

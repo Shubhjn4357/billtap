@@ -3,7 +3,7 @@ import {
     ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { navigateBackOrReplace, useSmartBack } from '../../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
@@ -34,6 +34,7 @@ export default function CashBankAccountDetailScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
     const { id } = useLocalSearchParams<{ id: string }>();
+    const detailRoute = `/(main)/accounts/cash-bank/${id}`;
 
     const { accounts, isLoading: balancesLoading, isRefetching: balancesRefetching, refetch: refetchBalances } = useCashBankAccounts();
     const {
@@ -63,7 +64,7 @@ export default function CashBankAccountDetailScreen() {
                 rightAction={(
                     <Pressable
                         style={[s.iconBtn, { borderColor: colors.border }]}
-                        onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/add', params: { id } })}
+                        onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/add', params: { id, returnPath: detailRoute } })}
                     >
                         <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
                     </Pressable>
@@ -109,19 +110,19 @@ export default function CashBankAccountDetailScreen() {
                                     <View style={s.actionRow}>
                                         <Pressable
                                             style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.success, elevated: true, muted: true })]}
-                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/deposit', params: { accountId: id } })}
+                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/deposit', params: { accountId: id, returnPath: detailRoute } })}
                                         >
                                             <Text style={[s.actionBtnText, { color: colors.success }]}>Deposit</Text>
                                         </Pressable>
                                         <Pressable
                                             style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.error, elevated: true, muted: true })]}
-                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/withdraw', params: { accountId: id } })}
+                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/withdraw', params: { accountId: id, returnPath: detailRoute } })}
                                         >
                                             <Text style={[s.actionBtnText, { color: colors.error }]}>Withdraw</Text>
                                         </Pressable>
                                         <Pressable
                                             style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.primaryVariant, elevated: true, muted: true })]}
-                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/transfer', params: { fromAccountId: id } })}
+                                            onPress={() => router.push({ pathname: '/(main)/accounts/cash-bank/transfer', params: { fromAccountId: id, returnPath: detailRoute } })}
                                         >
                                             <Text style={[s.actionBtnText, { color: colors.primaryVariant }]}>Transfer</Text>
                                         </Pressable>
@@ -139,7 +140,7 @@ export default function CashBankAccountDetailScreen() {
                                                         try {
                                                             await deactivateAccount(id);
                                                             dialog.alert('Deactivated', 'Account moved to inactive state.', [
-                                                                { text: 'OK', onPress: () => router.back() },
+                                                                { text: 'OK', onPress: () => navigateBackOrReplace('/(main)/accounts/cash-bank') },
                                                             ]);
                                                         } catch (error) {
                                                             dialog.alert('Deactivate failed', error instanceof Error ? error.message : 'Unable to deactivate account.');

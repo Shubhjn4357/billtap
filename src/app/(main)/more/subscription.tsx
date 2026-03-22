@@ -68,8 +68,9 @@ export default function SubscriptionScreen() {
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/more');
     const subscription = useAuthStore((state) => state.subscription);
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
-    const canCheckout = canPerformAction(role, 'subscription.checkout', subscription);
+    const canCheckout = canPerformAction(role, 'subscription.checkout', subscription, business);
 
     const [discountCode, setDiscountCode] = useState('');
     const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);

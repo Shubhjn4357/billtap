@@ -1,6 +1,6 @@
 import { FeatureFlag, SubscriptionTier, type FeatureFlag as FeatureFlagType } from '../constants/enums';
 import { SUBSCRIPTION_TIERS } from '../constants/subscription';
-import type { Subscription } from '../types/domain';
+import type { Business, Subscription } from '../types/domain';
 
 export type OrganizationRole = 'owner' | 'manager' | 'salesman' | 'staff';
 
@@ -47,6 +47,22 @@ export const APP_MODULES: AppModule[] = [
     'operations',
     'staff',
 ];
+
+export const BUSINESS_TOGGLABLE_MODULES: Exclude<AppModule, 'home'>[] = [
+    'billing',
+    'inventory',
+    'accounts',
+    'reports',
+    'parties',
+    'settings',
+    'operations',
+    'staff',
+];
+
+const BUSINESS_MODULE_ALIASES: Partial<Record<Exclude<AppModule, 'home'>, readonly string[]>> = {
+    inventory: ['stock'],
+    accounts: ['accounting'],
+};
 
 export const APP_ACTIONS: AppAction[] = [
     'billing.create',
@@ -212,6 +228,37 @@ const parseJsonLike = (value: unknown): unknown => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+const resolveRole = (role: OrganizationRole | string | null | undefined): OrganizationRole =>
+    ORGANIZATION_ROLES.includes(role as OrganizationRole) ? role as OrganizationRole : 'owner';
+
+const normalizeBusinessModuleKey = (module: Exclude<AppModule, 'home'> | string) => {
+    const normalized = String(module).trim().toLowerCase();
+    if (normalized === 'stock') return 'inventory';
+    if (normalized === 'accounting') return 'accounts';
+    return normalized;
+};
+
+const getBusinessModuleLookupKeys = (module: Exclude<AppModule, 'home'>) => {
+    const normalized = normalizeBusinessModuleKey(module) as Exclude<AppModule, 'home'>;
+    const aliases = BUSINESS_MODULE_ALIASES[normalized] ?? [];
+    return [normalized, ...aliases];
+};
+
+const isBusinessModuleEnabled = (business: Business | null, module: AppModule): boolean => {
+    if (!business || module === 'home') return true;
+    const settings = isRecord(business.settings) ? business.settings : {};
+    const direct = isRecord(settings.appModuleAccess) ? settings.appModuleAccess : {};
+    const legacy = isRecord(settings.moduleVisibility) ? settings.moduleVisibility : {};
+
+    for (const key of getBusinessModuleLookupKeys(module)) {
+        if (typeof direct[key] === 'boolean') return Boolean(direct[key]);
+    }
+    for (const key of getBusinessModuleLookupKeys(module)) {
+        if (typeof legacy[key] === 'boolean') return Boolean(legacy[key]);
+    }
+    return true;
+};
+
 const parseOverrides = <T extends string>(
     raw: unknown,
     allowedKeys: readonly T[]
@@ -259,10 +306,10 @@ export const setRoleAccessOverrides = (payload: {
 };
 
 export const getDefaultModulePermission = (role: OrganizationRole, module: AppModule): boolean =>
-    ROLE_ACCESS[role][module];
+    ROLE_ACCESS[resolveRole(role)][module];
 
 export const getDefaultActionPermission = (role: OrganizationRole, action: AppAction): boolean =>
-    ROLE_ACTION_ACCESS[role][action];
+    ROLE_ACTION_ACCESS[resolveRole(role)][action];
 
 const toTier = (subscription: Subscription | null): SubscriptionTier =>
     subscription?.tier ?? SubscriptionTier.FREE;
@@ -279,13 +326,16 @@ export const hasFeatureAccess = (subscription: Subscription | null, flag: Featur
 export const canAccessModule = (
     role: OrganizationRole,
     module: AppModule,
-    subscription: Subscription | null
+    subscription: Subscription | null,
+    business?: Business | null
 ): boolean => {
-    const moduleOverride = runtimeModuleOverrides[role]?.[module];
+    const resolvedRole = resolveRole(role);
+    const moduleOverride = runtimeModuleOverrides[resolvedRole]?.[module];
     const roleModuleAllowed = typeof moduleOverride === 'boolean'
         ? moduleOverride
-        : ROLE_ACCESS[role][module];
+        : ROLE_ACCESS[resolvedRole][module];
     if (!roleModuleAllowed) return false;
+    if (!isBusinessModuleEnabled(business ?? null, module)) return false;
 
     if (module === 'inventory' && !hasFeatureAccess(subscription, FeatureFlag.STOCK_MODULE)) return false;
     if (module === 'parties' && !hasFeatureAccess(subscription, FeatureFlag.PARTY_MANAGEMENT)) return false;
@@ -304,11 +354,13 @@ export const canUsePos = (subscription: Subscription | null): boolean =>
 export const canPerformAction = (
     role: OrganizationRole,
     action: AppAction,
-    subscription: Subscription | null
+    subscription: Subscription | null,
+    business?: Business | null
 ): boolean => {
+    const resolvedRole = resolveRole(role);
     const requiredModule = ACTION_MODULE_REQUIREMENT[action];
-    if (requiredModule && !canAccessModule(role, requiredModule, subscription)) return false;
-    const actionOverride = runtimeActionOverrides[role]?.[action];
+    if (requiredModule && !canAccessModule(resolvedRole, requiredModule, subscription, business)) return false;
+    const actionOverride = runtimeActionOverrides[resolvedRole]?.[action];
     if (typeof actionOverride === 'boolean') return actionOverride;
-    return ROLE_ACTION_ACCESS[role][action];
+    return ROLE_ACTION_ACCESS[resolvedRole][action];
 };

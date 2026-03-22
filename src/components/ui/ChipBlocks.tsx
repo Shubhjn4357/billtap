@@ -35,16 +35,16 @@ export function ChipButton({
     const colors = useAppColors();
     const accent = toneColor(tone, colors);
     const backgroundColor = selected
-        ? accent
+        ? withAlpha(accent, colors.isDark ? '2A' : '14')
         : variant === 'action'
             ? colors.card
-            : colors.surfaceVariant;
+            : colors.surfaceRaised;
     const borderColor = selected
         ? accent
         : variant === 'action'
-            ? withAlpha(accent, '20')
-            : colors.border;
-    const textColor = selected ? colors.onPrimary : tone === 'default' ? colors.textSecondary : accent;
+            ? withAlpha(accent, '18')
+            : withAlpha(colors.border, 'C4');
+    const textColor = selected ? accent : tone === 'default' ? colors.textSecondary : accent;
 
     return (
         <Pressable
@@ -67,14 +67,14 @@ export function ChipButton({
                     style={[
                         styles.iconWrap,
                         {
-                            backgroundColor: selected ? withAlpha(colors.onPrimary, '1F') : withAlpha(accent, '12'),
+                            backgroundColor: selected ? withAlpha(accent, colors.isDark ? '24' : '12') : withAlpha(accent, '12'),
                         },
                     ]}
                 >
                     <MaterialCommunityIcons
                         name={icon}
                         size={13}
-                        color={selected ? colors.onPrimary : accent}
+                        color={accent}
                     />
                 </View>
             ) : null}

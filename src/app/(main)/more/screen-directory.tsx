@@ -37,6 +37,7 @@ export default function ScreenDirectoryScreen() {
     const smartBack = useSmartBack('/(main)/more');
 
     const [search, setSearch] = useState('');
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
     const normalizedSearch = search.trim().toLowerCase();
@@ -130,7 +131,7 @@ export default function ScreenDirectoryScreen() {
         ];
 
         return links.filter((link) => {
-            if (!canAccessModule(role, link.module, subscription)) return false;
+            if (!canAccessModule(role, link.module, subscription, business)) return false;
             if (!normalizedSearch) return true;
             return `${link.label} ${link.subtitle}`.toLowerCase().includes(normalizedSearch);
         });
@@ -142,6 +143,7 @@ export default function ScreenDirectoryScreen() {
         latestLoans,
         normalizedSearch,
         latestParties,
+        business,
         role,
         subscription,
     ]);
@@ -150,7 +152,7 @@ export default function ScreenDirectoryScreen() {
         return SCREEN_DIRECTORY_SECTIONS.map((section: UtilityScreenSection) => {
             const visibleItems = section.items.filter((item) => {
                 if (item.ownerOnly && role !== 'owner') return false;
-                if (item.module && !canAccessModule(role, item.module, subscription)) return false;
+                if (item.module && !canAccessModule(role, item.module, subscription, business)) return false;
                 if (item.requiresPos && !canUsePos(subscription)) return false;
                 if (item.requiresFeature && !hasFeatureAccess(subscription, item.requiresFeature)) return false;
                 if (!normalizedSearch) return true;
@@ -161,7 +163,7 @@ export default function ScreenDirectoryScreen() {
 
             return { title: section.title, items: visibleItems };
         }).filter((section) => section.items.length > 0);
-    }, [normalizedSearch, role, subscription]);
+    }, [business, normalizedSearch, role, subscription]);
 
     return (
         <SafeAreaView style={s.safe} edges={['top']}>

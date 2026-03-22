@@ -92,7 +92,7 @@ export default function PaymentOutScreen() {
         })
             .then(() => {
                 dialog.alert('Payment Out', 'Payment recorded successfully.', [
-                    { text: 'OK', onPress: () => router.back() },
+                    { text: 'OK', onPress: smartBack },
                 ]);
             })
             .catch((error) => {

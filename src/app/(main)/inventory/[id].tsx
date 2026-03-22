@@ -27,10 +27,11 @@ export default function ItemDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/inventory');
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
-    const canUpdateItem = canPerformAction(role, 'inventory.update', subscription);
-    const canDeleteItem = canPerformAction(role, 'inventory.delete', subscription);
+    const canUpdateItem = canPerformAction(role, 'inventory.update', subscription, business);
+    const canDeleteItem = canPerformAction(role, 'inventory.delete', subscription, business);
 
     const [customQty, setCustomQty] = useState('1');
     const [customReason, setCustomReason] = useState('');
@@ -117,7 +118,7 @@ export default function ItemDetailScreen() {
                                     dialog.alert('Access denied', 'Your role cannot edit inventory items.');
                                     return;
                                 }
-                                router.push(`/(main)/inventory/add-item?id=${id}` as Parameters<typeof router.push>[0]);
+                                router.push({ pathname: '/(main)/inventory/add-item', params: { id, returnPath: `/(main)/inventory/${id}` } });
                             }}
                         >
                             <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />

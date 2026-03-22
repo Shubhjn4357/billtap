@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useSmartBack } from '../../../hooks/useSmartBack';
+import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -54,16 +54,26 @@ type PartyForm = z.output<typeof partySchema>;
 export default function AddPartyScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
-    const { type: defaultType, id: editId, returnContext } = useLocalSearchParams<{
+    const params = useLocalSearchParams<{
         type?: string;
-        id?: string;
+        id?: string | string[];
         returnContext?: string;
+        returnPath?: string | string[];
     }>();
+    const defaultType = params.type;
+    const editId = resolveSingleParam(params.id);
+    const returnContext = params.returnContext;
+    const fallbackRoute = resolveSingleParam(params.returnPath) ?? (returnContext === 'invoice'
+        ? '/(main)/billing'
+        : editId
+            ? `/(main)/parties/${editId}`
+            : '/(main)/parties');
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/parties');
+    const smartBack = useSmartBack(fallbackRoute);
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
-    const canSaveParty = canPerformAction(role, editId ? 'party.update' : 'party.create', subscription);
+    const canSaveParty = canPerformAction(role, editId ? 'party.update' : 'party.create', subscription, business);
     const { selection } = useHaptics();
     const setInvoiceParty = useInvoiceBuilderStore((state) => state.setParty);
     const { party: existingParty, isLoading: existingPartyLoading } = usePartyDetails(editId, {
@@ -201,7 +211,7 @@ export default function AddPartyScreen() {
                                             shippingAddress: result.data.shippingAddress ?? null,
                                         });
                                     }
-                                    router.back();
+                                    navigateBackOrReplace(fallbackRoute);
                                 })
                                 .catch((error) => dialog.alert('Error', toUserMessage(error, 'Failed to save party.')));
                         })}

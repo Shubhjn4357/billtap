@@ -132,9 +132,10 @@ export default function RoleAccessScreen() {
     const queryClient = useQueryClient();
     const smartBack = useSmartBack('/(main)/more');
     const { selection } = useHaptics();
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
-    const canEditSettings = canPerformAction(role, 'settings.update', subscription) && role === 'owner';
+    const canEditSettings = canPerformAction(role, 'settings.update', subscription, business) && role === 'owner';
 
     const [actionOverrides, setActionOverrides] = useState<RoleActionOverrides>({});
     const [moduleOverrides, setModuleOverrides] = useState<RoleModuleOverrides>({});

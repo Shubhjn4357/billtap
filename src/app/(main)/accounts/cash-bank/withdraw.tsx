@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../../hooks/useSmartBack';
 import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel, getVoucherReferenceHint } from '../../../../constants/accountingInputOptions';
 import { DESIGN_SPACING, getPillStyle } from '../../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../../constants/theme';
@@ -26,12 +26,14 @@ const toAmount = (value: string) => {
 
 export default function WithdrawScreen() {
     const dialog = useAppDialog();
-        const colors = useAppColors();
+    const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/accounts');
-    const params = useLocalSearchParams<{ accountId?: string }>();
+    const params = useLocalSearchParams<{ accountId?: string | string[]; returnPath?: string | string[] }>();
+    const initialAccountId = resolveSingleParam(params.accountId) ?? '';
+    const fallbackRoute = resolveSingleParam(params.returnPath) ?? (initialAccountId ? `/(main)/accounts/cash-bank/${initialAccountId}` : '/(main)/accounts/cash-bank');
+    const smartBack = useSmartBack(fallbackRoute);
 
-    const [accountId, setAccountId] = useState(params.accountId ?? '');
+    const [accountId, setAccountId] = useState(initialAccountId);
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -69,7 +71,7 @@ export default function WithdrawScreen() {
         })
             .then((response) => {
                 dialog.alert('Saved', response.message ?? 'Withdrawal recorded.');
-                router.back();
+                navigateBackOrReplace(fallbackRoute);
             })
             .catch((error) => {
                 console.error('[cash-bank/withdraw] save failed', { accountId, amount, date, paymentMode, error });

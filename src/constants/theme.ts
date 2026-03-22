@@ -3,59 +3,59 @@ import { offlineKeyValueStore } from '../offline/db/offlineKeyValueStore';
 
 export const Colors = {
     light: {
-        primary: '#0B78FF',
-        primaryVariant: '#085FD0',
-        secondary: '#F59E0B',
-        background: '#F4F7FC',
-        surface: '#FFFFFF',
-        surfaceVariant: '#EDF3FF',
-        error: '#D14343',
-        text: '#0F172A',
-        textSecondary: '#5F6D82',
-        border: '#D6DFED',
-        success: '#0E9F6E',
-        warning: '#F59E0B',
-        info: '#0284C7',
-        backgroundElement: '#EAF1FF',
-        backgroundSelected: '#DCEAFE',
+        primary: '#315DDC',
+        primaryVariant: '#2448AE',
+        secondary: '#7B8DB6',
+        background: '#EEF2F7',
+        surface: '#F8FAFD',
+        surfaceVariant: '#E6ECF4',
+        error: '#C65353',
+        text: '#142033',
+        textSecondary: '#617186',
+        border: '#D2DBE8',
+        success: '#197D57',
+        warning: '#C98A18',
+        info: '#3C75DA',
+        backgroundElement: '#E7EDF7',
+        backgroundSelected: '#DCE7FB',
         onPrimary: '#FFFFFF',
-        onSurface: '#0F172A',
-        tabBar: '#FFFFFF',
-        tabBarBorder: '#D6DFED',
+        onSurface: '#142033',
+        tabBar: '#F7F9FD',
+        tabBarBorder: '#D2DBE8',
         card: '#FFFFFF',
-        skeleton: '#E7EDF8',
-        skeletonHighlight: '#F8FBFF',
-        surfaceRaised: '#F9FBFF',
-        backdrop: '#0F172A',
-        glow: '#4DA3FF',
+        skeleton: '#E4EBF5',
+        skeletonHighlight: '#F9FBFE',
+        surfaceRaised: '#FCFDFF',
+        backdrop: '#0E1625',
+        glow: '#86A5F4',
         isDark: false,
     },
     dark: {
-        primary: '#56A8FF',
-        primaryVariant: '#2E84F6',
-        secondary: '#FFB64C',
-        background: '#06111F',
-        surface: '#0C1A2D',
-        surfaceVariant: '#13263E',
-        error: '#FF7D7D',
-        text: '#F5F8FF',
-        textSecondary: '#9FB2CF',
-        border: '#223754',
-        success: '#34D399',
-        warning: '#FFB547',
-        info: '#50C4FF',
-        backgroundElement: '#102136',
-        backgroundSelected: '#173152',
-        onPrimary: '#FFFFFF',
-        onSurface: '#F5F8FF',
-        tabBar: '#0C1A2D',
-        tabBarBorder: '#223754',
-        card: '#102136',
-        skeleton: '#1A304D',
-        skeletonHighlight: '#254267',
-        surfaceRaised: '#13263E',
+        primary: '#6E93FF',
+        primaryVariant: '#4C73E6',
+        secondary: '#94A7D6',
+        background: '#091321',
+        surface: '#111C2E',
+        surfaceVariant: '#18263B',
+        error: '#F08A8A',
+        text: '#F4F7FC',
+        textSecondary: '#A3B2C7',
+        border: '#2A3F5C',
+        success: '#45C48A',
+        warning: '#F0B356',
+        info: '#6AB8FF',
+        backgroundElement: '#152238',
+        backgroundSelected: '#203454',
+        onPrimary: '#081221',
+        onSurface: '#F4F7FC',
+        tabBar: '#0E1828',
+        tabBarBorder: '#273B56',
+        card: '#132034',
+        skeleton: '#22344B',
+        skeletonHighlight: '#304867',
+        surfaceRaised: '#18263B',
         backdrop: '#020711',
-        glow: '#5EA9FF',
+        glow: '#6F95FF',
         isDark: true,
     },
 } as const;
@@ -169,18 +169,18 @@ export const Spacing = {
 } as const;
 
 export const Radius = {
-    sm: 6, md: 12, lg: 18, xl: 24, pill: 999, card: 16, chip: 999,
+    sm: 8, md: 14, lg: 18, xl: 28, pill: 999, card: 22, chip: 999,
 } as const;
 
-export const Elevation = { none: 0, low: 2, medium: 4, high: 8 } as const;
+export const Elevation = { none: 0, low: 1, medium: 3, high: 6 } as const;
 
 export const Typography = {
-    display: { size: 26, weight: '700' as const, lineHeight: 34 },
-    headline: { size: 22, weight: '600' as const, lineHeight: 30 },
+    display: { size: 30, weight: '700' as const, lineHeight: 38 },
+    headline: { size: 24, weight: '600' as const, lineHeight: 32 },
     title: { size: 18, weight: '600' as const, lineHeight: 24 },
     body: { size: 14, weight: '400' as const, lineHeight: 20 },
     caption: { size: 12, weight: '400' as const, lineHeight: 16 },
-    label: { size: 12, weight: '500' as const, lineHeight: 16 },
+    label: { size: 12, weight: '700' as const, lineHeight: 16 },
     code: { size: 13, weight: '400' as const, lineHeight: 18 },
 } as const;
 
@@ -191,8 +191,8 @@ export const Fonts = Platform.select({
 });
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const MaxContentWidth = 840;
 export const ScreenPadding = Spacing.lg;
 export const TouchTargetMin = 48;
-export const RowHeight = 48;
-export const HeaderHeight = 56;
+export const RowHeight = 50;
+export const HeaderHeight = 60;

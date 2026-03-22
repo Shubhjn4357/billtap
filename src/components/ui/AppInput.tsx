@@ -10,7 +10,6 @@ import {
     type ViewStyle,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getShadowStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -203,13 +202,12 @@ const styles = (colors: ColorPalette) =>
             minHeight: 48,
             borderRadius: Radius.md,
             borderWidth: 1,
-            borderColor: withAlpha(colors.border, 'C8'),
-            backgroundColor: colors.surface,
-            paddingHorizontal: Spacing.sm,
+            borderColor: withAlpha(colors.border, 'B0'),
+            backgroundColor: colors.surfaceRaised,
+            paddingHorizontal: Spacing.md,
             flexDirection: 'row',
             alignItems: 'center',
             gap: Spacing.xs,
-            ...getShadowStyle(colors, 'soft'),
         },
         input: {
             flex: 1,

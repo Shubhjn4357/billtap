@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Pressable,
     RefreshControl,
@@ -27,7 +27,7 @@ import {
     type SettingsTabKey,
 } from '../../../constants/settingsOptions';
 import { DESIGN_SPACING, getInsetPanelStyle, getSurfaceStyle } from '../../../constants/designSystem';
-import { Radius, Typography, withAlpha, type ColorPalette } from '../../../constants/theme';
+import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../../constants/theme';
 import { getSettingsSectionLabel } from '../../../constants/settingsSchema';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
@@ -65,6 +65,7 @@ export default function SettingsScreen() {
 
     const [activeTab, setActiveTab] = useState<SettingsTabKey>('app');
     const [search, setSearch] = useState('');
+    const contentScrollRef = useRef<ScrollView | null>(null);
 
     const { data, isLoading, isRefetching, refetch } = useSettingsSchemaQuery();
 
@@ -125,10 +126,18 @@ export default function SettingsScreen() {
     const navigateToSection = (key: string) =>
         router.push(`/(main)/more/settings/${key}` as Parameters<typeof router.push>[0]);
 
+    useEffect(() => {
+        const handle = setTimeout(() => {
+            contentScrollRef.current?.scrollTo({ y: 0, animated: false });
+        }, 0);
+        return () => clearTimeout(handle);
+    }, [activeTab, search]);
+
     const renderActiveTabContent = () => {
         if (activeTab === 'app') {
             return (
                 <ScrollView
+                    ref={contentScrollRef}
                     contentContainerStyle={s.tabContent}
                     refreshControl={(
                         <RefreshControl
@@ -157,6 +166,7 @@ export default function SettingsScreen() {
 
         return (
             <ScrollView
+                ref={contentScrollRef}
                 contentContainerStyle={s.tabContent}
                 refreshControl={(
                     <RefreshControl
@@ -236,7 +246,7 @@ export default function SettingsScreen() {
             </View>
 
             {searchResults ? (
-                <ScrollView contentContainerStyle={s.tabContent}>
+                <ScrollView ref={contentScrollRef} contentContainerStyle={s.tabContent}>
                     {searchResults.length === 0 ? (
                         <EmptyStateCard
                             icon="file-search-outline"
@@ -509,11 +519,16 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
     searchWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
-    tabBarScroll: { flexGrow: 0 },
+    tabBarScroll: {
+        flexGrow: 0,
+        minHeight: 48,
+        marginBottom: Spacing.sm,
+    },
     tabBar: {
         paddingHorizontal: DESIGN_SPACING.screenX,
         gap: DESIGN_SPACING.cardGap,
-        paddingBottom: DESIGN_SPACING.cardGap,
+        paddingVertical: 2,
+        alignItems: 'center',
     },
     tabUnderline: {
         flexDirection: 'row',

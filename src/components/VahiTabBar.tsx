@@ -33,6 +33,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
     const colors = useAppColors();
     const s = useMemo(() => styles(colors), [colors]);
     const insets = useSafeAreaInsets();
+    const business = useAuthStore((value) => value.business);
     const role = useAuthStore((value) => value.organizationRole);
     const subscription = useAuthStore((value) => value.subscription);
     const richMotionEnabled = useThemeStore((value) => value.richMotionEnabled);
@@ -56,11 +57,11 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
             TAB_BAR_QUICK_ACTIONS.filter((action) => {
                 if (action.requiresPos && !canUsePos(subscription)) return false;
                 if (!action.module) return true;
-                if (!canAccessModule(role, action.module, subscription)) return false;
-                if (action.action && !canPerformAction(role, action.action, subscription)) return false;
+                if (!canAccessModule(role, action.module, subscription, business)) return false;
+                if (action.action && !canPerformAction(role, action.action, subscription, business)) return false;
                 return true;
             }),
-        [role, subscription]
+        [business, role, subscription]
     );
 
     const activeMetrics = useMemo(() => {
@@ -365,14 +366,14 @@ const styles = (colors: ColorPalette) =>
             paddingTop: Spacing.xs,
         },
         bar: {
-            minHeight: 76,
-            borderRadius: 26,
+            minHeight: 74,
+            borderRadius: 24,
             flexDirection: 'row',
             alignItems: 'center',
             paddingHorizontal: BAR_HORIZONTAL_PADDING,
             position: 'relative',
             overflow: 'hidden',
-            ...getSurfaceStyle(colors, { floating: true, elevated: true }),
+            ...getSurfaceStyle(colors, { floating: true }),
         },
         activePill: {
             position: 'absolute',
@@ -380,6 +381,7 @@ const styles = (colors: ColorPalette) =>
             height: 46,
             borderRadius: Radius.pill,
             ...getInsetPanelStyle(colors, colors.primary),
+            backgroundColor: withAlpha(colors.primary, colors.isDark ? '22' : '12'),
         },
         sideAction: {
             flex: 1,
@@ -411,7 +413,7 @@ const styles = (colors: ColorPalette) =>
             width: 58,
             height: 58,
             borderRadius: Radius.pill,
-            backgroundColor: withAlpha(colors.glow, colors.isDark ? '20' : '16'),
+            backgroundColor: withAlpha(colors.glow, colors.isDark ? '18' : '12'),
         },
         centerAction: {
             width: 52,
@@ -504,7 +506,7 @@ const styles = (colors: ColorPalette) =>
             justifyContent: 'flex-start',
             alignItems: 'flex-start',
             gap: Spacing.sm,
-            ...getSurfaceStyle(colors, { accent: colors.primary, elevated: true }),
+            ...getSurfaceStyle(colors, { accent: colors.primary }),
         },
         sheetActionIcon: {
             width: 34,

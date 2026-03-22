@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useSmartBack } from '../../../hooks/useSmartBack';
+import { navigateBackOrReplace, useSmartBack } from '../../../hooks/useSmartBack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Spacing, Radius, type ColorPalette } from '../../../constants/theme';
@@ -20,6 +20,7 @@ export default function PartyDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/parties');
+    const detailRoute = `/(main)/parties/${id}`;
 
     const { party, invoices, isLoading, isRefetching, refetch } = usePartyDetails(id);
     const { archiveParty, isArchivingParty: deleting } = usePartyMutations();
@@ -36,7 +37,7 @@ export default function PartyDetailScreen() {
                 rightAction={(
                     <Pressable
                         style={s.iconBtn}
-                        onPress={() => router.push(`/(main)/parties/add?id=${id}` as Parameters<typeof router.push>[0])}
+                        onPress={() => router.push({ pathname: '/(main)/parties/add', params: { id, returnPath: detailRoute } })}
                     >
                         <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
                     </Pressable>
@@ -129,7 +130,7 @@ export default function PartyDetailScreen() {
                                 style: 'destructive',
                                 onPress: () => {
                                     void archiveParty(id!)
-                                        .then(() => router.back())
+                                        .then(() => navigateBackOrReplace('/(main)/parties'))
                                         .catch((error) => dialog.alert('Error', error instanceof Error ? error.message : 'Delete failed'));
                                 },
                             },

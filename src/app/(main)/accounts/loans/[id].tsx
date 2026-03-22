@@ -38,6 +38,7 @@ export default function LoanDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/accounts');
+    const detailRoute = `/(main)/accounts/loans/${id}`;
 
     const { loan, transactions, isLoading, isRefetching, refetch } = useLoanDetails(id, {
         enabled: Boolean(id),
@@ -131,14 +132,14 @@ export default function LoanDetailScreen() {
                     <View style={s.actionsRow}>
                         <Pressable
                             style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.success, elevated: true, muted: true })]}
-                            onPress={() => router.push(`/(main)/accounts/loans/${id}/payment` as Parameters<typeof router.push>[0])}
+                            onPress={() => router.push({ pathname: '/(main)/accounts/loans/[id]/payment', params: { id, returnPath: detailRoute } })}
                         >
                             <MaterialCommunityIcons name="cash-plus" size={16} color={colors.success} />
                             <Text style={[s.actionBtnText, { color: colors.success }]}>Add Payment</Text>
                         </Pressable>
                         <Pressable
                             style={[s.actionBtn, getSurfaceStyle(colors, { accent: colors.warning, elevated: true, muted: true })]}
-                            onPress={() => router.push(`/(main)/accounts/loans/${id}/interest` as Parameters<typeof router.push>[0])}
+                            onPress={() => router.push({ pathname: '/(main)/accounts/loans/[id]/interest', params: { id, returnPath: detailRoute } })}
                         >
                             <MaterialCommunityIcons name="percent-outline" size={16} color={colors.warning} />
                             <Text style={[s.actionBtnText, { color: colors.warning }]}>Add Interest</Text>

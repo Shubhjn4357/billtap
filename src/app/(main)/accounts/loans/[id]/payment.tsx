@@ -2,9 +2,9 @@ import { useState } from 'react';
 import {
     ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSmartBack } from '../../../../../hooks/useSmartBack';
+import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../../../hooks/useSmartBack';
 import { DESIGN_SPACING, getPillStyle } from '../../../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../../../constants/theme';
 import { useAppColors } from '../../../../../hooks/useAppColors';
@@ -19,8 +19,9 @@ export default function LoanPaymentEntryScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/accounts');
-    const { id } = useLocalSearchParams<{ id: string }>();
+    const { id, returnPath } = useLocalSearchParams<{ id: string; returnPath?: string | string[] }>();
+    const fallbackRoute = resolveSingleParam(returnPath) ?? `/(main)/accounts/loans/${id}`;
+    const smartBack = useSmartBack(fallbackRoute);
 
     const [amount, setAmount] = useState('');
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -46,7 +47,7 @@ export default function LoanPaymentEntryScreen() {
         })
             .then(() => {
                 dialog.alert('Saved', 'Loan repayment recorded.');
-                router.back();
+                navigateBackOrReplace(fallbackRoute);
             })
             .catch((error) => {
                 dialog.alert('Failed', error instanceof Error ? error.message : 'Unable to save repayment.');

@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSmartBack } from '../../../../hooks/useSmartBack';
+import { navigateBackOrReplace, resolveSingleParam, useSmartBack } from '../../../../hooks/useSmartBack';
 import { toUserMessage } from '../../../../api/client';
 import { DESIGN_SPACING } from '../../../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../../../constants/theme';
@@ -33,8 +33,13 @@ export default function GodownTransferScreen() {
         fromGodownId?: string;
         toGodownId?: string;
         itemId?: string;
+        returnPath?: string | string[];
     }>();
-    const smartBack = useSmartBack('/(main)/more/godowns');
+    const normalizedFromParam = resolveSingleParam(params.fromGodownId);
+    const normalizedToParam = resolveSingleParam(params.toGodownId);
+    const normalizedItemParam = resolveSingleParam(params.itemId);
+    const fallbackRoute = resolveSingleParam(params.returnPath) ?? (normalizedFromParam ? `/(main)/more/godowns/${normalizedFromParam}` : '/(main)/more/godowns');
+    const smartBack = useSmartBack(fallbackRoute);
     const [fromGodownId, setFromGodownId] = useState<string | null>(null);
     const [toGodownId, setToGodownId] = useState<string | null>(null);
     const [itemId, setItemId] = useState<string | null>(null);
@@ -54,10 +59,6 @@ export default function GodownTransferScreen() {
         refetch: refetchItems,
     } = useItemCatalog({ limit: 400 });
     const { transferGodownStock, isTransferringGodownStock } = useGodownMutations();
-
-    const normalizedFromParam = Array.isArray(params.fromGodownId) ? params.fromGodownId[0] : params.fromGodownId;
-    const normalizedToParam = Array.isArray(params.toGodownId) ? params.toGodownId[0] : params.toGodownId;
-    const normalizedItemParam = Array.isArray(params.itemId) ? params.itemId[0] : params.itemId;
 
     useEffect(() => {
         if (fromGodownId || godowns.length === 0) return;
@@ -224,7 +225,7 @@ export default function GodownTransferScreen() {
                                             {
                                                 text: 'OK',
                                                 onPress: () => {
-                                                    router.back();
+                                                    navigateBackOrReplace(fallbackRoute);
                                                 },
                                             },
                                         ]);

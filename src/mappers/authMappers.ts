@@ -28,6 +28,11 @@ const readNumber = (value: unknown): number | null => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+const readRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
 export const normalizeOrganizationRole = (value: unknown): OrganizationRole => {
   const role = readString(value)?.toLowerCase();
   if (
@@ -95,7 +100,7 @@ export const mapLegacyOrganizationToBusiness = (
     code: readString(organization.code),
     isActive:
       typeof organization.isActive === 'boolean' ? organization.isActive : true,
-    settings: {},
+    settings: readRecord(organization.settings),
     createdAt: readStringOrDefault(organization.createdAt, timestamp),
     updatedAt: readStringOrDefault(organization.updatedAt, timestamp),
   };

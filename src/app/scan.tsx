@@ -42,8 +42,18 @@ const pushWithReturnPath = (destination: string, params: Record<string, string>)
 export default function ScanScreen() {
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more/settings/GENERAL');
     const params = useLocalSearchParams<{ target?: string | string[]; returnPath?: string | string[]; scanField?: string | string[] }>();
+    const targetParam = getSingleParam(params.target) as ScanTarget | undefined;
+    const returnPathParam = getSingleParam(params.returnPath);
+    const fallbackRoute = returnPathParam
+        || (targetParam === 'billing'
+            ? '/(main)/billing/pos'
+            : targetParam === 'item_detail'
+                ? '/(main)/inventory/add-item'
+                : targetParam === 'upi' || targetParam === 'upi_profile'
+                    ? '/(main)/more/settings/GENERAL'
+                    : '/(main)/inventory');
+    const smartBack = useSmartBack(fallbackRoute);
     const [hasPermission, setHasPermission] = useState<boolean | null>(null);
     const [scanned, setScanned] = useState(false);
 
@@ -70,8 +80,6 @@ export default function ScanScreen() {
             return;
         }
 
-        const targetParam = getSingleParam(params.target) as ScanTarget | undefined;
-        const returnPathParam = getSingleParam(params.returnPath);
         const scanFieldParam = getSingleParam(params.scanField) || 'barcode';
         const scanAt = Date.now().toString();
 
@@ -114,7 +122,7 @@ export default function ScanScreen() {
                 <View style={s.centered}>
                     <Text style={[s.title, { color: colors.text }]}>Camera permission denied</Text>
                     <Text style={[s.helpText, { color: colors.textSecondary }]}>Enable camera access to scan barcode or QR.</Text>
-                    <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={() => router.back()}>
+                    <Pressable style={[s.actionBtn, { backgroundColor: colors.primary }]} onPress={smartBack}>
                         <Text style={s.actionText}>Go Back</Text>
                     </Pressable>
                 </View>

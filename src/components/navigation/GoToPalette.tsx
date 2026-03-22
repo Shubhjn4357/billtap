@@ -48,6 +48,7 @@ export function GoToPalette() {
 
     const [visible, setVisible] = useState(false);
     const [query, setQuery] = useState('');
+    const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
     const normalizedQuery = query.trim().toLowerCase();
@@ -130,7 +131,7 @@ export function GoToPalette() {
         ];
 
         return items.filter((entry) => {
-            if (!canAccessModule(role, entry.module, subscription)) return false;
+            if (!canAccessModule(role, entry.module, subscription, business)) return false;
             if (!normalizedQuery) return true;
             return `${entry.label} ${entry.subtitle}`.toLowerCase().includes(normalizedQuery);
         });
@@ -142,6 +143,7 @@ export function GoToPalette() {
         latestLoans,
         normalizedQuery,
         latestParties,
+        business,
         role,
         subscription,
     ]);
@@ -149,13 +151,13 @@ export function GoToPalette() {
     const visibleRoutes = useMemo(() => {
         return GO_TO_PALETTE_ROUTES.filter((entry) => {
             if (entry.ownerOnly && role !== 'owner') return false;
-            if (entry.module && !canAccessModule(role, entry.module, subscription)) return false;
+            if (entry.module && !canAccessModule(role, entry.module, subscription, business)) return false;
             if (entry.requiresPos && !canUsePos(subscription)) return false;
             if (entry.requiresFeature && !hasFeatureAccess(subscription, entry.requiresFeature)) return false;
             if (!normalizedQuery) return true;
             return `${entry.label} ${entry.description}`.toLowerCase().includes(normalizedQuery);
         });
-    }, [normalizedQuery, role, subscription]);
+    }, [business, normalizedQuery, role, subscription]);
 
     useEffect(() => {
         const opener = () => setVisible(true);

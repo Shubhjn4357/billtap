@@ -62,11 +62,11 @@ const styles = StyleSheet.create({
     wrap: {
         alignItems: 'center',
         borderRadius: 24,
-        paddingHorizontal: Spacing.md,
+        paddingHorizontal: Spacing.lg,
         paddingVertical: Spacing.xl,
         gap: Spacing.sm,
         marginHorizontal: DESIGN_SPACING.screenX,
-        marginTop: 56,
+        marginTop: 40,
     },
     iconWrap: {
         width: 56,

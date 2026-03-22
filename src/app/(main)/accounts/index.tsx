@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,6 +12,7 @@ import type { Expense, Loan } from '../../../types/domain';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
 import { HubActionCard, HubMetricCard } from '../../../components/ui/HubBlocks';
+import { ListSkeleton } from '../../../components/ui/ListSkeleton';
 import { UtilityHero } from '../../../components/ui/UtilityBlocks';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { invalidateCashBankQueries, useCashBankAccounts } from '../../../hooks/useCashBankAccounts';
@@ -167,7 +168,7 @@ export default function AccountsScreen() {
                             <Text style={[s.viewAll, { color: colors.primary }]}>View all</Text>
                         </Pressable>
                     </View>
-                    {balancesLoading ? <ActivityIndicator color={colors.primary} /> : filteredAccounts.length === 0 ? (
+                    {balancesLoading ? <SectionSkeleton colors={colors} rows={2} /> : filteredAccounts.length === 0 ? (
                         <Text style={s.emptyText}>No accounts set up</Text>
                     ) : filteredAccounts.slice(0, 3).map((account) => (
                         <Pressable
@@ -194,7 +195,7 @@ export default function AccountsScreen() {
                             <Text style={[s.viewAll, { color: colors.primary }]}>View all</Text>
                         </Pressable>
                     </View>
-                    {expensesLoading ? <ActivityIndicator color={colors.primary} /> : filteredExpenses.length === 0 ? (
+                    {expensesLoading ? <SectionSkeleton colors={colors} rows={2} /> : filteredExpenses.length === 0 ? (
                         <Text style={s.emptyText}>No expenses recorded</Text>
                     ) : filteredExpenses.slice(0, 5).map((expense) => (
                         <View key={expense.id} style={[s.row, getSurfaceStyle(colors, { elevated: true })]}> 
@@ -221,7 +222,7 @@ export default function AccountsScreen() {
                             <Text style={[s.viewAll, { color: colors.primary }]}>View all</Text>
                         </Pressable>
                     </View>
-                    {loansLoading ? <ActivityIndicator color={colors.primary} /> : filteredLoans.length === 0 ? (
+                    {loansLoading ? <SectionSkeleton colors={colors} rows={2} /> : filteredLoans.length === 0 ? (
                         <Text style={s.emptyText}>No loans added</Text>
                     ) : filteredLoans.slice(0, 5).map((loan) => (
                         <Pressable
@@ -249,6 +250,21 @@ export default function AccountsScreen() {
                 <View style={{ height: 100 }} />
             </ScrollView>
         </SafeAreaView>
+    );
+}
+
+function SectionSkeleton({
+    colors,
+    rows = 2,
+}: {
+    colors: ColorPalette;
+    rows?: number;
+}) {
+    return (
+        <View style={sectionSkeletonStyles.wrap}>
+            <ListSkeleton rows={rows} compact />
+            <View pointerEvents="none" style={[sectionSkeletonStyles.fade, { backgroundColor: colors.background }]} />
+        </View>
     );
 }
 
@@ -304,4 +320,19 @@ const styles = (colors: ColorPalette) =>
         outlineButton: { ...getPillStyle(colors, colors.primary), borderRadius: Radius.pill, paddingVertical: Spacing.sm, alignItems: 'center', marginTop: Spacing.sm },
         outlineText: { fontWeight: '600', fontSize: 13 },
     });
+
+const sectionSkeletonStyles = StyleSheet.create({
+    wrap: {
+        position: 'relative',
+        marginBottom: Spacing.xs,
+    },
+    fade: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: 12,
+        opacity: 0.82,
+    },
+});
 
