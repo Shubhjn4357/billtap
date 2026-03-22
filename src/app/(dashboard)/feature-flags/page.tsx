@@ -44,10 +44,12 @@ const CORE_FEATURE_FLAGS = [
 const DEFAULT_MODULES = [
     "billing",
     "inventory",
-    "parties",
-    "accounting",
+    "accounts",
     "reports",
+    "parties",
     "settings",
+    "operations",
+    "staff",
 ];
 
 export default function FeatureFlagsPage() {
