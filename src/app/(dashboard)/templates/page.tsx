@@ -1,37 +1,96 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import Image from "next/image";
-import { CreditCard, Edit, FileText, Plus, Star, Trash2, Database } from "lucide-react";
+import {
+    CreditCard,
+    Database,
+    Edit,
+    FileText,
+    Layers3,
+    Plus,
+    Sparkles,
+    Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useToast } from "@/components/ui/Toast";
 import { useTemplates } from "@/hooks/useTemplates";
 import { Template } from "@/types";
 import { TemplateDrawer } from "@/components/templates/TemplateDrawer";
+import { TemplatePreview } from "@/components/templates/TemplatePreview";
+import { getStructuredTemplateDraft } from "@/components/templates/templateConfig";
 import { getErrorMessage } from "@/lib/api-error";
 
 const PREMADE_TEMPLATES = [
-    { name: "Standard GST Invoice", type: "invoice" as const, content: { layout: "classic", showGst: true }, isDefault: true, isActive: true },
-    { name: "Modern Bill of Supply", type: "invoice" as const, content: { layout: "modern", showGst: false }, isDefault: false, isActive: true },
-    { name: "Executive Business Card", type: "card" as const, content: { layout: "horizontal", theme: "dark" }, isDefault: true, isActive: true }
+    {
+        name: "Standard GST Invoice",
+        type: "invoice" as const,
+        content: {
+            layoutPreset: "classic",
+            accentTone: "slate",
+            headline: "Tax Invoice",
+            subheadline: "Standard GST-ready format",
+            footerNote: "Thank you for your business.",
+            showLogo: true,
+            showGst: true,
+            showSignature: false,
+        },
+        isDefault: true,
+        isActive: true,
+    },
+    {
+        name: "Thermal Counter Bill",
+        type: "invoice" as const,
+        content: {
+            layoutPreset: "thermal",
+            accentTone: "amber",
+            headline: "Counter Bill",
+            subheadline: "Fast thermal billing profile",
+            footerNote: "Visit again soon.",
+            showLogo: false,
+            showGst: false,
+            showSignature: false,
+        },
+        isDefault: false,
+        isActive: true,
+    },
+    {
+        name: "Executive Business Card",
+        type: "card" as const,
+        content: {
+            layoutPreset: "banking",
+            accentTone: "slate",
+            headline: "Business Card",
+            subheadline: "Ready for sharing and QR action",
+            footerNote: "Counter billing • GST • UPI",
+            showLogo: true,
+            showQr: true,
+        },
+        isDefault: true,
+        isActive: true,
+    },
 ];
 
 export default function TemplatesPage() {
     const { data: templates, isLoading, createTemplate, updateTemplate, deleteTemplate, refetch } = useTemplates();
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState<Template | undefined>(undefined);
+    const [seeding, setSeeding] = useState(false);
     const { toast } = useToast();
 
-    const billTemplates = useMemo(
-        () => (templates ?? []).filter((entry) => entry.type === "invoice"),
-        [templates]
+    const templateRows = useMemo(() => templates ?? [], [templates]);
+    const invoiceTemplates = useMemo(
+        () => templateRows.filter((entry) => entry.type === "invoice"),
+        [templateRows]
     );
     const cardTemplates = useMemo(
-        () => (templates ?? []).filter((entry) => entry.type === "card"),
-        [templates]
+        () => templateRows.filter((entry) => entry.type === "card"),
+        [templateRows]
     );
-
-    const [seeding, setSeeding] = useState(false);
+    const emailTemplates = useMemo(
+        () => templateRows.filter((entry) => entry.type === "email"),
+        [templateRows]
+    );
 
     const saving = createTemplate.isPending || updateTemplate.isPending;
 
@@ -48,13 +107,21 @@ export default function TemplatesPage() {
     const handleSeed = async () => {
         setSeeding(true);
         try {
-            for (const t of PREMADE_TEMPLATES) {
-                await createTemplate.mutateAsync(t);
+            for (const template of PREMADE_TEMPLATES) {
+                await createTemplate.mutateAsync(template);
             }
-            toast({ title: "Templates Seeded", description: "Successfully injected premade template data.", type: "success" });
+            toast({
+                title: "Templates Seeded",
+                description: "Preview-ready default templates were added successfully.",
+                type: "success",
+            });
             await refetch();
         } catch (error) {
-            toast({ title: "Seed Failed", description: getErrorMessage(error, "Failed to inject templates."), type: "error" });
+            toast({
+                title: "Seed Failed",
+                description: getErrorMessage(error, "Failed to inject templates."),
+                type: "error",
+            });
         } finally {
             setSeeding(false);
         }
@@ -90,14 +157,7 @@ export default function TemplatesPage() {
             if (payload.id) {
                 await updateTemplate.mutateAsync({
                     id: payload.id,
-                    payload: {
-                        name: payload.name,
-                        type: payload.type,
-                        thumbnailUrl: payload.thumbnailUrl,
-                        isDefault: payload.isDefault,
-                        isActive: payload.isActive,
-                        content: payload.content,
-                    },
+                    payload,
                 });
                 toast({
                     title: "Saved",
@@ -105,20 +165,14 @@ export default function TemplatesPage() {
                     type: "success",
                 });
             } else {
-                await createTemplate.mutateAsync({
-                    name: payload.name,
-                    type: payload.type,
-                    thumbnailUrl: payload.thumbnailUrl,
-                    isDefault: payload.isDefault,
-                    isActive: payload.isActive,
-                    content: payload.content,
-                });
+                await createTemplate.mutateAsync(payload);
                 toast({
                     title: "Created",
                     description: "Template created successfully.",
                     type: "success",
                 });
             }
+
             setIsDrawerOpen(false);
             setSelectedTemplate(undefined);
             await refetch();
@@ -127,79 +181,19 @@ export default function TemplatesPage() {
         }
     };
 
-    const renderTemplateSection = (title: string, icon: React.ReactNode, entries: Template[]) => (
-        <div>
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                {icon}
-                {title}
-            </h3>
-            {entries.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                    No templates found in this category.
-                </div>
-            ) : (
-                <div className="grid gap-6 md:grid-cols-3 lg:grid-cols-4">
-                    {entries.map((template) => (
-                        <div key={template.id} className="group relative border rounded-lg overflow-hidden bg-card shadow-sm">
-                            <div className="aspect-[4/3] bg-muted relative">
-                                {template.thumbnailUrl ? (
-                                    <Image
-                                        unoptimized
-                                        src={template.thumbnailUrl}
-                                        alt={template.name}
-                                        className="w-full h-full object-cover"
-                                        fill
-                                    />
-                                ) : (
-                                    <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
-                                        No thumbnail
-                                    </div>
-                                )}
-                                {template.isDefault ? (
-                                    <div className="absolute top-2 right-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded-full flex items-center shadow-sm">
-                                        <Star className="w-3 h-3 mr-1 fill-current" />
-                                        Default
-                                    </div>
-                                ) : null}
-                            </div>
-                            <div className="p-3 border-t space-y-2">
-                                <div className="flex items-center justify-between gap-2">
-                                    <h4 className="font-medium truncate">{template.name}</h4>
-                                    <span className={`text-[10px] uppercase tracking-wider font-semibold ${template.isActive ? "text-green-600" : "text-muted-foreground"}`}>
-                                        {template.isActive ? "Active" : "Inactive"}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Button variant="outline" size="sm" onClick={() => openEdit(template)}>
-                                        <Edit className="w-4 h-4 mr-2" />
-                                        Edit
-                                    </Button>
-                                    <Button variant="ghost" size="sm" onClick={() => { void handleDelete(template); }}>
-                                        <Trash2 className="w-4 h-4 mr-2" />
-                                        Delete
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-
     if (isLoading) return <div className="p-8">Loading templates...</div>;
 
     return (
         <div className="space-y-8">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight">Templates</h2>
-                    <p className="text-muted-foreground">Manage invoice designs and business cards.</p>
+                    <p className="text-muted-foreground">Preview-first invoice, business card, and email template management for Vahi.</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={handleSeed} disabled={seeding}>
                         <Database className="mr-2 h-4 w-4" />
-                        {seeding ? "Injecting..." : "Seed Default Templates"}
+                        {seeding ? "Injecting..." : "Seed Preview Defaults"}
                     </Button>
                     <Button onClick={openCreate}>
                         <Plus className="mr-2 h-4 w-4" />
@@ -208,8 +202,34 @@ export default function TemplatesPage() {
                 </div>
             </div>
 
-            {renderTemplateSection("Invoices", <FileText className="w-5 h-5" />, billTemplates)}
-            {renderTemplateSection("Business Cards", <CreditCard className="w-5 h-5" />, cardTemplates)}
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <SummaryCard title="All Templates" value={String(templateRows.length)} icon={Layers3} meta="Active and draft presets combined" />
+                <SummaryCard title="Invoice Templates" value={String(invoiceTemplates.length)} icon={FileText} meta="GST, PDF, and thermal designs" />
+                <SummaryCard title="Business Cards" value={String(cardTemplates.length)} icon={CreditCard} meta="Share-ready identity layouts" />
+                <SummaryCard title="Preview Ready" value={String(templateRows.filter((entry) => entry.isActive).length)} icon={Sparkles} meta="Currently active and usable" />
+            </div>
+
+            <TemplateSection
+                title="Invoices"
+                icon={<FileText className="h-5 w-5" />}
+                templates={invoiceTemplates}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+            />
+            <TemplateSection
+                title="Business Cards"
+                icon={<CreditCard className="h-5 w-5" />}
+                templates={cardTemplates}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+            />
+            <TemplateSection
+                title="Email Templates"
+                icon={<Sparkles className="h-5 w-5" />}
+                templates={emailTemplates}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+            />
 
             <TemplateDrawer
                 isOpen={isDrawerOpen}
@@ -222,5 +242,99 @@ export default function TemplatesPage() {
                 onSave={handleSave}
             />
         </div>
+    );
+}
+
+function TemplateSection({
+    title,
+    icon,
+    templates,
+    onEdit,
+    onDelete,
+}: {
+    title: string;
+    icon: React.ReactNode;
+    templates: Template[];
+    onEdit: (template: Template) => void;
+    onDelete: (template: Template) => Promise<void>;
+}) {
+    return (
+        <section className="space-y-4">
+            <div className="flex items-center gap-2">
+                {icon}
+                <h3 className="text-lg font-semibold">{title}</h3>
+            </div>
+            {templates.length === 0 ? (
+                <div className="rounded-2xl border border-dashed p-8 text-sm text-muted-foreground">
+                    No templates found in this category.
+                </div>
+            ) : (
+                <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-3">
+                    {templates.map((template) => {
+                        const previewMeta = getStructuredTemplateDraft(template.type, template.content);
+                        return (
+                            <Card key={template.id} className="overflow-hidden">
+                                <CardHeader className="space-y-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <CardTitle className="text-lg">{template.name}</CardTitle>
+                                            <p className="mt-1 text-sm text-muted-foreground">
+                                                {previewMeta.layoutPreset} • {previewMeta.accentTone}
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1 text-[10px] font-bold uppercase tracking-[0.18em]">
+                                            {template.isDefault ? (
+                                                <span className="rounded-full bg-amber-500/15 px-2 py-1 text-amber-700">Default</span>
+                                            ) : null}
+                                            <span className={`rounded-full px-2 py-1 ${template.isActive ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-500/15 text-zinc-700"}`}>
+                                                {template.isActive ? "Active" : "Inactive"}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <TemplatePreview type={template.type} name={template.name} content={template.content} compact />
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button variant="outline" size="sm" onClick={() => onEdit(template)}>
+                                            <Edit className="mr-2 h-4 w-4" />
+                                            Edit
+                                        </Button>
+                                        <Button variant="ghost" size="sm" onClick={() => { void onDelete(template); }}>
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Delete
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function SummaryCard({
+    title,
+    value,
+    meta,
+    icon: Icon,
+}: {
+    title: string;
+    value: string;
+    meta: string;
+    icon: React.ElementType;
+}) {
+    return (
+        <Card className="border-none bg-muted/20 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-semibold text-muted-foreground">{title}</CardTitle>
+                <Icon className="h-4 w-4 text-primary" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">{value}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{meta}</p>
+            </CardContent>
+        </Card>
     );
 }

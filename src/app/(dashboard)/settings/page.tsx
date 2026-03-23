@@ -7,6 +7,7 @@ import {
     BellRing,
     CreditCard,
     ExternalLink,
+    FileBarChart2,
     Flag,
     RefreshCw,
     Settings2,
@@ -14,6 +15,7 @@ import {
     SlidersHorizontal,
     Sparkles,
     Store,
+    Users,
     Wrench,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -86,11 +88,14 @@ const PROFILE_COMPLETENESS_FIELDS: Array<keyof Organization> = [
 
 const RELATED_WORKSPACE_LINKS = [
     { href: "/organizations", label: "Organizations", description: "Owner, quotas, and business roster.", icon: Store },
+    { href: "/parties", label: "Parties", description: "Customer and supplier governance tools.", icon: Users },
     { href: "/feature-flags", label: "Feature Flags", description: "Business-level module and plan switches.", icon: Flag },
     { href: "/templates", label: "Templates", description: "Invoice, print, and business card presets.", icon: SlidersHorizontal },
     { href: "/master-data", label: "Master Data", description: "Units, categories, and seeded defaults.", icon: Wrench },
+    { href: "/reporting", label: "Reporting", description: "GST/PDF/thermal governance across businesses.", icon: FileBarChart2 },
     { href: "/banners", label: "Offers & Announcements", description: "In-app banners with Vahi route redirects.", icon: Sparkles },
     { href: "/notifications/campaigns", label: "Notifications", description: "Platform campaigns and queued announcements.", icon: BellRing },
+    { href: "/sync", label: "Sync Center", description: "Business-level sync restrictions and queue pressure.", icon: RefreshCw },
     { href: "/subscriptions", label: "Subscriptions", description: "Tier, billing cycle, and cloud access controls.", icon: CreditCard },
 ] as const;
 

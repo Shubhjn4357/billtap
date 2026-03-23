@@ -273,7 +273,7 @@ export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerPr
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Custom Route / Deep Link</label>
                             <Input
-                                placeholder="e.g. /(main)/more/subscription or https://example.com"
+                                placeholder="e.g. /settings/subscription or https://example.com"
                                 value={formData.ctaRoute || ""}
                                 onChange={(e) => setFormData({ ...formData, ctaRoute: e.target.value })}
                             />

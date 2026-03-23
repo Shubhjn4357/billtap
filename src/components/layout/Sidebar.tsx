@@ -25,6 +25,7 @@ import {
     Settings,
     ShieldCheck,
     Store,
+    RefreshCw,
     UserCircle,
     CreditCard,
     Warehouse,
@@ -61,6 +62,7 @@ const navCategories: NavCategory[] = [
             { href: "/organizations", label: "Organizations", icon: Store, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/users", label: "Users", icon: Users, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/staff", label: "Staff", icon: ShieldCheck, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/parties", label: "Parties", icon: Users, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
             { href: "/feature-flags", label: "Feature Flags", icon: Flag, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/subscriptions", label: "Subscriptions", icon: CreditCard, roles: ["SUPER_ADMIN"] },
             { href: "/plans", label: "Plans Hub", icon: Box, roles: ["SUPER_ADMIN"] },
@@ -85,6 +87,7 @@ const navCategories: NavCategory[] = [
         items: [
             { href: "/analytics", label: "Analytics", icon: FileBarChart2, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
             { href: "/analytics/expenses", label: "Expense Analytics", icon: ClipboardList, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
+            { href: "/reporting", label: "Reporting", icon: FileSpreadsheet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
         ]
     },
     {
@@ -92,6 +95,7 @@ const navCategories: NavCategory[] = [
         items: [
             { href: "/templates", label: "Templates", icon: FileSpreadsheet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/master-data", label: "Master Data", icon: Database, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/sync", label: "Sync Center", icon: RefreshCw, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN", "READ_ONLY_ADMIN"] },
             { href: "/settings", label: "Control Center", icon: Settings, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
         ]
     }
