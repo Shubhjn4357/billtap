@@ -26,6 +26,12 @@ export function OrganizationDrawer({ isOpen, onClose, organization, onSuccess }:
         phoneNumber: "",
         email: "",
         currency: "INR",
+        state: "",
+        legalName: "",
+        pan: "",
+        category: "",
+        booksStartDate: "",
+        logoUrl: "",
         isActive: true,
     });
     const [isLoading, setIsLoading] = useState(false);
@@ -44,6 +50,12 @@ export function OrganizationDrawer({ isOpen, onClose, organization, onSuccess }:
                 phoneNumber: "",
                 email: "",
                 currency: "INR",
+                state: "",
+                legalName: "",
+                pan: "",
+                category: "",
+                booksStartDate: "",
+                logoUrl: "",
                 isActive: true,
             });
         }
@@ -147,11 +159,55 @@ export function OrganizationDrawer({ isOpen, onClose, organization, onSuccess }:
                             onChange={(e) => setFormData({ ...formData, gstNumber: e.target.value })}
                         />
                     </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">Legal Name</label>
+                        <Input
+                            placeholder="Registered business name"
+                            value={formData.legalName || ""}
+                            onChange={(e) => setFormData({ ...formData, legalName: e.target.value })}
+                        />
+                    </div>
                 </div>
 
                 <div className="h-px bg-muted" />
 
                 <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">State</label>
+                            <Input
+                                placeholder="e.g. Maharashtra"
+                                value={formData.state || ""}
+                                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Category</label>
+                            <Input
+                                placeholder="e.g. Retail"
+                                value={formData.category || ""}
+                                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">PAN</label>
+                            <Input
+                                placeholder="e.g. ABCDE1234F"
+                                value={formData.pan || ""}
+                                onChange={(e) => setFormData({ ...formData, pan: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Books Start Date</label>
+                            <Input
+                                type="date"
+                                value={(formData.booksStartDate || "").toString().slice(0, 10)}
+                                onChange={(e) => setFormData({ ...formData, booksStartDate: e.target.value })}
+                            />
+                        </div>
+                    </div>
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Email Address</label>
                         <Input
@@ -175,6 +231,14 @@ export function OrganizationDrawer({ isOpen, onClose, organization, onSuccess }:
                             placeholder="Full address here..."
                             value={formData.address || ""}
                             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">Logo URL</label>
+                        <Input
+                            placeholder="https://example.com/logo.png"
+                            value={formData.logoUrl || ""}
+                            onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
                         />
                     </div>
                 </div>

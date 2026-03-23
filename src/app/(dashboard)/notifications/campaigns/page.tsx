@@ -27,7 +27,7 @@ const DEFAULT_FORM: CampaignFormState = {
     id: null,
     title: "",
     templateId: "",
-    channel: "SMS",
+    channel: "IN_APP",
     audience: "all",
     status: "DRAFT",
     scheduledAt: "",
@@ -387,7 +387,7 @@ export default function NotificationCampaignsPage() {
                             value={form.channel}
                             onChange={(e) => setForm((prev) => ({ ...prev, channel: e.target.value as NotificationChannel }))}
                         >
-                            {["IN_APP", "PUSH", "EMAIL", "SMS", "WHATSAPP"].map((entry) => (
+                            {["IN_APP", "PUSH", "EMAIL"].map((entry) => (
                                 <option key={entry} value={entry}>{entry}</option>
                             ))}
                         </Select>

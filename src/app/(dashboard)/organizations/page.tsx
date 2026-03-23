@@ -9,6 +9,7 @@ import { Organization, organizationService } from "@/services/organizationServic
 import { useToast } from "@/components/ui/Toast";
 import { OrganizationDrawer } from "@/components/organizations/OrganizationDrawer";
 import { getErrorMessage } from "@/lib/api-error";
+import Link from "next/link";
 
 export default function OrganizationsPage() {
     const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -41,7 +42,11 @@ export default function OrganizationsPage() {
 
     const filteredOrgs = organizations.filter(org =>
         org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        org.code.toLowerCase().includes(searchQuery.toLowerCase())
+        org.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (org.legalName?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+        (org.gstNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+        (org.state?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+        (org.category?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
     );
 
     const handleEdit = (org: Organization) => {
@@ -121,6 +126,7 @@ export default function OrganizationsPage() {
                 <div className="text-xs space-y-0.5">
                     <p>{org.phoneNumber || "No Phone"}</p>
                     <p className="text-muted-foreground">{org.email || "No Email"}</p>
+                    <p className="text-muted-foreground">{org.state || "No State"} {org.category ? `• ${org.category}` : ""}</p>
                 </div>
             )
         },
@@ -140,6 +146,13 @@ export default function OrganizationsPage() {
             className: "text-right",
             cell: (org: Organization) => (
                 <div className="flex items-center justify-end gap-1">
+                    <Link
+                        href={`/settings?businessId=${org.id}`}
+                        className="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium text-primary hover:bg-muted"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        Settings
+                    </Link>
                     <Button variant="ghost" size="sm" onClick={(e) => {
                         e.stopPropagation();
                         handleEdit(org);

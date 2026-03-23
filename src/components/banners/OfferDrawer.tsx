@@ -4,12 +4,13 @@ import React, { useState, useEffect } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { Offer, offerService } from "@/services/offerService";
+import { offerService, type Offer } from "@/services/offerService";
 import { useToast } from "@/components/ui/Toast";
 import { Switch } from "@/components/ui/Switch";
-import { Megaphone, Target, Image as ImageIcon, Link as LinkIcon } from "lucide-react";
+import { Megaphone, Target, Image as ImageIcon, Link as LinkIcon, CalendarClock, Sparkles } from "lucide-react";
 import { getErrorMessage } from "@/lib/api-error";
 import { Select } from "@/components/ui/Select";
+import { VAHI_APP_ROUTE_GROUPS, getVahiAppRouteLabel, isPresetVahiAppRoute } from "@/lib/vahiAppRoutes";
 
 interface OfferDrawerProps {
     isOpen: boolean;
@@ -18,7 +19,15 @@ interface OfferDrawerProps {
     onSuccess: () => void;
 }
 
+const toDateTimeLocal = (value?: string | null) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+};
+
 export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerProps) {
+    const [routeChoice, setRouteChoice] = useState("");
     const [formData, setFormData] = useState<Partial<Offer>>({
         id: "",
         title: "",
@@ -27,15 +36,34 @@ export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerPr
         isActive: true,
         priority: 0,
         bannerUrl: "",
+        bannerBackground: "",
         ctaText: "",
         ctaRoute: "",
+        startsAt: "",
+        endsAt: "",
     });
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
 
     useEffect(() => {
         if (offer) {
-            setFormData(offer);
+            const normalizedRoute = offer.ctaRoute?.trim() ?? "";
+            setFormData({
+                ...offer,
+                bannerUrl: offer.bannerUrl ?? "",
+                bannerBackground: offer.bannerBackground ?? "",
+                ctaText: offer.ctaText ?? "",
+                ctaRoute: normalizedRoute,
+                startsAt: toDateTimeLocal(offer.startsAt),
+                endsAt: toDateTimeLocal(offer.endsAt),
+            });
+            setRouteChoice(
+                !normalizedRoute
+                    ? ""
+                    : isPresetVahiAppRoute(normalizedRoute)
+                        ? normalizedRoute
+                        : "__custom__"
+            );
         } else {
             setFormData({
                 id: `off_${Date.now()}`,
@@ -45,26 +73,48 @@ export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerPr
                 isActive: true,
                 priority: 0,
                 bannerUrl: "",
+                bannerBackground: "",
                 ctaText: "",
                 ctaRoute: "",
+                startsAt: "",
+                endsAt: "",
             });
+            setRouteChoice("");
         }
     }, [offer, isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (formData.startsAt && formData.endsAt && new Date(formData.endsAt).getTime() < new Date(formData.startsAt).getTime()) {
+            toast({
+                title: "Invalid schedule",
+                description: "End time must be after the start time.",
+                type: "error",
+            });
+            return;
+        }
         setIsLoading(true);
 
         try {
+            const payload = {
+                ...formData,
+                bannerUrl: formData.bannerUrl?.trim() || null,
+                bannerBackground: formData.bannerBackground?.trim() || null,
+                ctaText: formData.ctaText?.trim() || null,
+                ctaRoute: formData.ctaRoute?.trim() || null,
+                startsAt: formData.startsAt ? new Date(formData.startsAt).toISOString() : null,
+                endsAt: formData.endsAt ? new Date(formData.endsAt).toISOString() : null,
+            };
+
             if (offer) {
-                await offerService.upsert(offer.id, formData);
+                await offerService.upsert(offer.id, payload);
                 toast({
                     title: "Success",
                     description: "Banner updated successfully",
                     type: "success"
                 });
             } else {
-                await offerService.create(formData);
+                await offerService.create(payload);
                 toast({
                     title: "Success",
                     description: "Banner created successfully",
@@ -119,7 +169,8 @@ export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerPr
                     </div>
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Message / Description</label>
-                        <Input
+                        <textarea
+                            className="min-h-28 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             placeholder="Detailed text for the banner..."
                             value={formData.message}
                             onChange={(e) => setFormData({ ...formData, message: e.target.value })}
@@ -172,6 +223,14 @@ export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerPr
                             />
                         </div>
                     </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">Banner Background (Optional)</label>
+                        <Input
+                            placeholder="e.g. linear-gradient(...) or #123456"
+                            value={formData.bannerBackground || ""}
+                            onChange={(e) => setFormData({ ...formData, bannerBackground: e.target.value })}
+                        />
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <label className="text-sm font-medium">CTA Button Text</label>
@@ -182,12 +241,102 @@ export function OfferDrawer({ isOpen, onClose, offer, onSuccess }: OfferDrawerPr
                             />
                         </div>
                         <div className="space-y-2">
-                            <label className="text-sm font-medium">CTA Route / Link</label>
+                            <label className="text-sm font-medium">Redirect Destination</label>
+                            <Select
+                                value={routeChoice}
+                                onChange={(e) => {
+                                    const next = e.target.value;
+                                    setRouteChoice(next);
+                                    if (!next) {
+                                        setFormData({ ...formData, ctaRoute: "" });
+                                        return;
+                                    }
+                                    if (next === "__custom__") return;
+                                    setFormData({ ...formData, ctaRoute: next });
+                                }}
+                            >
+                                <option value="">No redirect</option>
+                                <option value="__custom__">Custom route or deep link</option>
+                                {VAHI_APP_ROUTE_GROUPS.map(([group, options]) => (
+                                    <optgroup key={group} label={group}>
+                                        {options.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                ))}
+                            </Select>
+                        </div>
+                    </div>
+                    {routeChoice === "__custom__" ? (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Custom Route / Deep Link</label>
                             <Input
-                                placeholder="e.g. /subscription"
+                                placeholder="e.g. /(main)/more/subscription or https://example.com"
                                 value={formData.ctaRoute || ""}
                                 onChange={(e) => setFormData({ ...formData, ctaRoute: e.target.value })}
                             />
+                        </div>
+                    ) : null}
+                    {formData.ctaRoute ? (
+                        <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">
+                                {getVahiAppRouteLabel(formData.ctaRoute) ?? "Custom destination"}
+                            </span>
+                            <span className="ml-2">{formData.ctaRoute}</span>
+                        </div>
+                    ) : null}
+                </div>
+
+                <div className="space-y-4">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                        <CalendarClock className="h-4 w-4" />
+                        Schedule
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Starts At</label>
+                            <Input
+                                type="datetime-local"
+                                value={String(formData.startsAt || "")}
+                                onChange={(e) => setFormData({ ...formData, startsAt: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Ends At</label>
+                            <Input
+                                type="datetime-local"
+                                value={String(formData.endsAt || "")}
+                                onChange={(e) => setFormData({ ...formData, endsAt: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        Preview
+                    </h3>
+                    <div className="rounded-2xl border border-border bg-background p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mobile offer card</p>
+                        <div
+                            className="mt-3 rounded-2xl border border-border px-4 py-4"
+                            style={{
+                                background: formData.bannerBackground?.trim() || undefined,
+                            }}
+                        >
+                            <p className="text-base font-semibold text-foreground">{formData.title || "Banner title preview"}</p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                {formData.message || "Offer or announcement message will appear here."}
+                            </p>
+                            {formData.ctaText || formData.ctaRoute ? (
+                                <p className="mt-3 text-sm font-semibold text-primary">
+                                    {(formData.ctaText || "Open").trim()}
+                                    {formData.ctaRoute ? ` -> ${getVahiAppRouteLabel(formData.ctaRoute) ?? formData.ctaRoute}` : ""}
+                                </p>
+                            ) : null}
                         </div>
                     </div>
                 </div>

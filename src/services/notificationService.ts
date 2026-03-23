@@ -1,6 +1,6 @@
 import { api } from "@/lib/api";
 
-export type NotificationChannel = "IN_APP" | "PUSH" | "EMAIL" | "SMS" | "WHATSAPP";
+export type NotificationChannel = "IN_APP" | "PUSH" | "EMAIL";
 
 export interface NotificationTemplate {
     id: string;

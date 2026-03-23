@@ -48,12 +48,17 @@ export interface Offer {
     id: string;
     title: string;
     message: string;
-    bannerUrl?: string;
+    bannerUrl?: string | null;
+    bannerBackground?: string | null;
+    ctaText?: string | null;
+    ctaRoute?: string | null;
     isActive: boolean;
     priority: number;
     audience: "all" | "owners" | "staff";
-    startsAt?: string;
-    endsAt?: string;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
 }
 
 export interface ApiResponse<T> {

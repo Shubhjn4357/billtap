@@ -1,21 +1,7 @@
 import { api } from "@/lib/api";
+import type { Offer } from "@/types";
 
-export interface Offer {
-    id: string;
-    title: string;
-    message: string;
-    bannerUrl?: string;
-    bannerBackground?: string;
-    ctaText?: string;
-    ctaRoute?: string;
-    audience: 'all' | 'owners' | 'staff';
-    isActive: boolean;
-    priority: number;
-    startsAt?: string;
-    endsAt?: string;
-    createdAt: string;
-    updatedAt: string;
-}
+export type { Offer } from "@/types";
 
 export const offerService = {
     getAll: async (includeInactive = true) => {

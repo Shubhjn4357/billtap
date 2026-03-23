@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/Toast";
 import { OfferDrawer } from "@/components/banners/OfferDrawer";
 import { Switch } from "@/components/ui/Switch";
 import { getErrorMessage } from "@/lib/api-error";
+import { getVahiAppRouteLabel } from "@/lib/vahiAppRoutes";
 
 export default function BannersPage() {
     const [offers, setOffers] = useState<Offer[]>([]);
@@ -123,6 +124,22 @@ export default function BannersPage() {
             )
         },
         {
+            header: "Redirect",
+            accessorKey: "ctaRoute",
+            cell: (offer: Offer) => {
+                if (!offer.ctaRoute) {
+                    return <span className="text-xs text-muted-foreground">No redirect</span>;
+                }
+                const presetLabel = getVahiAppRouteLabel(offer.ctaRoute);
+                return (
+                    <div className="space-y-1">
+                        <p className="text-xs font-semibold">{presetLabel ?? "Custom link"}</p>
+                        <p className="max-w-[220px] truncate text-[11px] text-muted-foreground">{offer.ctaRoute}</p>
+                    </div>
+                );
+            },
+        },
+        {
             header: "Status",
             accessorKey: "isActive",
             cell: (offer: Offer) => (
@@ -165,7 +182,7 @@ export default function BannersPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-foreground">Banners & Offers</h1>
-                    <p className="text-muted-foreground">Manage system-wide promotional banners and notifications.</p>
+                    <p className="text-muted-foreground">Manage mobile banners, announcements, and redirect targets for the Vahi app.</p>
                 </div>
                 <Button onClick={handleCreate} className="h-11 px-6 shadow-lg shadow-primary/20">
                     <Plus className="mr-2 h-5 w-5" />

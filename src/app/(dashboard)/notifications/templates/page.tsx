@@ -29,7 +29,7 @@ const DEFAULT_FORM: TemplateFormState = {
     id: null,
     name: "",
     eventKey: "",
-    channel: "SMS",
+    channel: "IN_APP",
     subject: "",
     body: "",
     variables: "",
@@ -257,7 +257,7 @@ export default function NotificationTemplatesPage() {
         <div className="space-y-6">
             <div>
                 <h1 className="text-3xl font-bold tracking-tight">Notification Templates</h1>
-                <p className="text-muted-foreground">Event templates for SMS, WhatsApp, email, push and in-app channels.</p>
+                <p className="text-muted-foreground">Event templates for in-app, push, and email channels.</p>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-5">
@@ -318,7 +318,7 @@ export default function NotificationTemplatesPage() {
                             value={form.channel}
                             onChange={(e) => setForm((prev) => ({ ...prev, channel: e.target.value as NotificationChannel }))}
                         >
-                            {["IN_APP", "PUSH", "EMAIL", "SMS", "WHATSAPP"].map((entry) => (
+                            {["IN_APP", "PUSH", "EMAIL"].map((entry) => (
                                 <option key={entry} value={entry}>{entry}</option>
                             ))}
                         </Select>

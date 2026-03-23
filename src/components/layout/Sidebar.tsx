@@ -92,7 +92,7 @@ const navCategories: NavCategory[] = [
         items: [
             { href: "/templates", label: "Templates", icon: FileSpreadsheet, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
             { href: "/master-data", label: "Master Data", icon: Database, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
-            { href: "/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
+            { href: "/settings", label: "Control Center", icon: Settings, roles: ["SUPER_ADMIN", "SUPPORT_ADMIN"] },
         ]
     }
 ];

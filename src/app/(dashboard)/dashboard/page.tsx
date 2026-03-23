@@ -1,7 +1,7 @@
 "use client";
 
 import { useAnalytics } from "@/hooks/useAnalytics";
-import { Users, CreditCard, DollarSign, TrendingUp, Warehouse, BellRing } from "lucide-react";
+import { Users, CreditCard, DollarSign, TrendingUp, Warehouse, BellRing, Settings2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card"; 
 import Link from "next/link";
 
@@ -122,6 +122,13 @@ export default function DashboardPage() {
                                 <span className="font-medium text-sm">Run Campaigns</span>
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">Launch announcements and reminders</p>
+                        </Link>
+                        <Link href="/settings" className="block p-3 border rounded-lg hover:bg-muted transition-colors">
+                            <div className="flex items-center gap-2">
+                                <Settings2 className="h-4 w-4" />
+                                <span className="font-medium text-sm">Open Control Center</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">Manage Vahi business settings and module gates</p>
                         </Link>
                     </CardContent>
                 </Card>
