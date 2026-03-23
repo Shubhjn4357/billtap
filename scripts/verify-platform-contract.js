@@ -269,6 +269,10 @@ function extractImportSpecifiers(source) {
     return specs;
 }
 
+function extractRelativeImports(source) {
+    return extractImportSpecifiers(source).filter((specifier) => specifier.startsWith('.'));
+}
+
 function resolveImportWithSuffixes(base) {
     const tried = [];
 
@@ -287,7 +291,10 @@ function resolveImportWithSuffixes(base) {
     return null;
 }
 
-function resolveLocalImport({ fromFileAbs, specifier, sourceRoot }) {
+function resolveLocalImport(input, maybeSpecifier, maybeSourceRoot) {
+    const fromFileAbs = typeof input === 'string' ? input : input?.fromFileAbs;
+    const specifier = typeof input === 'string' ? maybeSpecifier : input?.specifier;
+    const sourceRoot = typeof input === 'string' ? maybeSourceRoot : input?.sourceRoot;
     if (!specifier) return null;
     const fromDir = path.dirname(fromFileAbs);
 
@@ -1000,6 +1007,7 @@ module.exports = {
     deriveNextPageRouteFromFile,
     inferFetchMethod,
     compileBackendPattern,
+    extractRelativeImports,
     extractImportSpecifiers,
     resolveLocalImport,
 };

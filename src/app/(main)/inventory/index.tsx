@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { INVENTORY_SORT_OPTIONS, INVENTORY_STOCK_FILTER_OPTIONS } from '../../../constants/inventoryOptions';
 import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
+import { ITEM_GST_RATE_OPTIONS } from '../../../constants/formOptions';
 import { Radius, Spacing, type ColorPalette, withAlpha } from '../../../constants/theme';
 import { useScannerMode } from '../../../hooks/useScannerMode';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -135,6 +136,21 @@ export default function InventoryScreen() {
         ]);
     };
 
+    const openBulkGstSelector = () => {
+        if (!selectedIds.length) return;
+        dialog.alert(
+            'Bulk GST update',
+            'Choose the GST slab to apply to the selected items.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                ...ITEM_GST_RATE_OPTIONS.map((option) => ({
+                    text: option.label,
+                    onPress: () => requestBulkGst(Number(option.value)),
+                })),
+            ],
+        );
+    };
+
     const activeFilters = [category, unit, stockFilter !== 'all' ? stockFilter : null].filter(Boolean).length
         + (sortBy !== 'name_asc' ? 1 : 0);
 
@@ -170,89 +186,102 @@ export default function InventoryScreen() {
                 )}
             />
 
-            <View style={s.heroWrap}>
-                <UtilityHero
-                    title="Inventory Hub"
-                    subtitle="Stock, categories, barcode search, bulk actions, and quick stock adjustments."
-                    icon="archive-outline"
-                    tone="info"
-                />
-            </View>
-
-            <View style={s.statsRow}>
-                <HubMetricCard label="In Stock" value={String(stats.inStock)} meta="Healthy items" tone="success" />
-                <HubMetricCard label="Low Stock" value={String(stats.lowStock)} meta="Needs refill" tone="warning" />
-                <HubMetricCard label="Out of Stock" value={String(stats.outOfStock)} meta="Unavailable" tone="danger" />
-                <HubMetricCard label="Stock Value" value={`Rs ${(stats.stockValue / 1000).toFixed(1)}K`} meta={`${stats.total} items`} tone="info" />
-            </View>
-
-            <View style={s.searchRow}>
-                <AppSearchBar
-                    value={search}
-                    onChangeText={setSearch}
-                    placeholder={scanner.isUsbScannerMode ? 'Scan via USB or type...' : 'Search by name or barcode...'}
-                    showScanAction
-                    scanLabel={scanner.canUseCameraScanner ? 'Scan' : scanner.isUsbScannerMode ? 'USB' : 'Off'}
-                    onScanPress={handleScanPress}
-                />
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filtersScroll} contentContainerStyle={s.filtersRow}>
-                {INVENTORY_STOCK_FILTER_OPTIONS.map((option) => {
-                    const selected = stockFilter === option.key;
-                    return (
-                        <ChipButton
-                            key={option.key}
-                            label={option.label}
-                            selected={selected}
-                            tone={option.key === 'out' ? 'danger' : option.key === 'low' ? 'warning' : option.key === 'in' ? 'success' : 'info'}
-                            onPress={() => { void selection(); setStockFilter(option.key); }}
-                        />
-                    );
-                })}
-            </ScrollView>
-
-            {categories.length > 0 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filtersScroll} contentContainerStyle={s.filtersRow}>
-                    <ChipButton label="All Categories" selected={!category} tone="info" onPress={() => setCategory(null)} />
-                    {categories.map((cat) => {
-                        const selected = category === cat;
-                        return (
-                            <ChipButton
-                                key={cat}
-                                label={cat}
-                                selected={selected}
-                                tone="info"
-                                onPress={() => setCategory(selected ? null : cat)}
-                            />
-                        );
-                    })}
-                </ScrollView>
-            ) : null}
-
-            {selectionMode ? (
-                <View style={s.bulkRow}>
-                    <Text style={[s.bulkLabel, { color: colors.textSecondary }]}>Selected: {selectedIds.length}</Text>
-                    <Pressable style={[s.bulkAction, { borderColor: colors.primary }]} onPress={() => requestBulkGst(18)} disabled={!selectedIds.length || bulkUpdatingGst}>
-                        <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 11 }}>{bulkUpdatingGst ? 'Applying...' : 'GST 18%'}</Text>
-                    </Pressable>
-                    <Pressable style={[s.bulkAction, { borderColor: colors.error }]} onPress={requestBulkDelete} disabled={!selectedIds.length || bulkDeleting}>
-                        <Text style={{ color: colors.error, fontWeight: '700', fontSize: 11 }}>{bulkDeleting ? 'Deleting...' : 'Delete'}</Text>
-                    </Pressable>
-                </View>
-            ) : (
-                <View style={s.actionRow}>
-                    <ChipButton label="Select" icon="check-circle-outline" variant="action" tone="info" onPress={() => { void selection(); setSelectionMode(true); }} />
-                    <ChipButton label="Bin" icon="delete-outline" variant="action" tone="warning" onPress={() => { void selection(); router.push('/(main)/inventory/recycle-bin' as Parameters<typeof router.push>[0]); }} />
-                </View>
-            )}
-
             {isLoading ? (
                 <ListSkeleton rows={7} />
             ) : (
                 <FlatList
                     data={items}
                     keyExtractor={(item) => item.id}
+                    ListHeaderComponent={(
+                        <>
+                            <View style={s.heroWrap}>
+                                <UtilityHero
+                                    title="Inventory Hub"
+                                    subtitle="Stock, categories, barcode search, bulk actions, and quick stock adjustments."
+                                    icon="archive-outline"
+                                    tone="info"
+                                />
+                            </View>
+
+                            <View style={s.statsRow}>
+                                <HubMetricCard label="In Stock" value={String(stats.inStock)} meta="Healthy items" tone="success" />
+                                <HubMetricCard label="Low Stock" value={String(stats.lowStock)} meta="Needs refill" tone="warning" />
+                                <HubMetricCard label="Out of Stock" value={String(stats.outOfStock)} meta="Unavailable" tone="danger" />
+                                <HubMetricCard label="Stock Value" value={`Rs ${(stats.stockValue / 1000).toFixed(1)}K`} meta={`${stats.total} items`} tone="info" />
+                            </View>
+
+                            <View style={s.searchRow}>
+                                <AppSearchBar
+                                    value={search}
+                                    onChangeText={setSearch}
+                                    placeholder={scanner.isUsbScannerMode ? 'Scan via USB or type...' : 'Search by name or barcode...'}
+                                    showScanAction
+                                    scanLabel={scanner.canUseCameraScanner ? 'Scan' : scanner.isUsbScannerMode ? 'USB' : 'Off'}
+                                    onScanPress={handleScanPress}
+                                />
+                            </View>
+
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filtersScroll} contentContainerStyle={s.filtersRow}>
+                                {INVENTORY_STOCK_FILTER_OPTIONS.map((option) => {
+                                    const selected = stockFilter === option.key;
+                                    return (
+                                        <ChipButton
+                                            key={option.key}
+                                            label={option.label}
+                                            selected={selected}
+                                            tone={option.key === 'out' ? 'danger' : option.key === 'low' ? 'warning' : option.key === 'in' ? 'success' : 'info'}
+                                            onPress={() => { void selection(); setStockFilter(option.key); }}
+                                        />
+                                    );
+                                })}
+                            </ScrollView>
+
+                            {categories.length > 0 ? (
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filtersScroll} contentContainerStyle={s.filtersRow}>
+                                    <ChipButton label="All Categories" selected={!category} tone="info" onPress={() => setCategory(null)} />
+                                    {categories.map((cat) => {
+                                        const selected = category === cat;
+                                        return (
+                                            <ChipButton
+                                                key={cat}
+                                                label={cat}
+                                                selected={selected}
+                                                tone="info"
+                                                onPress={() => setCategory(selected ? null : cat)}
+                                            />
+                                        );
+                                    })}
+                                </ScrollView>
+                            ) : null}
+
+                            {selectionMode ? (
+                                <View style={s.bulkRow}>
+                                    <Text style={[s.bulkLabel, { color: colors.textSecondary }]}>Selected: {selectedIds.length}</Text>
+                                    <Pressable style={[s.bulkAction, { borderColor: colors.primary }]} onPress={openBulkGstSelector} disabled={!selectedIds.length || bulkUpdatingGst}>
+                                        <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 11 }}>{bulkUpdatingGst ? 'Applying...' : 'GST Slab'}</Text>
+                                    </Pressable>
+                                    <Pressable style={[s.bulkAction, { borderColor: colors.error }]} onPress={requestBulkDelete} disabled={!selectedIds.length || bulkDeleting}>
+                                        <Text style={{ color: colors.error, fontWeight: '700', fontSize: 11 }}>{bulkDeleting ? 'Deleting...' : 'Delete'}</Text>
+                                    </Pressable>
+                                </View>
+                            ) : (
+                                <View style={s.actionRow}>
+                                    <ChipButton
+                                        label={selectionMode ? 'Cancel' : 'Select'}
+                                        icon={selectionMode ? 'close' : 'check-circle-outline'}
+                                        variant="action"
+                                        tone="info"
+                                        onPress={() => {
+                                            void selection();
+                                            setSelectionMode((current) => !current);
+                                            setSelectedIds([]);
+                                        }}
+                                    />
+                                    <ChipButton label="Bin" icon="delete-outline" variant="action" tone="warning" onPress={() => { void selection(); router.push('/(main)/inventory/recycle-bin' as Parameters<typeof router.push>[0]); }} />
+                                </View>
+                            )}
+                        </>
+                    )}
                     renderItem={({ item }) => (
                         <ItemRow
                             item={item}
@@ -340,7 +369,7 @@ export default function InventoryScreen() {
                         ) : null}
 
                         <Pressable style={[s.sortDoneBtn, { backgroundColor: colors.primary }]} onPress={() => setShowSortSheet(false)}>
-                            <Text style={[s.sortDoneBtnText, { color: colors.onPrimary }]}>Apply</Text>
+                            <Text style={[s.sortDoneBtnText, { color: colors.onPrimary }]}>Done</Text>
                         </Pressable>
                     </View>
                 </Pressable>
@@ -425,8 +454,8 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     heroWrap: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.cardGap },
     statsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: DESIGN_SPACING.screenX, paddingVertical: Spacing.xs, gap: Spacing.sm },
     searchRow: { paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.xs },
-    filtersScroll: { flexGrow: 0, marginBottom: 2 },
-    filtersRow: { paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.xs, paddingVertical: 2 },
+    filtersScroll: { flexGrow: 0, marginBottom: Spacing.xs },
+    filtersRow: { paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.xs, paddingVertical: 2, alignItems: 'center' },
     actionRow: { flexDirection: 'row', paddingHorizontal: DESIGN_SPACING.screenX, gap: Spacing.sm, marginBottom: Spacing.xs },
     bulkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: Spacing.sm },
     bulkLabel: { flex: 1, fontSize: 12, fontWeight: '700' },

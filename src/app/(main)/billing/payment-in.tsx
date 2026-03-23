@@ -9,6 +9,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel, getVoucherReferenceHint } from '../../../constants/accountingInputOptions';
 import { DESIGN_SPACING } from '../../../constants/designSystem';
@@ -32,10 +33,13 @@ const toAmount = (value: string) => {
 export default function PaymentInScreen() {
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/billing');
+    const params = useLocalSearchParams<{ partyId?: string | string[]; returnPath?: string | string[] }>();
+    const initialPartyId = Array.isArray(params.partyId) ? params.partyId[0] : params.partyId;
+    const returnPath = Array.isArray(params.returnPath) ? params.returnPath[0] : params.returnPath;
+    const smartBack = useSmartBack(returnPath ?? '/(main)/billing');
     const dialog = useAppDialog();
 
-    const [partyId, setPartyId] = useState<string | null>(null);
+    const [partyId, setPartyId] = useState<string | null>(initialPartyId ?? null);
     const [accountId, setAccountId] = useState<string | null>(null);
     const [paymentMode, setPaymentMode] = useState<PaymentMode>('CASH');
     const [amountInput, setAmountInput] = useState('');
@@ -85,6 +89,7 @@ export default function PaymentInScreen() {
 
         void deposit({
             accountId,
+            partyId: partyId ?? undefined,
             amount,
             paymentMode,
             description: note,

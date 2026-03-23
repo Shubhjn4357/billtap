@@ -1,5 +1,6 @@
 import { api } from '../api/client';
 import {
+    mapApiSubscription,
     mapLegacyProfileToSubscription,
     mapLegacyProfileToUser,
     normalizeOrganizationRole,
@@ -43,11 +44,30 @@ export const authRepository = {
     }>> => {
         const response = await api.get<{ ok: boolean; user?: Record<string, unknown>; message?: string }>('/api/users/me');
         const profile = requireUserPayload(response, 'Failed to load profile.');
+        let subscription: Subscription | null = null;
+
+        try {
+            const subscriptionResponse = await api.get<{
+                ok: boolean;
+                businessId?: string;
+                subscription?: Record<string, unknown> | null;
+                message?: string;
+            }>('/api/subscription/current');
+
+            if (subscriptionResponse.ok) {
+                subscription = subscriptionResponse.subscription
+                    ? mapApiSubscription(subscriptionResponse.subscription, subscriptionResponse.businessId ?? businessId ?? null)
+                    : null;
+            }
+        } catch {
+            subscription = mapLegacyProfileToSubscription(profile, businessId ?? null);
+        }
+
         return {
             ok: true,
             data: {
                 user: mapLegacyProfileToUser(profile),
-                subscription: mapLegacyProfileToSubscription(profile, businessId ?? null),
+                subscription,
                 organizationRole: normalizeOrganizationRole(profile.role),
             },
             message: response.message,

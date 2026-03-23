@@ -1,5 +1,5 @@
 import { api, getStoredBusinessId } from '../api/client';
-import { mapLegacyProfileToSubscription } from '../mappers/authMappers';
+import { mapApiSubscription, mapLegacyProfileToSubscription } from '../mappers/authMappers';
 import { offlineKeyValueStore } from '../offline/db/offlineKeyValueStore';
 import { getRuntimeSubscription } from '../services/runtimeSession';
 import { queryClient } from '../state/queryClient';
@@ -88,11 +88,18 @@ export const subscriptionRepository = {
     get: async (): Promise<ApiResponse<Subscription | null>> => {
         const businessId = (await getStoredBusinessId()) ?? 'current';
         try {
-            const response = await api.get<{ ok: boolean; user?: Record<string, unknown>; message?: string }>('/api/users/me');
-            if (!response.ok || !response.user) {
+            const response = await api.get<{
+                ok: boolean;
+                businessId?: string;
+                subscription?: Record<string, unknown> | null;
+                message?: string;
+            }>('/api/subscription/current');
+            if (!response.ok) {
                 throw new Error(response.message ?? 'Failed to load subscription.');
             }
-            const subscription = mapLegacyProfileToSubscription(response.user, businessId);
+            const subscription = response.subscription
+                ? mapApiSubscription(response.subscription, response.businessId ?? businessId)
+                : null;
             await writeCachedJson(SUBSCRIPTION_CACHE_KEYS.current(businessId), subscription);
             return {
                 ok: true,
@@ -100,6 +107,20 @@ export const subscriptionRepository = {
                 message: response.message,
             };
         } catch (error) {
+            try {
+                const legacyResponse = await api.get<{ ok: boolean; user?: Record<string, unknown>; message?: string }>('/api/users/me');
+                if (legacyResponse.ok && legacyResponse.user) {
+                    const fallbackSubscription = mapLegacyProfileToSubscription(legacyResponse.user, businessId);
+                    await writeCachedJson(SUBSCRIPTION_CACHE_KEYS.current(businessId), fallbackSubscription);
+                    return {
+                        ok: true,
+                        data: fallbackSubscription,
+                        message: legacyResponse.message,
+                    };
+                }
+            } catch {
+                // fall through to runtime snapshot / offline cache
+            }
             const authSubscription = getRuntimeSubscription();
             if (authSubscription) {
                 return {

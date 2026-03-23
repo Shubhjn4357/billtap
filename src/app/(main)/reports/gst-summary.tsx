@@ -48,6 +48,7 @@ export default function GstSummaryScreen() {
                 subtitle: `Tax slab position for ${monthLabel}.`,
                 businessName: business?.name,
                 contextLabel: monthLabel,
+                documentKind: 'gst-summary',
                 summaryMetrics: [
                     { label: 'Taxable Turnover', value: formatInr(totals.taxable) },
                     { label: 'Total Tax', value: formatInr(totals.tax) },

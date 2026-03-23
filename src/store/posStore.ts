@@ -16,8 +16,8 @@ interface PosState {
 }
 
 interface PosActions {
-    addItem: (item: Omit<PosCartItem, '_key' | 'taxableValue' | 'totalAmount'>) => void;
-    updateItemQty: (key: string, qty: number) => void;
+    addItem: (item: Omit<PosCartItem, '_key' | 'taxableValue' | 'totalAmount'>) => { accepted: boolean; clamped: boolean; quantity: number; maxAvailable: number | null };
+    updateItemQty: (key: string, qty: number) => { accepted: boolean; clamped: boolean; quantity: number; maxAvailable: number | null };
     removeItem: (key: string) => void;
     clearCart: () => void;
     setParty: (id: string | null, name: string | null) => void;
@@ -46,6 +46,11 @@ function computePosItem(item: Omit<PosCartItem, 'taxableValue' | 'totalAmount'> 
     return { ...item, taxableValue, totalAmount };
 }
 
+const getMaxAvailable = (availableStock?: number | null) => {
+    if (typeof availableStock !== 'number' || !Number.isFinite(availableStock)) return null;
+    return Math.max(0, availableStock);
+};
+
 export const usePosStore = create<PosState & PosActions>()(
     immer((set, get) => ({
         cartItems: [],
@@ -59,22 +64,60 @@ export const usePosStore = create<PosState & PosActions>()(
         notes: '',
         isInterState: false,
 
-        addItem: (item) => set((s) => {
-            const existing = s.cartItems.find((ci) => ci.itemId === item.itemId && item.itemId != null);
-            if (existing) {
-                const idx = s.cartItems.indexOf(existing);
-                s.cartItems[idx] = computePosItem({ ...existing, quantity: existing.quantity + 1 });
-            } else {
-                s.cartItems.push(computePosItem({ _key: Math.random().toString(36).slice(2), ...item }));
-            }
-        }),
+        addItem: (item) => {
+            let result = { accepted: true, clamped: false, quantity: item.quantity, maxAvailable: getMaxAvailable(item.availableStock) };
+            set((s) => {
+                const maxAvailable = getMaxAvailable(item.availableStock);
+                const existing = s.cartItems.find((ci) => ci.itemId === item.itemId && item.itemId != null);
+                const requestedQty = existing ? existing.quantity + 1 : item.quantity;
+                const finalQty = maxAvailable === null ? requestedQty : Math.min(requestedQty, maxAvailable);
 
-        updateItemQty: (key, qty) => set((s) => {
-            if (qty <= 0) { s.cartItems = s.cartItems.filter((ci) => ci._key !== key); return; }
-            const idx = s.cartItems.findIndex((ci) => ci._key === key);
-            if (idx < 0) return;
-            s.cartItems[idx] = computePosItem({ ...s.cartItems[idx], quantity: qty });
-        }),
+                result = {
+                    accepted: finalQty > 0,
+                    clamped: maxAvailable !== null && finalQty < requestedQty,
+                    quantity: finalQty,
+                    maxAvailable,
+                };
+
+                if (finalQty <= 0) return;
+
+                if (existing) {
+                    const idx = s.cartItems.indexOf(existing);
+                    s.cartItems[idx] = computePosItem({ ...existing, availableStock: item.availableStock, quantity: finalQty });
+                } else {
+                    s.cartItems.push(computePosItem({ _key: Math.random().toString(36).slice(2), ...item, quantity: finalQty }));
+                }
+            });
+            return result;
+        },
+
+        updateItemQty: (key, qty) => {
+            let result = { accepted: true, clamped: false, quantity: qty, maxAvailable: null as number | null };
+            set((s) => {
+                const idx = s.cartItems.findIndex((ci) => ci._key === key);
+                if (idx < 0) {
+                    result = { accepted: false, clamped: false, quantity: 0, maxAvailable: null };
+                    return;
+                }
+                const current = s.cartItems[idx];
+                const maxAvailable = getMaxAvailable(current.availableStock);
+                if (qty <= 0) {
+                    s.cartItems = s.cartItems.filter((ci) => ci._key !== key);
+                    result = { accepted: true, clamped: false, quantity: 0, maxAvailable };
+                    return;
+                }
+
+                const finalQty = maxAvailable === null ? qty : Math.min(qty, maxAvailable);
+                s.cartItems[idx] = computePosItem({ ...current, quantity: finalQty });
+                result = {
+                    accepted: true,
+                    clamped: maxAvailable !== null && finalQty < qty,
+                    quantity: finalQty,
+                    maxAvailable,
+                };
+            });
+            return result;
+        },
 
         removeItem: (key) => set((s) => { s.cartItems = s.cartItems.filter((ci) => ci._key !== key); }),
         clearCart: () => set((s) => { s.cartItems = []; s.partyId = null; s.partyName = null; s.discountAmount = 0; s.roundOffAmount = 0; s.paidAmount = 0; }),

@@ -62,7 +62,7 @@ interface InvoiceBuilderStore {
     state: InvoiceBuilderState;
     totals: InvoiceTotals;
     // Actions
-    init: (invoiceType: InvoiceType) => void;
+    init: (invoiceType: InvoiceType, options?: { preserveDraft?: boolean }) => void;
     reset: () => void;
     setInvoiceType: (type: InvoiceType) => void;
     setInvoiceNumber: (n: string) => void;
@@ -107,6 +107,26 @@ const defaultState = (): InvoiceBuilderState => ({
     termsAndConditions: '',
 });
 
+const hasMeaningfulDraft = (state: InvoiceBuilderState) =>
+    Boolean(
+        state.partyId
+        || state.placeOfSupply.trim()
+        || state.notes.trim()
+        || state.dueDate
+        || state.discountAmount
+        || state.additionalCharges
+        || state.roundOffAmount
+        || state.paidAmount
+        || state.items.some((line) => (
+            Boolean(line.itemId)
+            || Boolean(line.godownId)
+            || line.description.trim().length > 0
+            || line.rate > 0
+            || line.quantity !== 1
+            || line.gstRate > 0
+        ))
+    );
+
 function computeTotals(s: InvoiceBuilderState): InvoiceTotals {
     let subtotal = 0, totalDiscount = 0, totalTaxable = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0;
     for (const line of s.items) {
@@ -130,7 +150,18 @@ export const useInvoiceBuilderStore = create<InvoiceBuilderStore>()(
             state: defaultState(),
             totals: computeTotals(defaultState()),
 
-            init: (invoiceType) => set((store) => {
+            init: (invoiceType, options) => set((store) => {
+                const shouldPreserveDraft =
+                    options?.preserveDraft
+                    && store.state.invoiceType === invoiceType
+                    && hasMeaningfulDraft(store.state);
+
+                if (shouldPreserveDraft) {
+                    store.state.invoiceType = invoiceType;
+                    store.totals = computeTotals(store.state);
+                    return;
+                }
+
                 store.state = { ...defaultState(), invoiceType };
                 store.totals = computeTotals(store.state);
             }),

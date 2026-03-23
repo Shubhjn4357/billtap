@@ -9,6 +9,7 @@ import { useAppColors } from '../../../hooks/useAppColors';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { UtilityBanner, UtilityEmptyState, UtilityHero, UtilityPanel } from '../../../components/ui/UtilityBlocks';
 import { useActiveOffers } from '../../../hooks/useOffers';
+import { openOfferDestination } from '../../../utils/offerNavigation';
 
 export default function AnnouncementsScreen() {
     const colors = useAppColors();
@@ -64,14 +65,16 @@ export default function AnnouncementsScreen() {
                         />
                     )}
                     renderItem={({ item }) => (
-                        <UtilityPanel>
+                        <UtilityPanel tone="info" onPress={item.ctaRoute ? () => { void openOfferDestination(item.ctaRoute); } : undefined}>
                             <View style={s.titleRow}>
                                 <MaterialCommunityIcons name="bullhorn-outline" size={18} color={colors.primary} />
                                 <Text style={[s.cardTitle, { color: colors.text }]}>{item.title}</Text>
                             </View>
                             <Text style={[s.cardMessage, { color: colors.textSecondary }]}>{item.message}</Text>
                             {(item.ctaText || item.ctaRoute) ? (
-                                <Text style={[s.cardMeta, { color: colors.primary }]}>{`${item.ctaText ?? 'Open'} ${item.ctaRoute ?? ''}`.trim()}</Text>
+                                <Text style={[s.cardMeta, { color: colors.primary }]}>
+                                    {`${item.ctaText ?? 'Open'}${item.ctaRoute ? ' -> Tap to open' : ''}`}
+                                </Text>
                             ) : null}
                         </UtilityPanel>
                     )}

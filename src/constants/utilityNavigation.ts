@@ -24,39 +24,28 @@ export type UtilityScreenSection = {
 
 export const MORE_SCREEN_SECTIONS: UtilityScreenSection[] = [
     {
-        title: 'Main',
+        title: 'Workspace',
         items: [
-            { label: 'Screen Directory', route: '/(main)/more/screen-directory', description: 'Explore every route and workflow.', icon: 'compass-outline', tone: 'info' },
-            { label: 'Parties', route: '/(main)/parties', description: 'Customers, suppliers, and balances.', icon: 'account-multiple-outline', module: 'parties' },
-            { label: 'Party Recycle Bin', route: '/(main)/parties/recycle-bin', description: 'Restore archived customer and supplier records.', icon: 'restore', module: 'parties', tone: 'warning' },
-            { label: 'Item Recycle Bin', route: '/(main)/inventory/recycle-bin', description: 'Recover archived inventory masters.', icon: 'archive-refresh-outline', module: 'inventory', tone: 'warning' },
-            { label: 'Reports', route: '/(main)/reports', description: 'GST, ledgers, profit and loss.', icon: 'chart-line', module: 'reports' },
-            { label: 'Quick Sale (POS)', route: '/(main)/billing/pos', description: 'Fast checkout flow for counter sales.', icon: 'point-of-sale', requiresPos: true, tone: 'success' },
+            { label: 'Settings Hub', route: '/(main)/more/settings', description: 'Business setup, taxes, inventory rules, and app preferences.', icon: 'cog-outline', module: 'settings' },
+            { label: 'Subscription', route: '/(main)/more/subscription', description: 'Plan, limits, renewals, and current status.', icon: 'crown-outline', tone: 'info' },
+            { label: 'Switch Business', route: '/(auth)/business-select', description: 'Change active firm and local scope.', icon: 'domain-switch', tone: 'info' },
         ],
     },
     {
-        title: 'Accounts',
-        items: [
-            { label: 'Cash and Bank', route: '/(main)/accounts/cash-bank', description: 'Cash, bank, contra and cheque accounts.', icon: 'bank-outline', module: 'accounts' },
-            { label: 'Expenses', route: '/(main)/accounts/expenses', description: 'Track operating costs and payment mode.', icon: 'cash-minus', module: 'accounts' },
-            { label: 'Expense Recycle Bin', route: '/(main)/accounts/expenses/recycle-bin', description: 'Review or restore archived expenses.', icon: 'trash-can-outline', module: 'accounts', tone: 'warning' },
-            { label: 'Loans', route: '/(main)/accounts/loans', description: 'Borrowed and given loan registers.', icon: 'hand-coin-outline', module: 'accounts' },
-        ],
-    },
-    {
-        title: 'Control',
+        title: 'Control Center',
         items: [
             { label: 'Operations', route: '/(main)/more/operations', description: 'Lock periods, approvals, and process controls.', icon: 'cog-transfer-outline', module: 'operations' },
             { label: 'Announcements', route: '/(main)/more/announcements', description: 'Offers and product notices from the system.', icon: 'bullhorn-outline', module: 'operations', tone: 'info' },
-            { label: 'Godowns', route: '/(main)/more/godowns', description: 'Warehouse list and stock transfer setup.', icon: 'warehouse', requiresFeature: FeatureFlag.MULTI_GODOWN },
             { label: 'Offline Sync Diagnostics', route: '/(main)/more/sync', description: 'Queue health, retry state, and blocked sync items.', icon: 'cloud-sync-outline', tone: 'warning' },
         ],
     },
     {
         title: 'Business',
         items: [
-            { label: 'Switch Business', route: '/(auth)/business-select', description: 'Change the active firm and local scope.', icon: 'domain-switch', tone: 'info' },
-            { label: 'Settings', route: '/(main)/more/settings', description: 'Business setup, printing, taxes, and security.', icon: 'cog-outline', module: 'settings' },
+            { label: 'Printing & Templates', route: '/(main)/more/printing', description: 'Thermal, PDF layouts and business card preview.', icon: 'printer-outline', module: 'settings' },
+            { label: 'Staff and Roles', route: '/(main)/more/staff', description: 'Invite staff and manage role access.', icon: 'account-group-outline', module: 'staff' },
+            { label: 'Role Access', route: '/(main)/more/role-access', description: 'Fine-grained module permissions.', icon: 'shield-account-outline', module: 'settings', ownerOnly: true },
+            { label: 'Legal Center', route: '/legal', description: 'Terms, privacy, changelog, and about.', icon: 'file-document-outline', tone: 'default' },
         ],
     },
 ];

@@ -47,11 +47,6 @@ export default function BillingScreen() {
             <AppTopBar
                 title="Billing"
                 subtitle="Invoices, purchases & payments"
-                rightAction={(
-                    <Pressable onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
-                        <MaterialCommunityIcons name="compass-outline" size={20} color={colors.primary} />
-                    </Pressable>
-                )}
             />
 
             {/* Search */}

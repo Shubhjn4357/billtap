@@ -77,11 +77,25 @@ export default function PartyDetailScreen() {
                 </View>
 
                 <View style={s.quickRow}>
-                    <Pressable style={[s.quickBtn, { backgroundColor: colors.primary }]} onPress={() => router.push(`/(main)/billing/create?type=TAX_INVOICE&partyId=${id}` as Parameters<typeof router.push>[0])}>
-                        <Text style={s.quickBtnText}>New Sale Invoice</Text>
+                    <Pressable
+                        style={[s.quickBtn, { backgroundColor: colors.primary }]}
+                        onPress={() => router.push(
+                            (party.type === 'SUPPLIER'
+                                ? `/(main)/billing/purchase-bill?partyId=${id}`
+                                : `/(main)/billing/create?type=TAX_INVOICE&partyId=${id}`) as Parameters<typeof router.push>[0]
+                        )}
+                    >
+                        <Text style={s.quickBtnText}>{party.type === 'SUPPLIER' ? 'New Purchase Bill' : 'New Sale Invoice'}</Text>
                     </Pressable>
-                    <Pressable style={[s.quickBtn, { backgroundColor: colors.primaryVariant }]} onPress={() => router.push(`/(main)/billing/create?type=PAYMENT_IN&partyId=${id}` as Parameters<typeof router.push>[0])}>
-                        <Text style={s.quickBtnText}>Receive Payment</Text>
+                    <Pressable
+                        style={[s.quickBtn, { backgroundColor: colors.primaryVariant }]}
+                        onPress={() => router.push(
+                            (party.type === 'SUPPLIER'
+                                ? `/(main)/billing/payment-out?partyId=${id}&returnPath=${encodeURIComponent(detailRoute)}`
+                                : `/(main)/billing/payment-in?partyId=${id}&returnPath=${encodeURIComponent(detailRoute)}`) as Parameters<typeof router.push>[0]
+                        )}
+                    >
+                        <Text style={s.quickBtnText}>{party.type === 'SUPPLIER' ? 'Payout' : 'Receive Payment'}</Text>
                     </Pressable>
                 </View>
 

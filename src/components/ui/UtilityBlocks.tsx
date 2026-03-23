@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getIconAccentStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography } from '../../constants/theme';
@@ -81,27 +82,39 @@ export function UtilityHero({
 export function UtilityPanel({
     children,
     tone = 'default',
+    onPress,
 }: {
     children: ReactNode;
     tone?: UtilityTone;
+    onPress?: () => void;
 }) {
     const colors = useAppColors();
     const accent = toneColor(tone, colors);
+    const panelStyle: StyleProp<ViewStyle> = [
+        styles.panel,
+        {
+            ...getSurfaceStyle(colors, {
+                accent: tone === 'default' ? undefined : accent,
+                elevated: true,
+                muted: tone !== 'default',
+            }),
+        },
+    ];
+
+    if (!onPress) {
+        return <View style={panelStyle}>{children}</View>;
+    }
+
     return (
-        <View
-            style={[
-                styles.panel,
-                {
-                    ...getSurfaceStyle(colors, {
-                        accent: tone === 'default' ? undefined : accent,
-                        elevated: true,
-                        muted: tone !== 'default',
-                    }),
-                },
+        <Pressable
+            style={({ pressed }) => [
+                panelStyle,
+                pressed && { backgroundColor: colors.backgroundSelected },
             ]}
+            onPress={onPress}
         >
             {children}
-        </View>
+        </Pressable>
     );
 }
 

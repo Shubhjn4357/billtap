@@ -107,10 +107,11 @@ export default function PosScreen() {
     };
 
     const handleAddItem = (item: Item) => {
-        store.addItem({
+        const result = store.addItem({
             itemId: item.id,
             description: item.name,
             quantity: 1,
+            availableStock: Number(item.stock ?? 0),
             unit: item.unit ?? 'pcs',
             rate: item.salePrice,
             mrp: item.mrp,
@@ -118,6 +119,23 @@ export default function PosScreen() {
             gstRate: normalizeGstRate(item.gstRate),
             isInterState: store.isInterState,
         });
+
+        if (result.clamped) {
+            openInfoDialog(
+                'Stock limit reached',
+                `${item.name} only has ${result.maxAvailable ?? 0} ${item.unit ?? 'pcs'} available.`
+            );
+        }
+    };
+
+    const handleCartQtyChange = (itemName: string, key: string, qty: number) => {
+        const result = store.updateItemQty(key, qty);
+        if (result.clamped) {
+            openInfoDialog(
+                'Stock limit reached',
+                `${itemName} only has ${result.maxAvailable ?? 0} in stock.`
+            );
+        }
     };
 
     const handleScanPress = () => {
@@ -227,11 +245,11 @@ export default function PosScreen() {
                             {store.cartItems.map((ci) => (
                                 <View key={ci._key} style={[s.cartRow, { borderBottomColor: colors.border }]}>
                                     <Text style={[s.cartItemName, { color: colors.text, flex: 1 }]} numberOfLines={1}>{ci.description}</Text>
-                                    <Pressable onPress={() => store.updateItemQty(ci._key, ci.quantity - 1)}>
+                                    <Pressable onPress={() => handleCartQtyChange(ci.description, ci._key, ci.quantity - 1)}>
                                         <Text style={[s.qtyBtn, { color: colors.primary }]}>-</Text>
                                     </Pressable>
                                     <Text style={[s.qty, { color: colors.text }]}>{ci.quantity}</Text>
-                                    <Pressable onPress={() => store.updateItemQty(ci._key, ci.quantity + 1)}>
+                                    <Pressable onPress={() => handleCartQtyChange(ci.description, ci._key, ci.quantity + 1)}>
                                         <Text style={[s.qtyBtn, { color: colors.primary }]}>+</Text>
                                     </Pressable>
                                     <Text style={[s.cartTotal, { color: colors.text }]}>Rs {ci.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>

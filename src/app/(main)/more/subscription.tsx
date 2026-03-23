@@ -38,6 +38,7 @@ import {
 } from '../../../components/ui/UtilityBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useActiveOffers, useSubscriptionPlans } from '../../../hooks/useOffers';
+import { openOfferDestination } from '../../../utils/offerNavigation';
 
 type PlanLike = {
     id: string;
@@ -124,6 +125,8 @@ export default function SubscriptionScreen() {
     );
 
     const currentTier = subscription?.tier ?? null;
+    const subscriptionStatus = subscription?.status ?? null;
+    const planInGoodStanding = subscriptionStatus === 'ACTIVE' || subscriptionStatus === 'TRIAL' || subscriptionStatus === null;
 
     const handleApplyDiscount = () => {
         void validateDiscount({
@@ -205,13 +208,22 @@ export default function SubscriptionScreen() {
                     <UtilityHero
                         title={currentTier ? `${currentTier} Plan` : 'Subscription Control'}
                         subtitle={
-                            livePaymentsEnabled
+                            !planInGoodStanding && subscriptionStatus
+                                ? `${subscriptionStatus} status is limiting cloud sync and premium modules until renewal.`
+                                : livePaymentsEnabled
                                 ? 'Live checkout is enabled for this build.'
                                 : 'Mock checkout is enabled for this build.'
                         }
                         icon="star-circle-outline"
-                        tone="info"
+                        tone={planInGoodStanding ? 'info' : 'warning'}
                     />
+
+                    {!planInGoodStanding && subscriptionStatus ? (
+                        <UtilityBanner
+                            tone="warning"
+                            message={`Current subscription status is ${subscriptionStatus}. Local work stays on device, but cloud-dependent features stay restricted until the plan is active again.`}
+                        />
+                    ) : null}
 
                     <UtilitySection title="Checkout Mode">
                         <UtilityPanel tone="info">
@@ -247,6 +259,11 @@ export default function SubscriptionScreen() {
                                 <Text style={[s.currentTitle, { color: colors.text }]}>
                                     Current Tier: {currentTier}
                                 </Text>
+                                {subscriptionStatus ? (
+                                    <Text style={[s.currentMeta, { color: colors.textSecondary }]}>
+                                        Status: {subscriptionStatus}
+                                    </Text>
+                                ) : null}
                                 {subscription?.renewsAt ? (
                                     <Text style={[s.currentMeta, { color: colors.textSecondary }]}>
                                         Renews on {new Date(subscription.renewsAt).toLocaleDateString('en-IN')}
@@ -259,9 +276,18 @@ export default function SubscriptionScreen() {
                     {offers.length > 0 ? (
                         <UtilitySection title="Offers" count={Math.min(offers.length, 2)}>
                             {offers.slice(0, 2).map((offer) => (
-                                <UtilityPanel key={offer.id} tone="info">
+                                <UtilityPanel
+                                    key={offer.id}
+                                    tone="info"
+                                    onPress={offer.ctaRoute ? () => { void openOfferDestination(offer.ctaRoute); } : undefined}
+                                >
                                     <Text style={[s.offerTitle, { color: colors.primary }]}>{offer.title}</Text>
                                     <Text style={[s.offerMessage, { color: colors.text }]}>{offer.message}</Text>
+                                    {(offer.ctaText || offer.ctaRoute) ? (
+                                        <Text style={[s.offerMeta, { color: colors.primary }]}>
+                                            {`${offer.ctaText ?? 'Open'}${offer.ctaRoute ? ' -> Tap to open' : ''}`}
+                                        </Text>
+                                    ) : null}
                                 </UtilityPanel>
                             ))}
                         </UtilitySection>
@@ -416,6 +442,7 @@ const styles = (colors: ColorPalette) =>
         currentMeta: { fontSize: 12, marginTop: 4 },
         offerTitle: { fontSize: 14, fontWeight: '700' },
         offerMessage: { fontSize: 12, marginTop: 4 },
+        offerMeta: { fontSize: 12, marginTop: 8, fontWeight: '700' },
         cycleTabs: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
         discountRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
         discountInputWrap: { flex: 1 },

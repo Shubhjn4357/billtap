@@ -8,7 +8,7 @@ export default {
   expo: {
     name: "vahi",
     slug: "vahi",
-    version: "4.1.0", // This is your public version (what users see)
+    version: "4.2.0", // This is your public version (what users see)
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: "vahi",

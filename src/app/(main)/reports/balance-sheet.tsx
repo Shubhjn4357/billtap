@@ -74,6 +74,7 @@ export default function BalanceSheetScreen() {
                 subtitle: 'Assets, liabilities, and equity snapshot.',
                 businessName: business?.name,
                 contextLabel: isBalanced ? 'Balanced snapshot' : 'Needs review',
+                documentKind: 'balance-sheet',
                 summaryMetrics: [
                     { label: 'Assets', value: formatInr(totals.assets) },
                     { label: 'Liabilities', value: formatInr(totals.liabilities) },

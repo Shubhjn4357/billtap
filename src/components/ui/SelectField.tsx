@@ -8,7 +8,7 @@ import {
     View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { DESIGN_SPACING, getPillStyle, getShadowStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { AppInput } from './AppInput';
 import { useAppColors } from '../../hooks/useAppColors';
@@ -186,7 +186,6 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: Spacing.sm,
-            ...getShadowStyle(colors, 'soft'),
         },
         inputText: {
             flex: 1,
@@ -199,20 +198,19 @@ const styles = (colors: ColorPalette) =>
         },
         modalRoot: {
             flex: 1,
-            justifyContent: 'flex-end',
+            justifyContent: 'center',
+            paddingHorizontal: DESIGN_SPACING.screenX,
         },
         backdrop: {
             ...StyleSheet.absoluteFillObject,
-            backgroundColor: withAlpha(colors.text, '88'),
+            backgroundColor: withAlpha(colors.text, '4D'),
         },
         sheet: {
-            borderTopLeftRadius: Radius.lg,
-            borderTopRightRadius: Radius.lg,
-            borderBottomWidth: 0,
-            maxHeight: '80%',
-            paddingHorizontal: DESIGN_SPACING.screenX,
+            borderRadius: Radius.card,
+            maxHeight: '72%',
+            paddingHorizontal: Spacing.md,
             paddingTop: Spacing.md,
-            paddingBottom: Spacing.xl,
+            paddingBottom: Spacing.md,
             gap: Spacing.sm,
             ...getSurfaceStyle(colors, { floating: true }),
         },

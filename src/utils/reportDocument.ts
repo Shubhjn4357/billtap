@@ -25,6 +25,7 @@ type ReportDocumentInput = {
     subtitle?: string;
     businessName?: string | null;
     contextLabel?: string;
+    documentKind?: 'generic' | 'trial-balance' | 'balance-sheet' | 'gst-summary';
     summaryMetrics?: DocumentMetric[];
     sections: DocumentSection[];
 };
@@ -90,11 +91,25 @@ const renderSections = (sections: DocumentSection[]) =>
         </section>
     `).join('');
 
+const renderDocumentNote = (documentKind: ReportDocumentInput['documentKind']) => {
+    if (documentKind === 'gst-summary') {
+        return 'Prepared for GST review. Verify values against return-working data before filing.';
+    }
+    if (documentKind === 'trial-balance') {
+        return 'Prepared for internal accounting review. Confirm ledger postings before statutory use.';
+    }
+    if (documentKind === 'balance-sheet') {
+        return 'Prepared from current ledger balances. Reconcile supporting schedules before final submission.';
+    }
+    return 'Prepared for business review and export.';
+};
+
 export const createReportDocumentHtml = ({
     title,
     subtitle,
     businessName,
     contextLabel,
+    documentKind = 'generic',
     summaryMetrics = [],
     sections,
 }: ReportDocumentInput) => {
@@ -182,6 +197,16 @@ export const createReportDocumentHtml = ({
         .summary-grid {
             margin-bottom: 20px;
         }
+        .note-card {
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(49, 93, 220, 0.06), rgba(49, 93, 220, 0.02));
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+        }
         .metric-card {
             border: 1px solid var(--border);
             background: var(--surface-alt);
@@ -231,6 +256,12 @@ export const createReportDocumentHtml = ({
         thead {
             background: var(--surface-alt);
         }
+        tbody {
+            background: #ffffff;
+        }
+        tbody tr:nth-child(even) {
+            background: rgba(21, 34, 53, 0.025);
+        }
         th,
         td {
             padding: 12px 14px;
@@ -279,6 +310,7 @@ export const createReportDocumentHtml = ({
                 <div>Generated ${escapeHtml(generatedAt)}</div>
             </div>
         </header>
+        <section class="note-card">${escapeHtml(renderDocumentNote(documentKind))}</section>
         ${summaryMetrics.length > 0 ? `<section class="summary-grid">${renderMetricCards(summaryMetrics)}</section>` : ''}
         ${renderSections(sections)}
     </main>

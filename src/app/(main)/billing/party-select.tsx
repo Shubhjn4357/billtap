@@ -15,7 +15,7 @@ import { useInvoiceBuilderStore } from '../../../store/invoiceBuilderStore';
 import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
 import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
-import { useSmartBack } from '../../../hooks/useSmartBack';
+import { resolveSingleParam, useSmartBack } from '../../../hooks/useSmartBack';
 import { useParties } from '../../../hooks/useParties';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppSearchBar } from '../../../components/ui/AppSearchBar';
@@ -25,8 +25,8 @@ export default function PartySelectScreen() {
     const colors = useAppColors();
     const s = styles(colors);
     const [search, setSearch] = useState('');
-    const params = useLocalSearchParams<{ partyType?: string }>();
-    const smartBack = useSmartBack('/(main)/billing');
+    const params = useLocalSearchParams<{ partyType?: string; returnPath?: string | string[] }>();
+    const smartBack = useSmartBack(resolveSingleParam(params.returnPath) ?? '/(main)/billing');
     const normalizedPartyType = params.partyType?.toLowerCase() === 'supplier' ? 'supplier' : 'customer';
 
     const setParty = useInvoiceBuilderStore((state) => state.setParty);
@@ -78,6 +78,7 @@ export default function PartySelectScreen() {
                             params: {
                                 type: normalizedPartyType === 'supplier' ? 'SUPPLIER' : 'CUSTOMER',
                                 returnContext: 'invoice',
+                                returnPath: resolveSingleParam(params.returnPath) ?? '/(main)/billing',
                             },
                         })
                     }

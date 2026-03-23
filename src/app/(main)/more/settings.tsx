@@ -78,7 +78,6 @@ export default function SettingsScreen() {
             invoicing: [],
             inventory: [],
             business: [],
-            notifications: [],
         };
 
         for (const section of apiSections) {

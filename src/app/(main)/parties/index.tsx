@@ -118,9 +118,6 @@ export default function PartiesScreen() {
                 subtitle="Customers, suppliers and balances"
                 rightAction={(
                     <View style={s.topActions}>
-                        <Pressable style={s.topIconBtn} onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
-                            <MaterialCommunityIcons name="compass-outline" size={18} color={colors.primary} />
-                        </Pressable>
                         <Pressable
                             style={[s.topIconBtn, { backgroundColor: colors.primary }]}
                             onPress={() => {
@@ -134,100 +131,101 @@ export default function PartiesScreen() {
                 )}
             />
 
-            <View style={s.heroWrap}>
-                <UtilityHero
-                    title={heroTitle}
-                    subtitle={heroSubtitle}
-                    icon={tab === 'CUSTOMER' ? 'account-group-outline' : 'truck-delivery-outline'}
-                    tone={tab === 'CUSTOMER' ? 'success' : 'warning'}
-                />
-            </View>
-
-            <View style={s.tabBar}>
-                {([
-                    { key: 'CUSTOMER' as const, label: 'Customers' },
-                    { key: 'SUPPLIER' as const, label: 'Suppliers' },
-                ]).map((entry) => {
-                    const selected = tab === entry.key;
-                    return (
-                        <ChipButton
-                            key={entry.key}
-                            label={entry.label}
-                            selected={selected}
-                            tone={entry.key === 'CUSTOMER' ? 'success' : 'warning'}
-                            onPress={() => {
-                                void selection();
-                                setTab(entry.key);
-                                setSelectionMode(false);
-                                setSelectedIds([]);
-                            }}
-                        />
-                    );
-                })}
-            </View>
-
-            {!isLoading ? (
-                <View style={s.statsRow}>
-                    <HubMetricCard
-                        label="Visible"
-                        value={String(parties.length)}
-                        meta={tab === 'CUSTOMER' ? 'Customers in view' : 'Suppliers in view'}
-                        tone="info"
-                    />
-                    <HubMetricCard
-                        label={primaryBalanceLabel}
-                        value={`Rs ${primaryBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
-                        meta={tab === 'CUSTOMER' ? 'Amount to receive' : 'Amount to pay'}
-                        tone={primaryTone}
-                    />
-                    <HubMetricCard
-                        label="With Balance"
-                        value={String(partiesWithBalance)}
-                        meta="Need follow-up"
-                        tone="warning"
-                    />
-                </View>
-            ) : null}
-
-            <View style={s.searchRow}>
-                <AppSearchBar value={search} onChangeText={setSearch} placeholder="Search by name, phone or GSTIN..." />
-            </View>
-
-            <View style={s.actionBar}>
-                <ChipButton
-                    label={selectionMode ? 'Cancel' : 'Select'}
-                    icon={selectionMode ? 'close' : 'check-circle-outline'}
-                    variant="action"
-                    tone="info"
-                    onPress={() => { void selection(); setSelectionMode((current) => !current); setSelectedIds([]); }}
-                />
-                <ChipButton
-                    label="Bin"
-                    icon="delete-outline"
-                    variant="action"
-                    tone="warning"
-                    onPress={() => { void selection(); router.push('/(main)/parties/recycle-bin' as Parameters<typeof router.push>[0]); }}
-                />
-            </View>
-
-            {selectionMode ? (
-                <View style={s.bulkRow}>
-                    <Text style={[s.bulkLabel, { color: colors.textSecondary }]}>Selected: {selectedCount}</Text>
-                    <Pressable style={[s.bulkAction, { ...getPillStyle(colors, colors.primary) }]} onPress={requestBulkResetLimit} disabled={selectedCount === 0 || bulkUpdating}>
-                        <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 11 }}>{bulkUpdating ? 'Applying...' : 'Reset Limit'}</Text>
-                    </Pressable>
-                    <Pressable style={[s.bulkAction, { ...getPillStyle(colors, colors.error) }]} onPress={requestBulkDelete} disabled={selectedCount === 0 || bulkDeleting}>
-                        <Text style={{ color: colors.error, fontWeight: '700', fontSize: 11 }}>{bulkDeleting ? 'Archiving...' : 'Archive'}</Text>
-                    </Pressable>
-                </View>
-            ) : null}
-
             {isLoading ? (
                 <ListSkeleton rows={6} compact />
             ) : (
                 <FlatList
                     data={parties}
                     keyExtractor={(item) => item.id}
+                    ListHeaderComponent={(
+                        <>
+                            <View style={s.heroWrap}>
+                                <UtilityHero
+                                    title={heroTitle}
+                                    subtitle={heroSubtitle}
+                                    icon={tab === 'CUSTOMER' ? 'account-group-outline' : 'truck-delivery-outline'}
+                                    tone={tab === 'CUSTOMER' ? 'success' : 'warning'}
+                                />
+                            </View>
+
+                            <View style={s.tabBar}>
+                                {([
+                                    { key: 'CUSTOMER' as const, label: 'Customers' },
+                                    { key: 'SUPPLIER' as const, label: 'Suppliers' },
+                                ]).map((entry) => {
+                                    const selected = tab === entry.key;
+                                    return (
+                                        <ChipButton
+                                            key={entry.key}
+                                            label={entry.label}
+                                            selected={selected}
+                                            tone={entry.key === 'CUSTOMER' ? 'success' : 'warning'}
+                                            onPress={() => {
+                                                void selection();
+                                                setTab(entry.key);
+                                                setSelectionMode(false);
+                                                setSelectedIds([]);
+                                            }}
+                                        />
+                                    );
+                                })}
+                            </View>
+
+                            <View style={s.statsRow}>
+                                <HubMetricCard
+                                    label="Visible"
+                                    value={String(parties.length)}
+                                    meta={tab === 'CUSTOMER' ? 'Customers in view' : 'Suppliers in view'}
+                                    tone="info"
+                                />
+                                <HubMetricCard
+                                    label={primaryBalanceLabel}
+                                    value={`Rs ${primaryBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                                    meta={tab === 'CUSTOMER' ? 'Amount to receive' : 'Amount to pay'}
+                                    tone={primaryTone}
+                                />
+                                <HubMetricCard
+                                    label="With Balance"
+                                    value={String(partiesWithBalance)}
+                                    meta="Need follow-up"
+                                    tone="warning"
+                                />
+                            </View>
+
+                            <View style={s.searchRow}>
+                                <AppSearchBar value={search} onChangeText={setSearch} placeholder="Search by name, phone or GSTIN..." />
+                            </View>
+
+                            <View style={s.actionBar}>
+                                <ChipButton
+                                    label={selectionMode ? 'Cancel' : 'Select'}
+                                    icon={selectionMode ? 'close' : 'check-circle-outline'}
+                                    variant="action"
+                                    tone="info"
+                                    onPress={() => { void selection(); setSelectionMode((current) => !current); setSelectedIds([]); }}
+                                />
+                                <ChipButton
+                                    label="Bin"
+                                    icon="delete-outline"
+                                    variant="action"
+                                    tone="warning"
+                                    onPress={() => { void selection(); router.push('/(main)/parties/recycle-bin' as Parameters<typeof router.push>[0]); }}
+                                />
+                            </View>
+
+                            {selectionMode ? (
+                                <View style={s.bulkRow}>
+                                    <Text style={[s.bulkLabel, { color: colors.textSecondary }]}>Selected: {selectedCount}</Text>
+                                    <Pressable style={[s.bulkAction, { ...getPillStyle(colors, colors.primary) }]} onPress={requestBulkResetLimit} disabled={selectedCount === 0 || bulkUpdating}>
+                                        <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 11 }}>{bulkUpdating ? 'Applying...' : 'Reset Limit'}</Text>
+                                    </Pressable>
+                                    <Pressable style={[s.bulkAction, { ...getPillStyle(colors, colors.error) }]} onPress={requestBulkDelete} disabled={selectedCount === 0 || bulkDeleting}>
+                                        <Text style={{ color: colors.error, fontWeight: '700', fontSize: 11 }}>{bulkDeleting ? 'Archiving...' : 'Archive'}</Text>
+                                    </Pressable>
+                                </View>
+                            ) : null}
+                        </>
+                    )}
                     renderItem={({ item }) => (
                         <PartyRow
                             party={item}

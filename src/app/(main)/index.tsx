@@ -127,13 +127,13 @@ export default function HomeScreen() {
             route: '/(main)/accounts',
         },
         {
-            key: 'add-mode',
-            eyebrow: 'Add Mode',
-            title: 'Pin another working card',
-            subtitle: 'Choose GST, stock, collections, or settings shortcuts next.',
-            icon: 'plus-circle-outline' as const,
+            key: 'business-card',
+            eyebrow: 'Brand Card',
+            title: 'Share your business identity',
+            subtitle: 'Open template settings to preview the business card and invoice branding.',
+            icon: 'card-account-details-outline' as const,
             accent: colors.warning,
-            route: '/(main)/more/screen-directory',
+            route: '/(main)/more/printing',
         },
     ]), [
         blockedCount,
@@ -424,15 +424,15 @@ export default function HomeScreen() {
 
                 <Pressable
                     style={s.directoryCard}
-                    onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}
+                    onPress={() => router.push('/(main)/more/printing' as Parameters<typeof router.push>[0])}
                 >
                     <View style={s.directoryIcon}>
-                        <MaterialCommunityIcons name="compass-outline" size={18} color={colors.primary} />
+                        <MaterialCommunityIcons name="card-account-details-outline" size={18} color={colors.primary} />
                     </View>
                     <View style={s.directoryCopy}>
-                        <Text style={[s.directoryTitle, { color: colors.text }]}>Open screen directory</Text>
+                        <Text style={[s.directoryTitle, { color: colors.text }]}>Business card and invoice branding</Text>
                         <Text style={[s.directorySubtitle, { color: colors.textSecondary }]}>
-                            Jump directly into billing, inventory, reports, settings, and legal routes.
+                            Preview the business card, printer layouts, invoice branding, and print-ready templates.
                         </Text>
                     </View>
                     <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />

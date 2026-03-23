@@ -41,11 +41,6 @@ export default function ReportsScreen() {
                 <AppTopBar
                     title="Reports"
                     subtitle="Sales, GST, accounting, and inventory insights"
-                    rightAction={(
-                        <Pressable onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
-                            <MaterialCommunityIcons name="compass-outline" size={20} color={colors.primary} />
-                        </Pressable>
-                    )}
                 />
                 <AppSearchBar
                     value={search}

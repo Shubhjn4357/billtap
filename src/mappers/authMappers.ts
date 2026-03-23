@@ -28,6 +28,11 @@ const readNumber = (value: unknown): number | null => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+const readStringArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+
 const readRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -157,6 +162,56 @@ export const mapLegacyProfileToSubscription = (
     featureFlagsEnabled: [],
     createdAt: timestamp,
     updatedAt: timestamp,
+  };
+};
+
+export const mapApiSubscription = (
+  payload: LegacyProfilePayload,
+  fallbackBusinessId?: string | null,
+): Subscription | null => {
+  const tier = readString(payload.tier);
+  if (!tier) return null;
+
+  const rawStatus = readStringOrDefault(payload.status, 'TRIAL').toUpperCase();
+  const status: Subscription['status'] =
+    rawStatus === 'ACTIVE'
+      ? 'ACTIVE'
+      : rawStatus === 'GRACE'
+        ? 'GRACE'
+        : rawStatus === 'EXPIRED'
+          ? 'EXPIRED'
+          : rawStatus === 'CANCELLED'
+            ? 'CANCELLED'
+            : 'TRIAL';
+
+  const featureFlagsEnabled = readStringArray(payload.featureFlagsEnabled) as Subscription['featureFlagsEnabled'];
+
+  return {
+    id: readStringOrDefault(payload.id, `sub_${fallbackBusinessId ?? 'current'}`),
+    businessId: readStringOrDefault(payload.businessId, fallbackBusinessId ?? 'current'),
+    tier: tier as Subscription['tier'],
+    billingCycle:
+      (readString(payload.billingCycle)?.toUpperCase() as Subscription['billingCycle']) ??
+      null,
+    status,
+    startDate: readString(payload.startDate),
+    endDate: readString(payload.endDate),
+    nextRenewalDate: readString(payload.nextRenewalDate),
+    renewsAt: readString(payload.renewsAt ?? payload.nextRenewalDate),
+    graceEndDate: readString(payload.graceEndDate),
+    maxBillsTotal: readNumber(payload.maxBillsTotal),
+    maxBillsPerMonth: readNumber(payload.maxBillsPerMonth),
+    maxStaffUsers: readNumber(payload.maxStaffUsers),
+    maxBusinesses: readNumber(payload.maxBusinesses),
+    maxDevices: readNumber(payload.maxDevices),
+    maxStorageMb: readNumber(payload.maxStorageMb),
+    monthlyInvoiceCount: readNumber(payload.monthlyInvoiceCount) ?? 0,
+    offlineOnly: readBoolean(payload.offlineOnly, false),
+    cloudSyncAllowed: readBoolean(payload.cloudSyncAllowed, true),
+    webDashboardAllowed: readBoolean(payload.webDashboardAllowed, true),
+    featureFlagsEnabled,
+    createdAt: readStringOrDefault(payload.createdAt, isoNow()),
+    updatedAt: readStringOrDefault(payload.updatedAt, isoNow()),
   };
 };
 

@@ -140,6 +140,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
     {
+        version: '4.2.0',
+        date: '2026-03-23',
+        highlights: [
+            'Reworked the app with the minimal shell, cleaner navigation, and calmer dashboard and utility layouts.',
+            'Fixed subscription gating, invoice draft preservation, GST toggles, POS stock ceiling checks, and module alignment across app, server, and admin.',
+            'Removed SMS and WhatsApp as active product channels and kept notifications plus announcements as the supported surface.',
+            'Added admin follow-up for banner announcements with route-targeted CTA selection, scheduling, and live in-app redirect handling.',
+        ],
+    },
+    {
         version: '4.1.0',
         date: '2026-02-28',
         highlights: [

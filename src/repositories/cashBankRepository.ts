@@ -166,7 +166,7 @@ export const cashBankRepository = {
             throw error;
         }
     },
-    deposit: async (payload: { accountId: string; amount: number; paymentMode?: string; narration?: string; description?: string; date?: string }) => {
+    deposit: async (payload: { accountId: string; partyId?: string; amount: number; paymentMode?: string; narration?: string; description?: string; date?: string }) => {
         const balanceChanges = [{ accountId: payload.accountId, delta: Number(payload.amount ?? 0) }];
         const previousBalances = await offlineSyncService.getCachedCashBankAccounts();
         await applyCashBankBalanceChanges(balanceChanges);
@@ -175,6 +175,7 @@ export const cashBankRepository = {
             try {
                 return await api.post<ApiOkResponse>('/api/cash-bank/deposit', {
                     accountId: payload.accountId,
+                    partyId: payload.partyId,
                     amount: payload.amount,
                     paymentMode: payload.paymentMode,
                     date: payload.date,
@@ -199,7 +200,7 @@ export const cashBankRepository = {
             syncMessage
         );
     },
-    withdraw: async (payload: { accountId: string; amount: number; paymentMode?: string; narration?: string; description?: string; date?: string }) => {
+    withdraw: async (payload: { accountId: string; partyId?: string; amount: number; paymentMode?: string; narration?: string; description?: string; date?: string }) => {
         const balanceChanges = [{ accountId: payload.accountId, delta: -Number(payload.amount ?? 0) }];
         const previousBalances = await offlineSyncService.getCachedCashBankAccounts();
         await applyCashBankBalanceChanges(balanceChanges);
@@ -208,6 +209,7 @@ export const cashBankRepository = {
             try {
                 return await api.post<ApiOkResponse>('/api/cash-bank/withdraw', {
                     accountId: payload.accountId,
+                    partyId: payload.partyId,
                     amount: payload.amount,
                     paymentMode: payload.paymentMode,
                     date: payload.date,

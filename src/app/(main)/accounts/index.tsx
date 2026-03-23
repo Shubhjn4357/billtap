@@ -98,11 +98,6 @@ export default function AccountsScreen() {
                 <AppTopBar
                     title="Accounts"
                     subtitle="Cash, bank, expenses, loans and ledgers"
-                    rightAction={(
-                        <Pressable onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
-                            <MaterialCommunityIcons name="compass-outline" size={20} color={colors.primary} />
-                        </Pressable>
-                    )}
                 />
                 <View style={s.searchWrap}>
                     <AppSearchBar

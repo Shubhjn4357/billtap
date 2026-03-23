@@ -51,7 +51,9 @@ export default function MoreScreen() {
         title: section.title,
         items: section.items.map((item) => ({
             ...item,
-            visible: item.requiresPos
+            visible: item.ownerOnly && role !== 'owner'
+                ? false
+                : item.requiresPos
                 ? featureFlags.includes(FeatureFlag.POS_MODE)
                 : item.requiresFeature
                     ? featureFlags.includes(item.requiresFeature)
@@ -67,7 +69,9 @@ export default function MoreScreen() {
         return sections
             .map((section) => ({
                 ...section,
-                items: section.items.filter((item) => item.label.toLowerCase().includes(needle)),
+                items: section.items.filter((item) =>
+                    `${item.label} ${item.description ?? ''}`.toLowerCase().includes(needle)
+                ),
             }))
             .filter((section) => section.items.length > 0);
     }, [search, sections]);
@@ -78,11 +82,6 @@ export default function MoreScreen() {
                 <AppTopBar
                     title="More"
                     subtitle="Utilities, controls, legal and admin tools"
-                    rightAction={(
-                        <Pressable onPress={() => router.push('/(main)/more/screen-directory' as Parameters<typeof router.push>[0])}>
-                            <MaterialCommunityIcons name="compass-outline" size={20} color={colors.primary} />
-                        </Pressable>
-                    )}
                 />
 
                 <View style={s.searchWrap}>

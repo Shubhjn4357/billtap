@@ -26,7 +26,6 @@ export type CashBankQuickAction = {
 };
 
 export const TAB_BAR_QUICK_ACTIONS: NavigationShortcut[] = [
-    { key: 'screen-directory', label: 'Screen Directory', route: '/(main)/more/screen-directory', icon: 'compass-outline' },
     { key: 'sale-invoice', label: 'New Sale Invoice', route: '/(main)/billing/create?type=TAX_INVOICE', icon: 'file-document-plus-outline', module: 'billing', action: 'billing.create' },
     { key: 'purchase-bill', label: 'Purchase Bill', route: '/(main)/billing/create?type=PURCHASE_BILL', icon: 'cart-plus', module: 'billing', action: 'billing.create' },
     { key: 'pos-sale', label: 'Quick Sale (POS)', route: '/(main)/billing/pos', icon: 'point-of-sale', module: 'billing', requiresPos: true },
@@ -53,7 +52,6 @@ export const SIDE_DRAWER_ACTIONS: NavigationShortcut[] = [
     { key: 'reports', label: 'Reports', route: '/(main)/reports', icon: 'chart-line', module: 'reports' },
     { key: 'staff', label: 'Staff and Roles', route: '/(main)/more/staff', icon: 'account-group-outline', module: 'staff' },
     { key: 'settings', label: 'Settings', route: '/(main)/more/settings', icon: 'cog-outline', module: 'settings' },
-    { key: 'screen-directory', label: 'Screen Directory', route: '/(main)/more/screen-directory', icon: 'compass-outline' },
 ];
 
 export const GO_TO_PALETTE_ROUTES: NavigationShortcut[] = [
@@ -80,7 +78,6 @@ export const GO_TO_PALETTE_ROUTES: NavigationShortcut[] = [
     { key: 'role-access', label: 'Role Access', route: '/(main)/more/role-access', description: 'Role based controls', module: 'settings', icon: 'shield-account-outline', ownerOnly: true },
     { key: 'godowns', label: 'Godowns', route: '/(main)/more/godowns', description: 'Warehouse management', module: 'inventory', icon: 'warehouse', requiresFeature: FeatureFlag.MULTI_GODOWN },
     { key: 'subscription', label: 'Subscription', route: '/(main)/more/subscription', description: 'Plan and limits', icon: 'star-circle-outline' },
-    { key: 'screen-directory', label: 'Screen Directory', route: '/(main)/more/screen-directory', description: 'Full route explorer', icon: 'compass-outline' },
     { key: 'legal', label: 'Legal Center', route: '/legal', description: 'Terms/privacy/changelog', icon: 'file-document-outline' },
     { key: 'stock-scanner', label: 'Stock Scanner', route: '/scan?target=stock', description: 'Barcode scanner', module: 'inventory', icon: 'barcode-scan' },
 ];

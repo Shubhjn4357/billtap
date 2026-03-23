@@ -29,6 +29,9 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
     const business = useAuthStore((state) => state.business);
     const subscription = useAuthStore((state) => state.subscription);
     const role = useAuthStore((state) => state.organizationRole);
+    const settings = (business?.settings ?? {}) as Record<string, unknown>;
+    const multiFirmEnabled = Boolean(settings.multi_firm_enabled);
+    const fastFirmSwitchEnabled = settings.allow_firm_switching_without_restart !== false;
 
     const actions = useMemo(() => {
         const normalized = search.trim().toLowerCase();
@@ -52,7 +55,6 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
         reports: colors.primary,
         staff: colors.warning,
         settings: colors.textSecondary,
-        'screen-directory': colors.primary,
     }), [colors.info, colors.primary, colors.primaryVariant, colors.success, colors.textSecondary, colors.warning]);
 
     return (
@@ -82,9 +84,24 @@ export function SideDrawerContent({ onClose }: SideDrawerContentProps) {
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={[s.userName, { color: colors.text }]} numberOfLines={1}>{user?.name ?? 'User'}</Text>
-                        <Text style={[s.bizName, { color: colors.textSecondary }]} numberOfLines={1}>
-                            {business?.name ?? 'Business'}
-                        </Text>
+                        <View style={s.businessRow}>
+                            <Text style={[s.bizName, { color: colors.textSecondary }]} numberOfLines={1}>
+                                {business?.name ?? 'Business'}
+                            </Text>
+                            {multiFirmEnabled && fastFirmSwitchEnabled ? (
+                                <Pressable
+                                    style={[s.switchBizBtn, { borderColor: withAlpha(colors.primary, '24') }]}
+                                    onPress={() => {
+                                        void selection();
+                                        onClose();
+                                        router.push('/(auth)/business-select' as Parameters<typeof router.push>[0]);
+                                    }}
+                                >
+                                    <MaterialCommunityIcons name="swap-horizontal-circle-outline" size={14} color={colors.primary} />
+                                    <Text style={[s.switchBizText, { color: colors.primary }]}>Switch</Text>
+                                </Pressable>
+                            ) : null}
+                        </View>
                     </View>
                 </View>
 
@@ -187,6 +204,12 @@ const styles = (colors: ColorPalette) =>
             alignItems: 'center',
             gap: Spacing.sm,
         },
+        businessRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.xs,
+            marginTop: 2,
+        },
         avatarWrap: {
             width: 46,
             height: 46,
@@ -209,9 +232,22 @@ const styles = (colors: ColorPalette) =>
             fontWeight: '700',
         },
         bizName: {
-            marginTop: 2,
             fontSize: Typography.caption.size,
             fontWeight: '500',
+            flexShrink: 1,
+        },
+        switchBizBtn: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            borderWidth: 1,
+            borderRadius: Radius.pill,
+            paddingHorizontal: Spacing.xs,
+            paddingVertical: 3,
+        },
+        switchBizText: {
+            fontSize: 10,
+            fontWeight: '700',
         },
         metaRow: {
             flexDirection: 'row',

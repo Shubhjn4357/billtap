@@ -564,6 +564,7 @@ export interface PosCartItem {
     itemId: string | null;
     description: string;
     quantity: number;
+    availableStock?: number | null;
     unit: string;
     rate: number;
     mrp: number;

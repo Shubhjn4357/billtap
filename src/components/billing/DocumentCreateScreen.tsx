@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams, usePathname } from 'expo-router';
 import { type InvoiceCreateInput } from '../../repositories/invoiceRepository';
 import type { BillingDocumentConfig } from '../../constants/billingDocumentOptions';
 import { DESIGN_SPACING } from '../../constants/designSystem';
@@ -15,7 +15,7 @@ import { InvoiceType, PaymentMode } from '../../constants/enums';
 import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel } from '../../constants/accountingInputOptions';
 import { useAuthStore } from '../../store/authStore';
 import { useInvoiceBuilderStore, useInvoiceTotals } from '../../store/invoiceBuilderStore';
-import type { InvoiceLineItem, Item } from '../../types/domain';
+import type { InvoiceBuilderState, InvoiceLineItem, Item } from '../../types/domain';
 import { useSmartBack } from '../../hooks/useSmartBack';
 import { toUserMessage } from '../../api/client';
 import { canPerformAction } from '../../utils/accessControl';
@@ -28,6 +28,7 @@ import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useItemCatalog } from '../../hooks/useInventory';
 import { useGodowns } from '../../hooks/useGodowns';
 import { useInvoiceMutations } from '../../hooks/useInvoiceMutations';
+import { usePartyDetails } from '../../hooks/usePartyDetails';
 
 type LineItemRowProps = {
     line: InvoiceLineItem;
@@ -92,6 +93,26 @@ const withNoGst = (line: InvoiceLineItem): InvoiceLineItem => {
     };
 };
 
+const hasExistingDraft = (state: InvoiceBuilderState) =>
+    Boolean(
+        state.partyId
+        || state.placeOfSupply.trim()
+        || state.notes.trim()
+        || state.dueDate
+        || state.discountAmount
+        || state.additionalCharges
+        || state.roundOffAmount
+        || state.paidAmount
+        || state.items.some((line) => (
+            Boolean(line.itemId)
+            || Boolean(line.godownId)
+            || line.description.trim().length > 0
+            || line.rate > 0
+            || line.quantity !== 1
+            || line.gstRate > 0
+        ))
+    );
+
 export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig }) {
     const dialog = useAppDialog();
     const colors = useAppColors();
@@ -104,6 +125,8 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
     const preferredPartyType = config.transactionType === 'PURCHASE' || config.transactionType === 'RETURN_INWARD'
         ? 'supplier'
         : 'customer';
+    const pathname = usePathname();
+    const routeParams = useLocalSearchParams();
 
     const {
         init,
@@ -122,6 +145,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
         setPaidAmount,
         applyInterState,
         moveLine,
+        setParty,
     } = useInvoiceBuilderStore();
     const totals = useInvoiceTotals();
 
@@ -162,14 +186,90 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
         });
         return map;
     }, [itemCatalog]);
+    const currentRoute = useMemo(() => {
+        const query = new URLSearchParams();
+        Object.entries(routeParams).forEach(([key, value]) => {
+            if (value == null) return;
+            if (Array.isArray(value)) {
+                value.forEach((entry) => {
+                    if (entry != null && String(entry).length > 0) {
+                        query.append(key, String(entry));
+                    }
+                });
+                return;
+            }
+            const normalized = String(value);
+            if (normalized.length > 0) {
+                query.append(key, normalized);
+            }
+        });
+        const queryString = query.toString();
+        return queryString ? `${pathname}?${queryString}` : pathname;
+    }, [pathname, routeParams]);
+    const initialPartyId = useMemo(() => {
+        const value = routeParams.partyId;
+        return Array.isArray(value) ? value[0] : value;
+    }, [routeParams.partyId]);
+    const { party: initialParty } = usePartyDetails(initialPartyId, {
+        enabled: Boolean(initialPartyId),
+        staleTime: 60_000,
+    });
 
     useEffect(() => {
-        init((config.invoiceType as InvoiceType) ?? InvoiceType.TAX_INVOICE);
-        setInvoiceNumber(generateBillNumber(config.documentKind?.slice(0, 3) ?? 'INV'));
-        setInvoiceDate(formatDate(new Date().toISOString()));
-        setGstEnabled(config.invoiceType !== InvoiceType.BILL_OF_SUPPLY);
-        setEWayBillNumber('');
+        const currentStore = useInvoiceBuilderStore.getState();
+        const preserveDraft =
+            currentStore.state.invoiceType === ((config.invoiceType as InvoiceType) ?? InvoiceType.TAX_INVOICE)
+            && hasExistingDraft(currentStore.state);
+
+        init((config.invoiceType as InvoiceType) ?? InvoiceType.TAX_INVOICE, { preserveDraft: true });
+        if (!preserveDraft) {
+            setInvoiceNumber(generateBillNumber(config.documentKind?.slice(0, 3) ?? 'INV'));
+            setInvoiceDate(formatDate(new Date().toISOString()));
+            setGstEnabled(config.invoiceType !== InvoiceType.BILL_OF_SUPPLY);
+            setEWayBillNumber('');
+        }
     }, [config.documentKind, config.invoiceType, init, setInvoiceDate, setInvoiceNumber]);
+
+    useEffect(() => {
+        if (!gstEnabled || state.placeOfSupply || !business?.state) return;
+        setPlaceOfSupply(business.state);
+    }, [business?.state, gstEnabled, setPlaceOfSupply, state.placeOfSupply]);
+
+    useEffect(() => {
+        if (!initialPartyId || !initialParty) return;
+        if (state.partyId && state.partyId !== initialPartyId) return;
+        if (state.partyId === initialPartyId && state.partySnapshot?.name === initialParty.name) return;
+
+        setParty(initialParty.id, {
+            id: initialParty.id,
+            type: initialParty.type,
+            name: initialParty.name,
+            phone: initialParty.phone ?? null,
+            email: initialParty.email ?? null,
+            gstin: initialParty.gstin ?? null,
+            billingAddress: initialParty.billingAddress ?? null,
+            shippingAddress: initialParty.shippingAddress ?? null,
+        });
+    }, [initialParty, initialPartyId, setParty, state.partyId, state.partySnapshot?.name]);
+
+    useEffect(() => {
+        if (!gstEnabled) {
+            if (state.items.some((line) => line.isInterState)) {
+                applyInterState(false);
+            }
+            return;
+        }
+
+        const businessState = business?.state?.trim().toLowerCase();
+        const placeOfSupply = state.placeOfSupply.trim().toLowerCase();
+        if (!businessState || !placeOfSupply) return;
+
+        const nextIsInterState = businessState !== placeOfSupply;
+        const linesAligned = state.items.every((line) => line.isInterState === nextIsInterState);
+        if (!linesAligned) {
+            applyInterState(nextIsInterState);
+        }
+    }, [applyInterState, business?.state, gstEnabled, state.items, state.placeOfSupply]);
 
     useEffect(() => {
         if (state.defaultGodownId) return;
@@ -197,6 +297,17 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
 
     const toggleGst = (enabled: boolean) => {
         setGstEnabled(enabled);
+        if (enabled) {
+            state.items.forEach((line) => {
+                const selected = line.itemId ? itemById[line.itemId] : undefined;
+                if (!selected || line.gstRate > 0) return;
+                updateLine(line._key, {
+                    gstRate: normalizeGstRate(Number(selected.gstRate ?? 0)),
+                });
+            });
+            return;
+        }
+
         if (!enabled) {
             applyInterState(false);
             state.items.forEach((line) => {
@@ -381,6 +492,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                                 params: {
                                     type: preferredPartyType === 'supplier' ? 'SUPPLIER' : 'CUSTOMER',
                                     returnContext: 'invoice',
+                                    returnPath: currentRoute,
                                 },
                             })}
                         >
@@ -392,7 +504,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                         onPress={() =>
                             router.push({
                                 pathname: '/(main)/billing/party-select',
-                                params: { partyType: preferredPartyType },
+                                params: { partyType: preferredPartyType, returnPath: currentRoute },
                             })
                         }
                     >
@@ -416,6 +528,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                                 pathname: '/(main)/more/godowns/add',
                                 params: {
                                     returnContext: 'invoice',
+                                    returnPath: currentRoute,
                                 },
                             })}
                         >
@@ -464,7 +577,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                                 style={[s.addLineBtn, { borderColor: colors.border, flex: 1 }]}
                                 onPress={() => router.push({
                                     pathname: '/(main)/inventory/add-item',
-                                    params: { returnContext: 'invoice' },
+                                    params: { returnContext: 'invoice', returnPath: currentRoute },
                                 })}
                             >
                                 <Text style={[s.addLineBtnText, { color: colors.textSecondary }]}>+ Create Item</Text>
@@ -613,7 +726,7 @@ function LineItemRow({
                         description: selected.name,
                         unit: selected.unit ?? line.unit ?? 'pcs',
                         rate: resolveRateFromItem(selected),
-                        gstRate: normalizeGstRate(Number(selected.gstRate ?? 0)),
+                        gstRate: gstEnabled ? normalizeGstRate(Number(selected.gstRate ?? 0)) : 0,
                     });
                 }}
                 title="Select Inventory Item"

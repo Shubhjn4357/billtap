@@ -102,8 +102,6 @@ export const SUBSCRIPTION_TIERS: Record<SubscriptionTier, TierConfig> = {
       FeatureFlag.BATCH_EXPIRY,
       FeatureFlag.MULTI_GODOWN,
       FeatureFlag.POS_MODE,
-      FeatureFlag.SMS_NOTIFICATIONS,
-      FeatureFlag.WHATSAPP_NOTIFICATIONS,
     ],
   },
   ENTERPRISE: {
@@ -142,8 +140,6 @@ export const SUBSCRIPTION_TIERS: Record<SubscriptionTier, TierConfig> = {
       FeatureFlag.BATCH_EXPIRY,
       FeatureFlag.MULTI_GODOWN,
       FeatureFlag.POS_MODE,
-      FeatureFlag.SMS_NOTIFICATIONS,
-      FeatureFlag.WHATSAPP_NOTIFICATIONS,
       FeatureFlag.LOYALTY_POINTS,
     ],
   },
@@ -155,6 +151,35 @@ export function hasFeature(enabledFlags: string[], flag: FeatureFlag): boolean {
 
 export const GRACE_PERIOD_DAYS = 7;
 export const MAX_PREPAID_YEARS = 3;
+
+const RESTRICTED_AFTER_EXPIRY = new Set<FeatureFlag>([
+  FeatureFlag.CLOUD_SYNC,
+  FeatureFlag.MULTI_DEVICE,
+  FeatureFlag.BACKUP_CLOUD,
+  FeatureFlag.ACCESS_WEB_DASHBOARD,
+  FeatureFlag.API_ACCESS,
+  FeatureFlag.STAFF_USERS,
+  FeatureFlag.ADVANCED_REPORTS,
+  FeatureFlag.E_INVOICE,
+  FeatureFlag.E_WAY_BILL,
+  FeatureFlag.MULTI_BUSINESS,
+  FeatureFlag.MULTI_GODOWN,
+  FeatureFlag.POS_MODE,
+  FeatureFlag.BATCH_EXPIRY,
+  FeatureFlag.EXPORT_EXCEL,
+  FeatureFlag.LOYALTY_POINTS,
+]);
+
+export const getStatusScopedFeatureFlags = (
+  status: string | null | undefined,
+  enabledFlags: readonly FeatureFlag[],
+) => {
+  if (status === 'ACTIVE' || status === 'TRIAL' || !status) {
+    return [...enabledFlags];
+  }
+
+  return enabledFlags.filter((flag) => !RESTRICTED_AFTER_EXPIRY.has(flag));
+};
 
 // Alias with feature string list for subscription screen UI
 export const SUBSCRIPTION_CONFIG: Record<
@@ -193,7 +218,7 @@ export const SUBSCRIPTION_CONFIG: Record<
       'Multi-godown',
       'Advanced reports',
       'Multi-business (3)',
-      'WhatsApp SMS',
+      'Fast sync and web dashboard',
     ],
   },
   [SubscriptionTier.ENTERPRISE]: {

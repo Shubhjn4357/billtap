@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { DESIGN_SPACING, getShadowStyle, getSurfaceStyle } from '../../constants/designSystem';
+import { DESIGN_SPACING, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, withAlpha, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 
@@ -57,6 +57,7 @@ export function DateField({
     const [draft, setDraft] = useState<Date>(() => parseDate(value) ?? new Date());
 
     const preview = useMemo(() => formatPreview(value, includeTime), [includeTime, value]);
+    const isAndroid = Platform.OS === 'android';
 
     const openPicker = () => {
         if (disabled) return;
@@ -94,47 +95,66 @@ export function DateField({
                 <MaterialCommunityIcons name="calendar-month-outline" size={18} color={colors.textSecondary} />
             </Pressable>
 
-            <Modal
-                visible={open}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setOpen(false)}
-            >
-                <View style={s.modalRoot}>
-                    <Pressable style={s.backdrop} onPress={() => setOpen(false)} />
-                    <View style={s.sheet}>
-                        <View style={s.handle} />
-                        <Text style={[s.title, { color: colors.text }]}>{title}</Text>
+            {isAndroid && open ? (
+                <DateTimePicker
+                    value={draft}
+                    mode={includeTime ? 'datetime' : 'date'}
+                    display="default"
+                    onChange={(event, selected) => {
+                        if (event.type === 'dismissed') {
+                            setOpen(false);
+                            return;
+                        }
+                        if (!selected) return;
+                        setDraft(selected);
+                        commitValue(selected);
+                    }}
+                />
+            ) : null}
 
-                        <DateTimePicker
-                            value={draft}
-                            mode={includeTime ? 'datetime' : 'date'}
-                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                            onChange={(event, selected) => {
-                                if (event.type === 'dismissed') {
-                                    setOpen(false);
-                                    return;
-                                }
-                                if (!selected) return;
-                                setDraft(selected);
-                                commitValue(selected);
-                            }}
-                        />
+            {!isAndroid ? (
+                <Modal
+                    visible={open}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setOpen(false)}
+                >
+                    <View style={s.modalRoot}>
+                        <Pressable style={s.backdrop} onPress={() => setOpen(false)} />
+                        <View style={s.sheet}>
+                            <View style={s.handle} />
+                            <Text style={[s.title, { color: colors.text }]}>{title}</Text>
 
-                        {allowClear ? (
-                            <Pressable
-                                style={s.clearBtn}
-                                onPress={() => {
-                                    onChange(null);
-                                    setOpen(false);
+                            <DateTimePicker
+                                value={draft}
+                                mode={includeTime ? 'datetime' : 'date'}
+                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                onChange={(event, selected) => {
+                                    if (event.type === 'dismissed') {
+                                        setOpen(false);
+                                        return;
+                                    }
+                                    if (!selected) return;
+                                    setDraft(selected);
+                                    commitValue(selected);
                                 }}
-                            >
-                                <Text style={[s.clearText, { color: colors.error }]}>Clear date</Text>
-                            </Pressable>
-                        ) : null}
+                            />
+
+                            {allowClear ? (
+                                <Pressable
+                                    style={s.clearBtn}
+                                    onPress={() => {
+                                        onChange(null);
+                                        setOpen(false);
+                                    }}
+                                >
+                                    <Text style={[s.clearText, { color: colors.error }]}>Clear date</Text>
+                                </Pressable>
+                            ) : null}
+                        </View>
                     </View>
-                </View>
-            </Modal>
+                </Modal>
+            ) : null}
         </>
     );
 }
@@ -149,7 +169,6 @@ const styles = (colors: ColorPalette) =>
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            ...getShadowStyle(colors, 'soft'),
         },
         inputText: {
             fontSize: Typography.body.size,
@@ -157,19 +176,18 @@ const styles = (colors: ColorPalette) =>
         },
         modalRoot: {
             flex: 1,
-            justifyContent: 'flex-end',
+            justifyContent: 'center',
+            paddingHorizontal: DESIGN_SPACING.screenX,
         },
         backdrop: {
             ...StyleSheet.absoluteFillObject,
-            backgroundColor: withAlpha(colors.text, '88'),
+            backgroundColor: withAlpha(colors.text, '4D'),
         },
         sheet: {
-            borderTopLeftRadius: 28,
-            borderTopRightRadius: 28,
-            borderBottomWidth: 0,
-            paddingHorizontal: DESIGN_SPACING.screenX,
+            borderRadius: Radius.card,
+            paddingHorizontal: Spacing.md,
             paddingTop: Spacing.md,
-            paddingBottom: Spacing.xl,
+            paddingBottom: Spacing.md,
             gap: Spacing.md,
             ...getSurfaceStyle(colors, { floating: true }),
         },

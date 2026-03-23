@@ -1,5 +1,5 @@
 import { FeatureFlag, SubscriptionTier, type FeatureFlag as FeatureFlagType } from '../constants/enums';
-import { SUBSCRIPTION_TIERS } from '../constants/subscription';
+import { getStatusScopedFeatureFlags, SUBSCRIPTION_TIERS } from '../constants/subscription';
 import type { Business, Subscription } from '../types/domain';
 
 export type OrganizationRole = 'owner' | 'manager' | 'salesman' | 'staff';
@@ -316,8 +316,10 @@ const toTier = (subscription: Subscription | null): SubscriptionTier =>
 
 export const getEffectiveFeatureFlags = (subscription: Subscription | null): FeatureFlagType[] => {
     const explicitFlags = subscription?.featureFlagsEnabled ?? [];
-    if (explicitFlags.length > 0) return explicitFlags as FeatureFlagType[];
-    return SUBSCRIPTION_TIERS[toTier(subscription)].enabledFeatures;
+    const baseFlags = explicitFlags.length > 0
+        ? explicitFlags as FeatureFlagType[]
+        : SUBSCRIPTION_TIERS[toTier(subscription)].enabledFeatures;
+    return getStatusScopedFeatureFlags(subscription?.status, baseFlags) as FeatureFlagType[];
 };
 
 export const hasFeatureAccess = (subscription: Subscription | null, flag: FeatureFlagType): boolean =>

@@ -29,6 +29,7 @@ export default function TrialBalanceScreen() {
                 subtitle: 'Debit and credit integrity across visible accounts.',
                 businessName: business?.name,
                 contextLabel: totals.isBalanced ? 'Books balanced' : 'Mismatch detected',
+                documentKind: 'trial-balance',
                 summaryMetrics: [
                     { label: 'Debit', value: `Rs ${totals.debit.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` },
                     { label: 'Credit', value: `Rs ${totals.credit.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` },
