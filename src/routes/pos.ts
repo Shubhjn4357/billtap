@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { invoices, invoiceItems, items } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
@@ -203,48 +203,6 @@ posRoute.post('/sale', async (c) => {
     } catch (err) {
         return c.json({ ok: false, message: err instanceof Error ? err.message : 'POS sale failed.' }, 400);
     }
-});
-
-// Get POS invoice details
-posRoute.get('/sale/:id', async (c) => {
-    const db = c.get('db');
-    const authUser = c.get('authUser');
-    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
-    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
-    const denied = requireOrganizationCapability(c, 'pos.read');
-    if (denied) return denied;
-
-    const id = c.req.param('id');
-    const [invoice] = await db.select().from(invoices).where(and(eq(invoices.id, id), eq(invoices.businessId, business.id)));
-    if (!invoice) return c.json({ ok: false, message: 'POS sale not found' }, 404);
-
-    const lineItems = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, id));
-    return c.json({ ok: true, data: { ...invoice, items: lineItems } });
-});
-
-// List recent POS sales
-posRoute.get('/sales', async (c) => {
-    const db = c.get('db');
-    const authUser = c.get('authUser');
-    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
-
-    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c));
-    if (!business) return c.json({ ok: false, message: 'Business not found.' }, 404);
-    const denied = requireOrganizationCapability(c, 'pos.read');
-    if (denied) return denied;
-
-    const limit = Math.min(Number(c.req.query('limit') ?? 20), 100);
-    const offset = Number(c.req.query('offset') ?? 0);
-
-    const rows = await db.select().from(invoices)
-        .where(and(eq(invoices.businessId, business.id), eq(invoices.invoiceType, 'POS_BILL'), eq(invoices.isDeleted, false)))
-        .orderBy(desc(invoices.invoiceDate))
-        .limit(limit)
-        .offset(offset);
-
-    return c.json({ ok: true, data: rows });
 });
 
 export default posRoute;

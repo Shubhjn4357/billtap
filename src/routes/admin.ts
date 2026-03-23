@@ -19,6 +19,7 @@ import {
     notificationTemplates,
     offers,
     paymentIntents,
+    parties,
     plans,
     staffInvites,
     subscriptions,
@@ -289,6 +290,29 @@ const inventoryAdminPatchSchema = z.object({
 const inventoryAdminAdjustSchema = z.object({
     delta: z.number().refine((value) => value !== 0, { message: 'Delta cannot be zero.' }),
     reason: z.string().trim().max(255).optional(),
+});
+
+const partyAdminListQuerySchema = z.object({
+    businessId: z.string().trim().min(1).optional(),
+    q: z.string().trim().min(1).optional(),
+    type: z.enum(['CUSTOMER', 'SUPPLIER']).optional(),
+    includeInactive: z.coerce.boolean().default(false),
+    limit: z.coerce.number().int().min(1).max(2000).default(500),
+});
+
+const partyAdminPatchSchema = z.object({
+    name: z.string().trim().min(1).max(200).optional(),
+    type: z.enum(['CUSTOMER', 'SUPPLIER']).optional(),
+    phone: z.string().trim().nullable().optional(),
+    email: z.string().trim().nullable().optional(),
+    billingAddress: z.string().trim().nullable().optional(),
+    gstin: z.string().trim().nullable().optional(),
+    openingBalance: z.number().optional(),
+    creditLimit: z.number().nonnegative().optional(),
+    loyaltyPoints: z.number().int().optional(),
+    isActive: z.boolean().optional(),
+}).refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided.',
 });
 
 const staffInviteListQuerySchema = z.object({
@@ -2765,6 +2789,347 @@ adminRoute.delete('/inventory/items/:id/permanent', async (c) => {
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to permanently delete item.' }, 400);
     }
+});
+
+adminRoute.get('/parties', async (c) => {
+    const db = c.get('db');
+    const query = partyAdminListQuerySchema.parse({
+        businessId: c.req.query('businessId'),
+        q: c.req.query('q'),
+        type: c.req.query('type') ?? undefined,
+        includeInactive: c.req.query('includeInactive') ?? 'false',
+        limit: c.req.query('limit') ?? 500,
+    });
+
+    const conditions: SQL<unknown>[] = [];
+    if (query.businessId) conditions.push(eq(parties.businessId, query.businessId));
+    if (!query.includeInactive) conditions.push(eq(parties.isActive, true));
+    if (query.type) conditions.push(eq(parties.type, query.type));
+    if (query.q) {
+        const searchTerm = `%${query.q}%`;
+        conditions.push(or(
+            ilike(parties.name, searchTerm),
+            ilike(parties.nameLowercase, `%${query.q.toLowerCase()}%`),
+            ilike(parties.phone, searchTerm),
+            ilike(parties.email, searchTerm),
+            ilike(parties.gstin, searchTerm),
+        ) as SQL<unknown>);
+    }
+
+    const rows = conditions.length > 0
+        ? await db.select().from(parties).where(and(...conditions)).orderBy(desc(parties.updatedAt)).limit(query.limit)
+        : await db.select().from(parties).orderBy(desc(parties.updatedAt)).limit(query.limit);
+
+    const businessIds = Array.from(new Set(rows.map((entry) => entry.businessId)));
+    const businessRows = businessIds.length > 0
+        ? await db.select({ id: businesses.id, name: businesses.name }).from(businesses).where(inArray(businesses.id, businessIds))
+        : [];
+    const businessById = new Map(businessRows.map((entry) => [entry.id, entry.name]));
+
+    const summary = {
+        total: rows.length,
+        active: rows.filter((entry) => entry.isActive).length,
+        inactive: rows.filter((entry) => !entry.isActive).length,
+        customers: rows.filter((entry) => entry.type === 'CUSTOMER').length,
+        suppliers: rows.filter((entry) => entry.type === 'SUPPLIER').length,
+    };
+
+    return c.json({
+        ok: true,
+        summary,
+        parties: rows.map((entry) => ({
+            id: entry.id,
+            businessId: entry.businessId,
+            businessName: businessById.get(entry.businessId) ?? 'Unknown',
+            type: entry.type,
+            name: entry.name,
+            phone: entry.phone,
+            email: entry.email,
+            billingAddress: entry.billingAddress,
+            gstin: entry.gstin,
+            openingBalance: Number(entry.openingBalance ?? 0),
+            creditLimit: Number(entry.creditLimit ?? 0),
+            loyaltyPoints: Number(entry.loyaltyPoints ?? 0),
+            isActive: entry.isActive,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt,
+        })),
+    });
+});
+
+adminRoute.patch('/parties/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const payload = partyAdminPatchSchema.parse(await c.req.json());
+
+        const rows = await db.select().from(parties).where(eq(parties.id, id)).limit(1);
+        const party = rows[0];
+        if (!party) return c.json({ ok: false, message: 'Party not found.' }, 404);
+
+        const patch: Partial<typeof parties.$inferInsert> = {
+            updatedAt: new Date(),
+        };
+        if (payload.name !== undefined) {
+            patch.name = payload.name;
+            patch.nameLowercase = payload.name.toLowerCase();
+        }
+        if (payload.type !== undefined) patch.type = payload.type;
+        if (payload.phone !== undefined) patch.phone = payload.phone ?? null;
+        if (payload.email !== undefined) patch.email = payload.email ?? null;
+        if (payload.billingAddress !== undefined) patch.billingAddress = payload.billingAddress ?? null;
+        if (payload.gstin !== undefined) patch.gstin = payload.gstin?.toUpperCase() ?? null;
+        if (payload.openingBalance !== undefined) patch.openingBalance = payload.openingBalance;
+        if (payload.creditLimit !== undefined) patch.creditLimit = payload.creditLimit;
+        if (payload.loyaltyPoints !== undefined) patch.loyaltyPoints = payload.loyaltyPoints;
+        if (payload.isActive !== undefined) patch.isActive = payload.isActive;
+
+        await db.update(parties).set(patch).where(eq(parties.id, id));
+        await appendAuditLog(c, 'PARTY_UPDATED', 'party', id, {
+            businessId: party.businessId,
+            changedFields: Object.keys(payload),
+        });
+
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update party.' }, 400);
+    }
+});
+
+adminRoute.post('/parties/:id/restore', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(parties).where(eq(parties.id, id)).limit(1);
+        const party = rows[0];
+        if (!party) return c.json({ ok: false, message: 'Party not found.' }, 404);
+
+        await db.update(parties).set({
+            isActive: true,
+            updatedAt: new Date(),
+        }).where(eq(parties.id, id));
+
+        await appendAuditLog(c, 'PARTY_RESTORED', 'party', id, { businessId: party.businessId });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to restore party.' }, 400);
+    }
+});
+
+adminRoute.delete('/parties/:id', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(parties).where(eq(parties.id, id)).limit(1);
+        const party = rows[0];
+        if (!party) return c.json({ ok: false, message: 'Party not found.' }, 404);
+
+        await db.update(parties).set({
+            isActive: false,
+            updatedAt: new Date(),
+        }).where(eq(parties.id, id));
+
+        await appendAuditLog(c, 'PARTY_DEACTIVATED', 'party', id, { businessId: party.businessId });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to deactivate party.' }, 400);
+    }
+});
+
+adminRoute.delete('/parties/:id/permanent', async (c) => {
+    try {
+        assertSuperAdmin(c);
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const rows = await db.select().from(parties).where(eq(parties.id, id)).limit(1);
+        const party = rows[0];
+        if (!party) return c.json({ ok: false, message: 'Party not found.' }, 404);
+        if (party.isActive) {
+            return c.json({ ok: false, message: 'Deactivate party before permanent delete.' }, 409);
+        }
+
+        await db.delete(parties).where(eq(parties.id, id));
+        await appendAuditLog(c, 'PARTY_PERMANENT_DELETE', 'party', id, { businessId: party.businessId });
+        return c.json({ ok: true });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to permanently delete party.' }, 400);
+    }
+});
+
+adminRoute.get('/reporting/governance', async (c) => {
+    const db = c.get('db');
+    const businessRows = await db.select({
+        id: businesses.id,
+        name: businesses.name,
+        code: businesses.code,
+        isActive: businesses.isActive,
+        updatedAt: businesses.updatedAt,
+    }).from(businesses).orderBy(asc(businesses.name));
+
+    const businessIds = businessRows.map((entry) => entry.id);
+    const [subscriptionRows, settingsRows, templateRows] = await Promise.all([
+        businessIds.length > 0
+            ? db.select().from(subscriptions).where(inArray(subscriptions.businessId, businessIds)).orderBy(desc(subscriptions.createdAt))
+            : Promise.resolve([]),
+        businessIds.length > 0
+            ? db.select({
+                businessId: businessSettings.businessId,
+                section: businessSettings.section,
+                dataJson: businessSettings.dataJson,
+            }).from(businessSettings).where(and(
+                inArray(businessSettings.businessId, businessIds),
+                inArray(businessSettings.section, ['TAXES_AND_GST', 'INVOICE_PRINT']),
+            ))
+            : Promise.resolve([]),
+        businessIds.length > 0
+            ? db.select({
+                businessId: templates.businessId,
+                type: templates.type,
+                isActive: templates.isActive,
+            }).from(templates).where(inArray(templates.businessId, businessIds))
+            : Promise.resolve([]),
+    ]);
+
+    const latestSubscriptionByBusiness = new Map<string, typeof subscriptions.$inferSelect>();
+    for (const row of subscriptionRows) {
+        if (!latestSubscriptionByBusiness.has(row.businessId)) {
+            latestSubscriptionByBusiness.set(row.businessId, row);
+        }
+    }
+
+    const settingsByBusiness = new Map<string, Record<string, Record<string, unknown>>>();
+    for (const row of settingsRows) {
+        const current = settingsByBusiness.get(row.businessId) ?? {};
+        current[row.section] = asRecord(row.dataJson);
+        settingsByBusiness.set(row.businessId, current);
+    }
+
+    const templateStateByBusiness = new Map<string, { invoice: number; card: number }>();
+    for (const row of templateRows) {
+        if (!row.businessId || !row.isActive) continue;
+        const current = templateStateByBusiness.get(row.businessId) ?? { invoice: 0, card: 0 };
+        if (row.type === 'invoice') current.invoice += 1;
+        if (row.type === 'card') current.card += 1;
+        templateStateByBusiness.set(row.businessId, current);
+    }
+
+    const rows = businessRows.map((business) => {
+        const subscription = latestSubscriptionByBusiness.get(business.id) ?? null;
+        const settings = settingsByBusiness.get(business.id) ?? {};
+        const taxSettings = asRecord(settings.TAXES_AND_GST);
+        const printSettings = asRecord(settings.INVOICE_PRINT);
+        const templatesState = templateStateByBusiness.get(business.id) ?? { invoice: 0, card: 0 };
+        const gstEnabled = taxSettings.gst_enabled !== false;
+        const exportPdfEnabled = Boolean(subscription?.featureFlagsEnabled?.includes('EXPORT_PDF'));
+        const thermalReady =
+            printSettings.print_layout_type === 'THERMAL'
+            || Boolean(printSettings.thermal_profile_preset);
+        const businessCardReady = templatesState.card > 0;
+
+        return {
+            businessId: business.id,
+            businessName: business.name,
+            businessCode: business.code,
+            businessIsActive: business.isActive,
+            subscriptionTier: subscription?.tier ?? 'FREE',
+            subscriptionStatus: subscription?.status ?? 'EXPIRED',
+            gstEnabled,
+            exportPdfEnabled,
+            thermalReady,
+            businessCardReady,
+            invoiceTemplateCount: templatesState.invoice,
+            cardTemplateCount: templatesState.card,
+            updatedAt: business.updatedAt,
+        };
+    });
+
+    const summary = {
+        totalBusinesses: rows.length,
+        gstReadyBusinesses: rows.filter((entry) => entry.gstEnabled).length,
+        pdfExportBusinesses: rows.filter((entry) => entry.exportPdfEnabled).length,
+        thermalReadyBusinesses: rows.filter((entry) => entry.thermalReady).length,
+        businessCardBusinesses: rows.filter((entry) => entry.businessCardReady).length,
+    };
+
+    return c.json({ ok: true, summary, rows });
+});
+
+adminRoute.get('/sync/diagnostics', async (c) => {
+    const db = c.get('db');
+    const businessRows = await db.select({
+        id: businesses.id,
+        name: businesses.name,
+        code: businesses.code,
+        isActive: businesses.isActive,
+        updatedAt: businesses.updatedAt,
+    }).from(businesses).orderBy(asc(businesses.name));
+
+    const businessIds = businessRows.map((entry) => entry.id);
+    const [subscriptionRows, queuedDeliveries, liveSnapshot] = await Promise.all([
+        businessIds.length > 0
+            ? db.select().from(subscriptions).where(inArray(subscriptions.businessId, businessIds)).orderBy(desc(subscriptions.createdAt))
+            : Promise.resolve([]),
+        db.select({ count: sql<number>`count(*)` })
+            .from(notificationDeliveries)
+            .where(inArray(notificationDeliveries.status, ['QUEUED', 'FAILED'])),
+        getLiveSnapshot(db),
+    ]);
+
+    const latestSubscriptionByBusiness = new Map<string, typeof subscriptions.$inferSelect>();
+    for (const row of subscriptionRows) {
+        if (!latestSubscriptionByBusiness.has(row.businessId)) {
+            latestSubscriptionByBusiness.set(row.businessId, row);
+        }
+    }
+
+    const rows = businessRows.map((business) => {
+        const subscription = latestSubscriptionByBusiness.get(business.id) ?? null;
+        const hasCloudSyncFlag = Boolean(subscription?.featureFlagsEnabled?.includes('CLOUD_SYNC'));
+        const status = subscription?.status ?? 'EXPIRED';
+        const cloudSyncAllowed = Boolean(subscription?.cloudSyncAllowed);
+        const restrictionReason =
+            !business.isActive
+                ? 'Business inactive'
+                : status !== 'ACTIVE' && status !== 'TRIAL'
+                    ? `Subscription ${status.toLowerCase()}`
+                    : !cloudSyncAllowed
+                        ? 'Cloud sync disabled on subscription'
+                        : !hasCloudSyncFlag
+                            ? 'CLOUD_SYNC flag disabled'
+                            : null;
+
+        return {
+            businessId: business.id,
+            businessName: business.name,
+            businessCode: business.code,
+            businessIsActive: business.isActive,
+            subscriptionTier: subscription?.tier ?? 'FREE',
+            subscriptionStatus: status,
+            cloudSyncAllowed,
+            hasCloudSyncFlag,
+            restrictionReason,
+            updatedAt: subscription?.updatedAt ?? business.updatedAt,
+        };
+    });
+
+    const summary = {
+        totalBusinesses: rows.length,
+        syncAllowedBusinesses: rows.filter((entry) => !entry.restrictionReason).length,
+        syncRestrictedBusinesses: rows.filter((entry) => Boolean(entry.restrictionReason)).length,
+        graceBusinesses: rows.filter((entry) => entry.subscriptionStatus === 'GRACE').length,
+        expiredBusinesses: rows.filter((entry) => entry.subscriptionStatus === 'EXPIRED').length,
+        queuedDeliveries: Number(queuedDeliveries[0]?.count ?? 0),
+    };
+
+    return c.json({
+        ok: true,
+        summary,
+        liveSnapshot,
+        rows,
+    });
 });
 
 adminRoute.get('/staff/overview', async (c) => {
