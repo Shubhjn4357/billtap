@@ -7,6 +7,7 @@ import { discounts, offers, paymentIntents, plans, subscriptions } from '../db/s
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     ensurePrimaryBusiness,
+    getActiveSubscription,
     getAccessibleBusiness,
     getRequestedBusinessId,
     requireOrganizationAction,
@@ -82,6 +83,32 @@ const toClientPlan = (plan: typeof plans.$inferSelect) => ({
     updatedAt: plan.updatedAt,
 });
 
+const toClientSubscription = (subscription: typeof subscriptions.$inferSelect) => ({
+    id: subscription.id,
+    businessId: subscription.businessId,
+    tier: subscription.tier,
+    billingCycle: subscription.billingCycle,
+    status: subscription.status,
+    startDate: subscription.startDate,
+    endDate: subscription.endDate,
+    nextRenewalDate: subscription.nextRenewalDate,
+    renewsAt: subscription.nextRenewalDate,
+    graceEndDate: subscription.graceEndDate,
+    maxBillsTotal: subscription.maxBillsTotal,
+    maxBillsPerMonth: subscription.maxBillsPerMonth,
+    maxStaffUsers: subscription.maxStaffUsers,
+    maxBusinesses: subscription.maxBusinesses,
+    maxDevices: subscription.maxDevices,
+    maxStorageMb: subscription.maxStorageMb,
+    monthlyInvoiceCount: 0,
+    offlineOnly: subscription.offlineOnly,
+    cloudSyncAllowed: subscription.cloudSyncAllowed,
+    webDashboardAllowed: subscription.webDashboardAllowed,
+    featureFlagsEnabled: subscription.featureFlagsEnabled,
+    createdAt: subscription.createdAt,
+    updatedAt: subscription.updatedAt,
+});
+
 subscriptionRoute.get('/plans', async (c) => {
     const db = c.get('db');
     await ensurePlansSeeded(db);
@@ -92,6 +119,22 @@ subscriptionRoute.get('/plans', async (c) => {
         : await db.select().from(plans).where(eq(plans.isVisible, true)).orderBy(asc(plans.displayOrder));
 
     return c.json({ ok: true, plans: rows.map(toClientPlan) });
+});
+
+subscriptionRoute.get('/current', requireAuth, async (c) => {
+    const db = c.get('db');
+    const authUser = c.get('authUser');
+    if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+
+    const business = await getAccessibleBusiness(db, authUser.id, getRequestedBusinessId(c))
+        ?? await ensurePrimaryBusiness(db, authUser);
+    const subscription = await getActiveSubscription(db, business.id);
+
+    return c.json({
+        ok: true,
+        businessId: business.id,
+        subscription: subscription ? toClientSubscription(subscription) : null,
+    });
 });
 
 subscriptionRoute.get('/offers/active', async (c) => {

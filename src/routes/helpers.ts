@@ -1,9 +1,10 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { AppContext, AppVariables } from '../middleware/auth';
-import { businesses, businessMembers, subscriptions, users } from '../db/schema';
+import { businesses, businessMembers, users } from '../db/schema';
 import type { BusinessRow, SubscriptionRow, UserRow } from '../db/schema';
 import type { DrizzleClient } from '../db/client';
 import { nanoid } from 'nanoid';
+import { getLatestSubscriptionForBusiness } from '../services/subscriptionPolicy';
 
 export const getRequestedBusinessId = (c: AppContext): string | null => {
     const fromHeader = c.req.header('X-Organization-Id') ?? c.req.header('x-organization-id');
@@ -123,14 +124,7 @@ export const getActiveSubscription = async (
     db: DrizzleClient,
     businessId: string
 ): Promise<SubscriptionRow | null> => {
-    const rows = await db
-        .select()
-        .from(subscriptions)
-        .where(eq(subscriptions.businessId, businessId))
-        .orderBy(desc(subscriptions.createdAt))
-        .limit(1);
-
-    return rows[0] ?? null;
+    return getLatestSubscriptionForBusiness(db, businessId);
 };
 
 export const updateUserBasics = async (

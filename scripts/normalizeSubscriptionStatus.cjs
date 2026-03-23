@@ -55,7 +55,7 @@ const CANONICAL_ENUM_VALUES = {
     plan_limit_type: ['MAX_BILLS', 'MAX_STAFF_USERS', 'MAX_BUSINESSES', 'MAX_DEVICES', 'MAX_STORAGE_MB'],
     discount_type: ['PERCENTAGE', 'FIXED_AMOUNT'],
     discount_scope: ['PLAN', 'TIER', 'GLOBAL'],
-    notification_channel: ['IN_APP', 'PUSH', 'EMAIL', 'WHATSAPP'],
+    notification_channel: ['IN_APP', 'PUSH', 'EMAIL'],
     admin_role: ['SUPER_ADMIN', 'SUPPORT_ADMIN', 'READ_ONLY_ADMIN'],
     member_role: ['OWNER', 'STAFF'],
 };

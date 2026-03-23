@@ -23,6 +23,8 @@ const businessSettingsRoute = new Hono<AppEnv>();
 
 businessSettingsRoute.use('/*', requireAuth);
 
+const HIDDEN_SETTINGS_SECTIONS = new Set<string>();
+
 const isBusinessSettingsStorageError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error ?? '');
     const normalized = message.toLowerCase();
@@ -39,10 +41,14 @@ const isBusinessSettingsStorageError = (error: unknown) => {
 businessSettingsRoute.get('/schema', async (c) => {
     const denied = requireOrganizationCapability(c, 'settings.read');
     if (denied) return denied;
+    const visibleSections = SETTINGS_SECTIONS.filter((section) => !HIDDEN_SETTINGS_SECTIONS.has(section));
+    const visibleSchema = Object.fromEntries(
+        Object.entries(SETTINGS_SCHEMA).filter(([section]) => !HIDDEN_SETTINGS_SECTIONS.has(section))
+    );
     return c.json({
         ok: true,
-        sections: SETTINGS_SECTIONS,
-        schema: SETTINGS_SCHEMA,
+        sections: visibleSections,
+        schema: visibleSchema,
     });
 });
 
@@ -60,6 +66,7 @@ businessSettingsRoute.get('/', async (c) => {
     try {
         const rows = await db.select().from(businessSettings).where(eq(businessSettings.businessId, business.id));
         const settingsMap = rows.reduce<Record<string, Record<string, unknown>>>((acc, row) => {
+            if (HIDDEN_SETTINGS_SECTIONS.has(row.section)) return acc;
             acc[row.section] = row.dataJson as Record<string, unknown>;
             return acc;
         }, {});

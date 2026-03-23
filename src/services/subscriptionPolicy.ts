@@ -88,9 +88,56 @@ export const getLatestSubscriptionForBusiness = async (
         .select()
         .from(subscriptions)
         .where(eq(subscriptions.businessId, businessId))
-        .orderBy(desc(subscriptions.createdAt))
-        .limit(1);
-    return rows[0] ?? null;
+        .orderBy(desc(subscriptions.updatedAt), desc(subscriptions.createdAt));
+
+    if (!rows[0]) return null;
+
+    const today = nowDateOnly().getTime();
+    const statusWeight = (subscription: SubscriptionRow) => {
+        const endDate = subscription.endDate ? toDateOnly(subscription.endDate).getTime() : null;
+        const graceEndDate = subscription.graceEndDate ? toDateOnly(subscription.graceEndDate).getTime() : null;
+        const activeWindow = endDate === null || endDate >= today;
+        const graceWindow = graceEndDate !== null && graceEndDate >= today;
+
+        switch (subscription.status) {
+            case 'ACTIVE':
+                return activeWindow ? 600 : 260;
+            case 'TRIAL':
+                return activeWindow ? 520 : 240;
+            case 'GRACE':
+                return graceWindow ? 420 : 220;
+            case 'EXPIRED':
+                return graceWindow ? 320 : 120;
+            case 'CANCELLED':
+                return graceWindow ? 300 : 80;
+            default:
+                return 0;
+        }
+    };
+
+    const recencyWeight = (subscription: SubscriptionRow) => {
+        const candidates = [
+            subscription.nextRenewalDate,
+            subscription.graceEndDate,
+            subscription.endDate,
+            subscription.startDate,
+            subscription.updatedAt,
+            subscription.createdAt,
+        ]
+            .filter((entry): entry is Date => entry instanceof Date && !Number.isNaN(entry.getTime()))
+            .map((entry) => entry.getTime());
+        return candidates[0] ?? 0;
+    };
+
+    return [...rows].sort((left, right) => {
+        const statusDelta = statusWeight(right) - statusWeight(left);
+        if (statusDelta !== 0) return statusDelta;
+
+        const recencyDelta = recencyWeight(right) - recencyWeight(left);
+        if (recencyDelta !== 0) return recencyDelta;
+
+        return right.createdAt.getTime() - left.createdAt.getTime();
+    })[0] ?? null;
 };
 
 const assertSubscriptionWritableByStatus = (subscription: SubscriptionRow | null, now = nowDateOnly()) => {

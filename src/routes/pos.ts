@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { invoices, invoiceItems, items } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
@@ -133,6 +133,34 @@ posRoute.post('/sale', async (c) => {
         const invoiceId = `inv_${nanoid(18)}`;
 
         await db.transaction(async (tx) => {
+            const itemIds = Array.from(new Set(body.items.map((entry) => entry.itemId).filter(Boolean))) as string[];
+            const stockRows = itemIds.length > 0
+                ? await tx
+                    .select()
+                    .from(items)
+                    .where(and(eq(items.businessId, business.id), inArray(items.id, itemIds)))
+                : [];
+            const stockById = new Map(stockRows.map((entry) => [entry.id, entry]));
+
+            for (const line of body.items) {
+                if (!line.itemId) continue;
+                const item = stockById.get(line.itemId);
+                if (!item) {
+                    throw new Error('Selected item does not exist.');
+                }
+
+                const availableStock = Number(item.stock ?? 0);
+                const trackStock = true;
+                if (trackStock && line.quantity > availableStock) {
+                    throw new Error(`Insufficient stock for ${item.name}. Available ${availableStock}, requested ${line.quantity}.`);
+                }
+
+                stockById.set(line.itemId, {
+                    ...item,
+                    stock: trackStock ? availableStock - line.quantity : availableStock,
+                });
+            }
+
             await tx.insert(invoices).values({
                 id: invoiceId,
                 businessId: business.id,

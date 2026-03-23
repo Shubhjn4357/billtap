@@ -8,6 +8,7 @@ import {
     adminSettings,
     businesses,
     businessMembers,
+    businessSettings,
     discounts,
     expenses,
     inventoryMovements,
@@ -26,6 +27,12 @@ import {
 } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { requireAdmin, type AppEnv } from '../middleware/auth';
+import {
+    isValidSettingsSection,
+    normalizeSettingsData,
+    SETTINGS_SCHEMA,
+    SETTINGS_SECTIONS,
+} from '../constants/settingsSchema';
 
 const adminRoute = new Hono<AppEnv>();
 
@@ -36,7 +43,7 @@ const BILLING_CYCLES = ['MONTHLY', 'YEARLY', 'THREE_YEAR'] as const;
 const SUBSCRIPTION_STATUSES = ['ACTIVE', 'EXPIRED', 'TRIAL', 'CANCELLED', 'GRACE'] as const;
 const DISCOUNT_TYPES = ['PERCENTAGE', 'FIXED_AMOUNT'] as const;
 const DISCOUNT_SCOPES = ['PLAN', 'TIER', 'GLOBAL'] as const;
-const NOTIFICATION_CHANNELS = ['IN_APP', 'PUSH', 'EMAIL', 'SMS', 'WHATSAPP'] as const;
+const NOTIFICATION_CHANNELS = ['IN_APP', 'PUSH', 'EMAIL'] as const;
 const FEATURE_FLAGS = [
     'OFFLINE_BILLING',
     'GST_INVOICES',
@@ -60,8 +67,6 @@ const FEATURE_FLAGS = [
     'MULTI_GODOWN',
     'POS_MODE',
     'LOYALTY_POINTS',
-    'SMS_NOTIFICATIONS',
-    'WHATSAPP_NOTIFICATIONS',
 ] as const;
 
 const DEFAULT_ITEM_CATEGORY_PRESETS = [
@@ -123,6 +128,8 @@ const organizationCreateSchema = z.object({
     legalName: z.string().trim().nullable().optional(),
     pan: z.string().trim().nullable().optional(),
     category: z.string().trim().nullable().optional(),
+    booksStartDate: z.coerce.date().nullable().optional(),
+    logoUrl: z.string().trim().nullable().optional(),
     isActive: z.boolean().optional(),
 });
 
@@ -254,6 +261,10 @@ const businessQuotaPatchSchema = z.object({
     storageLimitMb: z.number().int().positive().nullable().optional(),
 });
 
+const businessSettingsPatchSchema = z.object({
+    data: z.record(z.string(), z.unknown()),
+});
+
 const inventoryAdminListQuerySchema = z.object({
     businessId: z.string().trim().min(1).optional(),
     q: z.string().trim().min(1).optional(),
@@ -376,6 +387,15 @@ type SubscriptionRow = typeof subscriptions.$inferSelect;
 const asRecord = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     return value as Record<string, unknown>;
+};
+
+const buildNormalizedBusinessSettingsMap = (
+    rows: Array<{ section: string; dataJson: Record<string, unknown> }>
+) => {
+    const bySection = new Map(rows.map((row) => [row.section, asRecord(row.dataJson)]));
+    return Object.fromEntries(
+        SETTINGS_SECTIONS.map((section) => [section, normalizeSettingsData(section, bySection.get(section) ?? {})])
+    );
 };
 
 const mapAuditLogEntry = (entry: typeof adminAuditLogs.$inferSelect) => {
@@ -1252,6 +1272,12 @@ adminRoute.get('/organizations', async (c) => {
             phoneNumber: entry.phone,
             email: entry.email,
             currency: entry.currency,
+            state: entry.state,
+            legalName: entry.legalName,
+            pan: entry.pan,
+            category: entry.category,
+            booksStartDate: entry.booksStartDate,
+            logoUrl: entry.logoUrl,
             isActive: entry.isActive,
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt,
@@ -1282,6 +1308,8 @@ adminRoute.get('/organizations/:id', async (c) => {
             legalName: entry.legalName,
             pan: entry.pan,
             category: entry.category,
+            booksStartDate: entry.booksStartDate,
+            logoUrl: entry.logoUrl,
             isActive: entry.isActive,
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt,
@@ -1314,8 +1342,8 @@ adminRoute.post('/organizations', async (c) => {
             state: payload.state ?? null,
             gstin: payload.gstNumber ?? null,
             pan: payload.pan ?? null,
-            booksStartDate: now,
-            logoUrl: null,
+            booksStartDate: payload.booksStartDate ?? now,
+            logoUrl: payload.logoUrl ?? null,
             phone: payload.phoneNumber ?? null,
             email: payload.email ?? null,
             currency: (payload.currency ?? 'INR').toUpperCase(),
@@ -1368,6 +1396,8 @@ adminRoute.patch('/organizations/:id', async (c) => {
             ...(payload.legalName !== undefined ? { legalName: payload.legalName } : {}),
             ...(payload.pan !== undefined ? { pan: payload.pan } : {}),
             ...(payload.category !== undefined ? { category: payload.category } : {}),
+            ...(payload.booksStartDate !== undefined ? { booksStartDate: payload.booksStartDate } : {}),
+            ...(payload.logoUrl !== undefined ? { logoUrl: payload.logoUrl } : {}),
             ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
             updatedAt: new Date(),
         }).where(eq(businesses.id, id)).returning({ id: businesses.id });
@@ -3746,6 +3776,159 @@ adminRoute.post('/master-data/seed-defaults', async (c) => {
         });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to seed master defaults.' }, 400);
+    }
+});
+
+adminRoute.get('/businesses/:id/settings/schema', async (c) => {
+    const db = c.get('db');
+    const businessId = c.req.param('id');
+    const businessRows = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+    if (!businessRows[0]) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+    return c.json({
+        ok: true,
+        businessId,
+        sections: SETTINGS_SECTIONS,
+        schema: SETTINGS_SCHEMA,
+    });
+});
+
+adminRoute.get('/businesses/:id/settings', async (c) => {
+    const db = c.get('db');
+    const businessId = c.req.param('id');
+    const businessRows = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+    if (!businessRows[0]) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+    const rows = await db
+        .select({
+            section: businessSettings.section,
+            dataJson: businessSettings.dataJson,
+        })
+        .from(businessSettings)
+        .where(eq(businessSettings.businessId, businessId));
+
+    return c.json({
+        ok: true,
+        businessId,
+        sections: SETTINGS_SECTIONS,
+        data: buildNormalizedBusinessSettingsMap(rows),
+    });
+});
+
+adminRoute.get('/businesses/:id/settings/:section', async (c) => {
+    const db = c.get('db');
+    const businessId = c.req.param('id');
+    const section = c.req.param('section').toUpperCase();
+    if (!isValidSettingsSection(section)) return c.json({ ok: false, message: 'Invalid settings section.' }, 400);
+
+    const businessRows = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+    if (!businessRows[0]) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+    const rows = await db
+        .select({
+            dataJson: businessSettings.dataJson,
+        })
+        .from(businessSettings)
+        .where(and(eq(businessSettings.businessId, businessId), eq(businessSettings.section, section)))
+        .limit(1);
+
+    return c.json({
+        ok: true,
+        businessId,
+        section,
+        data: normalizeSettingsData(section, asRecord(rows[0]?.dataJson)),
+    });
+});
+
+adminRoute.put('/businesses/:id/settings/:section', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const businessId = c.req.param('id');
+        const section = c.req.param('section').toUpperCase();
+        if (!isValidSettingsSection(section)) return c.json({ ok: false, message: 'Invalid settings section.' }, 400);
+
+        const businessRows = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+        if (!businessRows[0]) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+        const payload = businessSettingsPatchSchema.parse(await c.req.json());
+        const now = new Date();
+        const existingRows = await db
+            .select()
+            .from(businessSettings)
+            .where(and(eq(businessSettings.businessId, businessId), eq(businessSettings.section, section)))
+            .limit(1);
+        const existing = existingRows[0];
+        const normalizedData = normalizeSettingsData(section, {
+            ...asRecord(existing?.dataJson),
+            ...payload.data,
+        });
+
+        if (existing) {
+            await db.update(businessSettings).set({
+                dataJson: normalizedData,
+                updatedAt: now,
+            }).where(eq(businessSettings.id, existing.id));
+        } else {
+            await db.insert(businessSettings).values({
+                id: `bset_${nanoid(16)}`,
+                businessId,
+                section,
+                dataJson: normalizedData,
+                updatedAt: now,
+            });
+        }
+
+        await appendAuditLog(c, 'BUSINESS_SETTINGS_SECTION_UPDATED', 'business_settings', businessId, {
+            section,
+            data: normalizedData,
+        });
+
+        return c.json({ ok: true, businessId, section, data: normalizedData });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to update business settings.' }, 400);
+    }
+});
+
+adminRoute.delete('/businesses/:id/settings/:section', async (c) => {
+    try {
+        assertWriteAccess(c);
+        const db = c.get('db');
+        const businessId = c.req.param('id');
+        const section = c.req.param('section').toUpperCase();
+        if (!isValidSettingsSection(section)) return c.json({ ok: false, message: 'Invalid settings section.' }, 400);
+
+        const businessRows = await db.select({ id: businesses.id }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+        if (!businessRows[0]) return c.json({ ok: false, message: 'Business not found.' }, 404);
+
+        const now = new Date();
+        const existingRows = await db
+            .select()
+            .from(businessSettings)
+            .where(and(eq(businessSettings.businessId, businessId), eq(businessSettings.section, section)))
+            .limit(1);
+        const existing = existingRows[0];
+        const emptyData = normalizeSettingsData(section, {});
+
+        if (existing) {
+            await db.update(businessSettings).set({
+                dataJson: emptyData,
+                updatedAt: now,
+            }).where(eq(businessSettings.id, existing.id));
+        } else {
+            await db.insert(businessSettings).values({
+                id: `bset_${nanoid(16)}`,
+                businessId,
+                section,
+                dataJson: emptyData,
+                updatedAt: now,
+            });
+        }
+
+        await appendAuditLog(c, 'BUSINESS_SETTINGS_SECTION_RESET', 'business_settings', businessId, { section });
+        return c.json({ ok: true, businessId, section, data: emptyData });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to reset business settings.' }, 400);
     }
 });
 

@@ -44,8 +44,6 @@ export const featureFlagEnum = pgEnum('feature_flag', [
     'MULTI_GODOWN',
     'POS_MODE',
     'LOYALTY_POINTS',
-    'SMS_NOTIFICATIONS',
-    'WHATSAPP_NOTIFICATIONS',
 ]);
 
 export const accountTypeEnum = pgEnum('account_type', [
@@ -114,8 +112,6 @@ export const notificationChannelEnum = pgEnum('notification_channel', [
     'IN_APP',
     'PUSH',
     'EMAIL',
-    'SMS',
-    'WHATSAPP',
 ]);
 
 export const adminRoleEnum = pgEnum('admin_role', [
@@ -131,8 +127,6 @@ export const settingsSectionEnum = pgEnum('settings_section', [
     'ITEM_SETTINGS',
     'PARTY_SETTINGS',
     'TAXES_AND_GST',
-    'PAYMENT_REMINDERS',
-    'TRANSACTION_SMS',
     'TRANSACTION_HEADER',
     'ITEM_TABLE',
     'TAX_DISCOUNT_TOTAL',

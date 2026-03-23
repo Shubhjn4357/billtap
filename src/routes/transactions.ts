@@ -10,7 +10,6 @@ import {
     items,
     godownStock,
     godowns,
-    notificationDeliveries,
     parties,
 } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
@@ -406,7 +405,7 @@ transactionsRoute.post('/', async (c) => {
             .from(businessSettings)
             .where(and(
                 eq(businessSettings.businessId, business.id),
-                inArray(businessSettings.section, ['TAXES_AND_GST', 'PAYMENT_REMINDERS', 'TRANSACTION_SMS']),
+                inArray(businessSettings.section, ['TAXES_AND_GST']),
             ));
         const settingsBySection = new Map(settingsRows.map((entry) => [entry.section, asSettingsRecord(entry.dataJson)]));
         const taxSettings = settingsBySection.get('TAXES_AND_GST') ?? {};
@@ -786,31 +785,13 @@ transactionsRoute.get('/reminders/config', async (c) => {
     const denied = requireOrganizationCapability(c, 'billing.read');
     if (denied) return denied;
 
-    const settingsRows = await db
-        .select()
-        .from(businessSettings)
-        .where(and(
-            eq(businessSettings.businessId, business.id),
-            inArray(businessSettings.section, ['PAYMENT_REMINDERS', 'TRANSACTION_SMS']),
-        ));
-    const settingsBySection = new Map(settingsRows.map((entry) => [entry.section, asSettingsRecord(entry.dataJson)]));
-    const reminderSettings = settingsBySection.get('PAYMENT_REMINDERS') ?? {};
-    const transactionSmsSettings = settingsBySection.get('TRANSACTION_SMS') ?? {};
-
-    const autoSchedulerEnabled = asSettingBool(reminderSettings.reminder_auto_schedule_enabled, false);
-    const scheduleHour = Math.trunc(asSettingNumber(reminderSettings.reminder_schedule_hour, 10));
-    const deliveryChannel = String(reminderSettings.reminder_delivery_channel ?? 'SMS');
-
     return c.json({
         ok: true,
         config: {
-            autoSchedulerEnabled,
-            scheduleHour,
-            deliveryChannel,
-            smsEnabled: asSettingBool(transactionSmsSettings.send_sms_to_party, false),
-            whatsappEnabled: asSettingBool(transactionSmsSettings.send_whatsapp_to_party, false),
-            smsTemplate: String(reminderSettings.party_payment_sms_template ?? reminderSettings.party_payment_reminder_message_template ?? ''),
-            whatsappTemplate: String(reminderSettings.party_payment_whatsapp_template ?? ''),
+            autoSchedulerEnabled: false,
+            scheduleHour: null,
+            deliveryChannel: 'IN_APP',
+            notificationOnly: true,
         },
     });
 });
@@ -827,95 +808,15 @@ transactionsRoute.post('/reminders/run', async (c) => {
         if (denied) return denied;
         const deniedAction = requireOrganizationAction(c, 'billing.update');
         if (deniedAction) return deniedAction;
-
         const payload = reminderRunSchema.parse(await c.req.json().catch(() => ({})));
-        const limit = payload.limit ?? 100;
-        const now = new Date();
-
-        const settingsRows = await db
-            .select()
-            .from(businessSettings)
-            .where(and(
-                eq(businessSettings.businessId, business.id),
-                inArray(businessSettings.section, ['PAYMENT_REMINDERS', 'TRANSACTION_SMS']),
-            ));
-        const settingsBySection = new Map(settingsRows.map((entry) => [entry.section, asSettingsRecord(entry.dataJson)]));
-        const reminderSettings = settingsBySection.get('PAYMENT_REMINDERS') ?? {};
-        const transactionSmsSettings = settingsBySection.get('TRANSACTION_SMS') ?? {};
-
-        const autoSchedulerEnabled = asSettingBool(reminderSettings.reminder_auto_schedule_enabled, false);
-        if (!autoSchedulerEnabled) {
-            return c.json({ ok: true, processed: 0, queued: 0, skipped: 0, reason: 'AUTO_SCHEDULER_DISABLED' });
-        }
-
-        const scheduleHour = Math.trunc(asSettingNumber(reminderSettings.reminder_schedule_hour, 10));
-        if (now.getHours() !== scheduleHour) {
-            return c.json({
-                ok: true,
-                processed: 0,
-                queued: 0,
-                skipped: 0,
-                reason: 'OUTSIDE_SCHEDULE_WINDOW',
-                scheduleHour,
-                currentHour: now.getHours(),
-            });
-        }
-
-        const smsEnabled = asSettingBool(transactionSmsSettings.send_sms_to_party, false);
-        const whatsappEnabled = asSettingBool(transactionSmsSettings.send_whatsapp_to_party, false);
-        const deliveryChannel = String(reminderSettings.reminder_delivery_channel ?? 'SMS');
-        const channels: Array<'SMS' | 'WHATSAPP'> = [];
-        if ((deliveryChannel === 'SMS' || deliveryChannel === 'SMS_AND_WHATSAPP') && smsEnabled) channels.push('SMS');
-        if ((deliveryChannel === 'WHATSAPP' || deliveryChannel === 'SMS_AND_WHATSAPP') && whatsappEnabled) channels.push('WHATSAPP');
-        if (channels.length === 0) {
-            return c.json({ ok: true, processed: 0, queued: 0, skipped: 0, reason: 'NO_DELIVERY_CHANNEL_ENABLED' });
-        }
-
-        const overdueInvoices = await db
-            .select()
-            .from(invoices)
-            .where(and(
-                eq(invoices.businessId, business.id),
-                eq(invoices.isDeleted, false),
-                ne(invoices.paymentStatus, 'PAID'),
-                lte(invoices.dueDate, now),
-            ))
-            .orderBy(asc(invoices.dueDate))
-            .limit(limit);
-
-        let queued = 0;
-        const deliveries = overdueInvoices.flatMap((invoice) => channels.map((channel) => ({
-            id: `ntf_del_${nanoid(16)}`,
-            campaignId: null,
-            templateId: null,
-            businessId: business.id,
-            userId: null,
-            channel,
-            status: payload.dryRun ? 'QUEUED' : 'SENT',
-            errorMessage: null,
-            metadata: {
-                source: 'PAYMENT_REMINDER_SCHEDULER',
-                invoiceId: invoice.id,
-                invoiceNumber: invoice.invoiceNumber,
-                dueDate: invoice.dueDate?.toISOString?.() ?? invoice.dueDate,
-                totalAmount: invoice.totalInvoiceValue,
-                paidAmount: invoice.paidAmount,
-            },
-            sentAt: payload.dryRun ? null : now,
-            createdAt: now,
-        })));
-
-        if (!payload.dryRun && deliveries.length > 0) {
-            await db.insert(notificationDeliveries).values(deliveries);
-            queued = deliveries.length;
-        }
 
         return c.json({
             ok: true,
-            processed: overdueInvoices.length,
-            queued: payload.dryRun ? deliveries.length : queued,
+            processed: 0,
+            queued: 0,
             skipped: 0,
             dryRun: Boolean(payload.dryRun),
+            reason: 'REMINDERS_DISABLED_NOTIFICATION_ONLY',
         });
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to run reminder scheduler.' }, 400);
