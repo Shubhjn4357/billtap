@@ -941,6 +941,36 @@ class OfflineSyncService {
         };
     }
 
+    async retryBlockedUpgradeMutations(): Promise<number> {
+        const scope = await getOfflineScope();
+        await ensureScopeInitialized(scope);
+
+        const queue = await this.getQueueForScope(scope);
+        let releasedCount = 0;
+
+        const nextQueue = queue.map((entry) => {
+            const mutation = normalizeQueueMutation(entry);
+            if (mutation.status !== 'blocked_upgrade') {
+                return mutation;
+            }
+
+            releasedCount += 1;
+            return {
+                ...mutation,
+                status: 'pending' as const,
+                lastErrorCode: undefined,
+                lastError: undefined,
+                nextRetryAt: undefined,
+            };
+        });
+
+        if (releasedCount > 0) {
+            await this.writeQueueForScope(scope, nextQueue);
+        }
+
+        return releasedCount;
+    }
+
     async flushQueueForScope(scope: OfflineScope): Promise<{ processed: number; remaining: number }> {
         const inFlight = flushInFlightByScope.get(scope.storageSuffix);
         if (inFlight) return inFlight;

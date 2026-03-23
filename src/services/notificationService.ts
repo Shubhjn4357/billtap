@@ -45,6 +45,19 @@ export async function notifySyncComplete(processedCount: number): Promise<void> 
     });
 }
 
+export async function notifyLowStockAlert(itemName: string, currentStock: number, reorderLevel: number): Promise<void> {
+    if (!canUseNotifications()) return;
+    await Notifications.scheduleNotificationAsync({
+        content: {
+            title: 'Low Stock Alert',
+            body: `${itemName} stock has dropped to ${currentStock} (Reorder level: ${reorderLevel}). Please restock.`,
+            ...(Platform.OS === 'android' ? { channelId: 'billing' } : {}),
+            sound: true,
+        },
+        trigger: null,
+    });
+}
+
 export function registerNotificationListeners(): () => void {
     if (!canUseNotifications()) return () => {};
     const received = Notifications.addNotificationReceivedListener(() => {

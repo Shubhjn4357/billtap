@@ -24,6 +24,9 @@ const buildSignatureHtml = (
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <style>
+    * {
+      box-sizing: border-box;
+    }
     html, body {
       margin: 0;
       padding: 0;
@@ -39,24 +42,30 @@ const buildSignatureHtml = (
       flex-direction: column;
       width: 100%;
       height: 100%;
+      min-height: 100%;
     }
     .canvas-wrap {
       flex: 1;
       border: 1px solid ${borderColor};
-      border-radius: 10px;
-      margin: 8px;
+      border-radius: 0;
+      margin: 0;
       position: relative;
       overflow: hidden;
       touch-action: none;
+      min-height: 0;
     }
     .hint {
       position: absolute;
-      top: 8px;
-      left: 12px;
+      top: 12px;
+      left: 16px;
       color: ${borderColor};
       font-size: 12px;
       pointer-events: none;
       user-select: none;
+      z-index: 1;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: ${pageBackground};
     }
     canvas {
       width: 100%;
@@ -68,7 +77,7 @@ const buildSignatureHtml = (
     .actions {
       display: flex;
       gap: 8px;
-      padding: 8px;
+      padding: 12px;
       border-top: 1px solid ${borderColor};
       background: ${surfaceBackground};
     }
@@ -265,9 +274,15 @@ export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCap
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
             <View style={s.overlay}>
                 <View style={s.sheet}>
-                    <View style={s.handle} />
-                    <Text style={s.title}>Draw Signature</Text>
-                    <Text style={s.subtitle}>Use finger or stylus. This will be saved in business settings.</Text>
+                    <View style={s.header}>
+                        <View style={s.headerTextWrap}>
+                            <Text style={s.title}>Draw Signature</Text>
+                            <Text style={s.subtitle}>Use finger or stylus. This will be saved in business settings.</Text>
+                        </View>
+                        <Pressable style={[s.iconButton, s.secondaryBtn]} onPress={onClose}>
+                            <Text style={s.secondaryText}>Close</Text>
+                        </Pressable>
+                    </View>
                     <View style={s.canvasWrap}>
                         {WebViewComponent ? (
                             <WebViewComponent
@@ -286,11 +301,6 @@ export function SignatureCaptureSheet({ visible, onClose, onSave }: SignatureCap
                             </View>
                         )}
                     </View>
-                    <View style={s.actions}>
-                        <Pressable style={[s.button, s.secondaryBtn]} onPress={onClose}>
-                            <Text style={s.secondaryText}>Close</Text>
-                        </Pressable>
-                    </View>
                 </View>
             </View>
         </Modal>
@@ -301,27 +311,26 @@ const styles = (colors: ColorPalette) =>
     StyleSheet.create({
         overlay: {
             flex: 1,
-            justifyContent: 'flex-end',
             backgroundColor: withAlpha(colors.text, '66'),
         },
         sheet: {
-            borderTopLeftRadius: 30,
-            borderTopRightRadius: 30,
+            flex: 1,
             paddingHorizontal: DESIGN_SPACING.screenX,
-            paddingTop: Spacing.md,
-            paddingBottom: Spacing.lg,
+            paddingTop: DESIGN_SPACING.screenX,
+            paddingBottom: Spacing.md,
             borderBottomWidth: 0,
             gap: Spacing.sm,
-            minHeight: '96%',
+            minHeight: 0,
             ...getSurfaceStyle(colors, { floating: true }),
         },
-        handle: {
-            alignSelf: 'center',
-            width: 44,
-            height: 5,
-            borderRadius: Radius.pill,
-            backgroundColor: colors.border,
-            marginBottom: 4,
+        header: {
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: Spacing.md,
+        },
+        headerTextWrap: {
+            flex: 1,
         },
         title: {
             color: colors.text,
@@ -333,8 +342,9 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.caption.size,
         },
         canvasWrap: {
-            minHeight: 320,
-            borderRadius: Radius.card,
+            flex: 1,
+            minHeight: 0,
+            borderRadius: Radius.xl,
             borderWidth: 1,
             borderColor: colors.border,
             overflow: 'hidden',
@@ -355,16 +365,19 @@ const styles = (colors: ColorPalette) =>
             fontSize: Typography.body.size,
             textAlign: 'center',
         },
-        actions: {
-            flexDirection: 'row',
-            justifyContent: 'flex-end',
-        },
         button: {
             minHeight: 42,
             borderRadius: Radius.pill,
             justifyContent: 'center',
             alignItems: 'center',
             paddingHorizontal: Spacing.lg,
+        },
+        iconButton: {
+            minHeight: 42,
+            borderRadius: Radius.pill,
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: Spacing.md,
         },
         secondaryBtn: {
             ...getPillStyle(colors),

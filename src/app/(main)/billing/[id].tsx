@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { printToFileAsync } from 'expo-print';
 import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import { format, parseISO } from 'date-fns';
@@ -21,6 +21,7 @@ import { DESIGN_SPACING, getInsetPanelStyle, getSurfaceStyle } from '../../../co
 import { Radius, Typography, withAlpha, type ColorPalette } from '../../../constants/theme';
 import { SettingsSection } from '../../../constants/enums';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { FormSkeleton } from '../../../components/ui/FormSkeleton';
 import { HubMetricCard } from '../../../components/ui/HubBlocks';
 import { useAppDialog } from '../../../components/providers/DialogProvider';
 import { useAppRuntime } from '../../../components/providers/AppRuntimeProvider';
@@ -42,6 +43,7 @@ export default function InvoiceDetailScreen() {
     const { t } = useI18n();
     const { localPreferences } = useAppRuntime();
     const { id } = useLocalSearchParams<{ id: string }>();
+    const router = useRouter();
     const smartBack = useSmartBack('/(main)/billing');
     const business = useAuthStore((state) => state.business);
     const dialog = useAppDialog();
@@ -154,9 +156,10 @@ export default function InvoiceDetailScreen() {
 
     if (isLoading) {
         return (
-            <View style={s.centered}>
-                <ActivityIndicator color={colors.primary} />
-            </View>
+            <SafeAreaView style={s.safe} edges={['top']}>
+                <AppTopBar title="Loading invoice..." onBackPress={smartBack} />
+                <FormSkeleton />
+            </SafeAreaView>
         );
     }
 
@@ -230,6 +233,31 @@ export default function InvoiceDetailScreen() {
                         tone={dueAmount > 0 ? 'danger' : 'success'}
                     />
                 </View>
+
+                {['ESTIMATE', 'PROFORMA', 'SALE_ORDER', 'DELIVERY_CHALLAN_DOC'].includes(invoice.invoiceType) && (
+                    <View style={{ paddingHorizontal: DESIGN_SPACING.screenX, marginBottom: DESIGN_SPACING.sectionGap }}>
+                        <Pressable 
+                            style={({ pressed }) => [
+                                {
+                                    backgroundColor: colors.primary,
+                                    paddingVertical: 14,
+                                    borderRadius: Radius.pill,
+                                    flexDirection: 'row',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    opacity: pressed ? 0.8 : 1,
+                                }
+                            ]}
+                            onPress={() => router.push(`/(main)/billing/create?convertFrom=${invoice.id}&type=TAX_INVOICE`)}
+                        >
+                            <MaterialCommunityIcons name="file-document-plus-outline" size={18} color={colors.card} />
+                            <Text style={{ color: colors.card, fontWeight: '600', fontSize: Typography.body.size }}>
+                                Convert to Tax Invoice
+                            </Text>
+                        </Pressable>
+                    </View>
+                )}
 
                 {invoice.partySnapshot ? (
                     <UtilitySection title={t('billing.bill_to')} count={null}>

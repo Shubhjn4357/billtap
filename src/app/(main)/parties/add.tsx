@@ -12,9 +12,10 @@ import { z } from 'zod';
 import { toUserMessage } from '../../../api/client';
 import { DESIGN_SPACING } from '../../../constants/designSystem';
 import { Spacing, Radius, type ColorPalette, withAlpha } from '../../../constants/theme';
-import { PartyType } from '../../../constants/enums';
+import { PartyType, SettingsSection } from '../../../constants/enums';
 import { PARTY_TYPE_OPTIONS } from '../../../constants/formOptions';
 import { useAppColors } from '../../../hooks/useAppColors';
+import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
 import { useAuthStore } from '../../../store/authStore';
 import { canPerformAction } from '../../../utils/accessControl';
 import {
@@ -81,6 +82,11 @@ export default function AddPartyScreen() {
         staleTime: 30_000,
     });
     const { saveParty, isSavingParty: isPending } = usePartyMutations();
+
+    const { selected: isGstGlobalEnabled } = useSettingsSelector(
+        SettingsSection.TAXES_AND_GST,
+        (data) => Boolean((data as Record<string, unknown>).gst_enabled ?? true)
+    );
 
     const [countryPickerVisible, setCountryPickerVisible] = useState(false);
     const [countrySearch, setCountrySearch] = useState('');
@@ -161,7 +167,7 @@ export default function AddPartyScreen() {
                 name: data.name.trim(),
                 phone: normalizedPhone || null,
                 email: data.email?.trim() || null,
-                gstin: data.gstin?.trim().toUpperCase() || null,
+                gstin: isGstGlobalEnabled ? (data.gstin?.trim().toUpperCase() || null) : null,
                 billingAddress: data.billingAddress?.trim() || null,
                 shippingAddress: null,
                 openingBalance: data.openingBalance,
@@ -308,23 +314,25 @@ export default function AddPartyScreen() {
                             />
                             </FormField>
 
-                            <FormField label="GSTIN" colors={colors}>
-                            <Controller
-                                control={control}
-                                name="gstin"
-                                render={({ field: { onChange, value } }) => (
-                                    <AppInput
-                                        value={value}
-                                        onChangeText={onChange}
-                                        inputType="text"
-                                        placeholder="22AAAAA0000A1Z5"
-                                        containerStyle={s.inputWrap}
-                                        autoCapitalize="characters"
-                                        maxLength={15}
-                                    />
-                                )}
-                            />
-                            </FormField>
+                            {isGstGlobalEnabled ? (
+                                <FormField label="GSTIN" colors={colors}>
+                                <Controller
+                                    control={control}
+                                    name="gstin"
+                                    render={({ field: { onChange, value } }) => (
+                                        <AppInput
+                                            value={value}
+                                            onChangeText={onChange}
+                                            inputType="text"
+                                            placeholder="22AAAAA0000A1Z5"
+                                            containerStyle={s.inputWrap}
+                                            autoCapitalize="characters"
+                                            maxLength={15}
+                                        />
+                                    )}
+                                />
+                                </FormField>
+                            ) : null}
                         </FormSectionCard>
 
                         <FormSectionCard title="Commercial Details" description="Billing address, opening balance, and credit limit.">

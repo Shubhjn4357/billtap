@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+/* global __dirname, Buffer */
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');

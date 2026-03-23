@@ -6,6 +6,7 @@ import { settingsSchemaQueryKey, settingsSectionQueryKey } from '../state/settin
 import type { ApiOkResponse, ApiResponse, SettingsFieldDefinition } from '../types/api';
 import type { BusinessSettingsMap } from '../types/domain';
 import { isOnline } from '../utils/network';
+import { auditRepository } from './auditRepository';
 
 type SettingsSchemaResponse = {
     ok: boolean;
@@ -118,6 +119,9 @@ export const settingsRepository = {
 
         await offlineSyncService.setCachedSettingsSection(normalizedSection, mergedData);
         writeSettingsSectionQueryCache(normalizedSection, mergedData);
+
+        // Dispatched audit trace without blocking the main thread execution
+        void auditRepository.logSettingChange(normalizedSection, mergedData).catch(() => null);
 
         if (await isOnline()) {
             try {

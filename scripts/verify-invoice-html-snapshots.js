@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+/* global __dirname, Buffer */
 const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
@@ -64,7 +65,7 @@ function createProjectModuleLoader() {
             return require(specifier);
         };
 
-        // eslint-disable-next-line no-new-func
+         
         const fn = new Function('require', 'module', 'exports', '__filename', '__dirname', transpiled);
         fn(localRequire, module, module.exports, normalizedPath, path.dirname(normalizedPath));
         return module.exports;

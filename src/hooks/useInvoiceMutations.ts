@@ -7,6 +7,8 @@ import { invalidateItemQueries } from './useInventory';
 import { invalidateGodownQueries } from './useGodowns';
 import { invalidateCashBankQueries } from './useCashBankAccounts';
 import { reportQueryKeys } from '../state/domainQueryKeys';
+import { offlineSyncService } from '../services/offlineSyncService';
+import { notifyLowStockAlert, requestNotificationPermissions } from '../services/notificationService';
 
 const invalidateInvoiceViews = async (queryClient: QueryClient, businessId?: string | null) => {
     await Promise.all([
@@ -25,8 +27,36 @@ export function useInvoiceMutations() {
 
     const saveInvoiceMutation = useMutation({
         mutationFn: (payload: InvoiceCreateInput) => invoiceRepository.create(payload),
-        onSuccess: async () => {
+        onSuccess: async (_, payload) => {
             await invalidateInvoiceViews(queryClient, businessId);
+
+            try {
+                const isDeduction = payload.transactionType === 'SALE' 
+                    || payload.invoiceType === 'TAX_INVOICE' 
+                    || payload.invoiceType === 'BILL_OF_SUPPLY' 
+                    || payload.invoiceType === 'POS_BILL';
+
+                if (isDeduction && payload.items && payload.items.length > 0) {
+                    const catalog = await offlineSyncService.getCachedItems();
+                    for (const line of payload.items) {
+                        if (!line.itemId) continue;
+                        const match = catalog.find((i) => i.id === line.itemId);
+                        if (!match || !match.trackStock || match.reorderLevel === null) continue;
+
+                        const qty = Number(line.quantity) || 0;
+                        const newStock = (Number(match.stock) || 0) - qty;
+
+                        if (newStock <= match.reorderLevel) {
+                            const granted = await requestNotificationPermissions();
+                            if (granted) {
+                                void notifyLowStockAlert(match.name, newStock, match.reorderLevel);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('[low-stock] evaluation failed', error);
+            }
         },
     });
 
@@ -45,8 +75,29 @@ export function useInvoiceMutations() {
 
     const createPosSaleMutation = useMutation({
         mutationFn: (payload: Parameters<typeof invoiceRepository.createPosSale>[0]) => invoiceRepository.createPosSale(payload),
-        onSuccess: async () => {
+        onSuccess: async (_, payload) => {
             await invalidateInvoiceViews(queryClient, businessId);
+
+            try {
+                const catalog = await offlineSyncService.getCachedItems();
+                for (const line of payload.items) {
+                    if (!line.itemId) continue;
+                    const match = catalog.find((i) => i.id === line.itemId);
+                    if (!match || !match.trackStock || match.reorderLevel === null) continue;
+
+                    const qty = Number(line.quantity) || 0;
+                    const newStock = (Number(match.stock) || 0) - qty;
+
+                    if (newStock <= match.reorderLevel) {
+                        const granted = await requestNotificationPermissions();
+                        if (granted) {
+                            void notifyLowStockAlert(match.name, newStock, match.reorderLevel);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('[low-stock] pos evaluation failed', error);
+            }
         },
     });
 

@@ -14,22 +14,20 @@ export default {
     scheme: "vahi",
     userInterfaceStyle: "automatic",
     splash: {
-      image: "./assets/images/splash-icon.png",
+      image: "./assets/images/icon.png",
       resizeMode: "contain",
-      backgroundColor: "#007B83"
+      backgroundColor: "#0A50D6"
     },
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.blockbucket.vahi",
       icon: "./assets/images/adaptive-icon.png",
       googleServicesFile: "./GoogleService-Info.plist",
-      // Apple expects buildNumber as a string
       buildNumber: ciBuildNumber.toString() 
     },
     android: {
       package: "com.blockbucket.vahi",
       googleServicesFile: "./google-services.json",
-      // Android expects versionCode as an integer
       versionCode: ciBuildNumber, 
       adaptiveIcon: {
         foregroundImage: "./assets/images/adaptive-icon.png",
@@ -50,13 +48,14 @@ export default {
       [
         "expo-splash-screen",
         {
-          image: "./assets/images/splash-icon.png",
+          image: "./assets/images/icon.png",
           imageWidth: 150,
           resizeMode: "contain",
-          backgroundColor: "#007B83",
+          backgroundColor: "#0A50D6",
+          radius: 20,
           dark: {
-            image: "./assets/images/splash-icon.png",
-            backgroundColor: "#005A60"
+            image: "./assets/images/icon.png",
+            backgroundColor: "#0A50D6"
           }
         }
       ],
@@ -71,7 +70,7 @@ export default {
         "expo-notifications",
         {
           icon: "./assets/images/icon.png",
-          color: "#007B83"
+          color: "#005A60"
         }
       ],
       [
@@ -87,6 +86,8 @@ export default {
         }
       ],
       "expo-sharing",
+      "expo-background-task",
+      "expo-task-manager",
       [
         "expo-dev-client",
         {

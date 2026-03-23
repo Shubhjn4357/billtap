@@ -1,55 +1,59 @@
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import {
     SettingsHeroCard,
     SettingsLinkRow,
     SettingsPageShell,
     SettingsSectionGroup,
+    SettingsStatusPill,
 } from '../../../components/settings/SettingsBlocks';
 import { useSmartBack } from '../../../hooks/useSmartBack';
 
 export default function HelpSettingsScreen() {
     const smartBack = useSmartBack('/(main)/settings');
+    const version = Constants.expoConfig?.version ?? '0.0.0';
 
     return (
         <SettingsPageShell
             title="Help & Support"
-            subtitle="Legal, product help, release details, and support shortcuts"
+            subtitle="Legal pages, release notes, and product support"
             onBackPress={smartBack}
         >
             <SettingsHeroCard
                 title="Help that stays findable"
-                subtitle="Support links, legal pages, subscription state, and announcement history stay inside Settings instead of a separate More hub."
+                subtitle="This category owns the legal and support pages only. Operational routes stay in their own categories."
                 primaryLabel="Help"
-                secondaryLabel="Support"
+                secondaryLabel={`v${version}`}
             />
 
             <SettingsSectionGroup
-                title="Support and policy"
-                subtitle="The core places users usually look for trust, policy, and release details."
+                title="Documents"
+                subtitle="Policy and product information stays grouped under one support category."
+                action={<SettingsStatusPill label="4 pages" tone="info" />}
             >
                 <SettingsLinkRow
+                    icon="scale-balance"
+                    title="About Vahi"
+                    subtitle="App identity, release references, and public product information."
+                    onPress={() => router.push('/legal/about' as Parameters<typeof router.push>[0])}
+                />
+                <SettingsLinkRow
                     icon="file-document-outline"
-                    title="Legal center"
-                    subtitle="Terms, privacy policy, changelog, and about pages."
-                    onPress={() => router.push('/legal' as Parameters<typeof router.push>[0])}
+                    title="Terms of Service"
+                    subtitle="Review product usage terms and responsibilities."
+                    onPress={() => router.push('/legal/terms' as Parameters<typeof router.push>[0])}
                 />
                 <SettingsLinkRow
-                    icon="crown-outline"
-                    title="Subscription"
-                    subtitle="Review plan state before diagnosing premium or sync restrictions."
-                    onPress={() => router.push('/(main)/settings/subscription' as Parameters<typeof router.push>[0])}
+                    icon="shield-account-outline"
+                    title="Privacy Policy"
+                    subtitle="See how business and user data is handled."
+                    onPress={() => router.push('/legal/privacy' as Parameters<typeof router.push>[0])}
                 />
                 <SettingsLinkRow
-                    icon="bullhorn-outline"
-                    title="Announcements"
-                    subtitle="Open the latest product notices and communication cards."
-                    onPress={() => router.push('/(main)/settings/announcements' as Parameters<typeof router.push>[0])}
-                />
-                <SettingsLinkRow
-                    icon="cloud-sync-outline"
-                    title="Sync diagnostics"
-                    subtitle="Use this when support needs current queue and connectivity state."
-                    onPress={() => router.push('/(main)/settings/sync' as Parameters<typeof router.push>[0])}
+                    icon="history"
+                    title="Changelog"
+                    subtitle="Read feature history and release updates."
+                    onPress={() => router.push('/legal/changelog' as Parameters<typeof router.push>[0])}
                 />
             </SettingsSectionGroup>
         </SettingsPageShell>

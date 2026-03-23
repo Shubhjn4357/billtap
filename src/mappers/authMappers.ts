@@ -1,3 +1,4 @@
+import { SUBSCRIPTION_TIERS, getStatusScopedFeatureFlags } from '../constants/subscription';
 import type { AuthResponse } from '../types/api';
 import type { Business, Subscription, User } from '../types/domain';
 
@@ -115,10 +116,10 @@ export const mapLegacyProfileToSubscription = (
   profile: LegacyProfilePayload,
   businessId?: string | null,
 ): Subscription | null => {
-  const tier = readString(
+  const rawTier = readString(
     profile.subscriptionPlanId ?? profile.subscriptionPlanName,
   );
-  if (!tier) return null;
+  if (!rawTier) return null;
 
   const rawStatus = readStringOrDefault(
     profile.subscriptionStatus,
@@ -134,6 +135,21 @@ export const mapLegacyProfileToSubscription = (
           : rawStatus === 'canceled'
             ? 'CANCELLED'
             : 'TRIAL';
+
+  const normalizedTier = rawTier.trim().toUpperCase();
+  const tier: Subscription['tier'] =
+    normalizedTier in SUBSCRIPTION_TIERS
+      ? (normalizedTier as Subscription['tier'])
+      : 'FREE';
+  const tierConfig = SUBSCRIPTION_TIERS[tier];
+  const cloudSyncAllowed =
+    (status === 'ACTIVE' || status === 'TRIAL') && tierConfig.cloudSyncAllowed;
+  const webDashboardAllowed =
+    (status === 'ACTIVE' || status === 'TRIAL') && tierConfig.webDashboardAllowed;
+  const featureFlagsEnabled = getStatusScopedFeatureFlags(
+    status,
+    tierConfig.enabledFeatures,
+  ) as Subscription['featureFlagsEnabled'];
 
   const timestamp = isoNow();
   const resolvedBusinessId = businessId ?? 'local';
@@ -156,10 +172,10 @@ export const mapLegacyProfileToSubscription = (
     maxDevices: null,
     maxStorageMb: null,
     monthlyInvoiceCount: 0,
-    offlineOnly: false,
-    cloudSyncAllowed: true,
-    webDashboardAllowed: true,
-    featureFlagsEnabled: [],
+    offlineOnly: !cloudSyncAllowed,
+    cloudSyncAllowed,
+    webDashboardAllowed,
+    featureFlagsEnabled,
     createdAt: timestamp,
     updatedAt: timestamp,
   };

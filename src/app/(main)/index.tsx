@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
@@ -11,6 +11,7 @@ import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../..
 import { AppTopBar } from '../../components/ui/AppTopBar';
 import { HubActionCard, HubMetricCard } from '../../components/ui/HubBlocks';
 import { useAppColors } from '../../hooks/useAppColors';
+import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useAppRuntime } from '../../components/providers/AppRuntimeProvider';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { useInvoices, formatInvoiceDate } from '../../hooks/useInvoices';
@@ -18,14 +19,17 @@ import { useParties } from '../../hooks/useParties';
 import { useReportSummary } from '../../hooks/useReports';
 import { useActiveOffers } from '../../hooks/useOffers';
 import { useSyncStatus } from '../../hooks/useSyncStatus';
+import { shareBusinessCardDocument } from '../../utils/businessCardDocument';
 
 export default function HomeScreen() {
     const colors = useAppColors();
+    const dialog = useAppDialog();
     const s = styles(colors);
     const { user, business, tierLabel, subscription, role, refresh } = useCurrentBusiness();
     const { syncStats, refreshSyncState } = useAppRuntime();
     const syncStatus = useSyncStatus();
     const [upgradePromptShown, setUpgradePromptShown] = useState(false);
+    const [sharingBusinessCard, setSharingBusinessCard] = useState(false);
 
     const today = new Date();
     const monthStart = format(startOfMonth(today), 'yyyy-MM-dd');
@@ -127,13 +131,13 @@ export default function HomeScreen() {
             route: '/(main)/accounts',
         },
         {
-            key: 'business-card',
-            eyebrow: 'Brand Card',
-            title: 'Share your business identity',
-            subtitle: 'Open template settings to preview the business card and invoice branding.',
-            icon: 'card-account-details-outline' as const,
+            key: 'reports',
+            eyebrow: 'Reports',
+            title: 'Share balance and GST exports',
+            subtitle: 'Open trial balance, balance sheet, and tax-ready summaries from one place.',
+            icon: 'chart-timeline-variant' as const,
             accent: colors.warning,
-            route: '/(main)/settings/printing',
+            route: '/(main)/reports',
         },
     ]), [
         blockedCount,
@@ -145,6 +149,32 @@ export default function HomeScreen() {
         invoiceSummary.outstanding,
         invoiceSummary.total,
         summary?.totalSales,
+    ]);
+
+    const businessCardMeta = useMemo(() => {
+        const location = [business?.city, business?.state].filter(Boolean).join(', ');
+        return {
+            name: business?.name ?? 'Your Business',
+            legalName: business?.legalName,
+            ownerName: user?.name,
+            phone: business?.phone ?? user?.phone ?? null,
+            email: business?.email ?? user?.email ?? null,
+            gstin: business?.gstin,
+            address: business?.address,
+            location,
+        };
+    }, [
+        business?.address,
+        business?.city,
+        business?.email,
+        business?.gstin,
+        business?.legalName,
+        business?.name,
+        business?.phone,
+        business?.state,
+        user?.email,
+        user?.name,
+        user?.phone,
     ]);
 
     const quickActionAccent = useMemo<Record<string, string>>(() => ({
@@ -216,6 +246,28 @@ export default function HomeScreen() {
             refetchSuppliers(),
             refreshSyncState(),
         ]);
+    };
+
+    const handleShareBusinessCard = () => {
+        setSharingBusinessCard(true);
+        void shareBusinessCardDocument({
+            businessName: businessCardMeta.name,
+            legalName: businessCardMeta.legalName,
+            ownerName: businessCardMeta.ownerName,
+            phone: businessCardMeta.phone,
+            email: businessCardMeta.email,
+            gstin: businessCardMeta.gstin,
+            address: businessCardMeta.address,
+            city: business?.city,
+            state: business?.state,
+        })
+            .catch((error) => {
+                const message = error instanceof Error ? error.message : 'Unable to share the business card.';
+                dialog.alert('Share failed', message);
+            })
+            .finally(() => {
+                setSharingBusinessCard(false);
+            });
     };
 
     return (
@@ -304,6 +356,96 @@ export default function HomeScreen() {
                             </Pressable>
                         ))}
                     </ScrollView>
+                </View>
+
+                <View style={s.section}>
+                    <SectionHeading title="Business Card" meta="Preview and share" />
+                    <View style={s.businessCardSection}>
+                        <View style={s.businessCardPanel}>
+                            <View style={s.businessCardGlow} />
+                            <View style={s.businessCardTop}>
+                                <View style={s.businessCardTopCopy}>
+                                    <Text style={[s.businessCardEyebrow, { color: colors.success }]}>Billing • GST • Business</Text>
+                                    <Text style={[s.businessCardPanelName, { color: colors.text }]}>
+                                        {businessCardMeta.name}
+                                    </Text>
+                                    {businessCardMeta.legalName ? (
+                                        <Text style={[s.businessCardPanelLegal, { color: colors.textSecondary }]}>
+                                            {businessCardMeta.legalName}
+                                        </Text>
+                                    ) : null}
+                                    {businessCardMeta.ownerName ? (
+                                        <Text style={[s.businessCardPanelOwner, { color: colors.success }]}>
+                                            {businessCardMeta.ownerName}
+                                        </Text>
+                                    ) : null}
+                                </View>
+                                <View style={[s.businessCardScan, { borderColor: withAlpha(colors.success, '32') }]}>
+                                    <Text style={[s.businessCardScanText, { color: colors.success }]}>SCAN</Text>
+                                </View>
+                            </View>
+
+                            <View style={s.businessCardInfo}>
+                                {businessCardMeta.phone ? (
+                                    <Text style={[s.businessCardInfoText, { color: colors.text }]}>
+                                        {businessCardMeta.phone}
+                                    </Text>
+                                ) : null}
+                                {businessCardMeta.email ? (
+                                    <Text style={[s.businessCardInfoText, { color: colors.text }]}>
+                                        {businessCardMeta.email}
+                                    </Text>
+                                ) : null}
+                                {businessCardMeta.gstin ? (
+                                    <Text style={[s.businessCardInfoText, { color: colors.textSecondary }]}>
+                                        GSTIN {businessCardMeta.gstin}
+                                    </Text>
+                                ) : null}
+                                {businessCardMeta.address ? (
+                                    <Text style={[s.businessCardInfoText, { color: colors.textSecondary }]}>
+                                        {businessCardMeta.address}
+                                    </Text>
+                                ) : null}
+                                {businessCardMeta.location ? (
+                                    <Text style={[s.businessCardInfoText, { color: colors.textSecondary }]}>
+                                        {businessCardMeta.location}
+                                    </Text>
+                                ) : null}
+                            </View>
+
+                            <View style={s.businessCardFooter}>
+                                <Text style={[s.businessCardFooterText, { color: colors.textSecondary }]}>
+                                    Share this card so customers can save your billing contact and GST identity quickly.
+                                </Text>
+                                <MetaPill label={tierLabel} colors={colors} />
+                            </View>
+                        </View>
+
+                        <View style={s.businessCardActions}>
+                            <Pressable
+                                style={[s.businessActionPrimary, { backgroundColor: colors.success }]}
+                                onPress={handleShareBusinessCard}
+                                disabled={sharingBusinessCard}
+                            >
+                                {sharingBusinessCard ? (
+                                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                                ) : (
+                                    <>
+                                        <MaterialCommunityIcons name="share-variant-outline" size={16} color={colors.onPrimary} />
+                                        <Text style={s.businessActionPrimaryText}>Share Card</Text>
+                                    </>
+                                )}
+                            </Pressable>
+
+                            <Pressable
+                                style={[s.businessActionSecondary, { borderColor: withAlpha(colors.primary, colors.isDark ? '48' : '26') }]}
+                                onPress={() => router.push('/(main)/settings/printing' as Parameters<typeof router.push>[0])}
+                            >
+                                <MaterialCommunityIcons name="palette-outline" size={16} color={colors.primary} />
+                                <Text style={[s.businessActionSecondaryText, { color: colors.primary }]}>Customize</Text>
+                            </Pressable>
+                        </View>
+                    </View>
                 </View>
 
                 <View style={s.section}>
@@ -421,22 +563,6 @@ export default function HomeScreen() {
                         />
                     </View>
                 </View>
-
-                <Pressable
-                    style={s.directoryCard}
-                    onPress={() => router.push('/(main)/settings/printing' as Parameters<typeof router.push>[0])}
-                >
-                    <View style={s.directoryIcon}>
-                        <MaterialCommunityIcons name="card-account-details-outline" size={18} color={colors.primary} />
-                    </View>
-                    <View style={s.directoryCopy}>
-                        <Text style={[s.directoryTitle, { color: colors.text }]}>Business card and invoice branding</Text>
-                        <Text style={[s.directorySubtitle, { color: colors.textSecondary }]}>
-                            Preview the business card, printer layouts, invoice branding, and print-ready templates.
-                        </Text>
-                    </View>
-                    <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
-                </Pressable>
             </ScrollView>
         </SafeAreaView>
     );
@@ -616,6 +742,127 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     section: {
         gap: Spacing.sm,
     },
+    businessCardSection: {
+        gap: Spacing.sm,
+    },
+    businessCardPanel: {
+        position: 'relative',
+        overflow: 'hidden',
+        borderRadius: Radius.card,
+        padding: Spacing.lg,
+        gap: Spacing.md,
+        ...getSurfaceStyle(colors, { accent: colors.success, elevated: true }),
+    },
+    businessCardGlow: {
+        position: 'absolute',
+        width: 164,
+        height: 164,
+        borderRadius: 82,
+        top: -54,
+        right: -22,
+        backgroundColor: withAlpha(colors.success, colors.isDark ? '1E' : '12'),
+    },
+    businessCardTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: Spacing.md,
+    },
+    businessCardTopCopy: {
+        flex: 1,
+        gap: 4,
+    },
+    businessCardEyebrow: {
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+    },
+    businessCardPanelName: {
+        fontSize: 24,
+        fontWeight: '800',
+        lineHeight: 30,
+    },
+    businessCardPanelLegal: {
+        fontSize: Typography.body.size,
+        fontWeight: '600',
+        lineHeight: 20,
+    },
+    businessCardPanelOwner: {
+        marginTop: 4,
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+    },
+    businessCardScan: {
+        width: 58,
+        height: 58,
+        borderRadius: Radius.lg,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: withAlpha(colors.success, colors.isDark ? '18' : '10'),
+    },
+    businessCardScanText: {
+        fontSize: 11,
+        fontWeight: '800',
+    },
+    businessCardInfo: {
+        gap: 4,
+    },
+    businessCardInfoText: {
+        fontSize: Typography.body.size,
+        lineHeight: 20,
+        fontWeight: '600',
+    },
+    businessCardFooter: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        gap: Spacing.md,
+    },
+    businessCardFooterText: {
+        flex: 1,
+        fontSize: Typography.caption.size,
+        lineHeight: 18,
+        fontWeight: '600',
+    },
+    businessCardActions: {
+        flexDirection: 'row',
+        gap: Spacing.sm,
+    },
+    businessActionPrimary: {
+        flex: 1,
+        minHeight: 46,
+        borderRadius: Radius.pill,
+        paddingHorizontal: Spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: Spacing.xs,
+    },
+    businessActionPrimaryText: {
+        color: colors.onPrimary,
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+    },
+    businessActionSecondary: {
+        flex: 1,
+        minHeight: 46,
+        borderRadius: Radius.pill,
+        borderWidth: 1,
+        paddingHorizontal: Spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: Spacing.xs,
+        backgroundColor: withAlpha(colors.primary, colors.isDark ? '10' : '08'),
+    },
+    businessActionSecondaryText: {
+        fontSize: Typography.caption.size,
+        fontWeight: '800',
+    },
     metricGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -677,35 +924,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     invoiceStatus: {
         fontSize: 11,
         fontWeight: '800',
-    },
-    directoryCard: {
-        borderRadius: Radius.card,
-        paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.md,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: Spacing.md,
-        ...getSurfaceStyle(colors),
-    },
-    directoryIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: Radius.md,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: withAlpha(colors.primary, '12'),
-    },
-    directoryCopy: {
-        flex: 1,
-        gap: 2,
-    },
-    directoryTitle: {
-        fontSize: Typography.body.size,
-        fontWeight: '700',
-    },
-    directorySubtitle: {
-        fontSize: Typography.caption.size,
-        lineHeight: 18,
     },
 });
 

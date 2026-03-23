@@ -1,6 +1,8 @@
-import { memo, type ReactNode } from 'react';
+
+import { memo, type ReactNode, useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View, type ScrollViewProps } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppTopBar } from '../ui/AppTopBar';
 import { DESIGN_SPACING, getIconAccentStyle, getSurfaceStyle } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette, withAlpha } from '../../constants/theme';
@@ -92,10 +94,16 @@ export const SettingsPageShell = memo(function SettingsPageShell({
     scrollProps,
 }: SettingsPageShellProps) {
     const colors = useAppColors();
+    const insets = useSafeAreaInsets();
     const s = styles(colors);
+    const scrollContentStyle = [
+        s.content,
+        { paddingBottom: Math.max(120, insets.bottom + 88) },
+        scrollProps?.contentContainerStyle,
+    ];
 
     return (
-        <View style={s.safe}>
+        <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
             <AppTopBar
                 title={title}
                 subtitle={subtitle}
@@ -104,13 +112,13 @@ export const SettingsPageShell = memo(function SettingsPageShell({
             />
             <ScrollView
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={s.content}
+                contentContainerStyle={scrollContentStyle}
                 keyboardShouldPersistTaps="handled"
                 {...scrollProps}
             >
                 {children}
             </ScrollView>
-        </View>
+        </SafeAreaView>
     );
 });
 
@@ -231,7 +239,13 @@ export const SettingsToggleRow = memo(function SettingsToggleRow({
 }: SettingsToggleRowProps) {
     const colors = useAppColors();
     const s = styles(colors);
+    const { selection } = useHaptics();
     const resolvedAccent = accent ?? colors.primary;
+
+    const handleChange = useCallback((next: boolean) => {
+        void selection();
+        onValueChange(next);
+    }, [onValueChange, selection]);
 
     return (
         <View style={[s.rowCard, getSurfaceStyle(colors, { elevated: true }), disabled ? { opacity: 0.55 } : null]}>
@@ -245,7 +259,7 @@ export const SettingsToggleRow = memo(function SettingsToggleRow({
             <Switch
                 disabled={disabled}
                 value={value}
-                onValueChange={onValueChange}
+                onValueChange={handleChange}
                 trackColor={{ true: resolvedAccent, false: withAlpha(colors.border, 'D0') }}
                 thumbColor={colors.onPrimary}
             />

@@ -58,6 +58,7 @@ interface InvoiceTotals {
     totalInvoiceValue: number;
 }
 
+
 interface InvoiceBuilderStore {
     state: InvoiceBuilderState;
     totals: InvoiceTotals;
@@ -85,6 +86,7 @@ interface InvoiceBuilderStore {
     setTerms: (t: string) => void;
     setReverseCharge: (v: boolean) => void;
     applyInterState: (isInterState: boolean) => void;
+    loadFromInvoice: (invoice: import('../types/domain').Invoice, newType: InvoiceType) => void;
 }
 
 const defaultState = (): InvoiceBuilderState => ({
@@ -265,6 +267,49 @@ export const useInvoiceBuilderStore = create<InvoiceBuilderStore>()(
 
             applyInterState: (isInterState) => set((store) => {
                 store.state.items = store.state.items.map((line) => computeLine({ ...line, isInterState }));
+                store.totals = syncTotals(store.state);
+            }),
+
+            loadFromInvoice: (invoice, newType) => set((store) => {
+                store.state = {
+                    ...defaultState(),
+                    invoiceType: newType,
+                    partyId: invoice.partyId,
+                    partySnapshot: invoice.partySnapshot ?? null,
+                    placeOfSupply: invoice.placeOfSupply ?? '',
+                    defaultGodownId: invoice.gstRateBreakupJson && typeof invoice.gstRateBreakupJson === 'object' && !Array.isArray(invoice.gstRateBreakupJson) 
+                        ? String((invoice.gstRateBreakupJson as Record<string, unknown>).defaultGodownId ?? '') || null 
+                        : null,
+                    discountAmount: invoice.discountAmount,
+                    additionalCharges: invoice.additionalCharges,
+                    roundOffAmount: invoice.roundOffAmount,
+                    notes: invoice.notes ?? '',
+                    termsAndConditions: invoice.termsAndConditions ?? '',
+                    reverseCharge: invoice.reverseCharge,
+                    paymentMode: PaymentMode.CASH,
+                    paidAmount: 0,
+                    items: (invoice.items ?? []).map((item) => ({
+                        _key: Math.random().toString(36).slice(2),
+                        itemId: item.itemId,
+                        godownId: item.godownId ?? null,
+                        description: item.description,
+                        quantity: item.quantity,
+                        unit: item.unit ?? 'pcs',
+                        rate: item.rate,
+                        discountPercent: item.discountPercent,
+                        discountAmount: item.discountAmount,
+                        taxableValue: item.taxableValue,
+                        gstRate: item.gstRate,
+                        cgstRate: item.cgstRate,
+                        cgstAmount: item.cgstAmount,
+                        sgstRate: item.sgstRate,
+                        sgstAmount: item.sgstAmount,
+                        igstRate: item.igstRate,
+                        igstAmount: item.igstAmount,
+                        isInterState: item.igstRate > 0,
+                        total: item.total,
+                    })),
+                };
                 store.totals = syncTotals(store.state);
             }),
         };

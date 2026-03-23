@@ -7,8 +7,7 @@ type AnimatedSplashOverlayProps = {
     backgroundColor?: string;
 };
 
-const BRAND_LOGO = require('../../assets/images/logo-glow.png');
-
+const BRAND_LOGO = require('../../assets/images/icon.png');
 /**
  * Branded startup overlay shown while bootstrapping.
  * Keeps logo visible and animated instead of a plain background.
@@ -18,9 +17,9 @@ export default function AnimatedSplashOverlay({
     backgroundColor = Colors.light.primary,
 }: AnimatedSplashOverlayProps) {
     const opacity = useRef(new Animated.Value(1)).current;
-    const logoScale = useRef(new Animated.Value(0.9)).current;
-    const logoOpacity = useRef(new Animated.Value(0)).current;
-    const brandOpacity = useRef(new Animated.Value(0)).current;
+    const logoScale = useRef(new Animated.Value(ready ? 1 : 0.9)).current;
+    const logoOpacity = useRef(new Animated.Value(ready ? 1 : 0)).current;
+    const brandOpacity = useRef(new Animated.Value(ready ? 1 : 0)).current;
     const shimmerProgress = useRef(new Animated.Value(0)).current;
     const [visible, setVisible] = useState(true);
     const [logoFailed, setLogoFailed] = useState(false);

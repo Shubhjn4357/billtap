@@ -73,6 +73,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     const markBootstrapped = useAuthStore((state) => state.markBootstrapped);
     const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
     const business = useAuthStore((state) => state.business);
+    const subscription = useAuthStore((state) => state.subscription);
 
     const [ready, setReady] = useState(false);
     const [isOnline, setIsOnline] = useState(true);
@@ -228,6 +229,11 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     }, [refreshSyncState]);
 
     const hasRuntimeAccess = hasStoredToken || DEV_DIRECT_ACCESS_ENABLED;
+    const canRetryBlockedCloudSync =
+        hasRuntimeAccess
+        && subscription?.offlineOnly === false
+        && subscription?.cloudSyncAllowed === true
+        && (subscription?.status === 'ACTIVE' || subscription?.status === 'TRIAL');
 
     const flushPendingSetup = useCallback(async (businessId: string | null) => {
         const scopedBusinessId = businessId ?? (await getStoredBusinessId()) ?? null;
@@ -369,6 +375,39 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
             void unlockWithBiometrics();
         });
     }, [localPreferences.biometricLockEnabled, localPreferencesReady, refreshBiometricSupport, unlockWithBiometrics]);
+
+    useEffect(() => {
+        if (!canRetryBlockedCloudSync) return;
+
+        let active = true;
+
+        (async () => {
+            try {
+                const releasedCount = await offlineSyncService.retryBlockedUpgradeMutations();
+                if (!active || releasedCount <= 0) return;
+                await refreshSyncState();
+                await flushSyncQueue();
+            } catch (error) {
+                console.error('[app-runtime] blocked sync retry reset failed', {
+                    businessId: business?.id ?? null,
+                    subscriptionId: subscription?.id ?? null,
+                    error,
+                });
+            }
+        })();
+
+        return () => {
+            active = false;
+        };
+    }, [
+        business?.id,
+        canRetryBlockedCloudSync,
+        flushSyncQueue,
+        refreshSyncState,
+        subscription?.id,
+        subscription?.status,
+        subscription?.updatedAt,
+    ]);
 
     useEffect(() => {
         let cleanupNotifications = () => {};

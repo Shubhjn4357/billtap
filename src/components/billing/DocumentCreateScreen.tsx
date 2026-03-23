@@ -11,12 +11,13 @@ import { DESIGN_SPACING } from '../../constants/designSystem';
 import { Radius, Spacing, Typography, type ColorPalette } from '../../constants/theme';
 import { useAppColors } from '../../hooks/useAppColors';
 import { GST_SLABS, INDIAN_STATE_LIST } from '../../constants/gstRates';
-import { InvoiceType, PaymentMode } from '../../constants/enums';
+import { InvoiceType, PaymentMode, SettingsSection } from '../../constants/enums';
 import { CASH_BANK_VOUCHER_MODE_OPTIONS, getPaymentModeLabel } from '../../constants/accountingInputOptions';
 import { useAuthStore } from '../../store/authStore';
 import { useInvoiceBuilderStore, useInvoiceTotals } from '../../store/invoiceBuilderStore';
 import type { InvoiceBuilderState, InvoiceLineItem, Item } from '../../types/domain';
 import { useSmartBack } from '../../hooks/useSmartBack';
+import { useHaptics } from '../../hooks/useHaptics';
 import { toUserMessage } from '../../api/client';
 import { canPerformAction } from '../../utils/accessControl';
 import { SelectField, type SelectOption } from '../ui/SelectField';
@@ -27,6 +28,7 @@ import { FormHero, FormSectionCard } from '../ui/FormBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useItemCatalog } from '../../hooks/useInventory';
 import { useGodowns } from '../../hooks/useGodowns';
+import { useSettingsSelector } from '../../hooks/useSettingsSelector';
 import { useInvoiceMutations } from '../../hooks/useInvoiceMutations';
 import { usePartyDetails } from '../../hooks/usePartyDetails';
 
@@ -113,12 +115,13 @@ const hasExistingDraft = (state: InvoiceBuilderState) =>
         ))
     );
 
-export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig }) {
+export function DocumentCreateScreen({ config, isConversion }: { config: BillingDocumentConfig; isConversion?: boolean }) {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
     const smartBack = useSmartBack('/(main)/billing');
     const business = useAuthStore((state) => state.business);
+    const { notify } = useHaptics();
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
     const canCreateBilling = canPerformAction(role, 'billing.create', subscription, business);
@@ -149,7 +152,14 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
     } = useInvoiceBuilderStore();
     const totals = useInvoiceTotals();
 
-    const [gstEnabled, setGstEnabled] = useState(config.invoiceType !== InvoiceType.BILL_OF_SUPPLY);
+    const { selected: isGstGlobalEnabled } = useSettingsSelector(
+        SettingsSection.TAXES_AND_GST,
+        (data) => Boolean(data.gst_enabled ?? true)
+    );
+
+    const [gstEnabled, setGstEnabled] = useState(
+        isGstGlobalEnabled && config.invoiceType !== InvoiceType.BILL_OF_SUPPLY
+    );
     const [eWayBillNumber, setEWayBillNumber] = useState('');
 
     const { allItems: itemCatalog } = useItemCatalog({
@@ -216,6 +226,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
     });
 
     useEffect(() => {
+        if (isConversion) return;
         const currentStore = useInvoiceBuilderStore.getState();
         const preserveDraft =
             currentStore.state.invoiceType === ((config.invoiceType as InvoiceType) ?? InvoiceType.TAX_INVOICE)
@@ -228,7 +239,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
             setGstEnabled(config.invoiceType !== InvoiceType.BILL_OF_SUPPLY);
             setEWayBillNumber('');
         }
-    }, [config.documentKind, config.invoiceType, init, setInvoiceDate, setInvoiceNumber]);
+    }, [config.documentKind, config.invoiceType, init, setInvoiceDate, setInvoiceNumber, isConversion]);
 
     useEffect(() => {
         if (!gstEnabled || state.placeOfSupply || !business?.state) return;
@@ -316,6 +327,13 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
         }
     };
 
+    useEffect(() => {
+        if (!isGstGlobalEnabled && gstEnabled) {
+            toggleGst(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isGstGlobalEnabled, gstEnabled]);
+
     const { saveInvoice: submit, isSavingInvoice: isPending } = useInvoiceMutations();
 
     const handleSave = () => {
@@ -348,6 +366,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
 
         void submit(payload)
             .then((res) => {
+                void notify();
                 if (res.data?.id) {
                     router.replace(`/(main)/billing/${res.data.id}` as Parameters<typeof router.replace>[0]);
                     return;
@@ -406,12 +425,14 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
 
                 <View style={s.section}>
                     <FormSectionCard title="Document Details" description="Document numbering, posting dates, and GST-specific settings.">
-                    <View style={s.rowBetween}>
-                        <View style={s.toggleRow}>
-                            <Text style={[s.smallLabel, { color: colors.textSecondary }]}>GST</Text>
-                            <Switch value={gstEnabled} onValueChange={toggleGst} trackColor={{ true: colors.primary }} />
+                    {isGstGlobalEnabled ? (
+                        <View style={s.rowBetween}>
+                            <View style={s.toggleRow}>
+                                <Text style={[s.smallLabel, { color: colors.textSecondary }]}>GST</Text>
+                                <Switch value={gstEnabled} onValueChange={toggleGst} trackColor={{ true: colors.primary }} />
+                            </View>
                         </View>
-                    </View>
+                    ) : null}
 
                     <Text style={s.inputLabel}>Bill Number</Text>
                     <View style={s.row}>

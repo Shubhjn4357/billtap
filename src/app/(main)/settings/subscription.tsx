@@ -1,16 +1,14 @@
 import { useMemo, useState } from 'react';
+import { router } from 'expo-router';
 import {
     ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
     Pressable,
     RefreshControl,
-    ScrollView,
     StyleSheet,
     Text,
     View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { toUserMessage } from '../../../api/client';
@@ -20,22 +18,32 @@ import {
     type BillingCycleTab,
     type MockCheckoutOutcome,
 } from '../../../constants/subscriptionOptions';
-import { DESIGN_SPACING, getPillStyle } from '../../../constants/designSystem';
-import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
+import {
+    DESIGN_SPACING,
+    getPillStyle,
+    getSurfaceStyle,
+} from '../../../constants/designSystem';
+import {
+    Radius,
+    Spacing,
+    Typography,
+    type ColorPalette,
+    withAlpha,
+} from '../../../constants/theme';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useSubscriptionMutations } from '../../../hooks/useSubscriptionMutations';
 import { useAuthStore } from '../../../store/authStore';
 import { canPerformAction } from '../../../utils/accessControl';
-import { AppTopBar } from '../../../components/ui/AppTopBar';
 import { AppInput } from '../../../components/ui/AppInput';
 import { ChipButton } from '../../../components/ui/ChipBlocks';
 import {
-    UtilityBanner,
-    UtilityEmptyState,
-    UtilityHero,
-    UtilityPanel,
-    UtilitySection,
-} from '../../../components/ui/UtilityBlocks';
+    SettingsFieldCard,
+    SettingsHeroCard,
+    SettingsLinkRow,
+    SettingsPageShell,
+    SettingsSectionGroup,
+    SettingsStatusPill,
+} from '../../../components/settings/SettingsBlocks';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useActiveOffers, useSubscriptionPlans } from '../../../hooks/useOffers';
 import { openOfferDestination } from '../../../utils/offerNavigation';
@@ -99,14 +107,15 @@ export default function SubscriptionScreen() {
         offers,
         isRefetching: offersRefetching,
         refetch: refetchOffers,
+        data: offersData,
     } = offersQuery;
     const isRefreshing = plansRefetching || offersRefetching;
     const cacheStatusMessage = useMemo(
         () =>
-            [plansQuery.data?.message, offersQuery.data?.message].find((message) =>
+            [plansQuery.data?.message, offersData?.message].find((message) =>
                 /offline cache|local session/i.test(String(message ?? ''))
             ) ?? null,
-        [offersQuery.data?.message, plansQuery.data?.message]
+        [offersData?.message, plansQuery.data?.message]
     );
 
     const plans = useMemo(() => {
@@ -184,301 +193,487 @@ export default function SubscriptionScreen() {
     };
 
     return (
-        <SafeAreaView style={s.safe} edges={['top']}>
-            <AppTopBar
-                title="Subscription"
-                subtitle="Plan and billing controls"
-                onBackPress={smartBack}
+        <SettingsPageShell
+            title="Subscription"
+            subtitle="Plan, billing cycle, offers, and cloud-sync access"
+            onBackPress={smartBack}
+            contextChip={{ label: currentTier ?? 'FREE' }}
+            scrollProps={{
+                refreshControl: (
+                    <RefreshControl
+                        tintColor={colors.primary}
+                        refreshing={isRefreshing}
+                        onRefresh={() => {
+                            void Promise.all([refetchPlans(), refetchOffers()]);
+                        }}
+                    />
+                ),
+            }}
+        >
+            <SettingsHeroCard
+                title={currentTier ? `${currentTier} Plan` : 'Subscription Control'}
+                subtitle={
+                    !planInGoodStanding && subscriptionStatus
+                        ? `${subscriptionStatus} status is limiting cloud sync and premium modules until renewal.`
+                        : livePaymentsEnabled
+                            ? 'Live checkout is enabled for this build.'
+                            : 'Mock checkout is enabled for this build.'
+                }
+                primaryLabel={subscriptionStatus ?? 'ACTIVE'}
+                secondaryLabel={subscription?.cloudSyncAllowed ? 'Cloud sync on' : 'Cloud sync blocked'}
             />
 
-            <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-                <ScrollView
-                    contentContainerStyle={s.content}
-                    showsVerticalScrollIndicator={false}
-                    refreshControl={(
-                        <RefreshControl
-                            tintColor={colors.primary}
-                            refreshing={isRefreshing}
-                            onRefresh={() => {
-                                void Promise.all([refetchPlans(), refetchOffers()]);
-                            }}
-                        />
-                    )}
+            <SettingsSectionGroup
+                title="Current access"
+                subtitle="The active firm should make its sync and plan state obvious."
+            >
+                <SettingsFieldCard
+                    icon="shield-check-outline"
+                    title="Subscription health"
+                    subtitle="Current tier, renewal state, and cloud feature access."
                 >
-                    <UtilityHero
-                        title={currentTier ? `${currentTier} Plan` : 'Subscription Control'}
-                        subtitle={
-                            !planInGoodStanding && subscriptionStatus
-                                ? `${subscriptionStatus} status is limiting cloud sync and premium modules until renewal.`
-                                : livePaymentsEnabled
-                                ? 'Live checkout is enabled for this build.'
-                                : 'Mock checkout is enabled for this build.'
-                        }
-                        icon="star-circle-outline"
-                        tone={planInGoodStanding ? 'info' : 'warning'}
-                    />
-
-                    {!planInGoodStanding && subscriptionStatus ? (
-                        <UtilityBanner
-                            tone="warning"
-                            message={`Current subscription status is ${subscriptionStatus}. Local work stays on device, but cloud-dependent features stay restricted until the plan is active again.`}
+                    <View style={s.statusRow}>
+                        <SettingsStatusPill label={currentTier ?? 'FREE'} tone="info" />
+                        <SettingsStatusPill
+                            label={subscriptionStatus ?? 'ACTIVE'}
+                            tone={planInGoodStanding ? 'success' : 'warning'}
                         />
-                    ) : null}
-
-                    <UtilitySection title="Checkout Mode">
-                        <UtilityPanel tone="info">
-                            <Text style={[s.modeTitle, { color: colors.text }]}>
-                                Payment mode: {livePaymentsEnabled ? 'Live checkout' : 'Mock checkout'}
-                            </Text>
-                            <Text style={[s.modeMeta, { color: colors.textSecondary }]}>
-                                {livePaymentsEnabled
-                                    ? 'Real checkout flow through API.'
-                                    : 'Deterministic mock flow for internal testing without payment gateway.'}
-                            </Text>
-                            {!livePaymentsEnabled ? (
-                                <View style={s.modeChips}>
-                                    {SUBSCRIPTION_MOCK_OUTCOME_OPTIONS.map((option) => {
-                                        return (
-                                            <ChipButton
-                                                key={option.key}
-                                                label={option.label}
-                                                selected={mockOutcome === option.key}
-                                                tone="info"
-                                                onPress={() => setMockOutcome(option.key)}
-                                            />
-                                        );
-                                    })}
-                                </View>
-                            ) : null}
-                        </UtilityPanel>
-                    </UtilitySection>
-
-                    {currentTier ? (
-                        <UtilitySection title="Current Plan">
-                            <UtilityPanel>
-                                <Text style={[s.currentTitle, { color: colors.text }]}>
-                                    Current Tier: {currentTier}
-                                </Text>
-                                {subscriptionStatus ? (
-                                    <Text style={[s.currentMeta, { color: colors.textSecondary }]}>
-                                        Status: {subscriptionStatus}
-                                    </Text>
-                                ) : null}
-                                {subscription?.renewsAt ? (
-                                    <Text style={[s.currentMeta, { color: colors.textSecondary }]}>
-                                        Renews on {new Date(subscription.renewsAt).toLocaleDateString('en-IN')}
-                                    </Text>
-                                ) : null}
-                            </UtilityPanel>
-                        </UtilitySection>
-                    ) : null}
-
-                    {offers.length > 0 ? (
-                        <UtilitySection title="Offers" count={Math.min(offers.length, 2)}>
-                            {offers.slice(0, 2).map((offer) => (
-                                <UtilityPanel
-                                    key={offer.id}
-                                    tone="info"
-                                    onPress={offer.ctaRoute ? () => { void openOfferDestination(offer.ctaRoute); } : undefined}
-                                >
-                                    <Text style={[s.offerTitle, { color: colors.primary }]}>{offer.title}</Text>
-                                    <Text style={[s.offerMessage, { color: colors.text }]}>{offer.message}</Text>
-                                    {(offer.ctaText || offer.ctaRoute) ? (
-                                        <Text style={[s.offerMeta, { color: colors.primary }]}>
-                                            {`${offer.ctaText ?? 'Open'}${offer.ctaRoute ? ' -> Tap to open' : ''}`}
-                                        </Text>
-                                    ) : null}
-                                </UtilityPanel>
-                            ))}
-                        </UtilitySection>
-                    ) : null}
-
-                    {cacheStatusMessage ? <UtilityBanner message={cacheStatusMessage} /> : null}
-
-                    <UtilitySection title="Discount and Billing">
-                        <View style={s.discountRow}>
-                            <AppInput
-                                inputType="text"
-                                value={discountCode}
-                                onChangeText={setDiscountCode}
-                                placeholder="Discount code (optional)"
-                                autoCapitalize="characters"
-                                containerStyle={s.discountInputWrap}
-                            />
-                            <Pressable
-                                style={[s.validateBtn, { backgroundColor: colors.primary }]}
-                                disabled={isValidatingDiscount || !discountCode.trim()}
-                                onPress={handleApplyDiscount}
-                            >
-                                {isValidatingDiscount ? (
-                                    <ActivityIndicator color={colors.onPrimary} size="small" />
-                                ) : (
-                                    <Text style={s.validateBtnText}>Apply</Text>
-                                )}
-                            </Pressable>
-                        </View>
-
-                        <View style={s.cycleTabs}>
-                            {SUBSCRIPTION_BILLING_CYCLE_OPTIONS.map((option) => {
-                                return (
-                                    <ChipButton
-                                        key={option.key}
-                                        label={option.label}
-                                        selected={activeCycleTab === option.key}
-                                        tone="info"
-                                        onPress={() => setActiveCycleTab(option.key)}
-                                    />
-                                );
-                            })}
-                        </View>
-                    </UtilitySection>
-
-                    <UtilitySection title="Plans" count={visiblePlans.length}>
-                        {loadingPlans ? (
-                            <View style={s.centered}>
-                                <ActivityIndicator color={colors.primary} />
-                            </View>
-                        ) : visiblePlans.length === 0 ? (
-                            <UtilityEmptyState
-                                icon="layers-search-outline"
-                                title="No plans found"
-                                description="No subscription plans are available for the selected billing cycle."
-                            />
-                        ) : (
-                            visiblePlans.map((plan) => {
-                                const isCurrent = Boolean(currentTier && plan.tier === currentTier);
-                                const isBusy = isStartingCheckout && selectedPlanId === plan.id;
-                                const featureList = (plan.enabledFeatures ?? plan.features ?? []).slice(0, 6);
-
-                                return (
-                                    <UtilityPanel key={plan.id} tone={isCurrent ? 'info' : 'default'}>
-                                        <View style={s.planHeader}>
-                                            <View style={s.planBody}>
-                                                <Text style={[s.planName, { color: colors.text }]}>
-                                                    {getPlanName(plan)}
-                                                </Text>
-                                                <Text style={[s.planPrice, { color: colors.primary }]}>
-                                                    {formatPlanPrice(plan)}
-                                                </Text>
-                                                {plan.description ? (
-                                                    <Text
-                                                        style={[
-                                                            s.planDescription,
-                                                            { color: colors.textSecondary },
-                                                        ]}
-                                                    >
-                                                        {plan.description}
-                                                    </Text>
-                                                ) : null}
-                                                <Text style={[s.planMeta, { color: colors.textSecondary }]}>
-                                                    {(plan.billingCycle ?? 'MONTHLY')} - {plan.id}
-                                                </Text>
-                                            </View>
-
-                                            {isCurrent ? (
-                                                <View style={[s.currentPill, { backgroundColor: colors.primary }]}>
-                                                    <Text style={s.currentPillText}>Current</Text>
-                                                </View>
-                                            ) : (
-                                                <Pressable
-                                                    style={[
-                                                        s.upgradeBtn,
-                                                        {
-                                                            backgroundColor: canCheckout
-                                                                ? colors.primary
-                                                                : colors.border,
-                                                        },
-                                                    ]}
-                                                    disabled={isBusy || isStartingCheckout || !canCheckout}
-                                                    onPress={() => handleUpgrade(plan)}
-                                                >
-                                                    {isBusy ? (
-                                                        <ActivityIndicator color={colors.onPrimary} size="small" />
-                                                    ) : (
-                                                        <Text style={s.upgradeBtnText}>Upgrade</Text>
-                                                    )}
-                                                </Pressable>
-                                            )}
-                                        </View>
-
-                                        {featureList.length > 0 ? (
-                                            <View style={s.featuresWrap}>
-                                                {featureList.map((feature) => (
-                                                    <Text
-                                                        key={feature}
-                                                        style={[s.featureText, { color: colors.textSecondary }]}
-                                                    >
-                                                        • {feature}
-                                                    </Text>
-                                                ))}
-                                            </View>
-                                        ) : null}
-                                    </UtilityPanel>
-                                );
-                            })
-                        )}
-                    </UtilitySection>
-
-                    {lastCheckoutIntentId ? (
-                        <Text style={[s.intentMeta, { color: colors.textSecondary }]}>
-                            Last intent: {lastCheckoutIntentId}
+                        <SettingsStatusPill
+                            label={subscription?.cloudSyncAllowed ? 'Cloud sync allowed' : 'Cloud sync blocked'}
+                            tone={subscription?.cloudSyncAllowed ? 'success' : 'warning'}
+                        />
+                    </View>
+                    {subscription?.renewsAt ? (
+                        <Text style={s.metaText}>
+                            Renewal date: {new Date(subscription.renewsAt).toLocaleDateString('en-IN')}
                         </Text>
                     ) : null}
-                </ScrollView>
-            </KeyboardAvoidingView>
-        </SafeAreaView>
+                    {!planInGoodStanding && subscriptionStatus ? (
+                        <View style={[s.alertCard, getSurfaceStyle(colors, { accent: colors.warning, muted: true })]}>
+                            <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.warning} />
+                            <Text style={s.alertText}>
+                                Local work can stay on device, but cloud-dependent features remain restricted until the plan becomes active again.
+                            </Text>
+                        </View>
+                    ) : null}
+                    {cacheStatusMessage ? (
+                        <View style={[s.alertCard, getSurfaceStyle(colors, { accent: colors.info, muted: true })]}>
+                            <MaterialCommunityIcons name="information-outline" size={18} color={colors.info} />
+                            <Text style={s.alertText}>{cacheStatusMessage}</Text>
+                        </View>
+                    ) : null}
+                </SettingsFieldCard>
+            </SettingsSectionGroup>
+
+            <SettingsSectionGroup
+                title="Billing setup"
+                subtitle="Pick the cycle first, then configure checkout behavior."
+            >
+                <SettingsFieldCard
+                    icon="calendar-sync-outline"
+                    title="Billing cycle"
+                    subtitle="Cycle filters change which plans appear below."
+                >
+                    <View style={s.chipWrap}>
+                        {SUBSCRIPTION_BILLING_CYCLE_OPTIONS.map((option) => (
+                            <ChipButton
+                                key={option.key}
+                                label={option.label}
+                                selected={activeCycleTab === option.key}
+                                tone="info"
+                                onPress={() => setActiveCycleTab(option.key)}
+                            />
+                        ))}
+                    </View>
+                </SettingsFieldCard>
+
+                <SettingsFieldCard
+                    icon={livePaymentsEnabled ? 'credit-card-check-outline' : 'test-tube'}
+                    title="Checkout mode"
+                    subtitle={livePaymentsEnabled ? 'Real checkout is enabled for this build.' : 'This build is using mock checkout responses.'}
+                >
+                    <View style={s.statusRow}>
+                        <SettingsStatusPill
+                            label={livePaymentsEnabled ? 'Live checkout' : 'Mock checkout'}
+                            tone={livePaymentsEnabled ? 'success' : 'warning'}
+                        />
+                        {!canCheckout ? <SettingsStatusPill label="Role blocked" tone="warning" /> : null}
+                    </View>
+                    {!livePaymentsEnabled ? (
+                        <View style={s.chipWrap}>
+                            {SUBSCRIPTION_MOCK_OUTCOME_OPTIONS.map((option) => (
+                                <ChipButton
+                                    key={option.key}
+                                    label={option.label}
+                                    selected={mockOutcome === option.key}
+                                    tone="info"
+                                    onPress={() => setMockOutcome(option.key)}
+                                />
+                            ))}
+                        </View>
+                    ) : null}
+                </SettingsFieldCard>
+
+                <SettingsFieldCard
+                    icon="ticket-percent-outline"
+                    title="Discount code"
+                    subtitle="Apply a code directly before starting checkout."
+                >
+                    <View style={s.discountRow}>
+                        <AppInput
+                            inputType="text"
+                            value={discountCode}
+                            onChangeText={setDiscountCode}
+                            placeholder="Discount code"
+                            autoCapitalize="characters"
+                            containerStyle={s.discountInput}
+                        />
+                        <Pressable
+                            style={[
+                                s.actionButton,
+                                { backgroundColor: colors.primary },
+                                (!discountCode.trim() || isValidatingDiscount) ? s.actionButtonDisabled : null,
+                            ]}
+                            disabled={isValidatingDiscount || !discountCode.trim()}
+                            onPress={handleApplyDiscount}
+                        >
+                            {isValidatingDiscount ? (
+                                <ActivityIndicator size="small" color={colors.onPrimary} />
+                            ) : (
+                                <Text style={s.actionButtonText}>Apply</Text>
+                            )}
+                        </Pressable>
+                    </View>
+                </SettingsFieldCard>
+            </SettingsSectionGroup>
+
+            {offers.length > 0 ? (
+                <SettingsSectionGroup
+                    title="Offers"
+                    subtitle="Active subscription cards and plan nudges from the platform."
+                    action={<SettingsStatusPill label={`${offers.length} live`} tone="info" />}
+                >
+                    {offers.slice(0, 3).map((offer) => (
+                        <Pressable
+                            key={offer.id}
+                            style={({ pressed }) => [
+                                s.offerCard,
+                                getSurfaceStyle(colors, { accent: colors.primary, muted: true }),
+                                pressed ? { opacity: 0.92 } : null,
+                            ]}
+                            disabled={!offer.ctaRoute}
+                            onPress={() => {
+                                if (offer.ctaRoute) {
+                                    void openOfferDestination(offer.ctaRoute);
+                                }
+                            }}
+                        >
+                            <View style={s.offerHeader}>
+                                <View style={s.offerIcon}>
+                                    <MaterialCommunityIcons name="bullhorn-outline" size={18} color={colors.primary} />
+                                </View>
+                                <View style={s.offerCopy}>
+                                    <Text style={s.offerTitle}>{offer.title}</Text>
+                                    <Text style={s.offerMessage}>{offer.message}</Text>
+                                </View>
+                            </View>
+                            {(offer.ctaText || offer.ctaRoute) ? (
+                                <Text style={s.offerCta}>
+                                    {`${offer.ctaText ?? 'Open'}${offer.ctaRoute ? ' -> Tap to open' : ''}`}
+                                </Text>
+                            ) : null}
+                        </Pressable>
+                    ))}
+                </SettingsSectionGroup>
+            ) : null}
+
+            <SettingsSectionGroup
+                title="Plans"
+                subtitle="Choose the plan that fits this business and billing cycle."
+                action={<SettingsStatusPill label={`${visiblePlans.length} shown`} tone="info" />}
+            >
+                {loadingPlans ? (
+                    <View style={s.centered}>
+                        <ActivityIndicator color={colors.primary} />
+                    </View>
+                ) : visiblePlans.length === 0 ? (
+                    <View style={[s.emptyCard, getSurfaceStyle(colors, { muted: true })]}>
+                        <MaterialCommunityIcons name="layers-search-outline" size={22} color={colors.textSecondary} />
+                        <Text style={s.emptyTitle}>No plans found</Text>
+                        <Text style={s.emptySubtitle}>
+                            No subscription plans are available for the selected billing cycle.
+                        </Text>
+                    </View>
+                ) : (
+                    visiblePlans.map((plan) => {
+                        const isCurrent = Boolean(currentTier && plan.tier === currentTier);
+                        const isBusy = isStartingCheckout && selectedPlanId === plan.id;
+                        const featureList = (plan.enabledFeatures ?? plan.features ?? []).slice(0, 6);
+
+                        return (
+                            <View
+                                key={plan.id}
+                                style={[
+                                    s.planCard,
+                                    getSurfaceStyle(colors, {
+                                        accent: isCurrent ? colors.primary : undefined,
+                                        elevated: true,
+                                    }),
+                                ]}
+                            >
+                                <View style={s.planHeader}>
+                                    <View style={s.planCopy}>
+                                        <View style={s.planTitleRow}>
+                                            <Text style={s.planTitle}>{getPlanName(plan)}</Text>
+                                            {isCurrent ? <SettingsStatusPill label="Current" tone="success" /> : null}
+                                        </View>
+                                        <Text style={s.planPrice}>{formatPlanPrice(plan)}</Text>
+                                        {plan.description ? <Text style={s.planDescription}>{plan.description}</Text> : null}
+                                        <Text style={s.planMeta}>
+                                            {(plan.billingCycle ?? 'MONTHLY')} - {plan.id}
+                                        </Text>
+                                    </View>
+
+                                    {isCurrent ? null : (
+                                        <Pressable
+                                            style={[
+                                                s.actionButton,
+                                                {
+                                                    backgroundColor: canCheckout ? colors.primary : colors.border,
+                                                },
+                                                (!canCheckout || isBusy || isStartingCheckout) ? s.actionButtonDisabled : null,
+                                            ]}
+                                            disabled={isBusy || isStartingCheckout || !canCheckout}
+                                            onPress={() => handleUpgrade(plan)}
+                                        >
+                                            {isBusy ? (
+                                                <ActivityIndicator size="small" color={colors.onPrimary} />
+                                            ) : (
+                                                <Text style={s.actionButtonText}>Upgrade</Text>
+                                            )}
+                                        </Pressable>
+                                    )}
+                                </View>
+
+                                {featureList.length > 0 ? (
+                                    <View style={s.featuresWrap}>
+                                        {featureList.map((feature) => (
+                                            <View key={`${plan.id}-${feature}`} style={s.featureRow}>
+                                                <MaterialCommunityIcons name="check-circle-outline" size={14} color={colors.primary} />
+                                                <Text style={s.featureText}>{feature}</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                ) : null}
+                            </View>
+                        );
+                    })
+                )}
+            </SettingsSectionGroup>
+
+            <SettingsSectionGroup
+                title="Related pages"
+                subtitle="Operational routing stays explicit from subscription state into diagnostics."
+            >
+                <SettingsLinkRow
+                    icon="cloud-sync-outline"
+                    title="Sync diagnostics"
+                    subtitle="Check queue health, blocked items, and connectivity."
+                    onPress={() => router.push('/(main)/settings/sync' as Parameters<typeof router.push>[0])}
+                />
+                <SettingsLinkRow
+                    icon="domain-switch"
+                    title="Switch business"
+                    subtitle="Move to another firm without leaving the new settings flow."
+                    onPress={() => router.push('/(auth)/business-select' as Parameters<typeof router.push>[0])}
+                />
+            </SettingsSectionGroup>
+
+            {lastCheckoutIntentId ? (
+                <Text style={s.intentMeta}>Last checkout intent: {lastCheckoutIntentId}</Text>
+            ) : null}
+        </SettingsPageShell>
     );
 }
 
 const styles = (colors: ColorPalette) =>
     StyleSheet.create({
-        safe: { flex: 1, backgroundColor: colors.background },
-        flex: { flex: 1 },
-        content: { paddingHorizontal: DESIGN_SPACING.screenX, paddingBottom: 80, gap: DESIGN_SPACING.sectionGap },
-        modeTitle: { fontSize: 14, fontWeight: '700' },
-        modeMeta: { fontSize: 12, marginTop: 4 },
-        modeChips: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
-        currentTitle: { fontSize: 15, fontWeight: '700' },
-        currentMeta: { fontSize: 12, marginTop: 4 },
-        offerTitle: { fontSize: 14, fontWeight: '700' },
-        offerMessage: { fontSize: 12, marginTop: 4 },
-        offerMeta: { fontSize: 12, marginTop: 8, fontWeight: '700' },
-        cycleTabs: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-        discountRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
-        discountInputWrap: { flex: 1 },
-        validateBtn: {
+        statusRow: {
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            gap: Spacing.xs,
+        },
+        metaText: {
+            color: colors.textSecondary,
+            fontSize: Typography.caption.size,
+            fontWeight: '600',
+        },
+        alertCard: {
+            borderRadius: Radius.card,
+            paddingHorizontal: DESIGN_SPACING.cardGap,
+            paddingVertical: DESIGN_SPACING.cardGap,
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: Spacing.sm,
+        },
+        alertText: {
+            flex: 1,
+            color: colors.text,
+            fontSize: Typography.caption.size,
+            lineHeight: Typography.caption.lineHeight,
+            fontWeight: '600',
+        },
+        chipWrap: {
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            gap: Spacing.sm,
+        },
+        discountRow: {
+            flexDirection: 'row',
+            alignItems: 'flex-end',
+            gap: Spacing.sm,
+        },
+        discountInput: {
+            flex: 1,
+        },
+        actionButton: {
             ...getPillStyle(colors, colors.primary),
+            minHeight: 44,
             borderRadius: Radius.pill,
             paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            minWidth: 72,
             alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: 88,
         },
-        validateBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
-        centered: { paddingVertical: 32, alignItems: 'center' },
-        planHeader: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start' },
-        planBody: { flex: 1 },
-        planName: { fontSize: 16, fontWeight: '700' },
-        planPrice: { marginTop: 2, fontSize: 14, fontWeight: '700' },
-        planDescription: { marginTop: 4, fontSize: 12 },
-        planMeta: { marginTop: 6, fontSize: 11, fontWeight: '600' },
-        currentPill: {
-            ...getPillStyle(colors, colors.primary),
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.sm,
-            paddingVertical: 6,
+        actionButtonDisabled: {
+            opacity: 0.6,
         },
-        currentPillText: { color: colors.onPrimary, fontSize: 11, fontWeight: '700' },
-        upgradeBtn: {
-            ...getPillStyle(colors, colors.primary),
-            borderRadius: Radius.pill,
-            paddingHorizontal: Spacing.md,
-            paddingVertical: Spacing.sm,
-            minWidth: 84,
+        actionButtonText: {
+            color: colors.onPrimary,
+            fontSize: Typography.caption.size,
+            fontWeight: '800',
+        },
+        offerCard: {
+            paddingHorizontal: DESIGN_SPACING.sectionGap,
+            paddingVertical: DESIGN_SPACING.cardGap,
+            gap: Spacing.sm,
+        },
+        offerHeader: {
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: Spacing.md,
+        },
+        offerIcon: {
+            width: 40,
+            height: 40,
+            borderRadius: Radius.md,
             alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: withAlpha(colors.primary, colors.isDark ? '24' : '12'),
         },
-        upgradeBtnText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
-        featuresWrap: { gap: 4 },
-        featureText: { fontSize: 12 },
-        intentMeta: { marginTop: 4, fontSize: 11, textAlign: 'center' },
+        offerCopy: {
+            flex: 1,
+            gap: 4,
+        },
+        offerTitle: {
+            color: colors.text,
+            fontSize: Typography.body.size,
+            fontWeight: '800',
+        },
+        offerMessage: {
+            color: colors.textSecondary,
+            fontSize: Typography.caption.size,
+            lineHeight: Typography.caption.lineHeight,
+            fontWeight: '500',
+        },
+        offerCta: {
+            color: colors.primary,
+            fontSize: Typography.caption.size,
+            fontWeight: '800',
+        },
+        centered: {
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: 32,
+        },
+        emptyCard: {
+            alignItems: 'center',
+            gap: Spacing.xs,
+            paddingHorizontal: DESIGN_SPACING.sectionGap,
+            paddingVertical: DESIGN_SPACING.sectionGap,
+        },
+        emptyTitle: {
+            color: colors.text,
+            fontSize: Typography.body.size,
+            fontWeight: '800',
+        },
+        emptySubtitle: {
+            color: colors.textSecondary,
+            fontSize: Typography.caption.size,
+            lineHeight: Typography.caption.lineHeight,
+            fontWeight: '500',
+            textAlign: 'center',
+        },
+        planCard: {
+            paddingHorizontal: DESIGN_SPACING.sectionGap,
+            paddingVertical: DESIGN_SPACING.cardGap,
+            gap: Spacing.sm,
+        },
+        planHeader: {
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: Spacing.sm,
+        },
+        planCopy: {
+            flex: 1,
+            gap: 4,
+        },
+        planTitleRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: Spacing.sm,
+        },
+        planTitle: {
+            color: colors.text,
+            fontSize: 16,
+            fontWeight: '800',
+        },
+        planPrice: {
+            color: colors.primary,
+            fontSize: Typography.body.size,
+            fontWeight: '800',
+        },
+        planDescription: {
+            color: colors.textSecondary,
+            fontSize: Typography.caption.size,
+            lineHeight: Typography.caption.lineHeight,
+            fontWeight: '500',
+        },
+        planMeta: {
+            color: colors.textSecondary,
+            fontSize: 11,
+            fontWeight: '700',
+        },
+        featuresWrap: {
+            gap: 6,
+        },
+        featureRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.xs,
+        },
+        featureText: {
+            flex: 1,
+            color: colors.textSecondary,
+            fontSize: Typography.caption.size,
+            lineHeight: Typography.caption.lineHeight,
+            fontWeight: '500',
+        },
+        intentMeta: {
+            color: colors.textSecondary,
+            fontSize: 11,
+            fontWeight: '700',
+            textAlign: 'center',
+        },
     });

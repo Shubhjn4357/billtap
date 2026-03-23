@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { AppInput } from '../../../components/ui/AppInput';
 import { ChipButton } from '../../../components/ui/ChipBlocks';
 import { SelectField } from '../../../components/ui/SelectField';
@@ -14,8 +14,10 @@ import {
     SettingsToggleRow,
 } from '../../../components/settings/SettingsBlocks';
 import { SettingsSection } from '../../../constants/enums';
-import { DESIGN_SPACING } from '../../../constants/designSystem';
-import { type ColorPalette } from '../../../constants/theme';
+import { DESIGN_SPACING, getPillStyle, getSurfaceStyle } from '../../../constants/designSystem';
+import { Radius, Spacing, Typography, type ColorPalette } from '../../../constants/theme';
+import { extractUpiIdFromPayload } from '../../../utils/upi';
+import { SignatureCaptureSheet } from '../../../components/signature/SignatureCaptureSheet';
 import { useAppColors } from '../../../hooks/useAppColors';
 import { useSettingsSelector } from '../../../hooks/useSettingsSelector';
 import { useSettingsSectionMutation } from '../../../hooks/useSettingsSectionMutation';
@@ -39,6 +41,7 @@ export default function AccountSettingsScreen() {
     const colors = useAppColors();
     const s = styles(colors);
     const dialog = useAppDialog();
+    const params = useLocalSearchParams<{ upiPayload?: string | string[]; scanAt?: string | string[] }>();
     const smartBack = useSmartBack('/(main)/settings');
     const subscription = useAuthStore((state) => state.subscription);
     const business = useAuthStore((state) => state.business);
@@ -50,6 +53,19 @@ export default function AccountSettingsScreen() {
     const [receiverName, setReceiverName] = useState('');
     const [upiId, setUpiId] = useState('');
     const [signatureUrl, setSignatureUrl] = useState('');
+    const [signatureCaptureVisible, setSignatureCaptureVisible] = useState(false);
+
+    useEffect(() => {
+        const payload = Array.isArray(params.upiPayload) ? params.upiPayload[0] : params.upiPayload;
+        if (!payload) return;
+        const extracted = extractUpiIdFromPayload(payload);
+        if (!extracted) {
+            dialog.alert('UPI', 'Scanned QR does not contain a valid UPI ID.');
+            return;
+        }
+        setUpiId(extracted);
+        dialog.alert('UPI', 'UPI ID captured. It will be saved in account settings when you Save details.');
+    }, [dialog, params.scanAt, params.upiPayload]);
 
     useEffect(() => {
         setReceiverName(typeof general.payment_receiver_name === 'string' ? general.payment_receiver_name : '');
@@ -185,6 +201,18 @@ export default function AccountSettingsScreen() {
                         placeholder="UPI ID"
                         autoCapitalize="none"
                     />
+                    <Pressable
+                        style={s.scanAction}
+                        onPress={() => router.push({
+                            pathname: '/scan',
+                            params: {
+                                target: 'upi_profile',
+                                returnPath: '/(main)/settings/account',
+                            },
+                        })}
+                    >
+                        <Text style={[s.scanActionText, { color: colors.primary }]}>Scan UPI QR</Text>
+                    </Pressable>
                     <View style={s.actionRow}>
                         <ChipButton
                             label={profileSaved ? 'Save payment details' : 'Save details'}
@@ -211,6 +239,27 @@ export default function AccountSettingsScreen() {
                         placeholder="Signature image URL"
                         autoCapitalize="none"
                     />
+                    <View style={s.signatureActions}>
+                        <Pressable
+                            style={[s.secondaryInlineButton, getPillStyle(colors)]}
+                            onPress={() => setSignatureCaptureVisible(true)}
+                        >
+                            <Text style={[s.secondaryInlineButtonText, { color: colors.primary }]}>Draw Signature</Text>
+                        </Pressable>
+                        {signatureUrl ? (
+                            <Pressable
+                                style={[s.secondaryInlineButton, getPillStyle(colors, colors.error)]}
+                                onPress={() => setSignatureUrl('')}
+                            >
+                                <Text style={[s.secondaryInlineButtonText, { color: colors.error }]}>Clear</Text>
+                            </Pressable>
+                        ) : null}
+                    </View>
+                    {signatureUrl ? (
+                        <View style={[s.signaturePreviewWrap, getSurfaceStyle(colors)]}>
+                            <Image source={{ uri: signatureUrl }} style={s.signaturePreview} resizeMode="contain" />
+                        </View>
+                    ) : null}
                     <View style={s.actionRow}>
                         <ChipButton
                             label="Save signature"
@@ -310,6 +359,14 @@ export default function AccountSettingsScreen() {
                     onPress={() => router.push('/(auth)/business-select' as Parameters<typeof router.push>[0])}
                 />
             </SettingsSectionGroup>
+            <SignatureCaptureSheet
+                visible={signatureCaptureVisible}
+                onClose={() => setSignatureCaptureVisible(false)}
+                onSave={(dataUrl) => {
+                    setSignatureCaptureVisible(false);
+                    setSignatureUrl(dataUrl);
+                }}
+            />
         </SettingsPageShell>
     );
 }
@@ -324,5 +381,49 @@ const styles = (colors: ColorPalette) =>
         actionRow: {
             flexDirection: 'row',
             justifyContent: 'flex-start',
+        },
+        scanAction: {
+            paddingVertical: 4,
+            alignSelf: 'flex-start',
+            marginBottom: 8,
+        },
+        scanActionText: {
+            fontSize: Typography.body.size,
+            fontWeight: '600',
+        },
+        signatureActions: {
+            flexDirection: 'row',
+            gap: Spacing.sm,
+            marginTop: 4,
+            marginBottom: 8,
+            alignItems: 'center',
+        },
+        secondaryInlineButton: {
+            ...getPillStyle(colors),
+            paddingHorizontal: Spacing.md,
+            paddingVertical: 8,
+            alignSelf: 'flex-start',
+        },
+        secondaryInlineButtonText: {
+            fontSize: Typography.caption.size,
+            fontWeight: '600',
+        },
+        signaturePreviewWrap: {
+            ...getSurfaceStyle(colors),
+            height: 120,
+            borderRadius: Radius.card,
+            padding: Spacing.sm,
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginTop: Spacing.xs,
+            marginBottom: Spacing.md,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderStyle: 'dashed',
+            backgroundColor: 'transparent',
+        },
+        signaturePreview: {
+            width: '100%',
+            height: '100%',
         },
     });

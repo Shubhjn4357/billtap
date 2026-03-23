@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+/* global __dirname, Buffer */
 const { spawnSync } = require('node:child_process');
 
 // These pnpm-injected vars can cause expo-doctor's dependency check to fail

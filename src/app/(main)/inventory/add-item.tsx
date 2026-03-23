@@ -24,6 +24,7 @@ import { FormHero, FormSectionCard } from '../../../components/ui/FormBlocks';
 import { SelectField, type SelectOption } from '../../../components/ui/SelectField';
 import { AppInput } from '../../../components/ui/AppInput';
 import { AppTopBar } from '../../../components/ui/AppTopBar';
+import { FormSkeleton } from '../../../components/ui/FormSkeleton';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { useAppDialog } from '@/components/providers/DialogProvider';
 import { useInvoiceBuilderStore } from '../../../store/invoiceBuilderStore';
@@ -155,6 +156,11 @@ export default function AddItemScreen() {
 
     const { saveItem, isSavingItem: isPending } = useInventoryMutations();
 
+    const { selected: isGstGlobalEnabled } = useSettingsSelector(
+        SettingsSection.TAXES_AND_GST,
+        (data) => Boolean((data as Record<string, unknown>).gst_enabled ?? true)
+    );
+
     useEffect(() => {
         const item = editItem;
         if (!item) return;
@@ -233,9 +239,8 @@ export default function AddItemScreen() {
     if (editId && editItemLoading) {
         return (
             <SafeAreaView style={s.safe} edges={['top']}>
-                <View style={s.centered}>
-                    <ActivityIndicator color={colors.primary} />
-                </View>
+                <AppTopBar title="Edit Item" onBackPress={smartBack} />
+                <FormSkeleton />
             </SafeAreaView>
         );
     }
@@ -266,7 +271,7 @@ export default function AddItemScreen() {
                                 salePrice: data.salePrice,
                                 purchasePrice: data.purchasePrice,
                                 mrp: data.mrp || data.salePrice,
-                                gstRate: data.gstRate,
+                                gstRate: isGstGlobalEnabled ? data.gstRate : 0,
                                 openingStock: data.stock,
                                 stock: data.stock,
                                 godownId: data.godownId ?? null,
@@ -275,7 +280,7 @@ export default function AddItemScreen() {
                                 expiresAt: data.expiresAt ?? null,
                                 autoDeleteAt: data.autoDeleteAt ?? null,
                                 autoDeleteEnabled: false,
-                                isSalesPriceInclusiveGst: data.isSalesPriceInclusiveGst,
+                                isSalesPriceInclusiveGst: isGstGlobalEnabled ? data.isSalesPriceInclusiveGst : false,
                                 description: data.description ?? null,
                                 location: data.location ?? null,
                                 trackStock: true,
@@ -537,31 +542,35 @@ export default function AddItemScreen() {
                         />
                             </Field>
 
-                            <Field label="GST Rate %" colors={colors}>
-                        <Controller
-                            control={control}
-                            name="gstRate"
-                            render={({ field: { onChange, value } }) => (
-                                <SelectField
-                                    value={String(value ?? gstRate ?? 0)}
-                                    onChange={(next) => onChange(Number(next))}
-                                    title="GST Slab"
-                                    options={gstRateOptions}
-                                />
-                            )}
-                        />
-                            </Field>
+                            {isGstGlobalEnabled ? (
+                                <Field label="GST Rate %" colors={colors}>
+                            <Controller
+                                control={control}
+                                name="gstRate"
+                                render={({ field: { onChange, value } }) => (
+                                    <SelectField
+                                        value={String(value ?? gstRate ?? 0)}
+                                        onChange={(next) => onChange(Number(next))}
+                                        title="GST Slab"
+                                        options={gstRateOptions}
+                                    />
+                                )}
+                            />
+                                </Field>
+                            ) : null}
 
-                            <View style={s.toggleRow}>
-                                <Text style={{ color: colors.text, flex: 1 }}>Sale price inclusive of GST</Text>
-                                <Controller
-                                    control={control}
-                                    name="isSalesPriceInclusiveGst"
-                                    render={({ field: { onChange, value } }) => (
-                                        <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.primary }} />
-                                    )}
-                                />
-                            </View>
+                            {isGstGlobalEnabled ? (
+                                <View style={s.toggleRow}>
+                                    <Text style={{ color: colors.text, flex: 1 }}>Sale price inclusive of GST</Text>
+                                    <Controller
+                                        control={control}
+                                        name="isSalesPriceInclusiveGst"
+                                        render={({ field: { onChange, value } }) => (
+                                            <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.primary }} />
+                                        )}
+                                    />
+                                </View>
+                            ) : null}
                         </FormSectionCard>
                     </View>
 

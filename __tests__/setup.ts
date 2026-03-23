@@ -7,6 +7,6 @@ vi.spyOn(console, 'error').mockImplementation((msg: string) => {
         typeof msg === 'string' &&
         (msg.includes('Warning:') || msg.includes('act('))
     ) return;
-    // eslint-disable-next-line no-console
+     
     console.warn('[test error]', msg);
 });
