@@ -91,9 +91,8 @@ const routeScreens = [
   ['inventory', '/inventory'],
   ['accounts', '/accounts'],
   ['reports', '/reports'],
-  ['more', '/more'],
-  ['settings', '/more/settings'],
-  ['sync', '/more/sync'],
+  ['settings', '/settings'],
+  ['sync', '/settings/sync'],
 ];
 
 fs.mkdirSync(artifactDir, { recursive: true });

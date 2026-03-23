@@ -40,7 +40,7 @@ export default function SyncDiagnosticsScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/notifications');
     const qc = useQueryClient();
     const {
         syncStats,

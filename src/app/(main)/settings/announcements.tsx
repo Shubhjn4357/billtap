@@ -14,7 +14,7 @@ import { openOfferDestination } from '../../../utils/offerNavigation';
 export default function AnnouncementsScreen() {
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/notifications');
 
     const { offers, isLoading, isRefetching, refetch, data } = useActiveOffers();
     const cacheMessage = /offline cache/i.test(String(data?.message ?? '')) ? data?.message : null;

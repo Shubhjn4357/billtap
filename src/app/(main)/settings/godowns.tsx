@@ -17,7 +17,7 @@ export default function GodownsScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/inventory');
 
     const { godowns, isLoading, isRefetching, refetch } = useGodowns();
     const { deleteGodown } = useGodownMutations();
@@ -32,14 +32,14 @@ export default function GodownsScreen() {
                     <View style={s.topActions}>
                         <Pressable
                             style={s.secondaryBtn}
-                            onPress={() => router.push('/(main)/more/godowns/transfer' as Parameters<typeof router.push>[0])}
+                            onPress={() => router.push('/(main)/settings/godowns/transfer' as Parameters<typeof router.push>[0])}
                         >
                             <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.text} />
                             <Text style={[s.secondaryBtnText, { color: colors.text }]}>Transfer</Text>
                         </Pressable>
                         <Pressable
                             style={[s.addBtn, { backgroundColor: colors.primary }]}
-                            onPress={() => router.push('/(main)/more/godowns/add')}
+                            onPress={() => router.push('/(main)/settings/godowns/add' as Parameters<typeof router.push>[0])}
                         >
                             <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
                             <Text style={s.addBtnText}>Add</Text>
@@ -69,7 +69,7 @@ export default function GodownsScreen() {
                         subtitle="Add warehouses to track stock location and transfers."
                         tone="info"
                         actionLabel="Add Godown"
-                        onActionPress={() => router.push('/(main)/more/godowns/add')}
+                        onActionPress={() => router.push('/(main)/settings/godowns/add' as Parameters<typeof router.push>[0])}
                     />
                 </View>
             ) : (
@@ -89,7 +89,7 @@ export default function GodownsScreen() {
                     renderItem={({ item }) => (
                         <Pressable
                             style={[s.row, getSurfaceStyle(colors, { elevated: true })]}
-                            onPress={() => router.push(`/(main)/more/godowns/${item.id}`)}
+                            onPress={() => router.push(`/(main)/settings/godowns/${item.id}` as Parameters<typeof router.push>[0])}
                             onLongPress={() => dialog.alert('Delete Godown', `Delete "${item.name}"?`, [
                                 { text: 'Cancel', style: 'cancel' },
                                 {

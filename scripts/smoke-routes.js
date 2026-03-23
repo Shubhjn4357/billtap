@@ -49,7 +49,7 @@ const requiredRoutes = [
     '/inventory',
     '/accounts',
     '/reports',
-    '/more',
+    '/settings',
     '/legal',
     '/legal/privacy',
     '/legal/terms',
@@ -66,7 +66,7 @@ for (const route of requiredRoutes) {
 const mainLayoutPath = path.join(appDir, '(main)', '_layout.tsx');
 if (fs.existsSync(mainLayoutPath)) {
     const mainLayout = fs.readFileSync(mainLayoutPath, 'utf8');
-    const expectedMainTabs = ['index', 'billing', 'inventory', 'accounts', 'reports', 'more'];
+    const expectedMainTabs = ['index', 'billing', 'inventory', 'accounts', 'reports', 'settings'];
     for (const tab of expectedMainTabs) {
         if (!new RegExp(`<Tabs\\.Screen\\s+name="${tab}"`).test(mainLayout)) {
             issues.push(`Main tabs layout missing Tabs.Screen "${tab}".`);

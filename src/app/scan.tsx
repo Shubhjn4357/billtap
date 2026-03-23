@@ -51,7 +51,7 @@ export default function ScanScreen() {
             : targetParam === 'item_detail'
                 ? '/(main)/inventory/add-item'
                 : targetParam === 'upi' || targetParam === 'upi_profile'
-                    ? '/(main)/more/settings/GENERAL'
+                    ? '/(main)/settings/account'
                     : '/(main)/inventory');
     const smartBack = useSmartBack(fallbackRoute);
     const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -90,7 +90,7 @@ export default function ScanScreen() {
         }
 
         if (targetParam === 'upi' || targetParam === 'upi_profile') {
-            const destination = returnPathParam || '/(main)/more/settings/GENERAL';
+            const destination = returnPathParam || '/(main)/settings/account';
             pushWithReturnPath(destination, { upiPayload: data, scanAt });
             return;
         }

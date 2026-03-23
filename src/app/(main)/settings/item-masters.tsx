@@ -47,7 +47,7 @@ export default function ItemMastersScreen() {
     const { focus } = useLocalSearchParams<{ focus?: string }>();
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/inventory');
     const queryClient = useQueryClient();
 
     const [newCategory, setNewCategory] = useState('');

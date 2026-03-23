@@ -133,7 +133,7 @@ export default function HomeScreen() {
             subtitle: 'Open template settings to preview the business card and invoice branding.',
             icon: 'card-account-details-outline' as const,
             accent: colors.warning,
-            route: '/(main)/more/printing',
+            route: '/(main)/settings/printing',
         },
     ]), [
         blockedCount,
@@ -226,7 +226,7 @@ export default function HomeScreen() {
                 rightAction={(
                     <Pressable
                         style={s.tierBadge}
-                        onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
+                        onPress={() => router.push('/(main)/settings/subscription' as Parameters<typeof router.push>[0])}
                     >
                         <Text style={[s.tierText, { color: colors.primary }]}>{tierLabel}</Text>
                     </Pressable>
@@ -259,7 +259,7 @@ export default function HomeScreen() {
                     {blockedCount > 0 ? (
                         <Pressable
                             style={s.syncAlert}
-                            onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
+                            onPress={() => router.push('/(main)/settings/subscription' as Parameters<typeof router.push>[0])}
                         >
                             <MaterialCommunityIcons name="cloud-alert-outline" size={16} color={colors.warning} />
                             <Text style={[s.syncAlertText, { color: colors.warning }]}>
@@ -410,21 +410,21 @@ export default function HomeScreen() {
                             subtitle={blockedCount > 0 ? `${blockedCount} blocked change(s)` : `${pendingCount} queued for cloud`}
                             icon="cloud-sync-outline"
                             tone={blockedCount > 0 ? 'warning' as const : pendingCount > 0 ? 'info' as const : 'success' as const}
-                            onPress={() => router.push('/(main)/more/sync' as Parameters<typeof router.push>[0])}
+                            onPress={() => router.push('/(main)/settings/sync' as Parameters<typeof router.push>[0])}
                         />
                         <HubActionCard
                             title="Offers & plans"
                             subtitle={offers[0]?.title ?? 'See plans, offers, and sync upgrades'}
                             icon="ticket-percent-outline"
                             tone="info"
-                            onPress={() => router.push('/(main)/more/subscription' as Parameters<typeof router.push>[0])}
+                            onPress={() => router.push('/(main)/settings/subscription' as Parameters<typeof router.push>[0])}
                         />
                     </View>
                 </View>
 
                 <Pressable
                     style={s.directoryCard}
-                    onPress={() => router.push('/(main)/more/printing' as Parameters<typeof router.push>[0])}
+                    onPress={() => router.push('/(main)/settings/printing' as Parameters<typeof router.push>[0])}
                 >
                     <View style={s.directoryIcon}>
                         <MaterialCommunityIcons name="card-account-details-outline" size={18} color={colors.primary} />

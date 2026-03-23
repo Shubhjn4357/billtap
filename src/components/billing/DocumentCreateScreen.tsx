@@ -525,7 +525,7 @@ export function DocumentCreateScreen({ config }: { config: BillingDocumentConfig
                         <Pressable
                             style={[s.secondaryBtn, { borderColor: colors.border }]}
                             onPress={() => router.push({
-                                pathname: '/(main)/more/godowns/add',
+                                pathname: '/(main)/settings/godowns/add' as never,
                                 params: {
                                     returnContext: 'invoice',
                                     returnPath: currentRoute,

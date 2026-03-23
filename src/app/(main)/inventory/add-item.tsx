@@ -449,7 +449,7 @@ export default function AddItemScreen() {
                                 />
                                 <Pressable
                                     style={s.scanInlineAction}
-                                    onPress={() => router.push('/(main)/more/item-masters?focus=categories' as Parameters<typeof router.push>[0])}
+                                    onPress={() => router.push('/(main)/settings/item-masters?focus=categories' as Parameters<typeof router.push>[0])}
                                 >
                                     <Text style={[s.scanInlineText, { color: colors.primary }]}>Manage Categories</Text>
                                 </Pressable>
@@ -473,7 +473,7 @@ export default function AddItemScreen() {
                         />
                         <Pressable
                             style={s.scanInlineAction}
-                            onPress={() => router.push('/(main)/more/item-masters?focus=units' as Parameters<typeof router.push>[0])}
+                            onPress={() => router.push('/(main)/settings/item-masters?focus=units' as Parameters<typeof router.push>[0])}
                         >
                             <Text style={[s.scanInlineText, { color: colors.primary }]}>Manage Units</Text>
                         </Pressable>
@@ -622,7 +622,7 @@ export default function AddItemScreen() {
                                     />
                                     <Pressable
                                         style={s.scanInlineAction}
-                                        onPress={() => router.push('/(main)/more/godowns' as Parameters<typeof router.push>[0])}
+                                        onPress={() => router.push('/(main)/settings/godowns' as Parameters<typeof router.push>[0])}
                                     >
                                         <Text style={[s.scanInlineText, { color: colors.primary }]}>Manage Godowns</Text>
                                     </Pressable>

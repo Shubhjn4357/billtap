@@ -44,7 +44,7 @@ export default function StaffScreen() {
     const [phoneNumber, setPhoneNumber] = useState('');
     const [inviteRole, setInviteRole] = useState<StaffInviteRole>('staff');
     const [search, setSearch] = useState('');
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/privacy');
     const { selection } = useHaptics();
     const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);

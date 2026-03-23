@@ -15,7 +15,7 @@ import { useGodownStock } from '../../../../hooks/useGodowns';
 export default function GodownDetailScreen() {
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/godowns');
     const { id } = useLocalSearchParams<{ id?: string }>();
 
     const godownId = useMemo(() => (Array.isArray(id) ? id[0] : id), [id]);
@@ -31,7 +31,7 @@ export default function GodownDetailScreen() {
                 rightAction={godownId ? (
                     <Pressable
                         style={[s.transferBtn, { backgroundColor: colors.primary }]}
-                        onPress={() => router.push({ pathname: '/(main)/more/godowns/transfer', params: { fromGodownId: godownId, returnPath: `/(main)/more/godowns/${godownId}` } })}
+                        onPress={() => router.push({ pathname: '/(main)/settings/godowns/transfer' as never, params: { fromGodownId: godownId, returnPath: `/(main)/settings/godowns/${godownId}` } })}
                     >
                         <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.onPrimary} />
                         <Text style={s.transferBtnText}>Transfer</Text>

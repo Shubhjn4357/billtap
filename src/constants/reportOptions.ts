@@ -92,7 +92,7 @@ export const REPORT_CARDS = [
     {
         title: 'Profit and Loss',
         subtitle: 'Income, expense and net result',
-        route: '/(main)/more/reports/pnl',
+        route: '/(main)/settings/reports/pnl',
         icon: 'chart-areaspline',
         category: 'Financial',
         tone: 'success',
@@ -140,7 +140,7 @@ export const REPORT_CARDS = [
     {
         title: 'Sync Diagnostics',
         subtitle: 'Offline queue health and blocked cloud items',
-        route: '/(main)/more/sync',
+        route: '/(main)/settings/sync',
         icon: 'cloud-sync-outline',
         category: 'Utility',
         tone: 'info',

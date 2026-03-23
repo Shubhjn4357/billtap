@@ -136,8 +136,8 @@ export default function PnLReportScreen() {
                     {([
                         { label: 'Balance Sheet', route: '/(main)/reports/balance-sheet', icon: 'safe-square-outline' },
                         { label: 'Trial Balance', route: '/(main)/reports/trial-balance', icon: 'scale-balance' },
-                        { label: 'GSTR-1 (Sales)', route: '/(main)/more/reports/gstr1', icon: 'file-document-outline' },
-                        { label: 'GSTR-3B (Summary)', route: '/(main)/more/reports/gstr3b', icon: 'chart-box-outline' },
+                        { label: 'GSTR-1 (Sales)', route: '/(main)/settings/reports/gstr1', icon: 'file-document-outline' },
+                        { label: 'GSTR-3B (Summary)', route: '/(main)/settings/reports/gstr3b', icon: 'chart-box-outline' },
                     ] satisfies readonly { label: string; route: string; icon: IconName }[]).map((entry) => (
                         <Pressable
                             key={entry.label}

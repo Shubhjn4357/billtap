@@ -23,7 +23,7 @@ Vahi is a React Native (Expo) app for Indian GST billing, inventory, POS, cash-b
 
 - Login: `/(auth)/login`
 - Main tabs: `/(main)`
-- Settings root: `/(main)/more/settings`
+- Settings root: `/settings`
 - Legal center: `/legal`
 - Terms: `/legal/terms`
 - Privacy: `/legal/privacy`

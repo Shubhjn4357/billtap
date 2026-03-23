@@ -38,8 +38,8 @@ export default function MainLayout() {
                         options={{ href: null, title: 'Reports' }}
                     />
                     <Tabs.Screen
-                        name="more"
-                        options={{ title: 'More', headerShown: false }}
+                        name="settings"
+                        options={{ title: 'Settings', headerShown: false }}
                     />
                     <Tabs.Screen
                         name="parties"

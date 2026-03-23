@@ -49,8 +49,8 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
     const { t } = useI18n();
 
     const currentRoute = state.routes[state.index]?.name ?? 'index';
-    const isMoreActive = currentRoute === 'more';
-    const isHomeActive = !isMoreActive;
+    const isSettingsActive = currentRoute === 'settings';
+    const isHomeActive = !isSettingsActive;
 
     const visibleActions = useMemo(
         () =>
@@ -195,7 +195,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
 
     useEffect(() => {
         const animation = Animated.spring(activeProgress, {
-            toValue: isMoreActive ? 1 : 0,
+            toValue: isSettingsActive ? 1 : 0,
             damping: 16,
             stiffness: 190,
             mass: 0.8,
@@ -203,7 +203,7 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
         });
         animation.start();
         return () => animation.stop();
-    }, [activeProgress, isMoreActive]);
+    }, [activeProgress, isSettingsActive]);
 
     useEffect(() => {
         if (!richMotionEnabled || sheetOpen || keyboardVisible) {
@@ -300,18 +300,18 @@ export function VahiTabBar({ state, navigation }: BottomTabBarProps) {
 
                     <Pressable
                         style={s.sideAction}
-                        onPress={() => goToTab('more')}
+                        onPress={() => goToTab('settings')}
                         accessibilityRole="button"
-                        accessibilityLabel="More"
+                        accessibilityLabel="Settings"
                     >
                         <Animated.View style={{ transform: [{ scale: moreIconScale }] }}>
                             <MaterialCommunityIcons
-                                name={isMoreActive ? 'dots-horizontal-circle' : 'dots-horizontal-circle-outline'}
+                                name={isSettingsActive ? 'cog' : 'cog-outline'}
                                 size={20}
-                                color={isMoreActive ? colors.primary : colors.textSecondary}
+                                color={isSettingsActive ? colors.primary : colors.textSecondary}
                             />
                         </Animated.View>
-                        <Text style={[s.sideLabel, { color: isMoreActive ? colors.primary : colors.textSecondary }]}>{t('tab.more')}</Text>
+                        <Text style={[s.sideLabel, { color: isSettingsActive ? colors.primary : colors.textSecondary }]}>{t('tab.settings')}</Text>
                     </Pressable>
                 </View>
             </Animated.View>

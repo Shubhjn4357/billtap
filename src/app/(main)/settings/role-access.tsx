@@ -130,7 +130,7 @@ export default function RoleAccessScreen() {
     const colors = useAppColors();
     const s = styles(colors);
     const queryClient = useQueryClient();
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/privacy');
     const { selection } = useHaptics();
     const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);

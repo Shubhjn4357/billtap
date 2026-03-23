@@ -43,7 +43,7 @@ export default function OperationsScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/privacy');
     const organizationRole = useOrganizationRole();
     const canReviewApprovals = organizationRole === 'owner' || organizationRole === 'manager';
 

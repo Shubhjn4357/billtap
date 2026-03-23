@@ -19,7 +19,7 @@ export default function AddGodownScreen() {
     const colors = useAppColors();
     const { returnContext, returnPath } = useLocalSearchParams<{ returnContext?: string; returnPath?: string | string[] }>();
     const s = styles(colors);
-    const fallbackRoute = resolveSingleParam(returnPath) ?? (returnContext === 'invoice' ? '/(main)/billing' : '/(main)/more/godowns');
+    const fallbackRoute = resolveSingleParam(returnPath) ?? (returnContext === 'invoice' ? '/(main)/billing' : '/(main)/settings/godowns');
     const smartBack = useSmartBack(fallbackRoute);
 
     const [name, setName] = useState('');

@@ -35,6 +35,149 @@ const IMPORT_SUFFIXES = [
     '.web.js',
 ];
 
+const ADMIN_ROUTE_ONLY_PAGE_ALLOWLIST = new Map([
+    [
+        '/|src/app/page.tsx',
+        {
+            reason: 'Root admin page redirects immediately to /dashboard.',
+        },
+    ],
+    [
+        '/auth/signin|src/app/auth/signin/page.tsx',
+        {
+            reason: 'Signin page launches auth flow and does not own API calls directly.',
+        },
+    ],
+]);
+
+const CLASSIFIED_UNUSED_SERVER_ROUTE_PATTERNS = [
+    {
+        pattern: /^(GET|PATCH|POST) \/auth\//,
+        bucket: 'Auth & Profile',
+        reason: 'Authentication/profile endpoints retained for runtime session bootstrap and non-surface flows.',
+    },
+    {
+        pattern: /^POST \/users\/me\//,
+        bucket: 'Auth & Profile',
+        reason: 'Current-user device and phone linking endpoints are retained for runtime account wiring.',
+    },
+    {
+        pattern: /^GET \/organizations\/(settings|members|templates|signatures|print-profiles)\/current$/,
+        bucket: 'Business Runtime',
+        reason: 'Current-business resources are kept for runtime bootstrap, print, and membership support paths.',
+    },
+    {
+        pattern: /^PUT \/organizations\/settings\/current$/,
+        bucket: 'Business Runtime',
+        reason: 'Current-business settings mutation route is retained for runtime settings persistence flows.',
+    },
+    {
+        pattern: /^(POST|PATCH|DELETE) \/organizations\/(members|signatures)\/current(?:\/:memberId|\/:id\/default)?$/,
+        bucket: 'Business Runtime',
+        reason: 'Current-business mutation endpoints support staff/signature workflows outside the detected surface crawl.',
+    },
+    {
+        pattern: /^POST \/organizations\/(templates|print-profiles)\/current$/,
+        bucket: 'Business Runtime',
+        reason: 'Current-business template/print-profile mutations are kept for print/runtime feature parity.',
+    },
+    {
+        pattern: /^GET \/organizations\/invites$/,
+        bucket: 'Business Runtime',
+        reason: 'Invite listing remains available for invite onboarding and support operations.',
+    },
+    {
+        pattern: /^GET \/transactions\/bill-number\/check$/,
+        bucket: 'Billing Support',
+        reason: 'Bill-number preflight check is retained for document creation safeguards.',
+    },
+    {
+        pattern: /^GET \/transactions\/pending-reminders$/,
+        bucket: 'Billing Support',
+        reason: 'Pending reminders feed exists for reminder scheduling and support operations.',
+    },
+    {
+        pattern: /^(GET|POST) \/transactions\/reminders\//,
+        bucket: 'Billing Support',
+        reason: 'Reminder config and executor routes are retained for scheduled reminder workflows.',
+    },
+    {
+        pattern: /^POST \/transactions\/:id\/e-invoice\//,
+        bucket: 'Compliance',
+        reason: 'E-invoice integration endpoints are intentionally parked for statutory integration rollout.',
+    },
+    {
+        pattern: /^GET \/transactions\/:id\/e-invoice\/status$/,
+        bucket: 'Compliance',
+        reason: 'E-invoice status endpoint is retained for future statutory reconciliation.',
+    },
+    {
+        pattern: /^POST \/transactions\/:id\/e-way-bill\//,
+        bucket: 'Compliance',
+        reason: 'E-way bill integration endpoints are intentionally preserved for future rollout.',
+    },
+    {
+        pattern: /^GET \/transactions\/:id\/e-way-bill\/status$/,
+        bucket: 'Compliance',
+        reason: 'E-way bill status endpoint is retained for future reconciliation flows.',
+    },
+    {
+        pattern: /^POST \/accounting\/accounts\/seed-default$/,
+        bucket: 'Accounting Support',
+        reason: 'Seed-default endpoint remains available for ledger bootstrap and support recovery.',
+    },
+    {
+        pattern: /^POST \/accounting\/journals$/,
+        bucket: 'Accounting Support',
+        reason: 'Journal-entry endpoint is retained for advanced accounting workflows beyond the current surface.',
+    },
+    {
+        pattern: /^GET \/accounting\/(profit-loss|balance-sheet)$/,
+        bucket: 'Accounting Support',
+        reason: 'Server-side accounting statements remain available for back-office and export workflows.',
+    },
+    {
+        pattern: /^GET \/accounting\/inventory\//,
+        bucket: 'Accounting Support',
+        reason: 'Inventory valuation/reorder/aging reports are preserved for future reporting surfaces.',
+    },
+    {
+        pattern: /^GET \/accounting\/stock-ledger\/:itemId$/,
+        bucket: 'Accounting Support',
+        reason: 'Stock-ledger drilldown remains intentionally exposed for support and reporting evolution.',
+    },
+    {
+        pattern: /^GET \/subscription\/discounts\/active$/,
+        bucket: 'Subscription',
+        reason: 'Active discount lookup is preserved for checkout and pricing experiments.',
+    },
+    {
+        pattern: /^POST \/subscription\/webhook$/,
+        bucket: 'Subscription',
+        reason: 'Payment/provider callback endpoint is intentionally server-only.',
+    },
+    {
+        pattern: /^GET \/reporting\/stock-valuation$/,
+        bucket: 'Reporting',
+        reason: 'Legacy stock-valuation endpoint is kept for report compatibility and admin follow-up.',
+    },
+    {
+        pattern: /^(GET|POST) \/analytics\/events$/,
+        bucket: 'Analytics',
+        reason: 'Analytics ingest/query endpoints are system-facing and not expected to map to visible client screens.',
+    },
+    {
+        pattern: /^GET \/admin\/live\/events$/,
+        bucket: 'Admin Runtime',
+        reason: 'Live event stream endpoint is retained for monitor tooling and future realtime dashboards.',
+    },
+    {
+        pattern: /^GET \/health$/,
+        bucket: 'Infrastructure',
+        reason: 'Health probe endpoint is infrastructure-facing.',
+    },
+];
+
 function normalizedPath(value) {
     const withLeadingSlash = value.startsWith('/') ? value : `/${value}`;
     const compact = withLeadingSlash.replace(/\/+/g, '/');
@@ -568,6 +711,23 @@ function buildServerVariants(routes) {
     return variants;
 }
 
+function getServerRouteClassification(route) {
+    const signature = `${route.method} ${route.path}`;
+    for (const rule of CLASSIFIED_UNUSED_SERVER_ROUTE_PATTERNS) {
+        if (rule.pattern.test(signature)) {
+            return {
+                bucket: rule.bucket,
+                reason: rule.reason,
+            };
+        }
+    }
+    return null;
+}
+
+function getAdminNoApiClassification(surface) {
+    return ADMIN_ROUTE_ONLY_PAGE_ALLOWLIST.get(`${surface.route}|${surface.fileRel}`) ?? null;
+}
+
 function extractApiCallsFromSource({
     rootDir,
     platform,
@@ -738,9 +898,12 @@ function renderReport({
     adminCalls,
     issues,
     serverRoutesWithoutOkJson,
+    classifiedServerRoutes,
     serverUnused,
     mobileSurfaceMappings,
     adminSurfaceMappings,
+    classifiedAdminRouteOnlyPages,
+    adminPagesWithoutApi,
     mobileOrphanCalls,
     adminOrphanCalls,
 }) {
@@ -756,11 +919,13 @@ function renderReport({
     lines.push(`- Admin API calls discovered: ${adminCalls.length}`);
     lines.push(`- Contract issues: ${issues.length}`);
     lines.push(`- Server routes missing explicit \`ok\` response shape: ${serverRoutesWithoutOkJson.length}`);
-    lines.push(`- Unused server routes (no mobile/admin caller found): ${serverUnused.length}`);
+    lines.push(`- Classified server routes without first-party surface reachability: ${classifiedServerRoutes.length}`);
+    lines.push(`- Unresolved unused server routes (no mobile/admin caller found): ${serverUnused.length}`);
     lines.push(`- Mobile screens discovered: ${mobileSurfaceMappings.length}`);
     lines.push(`- Mobile screens without reachable API calls: ${mobileSurfaceMappings.filter((surface) => surface.calls.length === 0).length}`);
     lines.push(`- Admin pages discovered: ${adminSurfaceMappings.length}`);
-    lines.push(`- Admin pages without reachable API calls: ${adminSurfaceMappings.filter((surface) => surface.calls.length === 0).length}`);
+    lines.push(`- Classified admin route-only pages: ${classifiedAdminRouteOnlyPages.length}`);
+    lines.push(`- Admin pages without reachable API calls: ${adminPagesWithoutApi.length}`);
     lines.push(`- Mobile orphan API call sites (not reachable from any screen): ${mobileOrphanCalls.length}`);
     lines.push(`- Admin orphan API call sites (not reachable from any page): ${adminOrphanCalls.length}`);
     lines.push('');
@@ -794,13 +959,24 @@ function renderReport({
     }
     lines.push('');
 
-    lines.push('## Admin Pages Without API Reachability');
+    lines.push('## Classified Admin Route-Only Pages');
     lines.push('');
-    const adminNoApi = adminSurfaceMappings.filter((surface) => surface.calls.length === 0);
-    if (adminNoApi.length === 0) {
+    if (classifiedAdminRouteOnlyPages.length === 0) {
         lines.push('- None');
     } else {
-        for (const surface of adminNoApi) {
+        for (const surface of classifiedAdminRouteOnlyPages) {
+            lines.push(`- \`${surface.route}\` (${surface.fileRel})`);
+            lines.push(`  - Reason: ${surface.reason}`);
+        }
+    }
+    lines.push('');
+
+    lines.push('## Admin Pages Without API Reachability');
+    lines.push('');
+    if (adminPagesWithoutApi.length === 0) {
+        lines.push('- None');
+    } else {
+        for (const surface of adminPagesWithoutApi) {
             lines.push(`- \`${surface.route}\` (${surface.fileRel})`);
         }
     }
@@ -833,6 +1009,19 @@ function renderReport({
     } else {
         for (const route of serverRoutesWithoutOkJson) {
             lines.push(`- \`${route.method} ${route.path}\` (${route.source})`);
+        }
+    }
+    lines.push('');
+
+    lines.push('## Classified Server Routes');
+    lines.push('');
+    if (classifiedServerRoutes.length === 0) {
+        lines.push('- None');
+    } else {
+        for (const route of classifiedServerRoutes) {
+            lines.push(`- \`${route.method} ${route.path}\` (${route.source})`);
+            lines.push(`  - Bucket: ${route.bucket}`);
+            lines.push(`  - Reason: ${route.reason}`);
         }
     }
     lines.push('');
@@ -885,10 +1074,21 @@ function run() {
     const { issues, usage } = validateCalls(allCalls, serverVariants);
 
     const serverRouteUsageKeys = new Set(usage.keys());
-    const serverUnused = serverRoutes.filter((route) => {
+    const classifiedServerRoutes = [];
+    const serverUnused = [];
+    for (const route of serverRoutes) {
         const key = `${route.method} ${route.path} ${route.source}`;
-        return !serverRouteUsageKeys.has(key);
-    });
+        if (serverRouteUsageKeys.has(key)) continue;
+        const classification = getServerRouteClassification(route);
+        if (classification) {
+            classifiedServerRoutes.push({
+                ...route,
+                ...classification,
+            });
+            continue;
+        }
+        serverUnused.push(route);
+    }
 
     const okShapeAllowlist = new Set([
         'GET /health',
@@ -959,15 +1159,33 @@ function run() {
         adminCalls.filter((call) => !usedAdminSignatures.has(callSignature(call)))
     );
 
+    const classifiedAdminRouteOnlyPages = [];
+    const adminPagesWithoutApi = [];
+    for (const surface of adminSurfaceResult.surfaceMappings) {
+        if (surface.calls.length > 0) continue;
+        const classification = getAdminNoApiClassification(surface);
+        if (classification) {
+            classifiedAdminRouteOnlyPages.push({
+                ...surface,
+                ...classification,
+            });
+            continue;
+        }
+        adminPagesWithoutApi.push(surface);
+    }
+
     const report = renderReport({
         serverRoutes,
         mobileCalls,
         adminCalls,
         issues,
         serverRoutesWithoutOkJson,
+        classifiedServerRoutes,
         serverUnused,
         mobileSurfaceMappings: mobileSurfaceResult.surfaceMappings,
         adminSurfaceMappings: adminSurfaceResult.surfaceMappings,
+        classifiedAdminRouteOnlyPages,
+        adminPagesWithoutApi,
         mobileOrphanCalls,
         adminOrphanCalls,
     });
@@ -991,7 +1209,7 @@ function run() {
         `[verify-platform-contract] Passed: ${mobileCalls.length} mobile calls + ${adminCalls.length} admin calls validated against ${serverRoutes.length} server routes.`
     );
     console.log(
-        `[verify-platform-contract] Coverage: ${mobileSurfaces.length} mobile screens, ${adminSurfaces.length} admin pages, ${mobileOrphanCalls.length + adminOrphanCalls.length} orphan API call sites.`
+        `[verify-platform-contract] Coverage: ${mobileSurfaces.length} mobile screens, ${adminSurfaces.length} admin pages, ${mobileOrphanCalls.length + adminOrphanCalls.length} orphan API call sites, ${classifiedServerRoutes.length} classified server-only routes.`
     );
     console.log(`[verify-platform-contract] Report written: ${REPORT_PATH}`);
 }
@@ -1007,6 +1225,7 @@ module.exports = {
     deriveNextPageRouteFromFile,
     inferFetchMethod,
     compileBackendPattern,
+    getServerRouteClassification,
     extractRelativeImports,
     extractImportSpecifiers,
     resolveLocalImport,

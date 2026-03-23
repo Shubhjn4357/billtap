@@ -38,7 +38,7 @@ export default function GodownTransferScreen() {
     const normalizedFromParam = resolveSingleParam(params.fromGodownId);
     const normalizedToParam = resolveSingleParam(params.toGodownId);
     const normalizedItemParam = resolveSingleParam(params.itemId);
-    const fallbackRoute = resolveSingleParam(params.returnPath) ?? (normalizedFromParam ? `/(main)/more/godowns/${normalizedFromParam}` : '/(main)/more/godowns');
+    const fallbackRoute = resolveSingleParam(params.returnPath) ?? (normalizedFromParam ? `/(main)/settings/godowns/${normalizedFromParam}` : '/(main)/settings/godowns');
     const smartBack = useSmartBack(fallbackRoute);
     const [fromGodownId, setFromGodownId] = useState<string | null>(null);
     const [toGodownId, setToGodownId] = useState<string | null>(null);

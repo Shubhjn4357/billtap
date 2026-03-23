@@ -37,7 +37,7 @@ export const TAB_BAR_QUICK_ACTIONS: NavigationShortcut[] = [
     { key: 'inventory', label: 'Inventory', route: '/(main)/inventory', icon: 'archive-outline', module: 'inventory' },
     { key: 'reports', label: 'Reports', route: '/(main)/reports', icon: 'chart-line', module: 'reports' },
     { key: 'cash-bank', label: 'Cash & Bank', route: '/(main)/accounts/cash-bank', icon: 'bank-outline', module: 'accounts' },
-    { key: 'settings', label: 'Settings', route: '/(main)/more/settings', icon: 'cog-outline', module: 'settings' },
+    { key: 'settings', label: 'Settings', route: '/(main)/settings', icon: 'cog-outline', module: 'settings' },
 ];
 
 export const SIDE_DRAWER_ACTIONS: NavigationShortcut[] = [
@@ -50,8 +50,8 @@ export const SIDE_DRAWER_ACTIONS: NavigationShortcut[] = [
     { key: 'parties', label: 'Parties', route: '/(main)/parties', icon: 'account-multiple-outline', module: 'parties' },
     { key: 'accounts', label: 'Accounts', route: '/(main)/accounts', icon: 'bank-outline', module: 'accounts' },
     { key: 'reports', label: 'Reports', route: '/(main)/reports', icon: 'chart-line', module: 'reports' },
-    { key: 'staff', label: 'Staff and Roles', route: '/(main)/more/staff', icon: 'account-group-outline', module: 'staff' },
-    { key: 'settings', label: 'Settings', route: '/(main)/more/settings', icon: 'cog-outline', module: 'settings' },
+    { key: 'staff', label: 'Staff and Roles', route: '/(main)/settings/staff', icon: 'account-group-outline', module: 'staff' },
+    { key: 'settings', label: 'Settings', route: '/(main)/settings', icon: 'cog-outline', module: 'settings' },
 ];
 
 export const GO_TO_PALETTE_ROUTES: NavigationShortcut[] = [
@@ -72,12 +72,11 @@ export const GO_TO_PALETTE_ROUTES: NavigationShortcut[] = [
     { key: 'balance-sheet', label: 'Balance Sheet', route: '/(main)/reports/balance-sheet', description: 'Assets and liabilities snapshot', module: 'reports', icon: 'safe-square-outline' },
     { key: 'ledgers', label: 'Ledgers', route: '/(main)/reports/ledgers', description: 'Account ledgers', module: 'reports', icon: 'book-outline' },
     { key: 'gst-summary', label: 'GST Summary', route: '/(main)/reports/gst-summary', description: 'GST slab report', module: 'reports', icon: 'file-percent-outline' },
-    { key: 'more', label: 'More', route: '/(main)/more', description: 'Utilities and controls', icon: 'dots-horizontal-circle-outline' },
-    { key: 'settings', label: 'Settings', route: '/(main)/more/settings', description: 'Business settings', module: 'settings', icon: 'cog-outline' },
-    { key: 'staff', label: 'Staff', route: '/(main)/more/staff', description: 'Team management', module: 'staff', icon: 'account-group-outline' },
-    { key: 'role-access', label: 'Role Access', route: '/(main)/more/role-access', description: 'Role based controls', module: 'settings', icon: 'shield-account-outline', ownerOnly: true },
-    { key: 'godowns', label: 'Godowns', route: '/(main)/more/godowns', description: 'Warehouse management', module: 'inventory', icon: 'warehouse', requiresFeature: FeatureFlag.MULTI_GODOWN },
-    { key: 'subscription', label: 'Subscription', route: '/(main)/more/subscription', description: 'Plan and limits', icon: 'star-circle-outline' },
+    { key: 'settings', label: 'Settings', route: '/(main)/settings', description: 'Business settings', module: 'settings', icon: 'cog-outline' },
+    { key: 'staff', label: 'Staff', route: '/(main)/settings/staff', description: 'Team management', module: 'staff', icon: 'account-group-outline' },
+    { key: 'role-access', label: 'Role Access', route: '/(main)/settings/role-access', description: 'Role based controls', module: 'settings', icon: 'shield-account-outline', ownerOnly: true },
+    { key: 'godowns', label: 'Godowns', route: '/(main)/settings/godowns', description: 'Warehouse management', module: 'inventory', icon: 'warehouse', requiresFeature: FeatureFlag.MULTI_GODOWN },
+    { key: 'subscription', label: 'Subscription', route: '/(main)/settings/subscription', description: 'Plan and limits', icon: 'star-circle-outline' },
     { key: 'legal', label: 'Legal Center', route: '/legal', description: 'Terms/privacy/changelog', icon: 'file-document-outline' },
     { key: 'stock-scanner', label: 'Stock Scanner', route: '/scan?target=stock', description: 'Barcode scanner', module: 'inventory', icon: 'barcode-scan' },
 ];

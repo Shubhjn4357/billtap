@@ -1,6 +1,3 @@
-import { api } from './client';
-import type { ApiListResponse, ApiResponse, PaginationParams } from '../types/api';
-import type { Invoice } from '../types/domain';
 import { accountingRepository } from '../repositories/accountingRepository';
 import { authRepository } from '../repositories/authRepository';
 import { businessRepository } from '../repositories/businessRepository';
@@ -66,8 +63,4 @@ export const offerApi = {
 };
 export const posApi = {
     createSale: invoiceRepository.createPosSale,
-    getSale: (id: string) =>
-        api.get<ApiResponse<Invoice & { items: unknown[] }>>(`/api/pos/sale/${id}`),
-    listSales: (params?: PaginationParams) =>
-        api.get<ApiListResponse<Invoice>>('/api/pos/sales', { params }),
 };

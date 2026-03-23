@@ -4,7 +4,7 @@ type CopyDictionary = Record<string, string>;
 
 const en: CopyDictionary = {
     'tab.dashboard': 'Dashboard',
-    'tab.more': 'More',
+    'tab.settings': 'Settings',
     'tab.quick_actions': 'Quick Actions',
     'tab.quick_actions_eyebrow': 'Create and move',
     'tab.quick_actions_subtitle': 'Start the most-used billing and accounting flows from anywhere.',
@@ -108,7 +108,7 @@ const en: CopyDictionary = {
 
 const hi: CopyDictionary = {
     'tab.dashboard': 'डैशबोर्ड',
-    'tab.more': 'अधिक',
+    'tab.settings': 'सेटिंग्स',
     'tab.quick_actions': 'क्विक एक्शन',
     'tab.quick_actions_eyebrow': 'बनाएं और चलाएं',
     'tab.quick_actions_subtitle': 'सबसे ज़्यादा उपयोग होने वाले बिलिंग और अकाउंटिंग काम यहीं से शुरू करें।',

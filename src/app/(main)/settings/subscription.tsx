@@ -67,7 +67,7 @@ export default function SubscriptionScreen() {
     const dialog = useAppDialog();
     const colors = useAppColors();
     const s = styles(colors);
-    const smartBack = useSmartBack('/(main)/more');
+    const smartBack = useSmartBack('/(main)/settings/account');
     const subscription = useAuthStore((state) => state.subscription);
     const business = useAuthStore((state) => state.business);
     const role = useAuthStore((state) => state.organizationRole);

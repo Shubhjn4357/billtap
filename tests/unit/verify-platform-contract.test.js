@@ -11,6 +11,7 @@ const {
     deriveNextPageRouteFromFile,
     inferFetchMethod,
     compileBackendPattern,
+    getServerRouteClassification,
     extractRelativeImports,
     resolveLocalImport,
 } = require('../../scripts/verify-platform-contract');
@@ -27,8 +28,8 @@ test('normalizeClientPath handles absolute URL and template placeholders', () =>
 });
 
 test('deriveExpoRouteFromFile maps expo app files to routes', () => {
-    const sample = path.join('D:', 'repo', 'vahi', 'src', 'app', '(main)', 'more', 'settings', '[section].tsx');
-    assert.equal(deriveExpoRouteFromFile(sample), '/more/settings/[section]');
+    const sample = path.join('D:', 'repo', 'vahi', 'src', 'app', '(main)', 'settings', 'account.tsx');
+    assert.equal(deriveExpoRouteFromFile(sample), '/settings/account');
 
     const root = path.join('D:', 'repo', 'vahi', 'src', 'app', 'index.tsx');
     assert.equal(deriveExpoRouteFromFile(root), '/');
@@ -56,6 +57,20 @@ test('compileBackendPattern matches dynamic params', () => {
     const pattern = compileBackendPattern('/api/items/:id');
     assert.equal(pattern.test('/api/items/abc123'), true);
     assert.equal(pattern.test('/api/items'), false);
+});
+
+test('getServerRouteClassification marks intentional server-only routes', () => {
+    const classified = getServerRouteClassification({
+        method: 'POST',
+        path: '/subscription/webhook',
+    });
+    assert.equal(classified?.bucket, 'Subscription');
+
+    const unclassified = getServerRouteClassification({
+        method: 'GET',
+        path: '/admin/unknown',
+    });
+    assert.equal(unclassified, null);
 });
 
 test('extractRelativeImports returns only local import specifiers', () => {
