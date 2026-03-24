@@ -238,6 +238,7 @@ export interface InvoiceBuilderState {
     reverseCharge: boolean;
     notes: string;
     termsAndConditions: string;
+    sourceVoucherId: string | null;
 }
 
 // ─── Voucher & Accounting ────────────────────────────────────────────────────
@@ -591,3 +592,4 @@ export interface Offer {
     startsAt: string | null;
     endsAt: string | null;
 }
+

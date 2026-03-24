@@ -31,6 +31,7 @@ import { useGodowns } from '../../hooks/useGodowns';
 import { useSettingsSelector } from '../../hooks/useSettingsSelector';
 import { useInvoiceMutations } from '../../hooks/useInvoiceMutations';
 import { usePartyDetails } from '../../hooks/usePartyDetails';
+import { useInvoices } from '../../hooks/useInvoices';
 
 type LineItemRowProps = {
     line: InvoiceLineItem;
@@ -149,6 +150,7 @@ export function DocumentCreateScreen({ config, isConversion }: { config: Billing
         applyInterState,
         moveLine,
         setParty,
+        setSourceVoucherId,
     } = useInvoiceBuilderStore();
     const totals = useInvoiceTotals();
 
@@ -224,6 +226,21 @@ export function DocumentCreateScreen({ config, isConversion }: { config: Billing
         enabled: Boolean(initialPartyId),
         staleTime: 60_000,
     });
+    
+    const isReturn = config.transactionType === 'RETURN_INWARD' || config.transactionType === 'RETURN_OUTWARD';
+    const { invoices: sourceInvoices } = useInvoices({
+        type: config.transactionType === 'RETURN_INWARD' ? 'TAX_INVOICE' : 'PURCHASE_BILL',
+        enabled: isReturn && Boolean(state.partyId),
+    });
+    const sourceInvoiceOptions: SelectOption[] = useMemo(() => {
+        return sourceInvoices
+            .filter((inv) => inv.partyId === state.partyId)
+            .map((inv) => ({
+                label: `${inv.invoiceNumber} (${formatDate(inv.invoiceDate)})`,
+                value: inv.id,
+                description: `Amount: ${inv.totalInvoiceValue}`,
+            }));
+    }, [sourceInvoices, state.partyId]);
 
     useEffect(() => {
         if (isConversion) return;
@@ -362,6 +379,7 @@ export function DocumentCreateScreen({ config, isConversion }: { config: Billing
             billMode: config.billMode,
             reverseCharge: gstEnabled ? state.reverseCharge : false,
             eWayBillNumber: gstEnabled ? (eWayBillNumber.trim() || null) : null,
+            sourceVoucherId: isReturn ? state.sourceVoucherId : null,
         };
 
         void submit(payload)
@@ -537,6 +555,21 @@ export function DocumentCreateScreen({ config, isConversion }: { config: Billing
                             </Text>
                         )}
                     </Pressable>
+                    {isReturn && state.partyId ? (
+                        <View style={{ marginTop: 16 }}>
+                            <Text style={s.inputLabel}>Return Against Bill</Text>
+                            <SelectField
+                                value={state.sourceVoucherId}
+                                onChange={setSourceVoucherId}
+                                options={sourceInvoiceOptions}
+                                placeholder="Select original bill (optional)"
+                                title="Original Bill"
+                                searchable
+                                allowClear
+                                onClear={() => setSourceVoucherId(null)}
+                            />
+                        </View>
+                    ) : null}
                     </FormSectionCard>
                 </View>
 

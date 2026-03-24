@@ -87,6 +87,7 @@ interface InvoiceBuilderStore {
     setReverseCharge: (v: boolean) => void;
     applyInterState: (isInterState: boolean) => void;
     loadFromInvoice: (invoice: import('../types/domain').Invoice, newType: InvoiceType) => void;
+    setSourceVoucherId: (id: string | null) => void;
 }
 
 const defaultState = (): InvoiceBuilderState => ({
@@ -107,6 +108,7 @@ const defaultState = (): InvoiceBuilderState => ({
     reverseCharge: false,
     notes: '',
     termsAndConditions: '',
+    sourceVoucherId: null,
 });
 
 const hasMeaningfulDraft = (state: InvoiceBuilderState) =>
@@ -264,6 +266,7 @@ export const useInvoiceBuilderStore = create<InvoiceBuilderStore>()(
             setNotes: (n) => set((store) => { store.state.notes = n; }),
             setTerms: (t) => set((store) => { store.state.termsAndConditions = t; }),
             setReverseCharge: (v) => set((store) => { store.state.reverseCharge = v; }),
+            setSourceVoucherId: (id) => set((store) => { store.state.sourceVoucherId = id; }),
 
             applyInterState: (isInterState) => set((store) => {
                 store.state.items = store.state.items.map((line) => computeLine({ ...line, isInterState }));
@@ -286,6 +289,7 @@ export const useInvoiceBuilderStore = create<InvoiceBuilderStore>()(
                     notes: invoice.notes ?? '',
                     termsAndConditions: invoice.termsAndConditions ?? '',
                     reverseCharge: invoice.reverseCharge,
+                    sourceVoucherId: invoice.sourceVoucherId,
                     paymentMode: PaymentMode.CASH,
                     paidAmount: 0,
                     items: (invoice.items ?? []).map((item) => ({

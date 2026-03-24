@@ -118,7 +118,8 @@ type QueueMutation =
     | (QueueMutationBase & { type: 'reopen_operations_period'; payload: { periodId: string } })
     | (QueueMutationBase & { type: 'create_operation_approval'; payload: { approvalId: string; actionType: 'UPDATE_CONTROLS' | 'LOCK_PERIOD' | 'CLOSE_PERIOD' | 'REOPEN_PERIOD' | 'CUSTOM'; module?: string; payload?: Record<string, unknown> } })
     | (QueueMutationBase & { type: 'approve_operation_approval'; payload: { id: string } })
-    | (QueueMutationBase & { type: 'reject_operation_approval'; payload: { id: string; note?: string } });
+    | (QueueMutationBase & { type: 'reject_operation_approval'; payload: { id: string; note?: string } })
+    | (QueueMutationBase & { type: 'create_journal'; payload: { date?: string; narration?: string; lines: { accountId: string; debit?: number; credit?: number }[] } });
 
 type EnqueueMutation =
     | { type: 'upsert_item'; payload: Record<string, unknown> & { id: string } }
@@ -161,7 +162,8 @@ type EnqueueMutation =
     | { type: 'reopen_operations_period'; payload: { periodId: string } }
     | { type: 'create_operation_approval'; payload: { approvalId: string; actionType: 'UPDATE_CONTROLS' | 'LOCK_PERIOD' | 'CLOSE_PERIOD' | 'REOPEN_PERIOD' | 'CUSTOM'; module?: string; payload?: Record<string, unknown> } }
     | { type: 'approve_operation_approval'; payload: { id: string } }
-    | { type: 'reject_operation_approval'; payload: { id: string; note?: string } };
+    | { type: 'reject_operation_approval'; payload: { id: string; note?: string } }
+    | { type: 'create_journal'; payload: { date?: string; narration?: string; lines: { accountId: string; debit?: number; credit?: number }[] } };
 
 let flushInFlightByScope = new Map<string, Promise<{ processed: number; remaining: number }>>();
 let enqueueMutex: Promise<void> = Promise.resolve();
@@ -753,6 +755,9 @@ const applyMutation = async (mutation: QueueMutation): Promise<void> => {
             await api.post(`/api/operations/approvals/${encodeURIComponent(mutation.payload.id)}/reject`, {
                 ...(mutation.payload.note ? { note: mutation.payload.note } : {}),
             });
+            return;
+        case 'create_journal':
+            await api.post('/api/accounting/journal', mutation.payload);
             return;
         default:
             return;

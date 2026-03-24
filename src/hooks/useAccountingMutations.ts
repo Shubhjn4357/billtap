@@ -53,11 +53,21 @@ export function useAccountingAccountMutations() {
         },
     });
 
+    const createJournalMutation = useMutation({
+        mutationFn: (payload: { date?: string | Date; narration?: string; lines: { accountId: string; debit?: number; credit?: number }[] }) =>
+            accountingRepository.createJournal({ ...payload, date: payload.date ? new Date(payload.date).toISOString() : undefined }),
+        onSuccess: async () => {
+            await invalidateAccountingViews(queryClient, businessId);
+        },
+    });
+
     return {
         saveAccount: saveMutation.mutateAsync,
         deactivateAccount: deactivateMutation.mutateAsync,
+        createJournal: createJournalMutation.mutateAsync,
         isSavingAccount: saveMutation.isPending,
         isDeactivatingAccount: deactivateMutation.isPending,
+        isCreatingJournal: createJournalMutation.isPending,
     };
 }
 

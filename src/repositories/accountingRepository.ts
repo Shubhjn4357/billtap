@@ -589,4 +589,19 @@ export const accountingRepository = {
             }>;
         }
     },
+    createJournalRemote: (data: { date?: string; narration?: string; lines: { accountId: string; debit?: number; credit?: number }[] }) =>
+        api.post<ApiResponse<{ id: string }>>('/api/accounting/journal', data),
+    createJournal: async (data: { date?: string; narration?: string; lines: { accountId: string; debit?: number; credit?: number }[] }) => {
+        let syncMessage = 'Journal saved locally. Sync pending.';
+        if (await isOnline()) {
+            try {
+                return await accountingRepository.createJournalRemote(data);
+            } catch (error) {
+                if (!shouldKeepLocalWriteOnError(error)) throw error;
+                if (isCloudWriteBlockedError(error)) syncMessage = 'Journal saved locally. Cloud sync blocked by subscription.';
+            }
+        }
+        await queueAndAttemptSync({ type: 'create_journal', payload: data as any }, syncMessage);
+        return { ok: true, data: { id: offlineSyncService.createLocalId('voucher') }, message: syncMessage } as ApiResponse<{ id: string }>;
+    },
 };

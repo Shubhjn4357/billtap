@@ -429,7 +429,7 @@ const buildLocalInvoiceFromBuilder = (
     return {
         id,
         businessId: getRuntimeBusinessId() ?? 'offline',
-        invoiceType: payload.invoiceType as Invoice['invoiceType'],
+        invoiceType: toServerInvoiceType(payload) as Invoice['invoiceType'],
         invoiceNumber:
             payload.invoiceNumber
             || `OFF-${new Date().getFullYear()}-${id.slice(-6).toUpperCase()}`,
@@ -459,8 +459,8 @@ const buildLocalInvoiceFromBuilder = (
         dueDate: payload.dueDate ?? null,
         notes: payload.notes ?? null,
         termsAndConditions: payload.termsAndConditions ?? null,
-        sourceVoucherType: null,
-        sourceVoucherId: null,
+        sourceVoucherType: payload.transactionType === 'RETURN_INWARD' ? 'TAX_INVOICE' : payload.transactionType === 'RETURN_OUTWARD' ? 'PURCHASE_BILL' : null,
+        sourceVoucherId: payload.sourceVoucherId ?? null,
         isDeleted: false,
         createdByUserId: null,
         createdAt: now,

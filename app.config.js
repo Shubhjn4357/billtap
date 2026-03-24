@@ -52,7 +52,7 @@ export default {
           imageWidth: 150,
           resizeMode: "contain",
           backgroundColor: "#0A50D6",
-          radius: 20,
+          radius: 100,
           dark: {
             image: "./assets/images/icon.png",
             backgroundColor: "#0A50D6"
