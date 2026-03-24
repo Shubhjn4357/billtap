@@ -88,6 +88,7 @@ const createTransactionSchema = z.object({
     reminderFrequencyDays: z.number().int().positive().optional(),
     nextReminderAt: z.coerce.date().optional().nullable(),
     remark: z.string().trim().optional(),
+    sourceVoucherId: z.string().trim().optional().nullable(),
     items: z.array(transactionItemSchema).min(1),
 });
 
@@ -485,6 +486,7 @@ transactionsRoute.post('/', async (c) => {
                 paidAmount: payload.paidAmount ?? 0,
                 dueDate: payload.dueDate ?? null,
                 notes: payload.remark ?? null,
+                sourceVoucherId: payload.sourceVoucherId ?? null,
                 transportDetails,
                 isDeleted: false,
                 createdByUserId: authUser.id,

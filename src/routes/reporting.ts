@@ -138,12 +138,41 @@ reportingRoute.get('/balance-sheet', async (c) => {
         totals.set(line.accountId, current);
     }
 
+    const invoiceRows = await db.select().from(invoices).where(eq(invoices.businessId, business.id));
+
+    let receivables = 0;
+    let payables = 0;
+    for (const inv of invoiceRows) {
+        if (inv.paymentStatus === 'PAID') continue;
+        const outstanding = Number(inv.totalInvoiceValue ?? 0) - Number(inv.paidAmount ?? 0);
+        const meta = inv.gstRateBreakupJson as Record<string, unknown> | null;
+        const txType = meta?.transactionType;
+        const isPosting = inv.invoiceType !== 'ESTIMATE' && inv.invoiceType !== 'PROFORMA' && inv.invoiceType !== 'DELIVERY_CHALLAN_DOC';
+
+        if (!isPosting) continue;
+
+        if (txType === 'SALE') {
+            receivables += outstanding;
+        } else if (txType === 'PURCHASE') {
+            payables += outstanding;
+        } else if (txType === 'RETURN_INWARD') {
+            receivables -= outstanding;
+        } else if (txType === 'RETURN_OUTWARD') {
+            payables -= outstanding;
+        }
+    }
+
     const assets = accountRows
         .filter((entry) => entry.type === 'ASSET')
         .map((entry) => ({
             account: entry.name,
             amount: (totals.get(entry.id)?.debit ?? 0) - (totals.get(entry.id)?.credit ?? 0),
         }));
+    
+    // Inject calculated Receivables if greater than 0
+    if (receivables !== 0) {
+        assets.push({ account: 'Accounts Receivable (Calculated)', amount: receivables });
+    }
 
     const liabilities = accountRows
         .filter((entry) => entry.type === 'LIABILITY')
@@ -151,6 +180,11 @@ reportingRoute.get('/balance-sheet', async (c) => {
             account: entry.name,
             amount: (totals.get(entry.id)?.credit ?? 0) - (totals.get(entry.id)?.debit ?? 0),
         }));
+    
+    // Inject calculated Payables if greater than 0
+    if (payables !== 0) {
+        liabilities.push({ account: 'Accounts Payable (Calculated)', amount: payables });
+    }
 
     const equity = accountRows
         .filter((entry) => entry.type === 'EQUITY')
@@ -209,3 +243,4 @@ reportingRoute.get('/export/transactions', async (c) => {
 });
 
 export default reportingRoute;
+

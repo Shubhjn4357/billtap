@@ -23,12 +23,12 @@ const createExpenseSchema = z.object({
         'TEA_AND_REFRESHMENTS', 'TRANSPORT', 'MISCELLANEOUS',
     ]),
     amount: z.number().positive(),
-    date: z.string().datetime().optional(),
-    description: z.string().max(500).optional(),
+    date: z.coerce.date().optional().nullable(),
+    description: z.string().max(500).optional().nullable(),
     paymentMode: z.enum(['CASH', 'BANK', 'UPI', 'CHEQUE', 'CARD']).default('CASH'),
-    partyId: z.string().optional(),
-    receiptUrl: z.string().url().optional(),
-    accountId: z.string().optional(),
+    partyId: z.string().optional().nullable(),
+    receiptUrl: z.string().url().optional().nullable(),
+    accountId: z.string().optional().nullable(),
 });
 
 // List expenses

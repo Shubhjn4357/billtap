@@ -20,20 +20,20 @@ const createLoanSchema = z.object({
     id: z.string().trim().min(1).optional(),
     lenderBorrowerName: z.string().min(1).max(200),
     loanType: z.enum(['BORROWED', 'GIVEN']),
-    openingDate: z.string().date(),
+    openingDate: z.coerce.date().optional().nullable(),
     openingBalance: z.number().nonnegative().default(0),
     interestRatePercent: z.number().nonnegative().default(0),
-    emiAmount: z.number().positive().optional(),
-    partyId: z.string().optional(),
-    accountId: z.string().optional(),
-    notes: z.string().max(500).optional(),
+    emiAmount: z.number().positive().optional().nullable(),
+    partyId: z.string().optional().nullable(),
+    accountId: z.string().optional().nullable(),
+    notes: z.string().max(500).optional().nullable(),
 });
 
 const loanTransactionSchema = z.object({
     transactionType: z.enum(['DISBURSEMENT', 'REPAYMENT', 'INTEREST']),
     amount: z.number().positive(),
-    date: z.string().datetime().optional(),
-    notes: z.string().max(500).optional(),
+    date: z.coerce.date().optional().nullable(),
+    notes: z.string().max(500).optional().nullable(),
 });
 
 // List loans
@@ -111,7 +111,7 @@ loansRoute.post('/', async (c) => {
             businessId: business.id,
             lenderBorrowerName: body.lenderBorrowerName,
             loanType: body.loanType,
-            openingDate: new Date(body.openingDate),
+            openingDate: body.openingDate ? new Date(body.openingDate) : new Date(),
             openingBalance: body.openingBalance,
             currentBalance: body.openingBalance,
             interestRatePercent: body.interestRatePercent,
@@ -227,3 +227,4 @@ loansRoute.post('/:id/transactions', async (c) => {
 });
 
 export default loansRoute;
+

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { and, asc, count, desc, eq, inArray } from 'drizzle-orm';
+import { withTransaction } from '../db/transaction';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import {
@@ -56,15 +57,34 @@ const journalSchema = z.object({
 });
 
 const DEFAULT_SYSTEM_ACCOUNTS = [
+    // Assets
     { code: '1000', name: 'Cash in Hand', type: 'ASSET' as const },
-    { code: '1010', name: 'Bank Account', type: 'ASSET' as const },
-    { code: '1100', name: 'Accounts Receivable', type: 'ASSET' as const },
-    { code: '2000', name: 'Accounts Payable', type: 'LIABILITY' as const },
-    { code: '3000', name: 'Owner Equity', type: 'EQUITY' as const },
-    { code: '4000', name: 'Sales', type: 'INCOME' as const },
-    { code: '5000', name: 'Purchases', type: 'EXPENSE' as const },
-    { code: '5100', name: 'Direct Expense', type: 'EXPENSE' as const },
-    { code: '5200', name: 'Indirect Expense', type: 'EXPENSE' as const },
+    { code: '1010', name: 'Bank Accounts', type: 'ASSET' as const },
+    { code: '1100', name: 'Sundry Debtors', type: 'ASSET' as const },
+    { code: '1200', name: 'Stock-in-Hand', type: 'ASSET' as const },
+    { code: '1300', name: 'Fixed Assets', type: 'ASSET' as const },
+    { code: '1400', name: 'Deposits (Asset)', type: 'ASSET' as const },
+    { code: '1500', name: 'Loans & Advances (Asset)', type: 'ASSET' as const },
+    { code: '1600', name: 'Investments', type: 'ASSET' as const },
+    // Liabilities
+    { code: '2000', name: 'Sundry Creditors', type: 'LIABILITY' as const },
+    { code: '2100', name: 'Duties & Taxes', type: 'LIABILITY' as const },
+    { code: '2200', name: 'Provisions', type: 'LIABILITY' as const },
+    { code: '2300', name: 'Secured Loans', type: 'LIABILITY' as const },
+    { code: '2400', name: 'Unsecured Loans', type: 'LIABILITY' as const },
+    { code: '2500', name: 'Bank OD A/c', type: 'LIABILITY' as const },
+    // Equity
+    { code: '3000', name: 'Capital Account', type: 'EQUITY' as const },
+    { code: '3100', name: 'Reserves & Surplus', type: 'EQUITY' as const },
+    { code: '3200', name: 'Drawings / Suspense', type: 'EQUITY' as const },
+    // Income
+    { code: '4000', name: 'Sales Accounts', type: 'INCOME' as const },
+    { code: '4100', name: 'Direct Incomes', type: 'INCOME' as const },
+    { code: '4200', name: 'Indirect Incomes', type: 'INCOME' as const },
+    // Expenses
+    { code: '5000', name: 'Purchase Accounts', type: 'EXPENSE' as const },
+    { code: '5100', name: 'Direct Expenses', type: 'EXPENSE' as const },
+    { code: '5200', name: 'Indirect Expenses', type: 'EXPENSE' as const },
 ];
 
 const resolveBusiness = async (c: Parameters<typeof requireAuth>[0]) => {
@@ -808,6 +828,113 @@ accountingRoute.get('/stock-ledger/:itemId', async (c) => {
         .limit(limit);
 
     return c.json({ ok: true, entries: rows });
+});
+
+accountingRoute.post('/close-period', async (c) => {
+    try {
+        const db = c.get('db');
+        const authUser = c.get('authUser');
+        if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
+        const denied = requireOrganizationCapability(c, 'accounts.write');
+        if (denied) return denied;
+
+        const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
+        const subscription = await getActiveSubscription(db, business.id);
+        assertSubscriptionWriteAllowed(subscription);
+        assertAccountsModuleAccess(business);
+
+        const body = await c.req.json();
+        const closingDate = new Date(body.date || Date.now());
+
+        const accountRows = await db.select().from(accounts)
+            .where(and(inArray(accounts.type, ['INCOME', 'EXPENSE']), eq(accounts.businessId, business.id)));
+        
+        if (accountRows.length === 0) return c.json({ ok: false, message: 'No income or expense accounts found.' }, 400);
+
+        const equityRows = await db.select().from(accounts)
+            .where(and(eq(accounts.type, 'EQUITY'), eq(accounts.businessId, business.id)));
+        const retainedEarningsAccount = equityRows.find(a => a.code === '3100' || a.name.toLowerCase().includes('retained')) || equityRows[0];
+        
+        if (!retainedEarningsAccount) {
+            return c.json({ ok: false, message: 'No Equity account found to transfer closed balance to.' }, 400);
+        }
+
+        const targetIds = accountRows.map(a => a.id);
+        const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
+        const validVoucherIds = voucherRows.filter(v => new Date(v.date ?? v.createdAt) <= closingDate).map(v => v.id);
+
+        let lineRows = validVoucherIds.length > 0 
+            ? await db.select().from(voucherLines).where(inArray(voucherLines.voucherId, validVoucherIds))
+            : [];
+
+        const totalsByAccount = new Map<string, { debit: number; credit: number }>();
+        for (const line of lineRows) {
+            if (!targetIds.includes(line.accountId)) continue;
+            const current = totalsByAccount.get(line.accountId) ?? { debit: 0, credit: 0 };
+            current.debit += Number(line.debit ?? 0);
+            current.credit += Number(line.credit ?? 0);
+            totalsByAccount.set(line.accountId, current);
+        }
+
+        const lines: any[] = [];
+        for (const acc of accountRows) {
+            const totals = totalsByAccount.get(acc.id);
+            if (!totals) continue;
+            
+            const balance = totals.debit - totals.credit;
+            if (balance > 0) {
+                lines.push({ accountId: acc.id, debit: 0, credit: balance });
+            } else if (balance < 0) {
+                lines.push({ accountId: acc.id, debit: Math.abs(balance), credit: 0 });
+            }
+        }
+
+        if (lines.length === 0) {
+            return c.json({ ok: true, message: 'No balances to close for the selected date.', linesCount: 0 });
+        }
+
+        const totalDebits = lines.reduce((s, l) => s + l.debit, 0);
+        const totalCredits = lines.reduce((s, l) => s + l.credit, 0);
+        const netDifference = totalDebits - totalCredits;
+
+        if (netDifference > 0) {
+            lines.push({ accountId: retainedEarningsAccount.id, debit: 0, credit: netDifference });
+        } else if (netDifference < 0) {
+            lines.push({ accountId: retainedEarningsAccount.id, debit: Math.abs(netDifference), credit: 0 });
+        }
+
+        const now = new Date();
+        const voucherId = `vch_${nanoid(18)}`;
+        const finalTotal = lines.reduce((s, l) => s + l.debit, 0);
+
+        await db.insert(vouchers).values({
+            id: voucherId,
+            businessId: business.id,
+            voucherType: 'JOURNAL',
+            date: closingDate,
+            number: `CLS-${Date.now()}`,
+            partyId: null,
+            totalAmount: finalTotal,
+            narration: body.narration || `Period Closing Entry on ${closingDate.toISOString().split('T')[0]}`,
+            status: 'POSTED',
+            createdByUserId: authUser.id,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await db.insert(voucherLines).values(lines.map(line => ({
+            id: `vln_${nanoid(16)}`,
+            voucherId,
+            accountId: line.accountId,
+            debit: line.debit,
+            credit: line.credit,
+            createdAt: now,
+        })));
+
+        return c.json({ ok: true, id: voucherId, linesCount: lines.length });
+    } catch (error) {
+        return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to close period.' }, 400);
+    }
 });
 
 export default accountingRoute;

@@ -48,7 +48,8 @@ const CANONICAL_ENUM_VALUES = {
         'PROFORMA',
         'CREDIT_NOTE_DOC',
         'DEBIT_NOTE_DOC',
-        'DELIVERY_CHALLAN',
+        'DELIVERY_CHALLAN_DOC',
+        'POS_BILL',
     ],
     payment_status: ['UNPAID', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
     device_platform: ['ANDROID', 'IOS', 'WEB'],
@@ -58,6 +59,23 @@ const CANONICAL_ENUM_VALUES = {
     notification_channel: ['IN_APP', 'PUSH', 'EMAIL'],
     admin_role: ['SUPER_ADMIN', 'SUPPORT_ADMIN', 'READ_ONLY_ADMIN'],
     member_role: ['OWNER', 'STAFF'],
+    settings_section: [
+        'GENERAL',
+        'ITEM_SETTINGS',
+        'PARTY_SETTINGS',
+        'TAXES_AND_GST',
+        'TRANSACTION_HEADER',
+        'ITEM_TABLE',
+        'TAX_DISCOUNT_TOTAL',
+        'MORE_TRANSACTION_FEATURES',
+        'INVOICE_PRINT',
+        'BACKUP_SETTINGS',
+        'MULTI_FIRM',
+        'GODOWN_AND_STOCK_TRANSFER',
+        'SECURITY',
+        'PAYMENT_REMINDERS',
+        'TRANSACTION_SMS',
+    ],
 };
 
 const escapeLiteral = (value) => value.replace(/'/g, "''");

@@ -136,6 +136,8 @@ export const settingsSectionEnum = pgEnum('settings_section', [
     'MULTI_FIRM',
     'GODOWN_AND_STOCK_TRANSFER',
     'SECURITY',
+    'PAYMENT_REMINDERS',
+    'TRANSACTION_SMS',
 ]);
 
 export const expenseCategoryEnum = pgEnum('expense_category', [

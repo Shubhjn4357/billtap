@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { and, asc, desc, eq, ilike, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { godownStock, godowns, inventoryMovements, items } from '../db/schema';
+import { accounts, godownStock, godowns, inventoryMovements, items, voucherLines, vouchers } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
@@ -400,6 +400,51 @@ itemsRoute.post('/', async (c) => {
                     createdByUserId: authUser.id,
                     createdAt: now,
                 });
+
+                const inventoryAcc = (await tx.select().from(accounts).where(and(eq(accounts.businessId, business.id), eq(accounts.code, '1200'))).limit(1))[0];
+                const equityAcc = (await tx.select().from(accounts).where(and(eq(accounts.businessId, business.id), eq(accounts.code, '3000'))).limit(1))[0];
+                const expenseAcc = (await tx.select().from(accounts).where(and(eq(accounts.businessId, business.id), eq(accounts.code, '5200'))).limit(1))[0];
+                
+                if (inventoryAcc && equityAcc && expenseAcc) {
+                    const value = Math.abs(existingItem ? stockDelta : payload.stock) * Number(payload.purchasePrice || payload.price || 0);
+                    if (value > 0) {
+                        const voucherId = `vch_${nanoid(16)}`;
+                        const isIncrease = existingItem ? (stockDelta > 0) : (payload.stock > 0);
+                        
+                        await tx.insert(vouchers).values({
+                            id: voucherId,
+                            businessId: business.id,
+                            voucherType: 'JOURNAL',
+                            date: now,
+                            number: `STK-${nanoid(6).toUpperCase()}`,
+                            totalAmount: value,
+                            status: 'POSTED',
+                            narration: `Stock adjustment for ${payload.name}`,
+                            createdByUserId: authUser.id,
+                            createdAt: now,
+                            updatedAt: now,
+                        });
+                        
+                        await tx.insert(voucherLines).values([
+                            {
+                                id: `vln_${nanoid(16)}`,
+                                voucherId,
+                                accountId: inventoryAcc.id,
+                                debit: isIncrease ? value : 0,
+                                credit: isIncrease ? 0 : value,
+                                createdAt: now,
+                            },
+                            {
+                                id: `vln_${nanoid(16)}`,
+                                voucherId,
+                                accountId: !existingItem ? equityAcc.id : expenseAcc.id,
+                                debit: isIncrease ? 0 : value,
+                                credit: isIncrease ? value : 0,
+                                createdAt: now,
+                            }
+                        ]);
+                    }
+                }
             }
         });
 
@@ -551,13 +596,14 @@ itemsRoute.post('/:id/adjust', async (c) => {
                 .where(and(eq(items.id, id), eq(items.businessId, business.id)));
 
             if (nextStock !== currentStock) {
+                const stockDelta = nextStock - currentStock;
                 await tx.insert(inventoryMovements).values({
                     id: `mov_${nanoid(16)}`,
                     businessId: business.id,
                     itemId: id,
                     movementType: payload.type,
                     quantity: payload.type === 'ADJUST'
-                        ? Math.abs(nextStock - currentStock)
+                        ? Math.abs(stockDelta)
                         : payload.quantity,
                     balanceAfter: nextStock,
                     reason: payload.reason ?? null,
@@ -565,6 +611,50 @@ itemsRoute.post('/:id/adjust', async (c) => {
                     createdByUserId: authUser.id,
                     createdAt: now,
                 });
+
+                const inventoryAcc = (await tx.select().from(accounts).where(and(eq(accounts.businessId, business.id), eq(accounts.code, '1200'))).limit(1))[0];
+                const expenseAcc = (await tx.select().from(accounts).where(and(eq(accounts.businessId, business.id), eq(accounts.code, '5200'))).limit(1))[0];
+                
+                if (inventoryAcc && expenseAcc) {
+                    const value = Math.abs(stockDelta) * Number(item.purchasePrice || item.salePrice || 0);
+                    if (value > 0) {
+                        const voucherId = `vch_${nanoid(16)}`;
+                        const isIncrease = stockDelta > 0;
+                        
+                        await tx.insert(vouchers).values({
+                            id: voucherId,
+                            businessId: business.id,
+                            voucherType: 'JOURNAL',
+                            date: now,
+                            number: `STK-${nanoid(6).toUpperCase()}`,
+                            totalAmount: value,
+                            status: 'POSTED',
+                            narration: `Manual stock adjustment for ${item.name}`,
+                            createdByUserId: authUser.id,
+                            createdAt: now,
+                            updatedAt: now,
+                        });
+                        
+                        await tx.insert(voucherLines).values([
+                            {
+                                id: `vln_${nanoid(16)}`,
+                                voucherId,
+                                accountId: inventoryAcc.id,
+                                debit: isIncrease ? value : 0,
+                                credit: isIncrease ? 0 : value,
+                                createdAt: now,
+                            },
+                            {
+                                id: `vln_${nanoid(16)}`,
+                                voucherId,
+                                accountId: expenseAcc.id,
+                                debit: isIncrease ? 0 : value,
+                                credit: isIncrease ? value : 0,
+                                createdAt: now,
+                            }
+                        ]);
+                    }
+                }
             }
 
             if (normalizedGodownId) {

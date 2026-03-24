@@ -20,54 +20,54 @@ const contraSchema = z.object({
     fromAccountId: z.string().min(1),
     toAccountId: z.string().min(1),
     amount: z.number().positive(),
-    date: z.string().datetime().optional(),
-    narration: z.string().max(500).optional(),
-    description: z.string().max(500).optional(),
+    date: z.coerce.date().optional().nullable(),
+    narration: z.string().max(500).optional().nullable(),
+    description: z.string().max(500).optional().nullable(),
 });
 
 const depositSchema = z.object({
     accountId: z.string().min(1),
     amount: z.number().positive(),
-    partyId: z.string().optional(),
+    partyId: z.string().optional().nullable(),
     paymentMode: z.enum(['CASH', 'BANK', 'UPI', 'CHEQUE', 'CARD']).default('CASH'),
-    date: z.string().datetime().optional(),
-    narration: z.string().max(500).optional(),
-    description: z.string().max(500).optional(),
+    date: z.coerce.date().optional().nullable(),
+    narration: z.string().max(500).optional().nullable(),
+    description: z.string().max(500).optional().nullable(),
 });
 
 const withdrawSchema = z.object({
     accountId: z.string().min(1),
     amount: z.number().positive(),
-    partyId: z.string().optional(),
+    partyId: z.string().optional().nullable(),
     paymentMode: z.enum(['CASH', 'BANK', 'UPI', 'CHEQUE', 'CARD']).default('CASH'),
-    date: z.string().datetime().optional(),
-    narration: z.string().max(500).optional(),
-    description: z.string().max(500).optional(),
+    date: z.coerce.date().optional().nullable(),
+    narration: z.string().max(500).optional().nullable(),
+    description: z.string().max(500).optional().nullable(),
 });
 
 const chequeReceiveSchema = z.object({
     chequeAccountId: z.string().min(1),
     amount: z.number().positive(),
-    partyId: z.string().optional(),
+    partyId: z.string().optional().nullable(),
     chequeNumber: z.string().trim().min(1),
-    chequeDate: z.string().date().optional(),
-    narration: z.string().max(500).optional(),
+    chequeDate: z.coerce.date().optional().nullable(),
+    narration: z.string().max(500).optional().nullable(),
 });
 
 const chequeDepositSchema = z.object({
     chequeAccountId: z.string().min(1),
     bankAccountId: z.string().min(1),
     amount: z.number().positive(),
-    date: z.string().datetime().optional(),
-    narration: z.string().max(500).optional(),
+    date: z.coerce.date().optional().nullable(),
+    narration: z.string().max(500).optional().nullable(),
 });
 
 const chequeBounceSchema = z.object({
     chequeAccountId: z.string().min(1),
     bankAccountId: z.string().min(1),
     amount: z.number().positive(),
-    reason: z.string().trim().optional(),
-    date: z.string().datetime().optional(),
+    reason: z.string().trim().optional().nullable(),
+    date: z.coerce.date().optional().nullable(),
 });
 
 const resolveCashBankKind = (accountName: string) => {
@@ -79,7 +79,7 @@ const resolveCashBankKind = (accountName: string) => {
 };
 
 const resolveNarration = (
-    body: { narration?: string; description?: string },
+    body: { narration?: string | null; description?: string | null },
     fallback: string
 ) => body.narration?.trim() || body.description?.trim() || fallback;
 
@@ -328,7 +328,7 @@ cashBankRoute.post('/contra', async (c) => {
             createdByUserId: context.authUser.id,
             voucherType: 'CONTRA',
             voucherNumberPrefix: 'CON',
-            date: body.date,
+            date: body.date ? body.date.toISOString() : undefined,
             amount: body.amount,
             narration: resolveNarration(body, `Transfer from ${fromAcc.name} to ${toAcc.name}`),
             lines: [
@@ -372,7 +372,7 @@ cashBankRoute.post('/transfer', async (c) => {
             createdByUserId: context.authUser.id,
             voucherType: 'CONTRA',
             voucherNumberPrefix: 'CON',
-            date: body.date,
+            date: body.date ? body.date.toISOString() : undefined,
             amount: body.amount,
             narration: resolveNarration(body, `Transfer from ${fromAcc.name} to ${toAcc.name}`),
             lines: [
@@ -414,8 +414,8 @@ cashBankRoute.post('/deposit', async (c) => {
             createdByUserId: context.authUser.id,
             voucherType: 'PAYMENT_IN',
             voucherNumberPrefix: 'DEP',
-            date: body.date,
-            partyId: body.partyId,
+            date: body.date ? body.date.toISOString() : undefined,
+            partyId: body.partyId ?? undefined,
             amount: body.amount,
             narration: resolveNarration(body, `Deposit via ${body.paymentMode}`),
             lines: [
@@ -456,8 +456,8 @@ cashBankRoute.post('/withdraw', async (c) => {
             createdByUserId: context.authUser.id,
             voucherType: 'PAYMENT_OUT',
             voucherNumberPrefix: 'WDR',
-            date: body.date,
-            partyId: body.partyId,
+            date: body.date ? body.date.toISOString() : undefined,
+            partyId: body.partyId ?? undefined,
             amount: body.amount,
             narration: resolveNarration(body, `Withdrawal via ${body.paymentMode}`),
             lines: [
@@ -498,7 +498,7 @@ cashBankRoute.post('/cheques/receive', async (c) => {
             voucherType: 'PAYMENT_IN',
             voucherNumberPrefix: 'CHQ-RCV',
             amount: body.amount,
-            partyId: body.partyId,
+            partyId: body.partyId ?? undefined,
             narration: body.narration ?? `Cheque ${body.chequeNumber} received`,
             lines: [
                 { accountId: body.chequeAccountId, debit: body.amount, credit: 0 },
@@ -544,7 +544,7 @@ cashBankRoute.post('/cheques/deposit', async (c) => {
             createdByUserId: context.authUser.id,
             voucherType: 'CONTRA',
             voucherNumberPrefix: 'CHQ-DEP',
-            date: body.date,
+            date: body.date ? body.date.toISOString() : undefined,
             amount: body.amount,
             narration: body.narration ?? `Cheque deposited from ${chequeAcc.name} to ${bankAcc.name}`,
             lines: [
@@ -583,7 +583,7 @@ cashBankRoute.post('/cheques/bounce', async (c) => {
             createdByUserId: context.authUser.id,
             voucherType: 'JOURNAL',
             voucherNumberPrefix: 'CHQ-BNC',
-            date: body.date,
+            date: body.date ? body.date.toISOString() : undefined,
             amount: body.amount,
             narration: `Cheque bounce${body.reason ? `: ${body.reason}` : ''}`,
             lines: [
@@ -661,3 +661,5 @@ cashBankRoute.get('/ledger/:accountId', async (c) => {
 });
 
 export default cashBankRoute;
+
+
