@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { godowns, godownStock, stockTransfers, items } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     getAccessibleBusiness,
@@ -233,7 +234,7 @@ godownsRoute.post('/transfer', async (c) => {
         }
 
         const now = new Date();
-        await db.transaction(async (tx) => {
+        await withTransaction(db, async (tx) => {
             await tx.update(godownStock)
                 .set({ quantity: sql`${godownStock.quantity} - ${body.quantity}`, updatedAt: now })
                 .where(and(eq(godownStock.godownId, body.fromGodownId), eq(godownStock.itemId, body.itemId)));

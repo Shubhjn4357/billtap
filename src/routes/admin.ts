@@ -508,8 +508,8 @@ const mapLegacyStatusToSubscription = (status: 'active' | 'inactive' | 'canceled
 };
 
 const mapInvoiceTypeToLegacyTransactionType = (invoiceType: typeof invoices.$inferSelect['invoiceType']) => {
-    if (invoiceType === 'CREDIT_NOTE_DOC') return 'RETURN_OUTWARD';
-    if (invoiceType === 'DEBIT_NOTE_DOC') return 'RETURN_INWARD';
+    if (invoiceType === 'CREDIT_NOTE_DOC') return 'RETURN_INWARD';
+    if (invoiceType === 'DEBIT_NOTE_DOC') return 'RETURN_OUTWARD';
     return 'SALE';
 };
 

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { accounts, voucherLines, vouchers } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     getAccessibleBusiness,
@@ -11,6 +12,7 @@ import {
 } from './helpers';
 import { nanoid } from 'nanoid';
 import { assertModuleEnabled, assertSubscriptionWriteAllowed } from '../services/subscriptionPolicy';
+import { ensureDefaultAccounts } from '../services/accountingDefaults';
 
 const cashBankRoute = new Hono<AppEnv>();
 
@@ -78,6 +80,12 @@ const resolveCashBankKind = (accountName: string) => {
     return 'OTHER';
 };
 
+const isCashBankAssetAccount = (account: typeof accounts.$inferSelect) =>
+    !account.isSystem
+    || account.code === '1000'
+    || account.code === '1010'
+    || resolveCashBankKind(account.name) !== 'OTHER';
+
 const resolveNarration = (
     body: { narration?: string | null; description?: string | null },
     fallback: string
@@ -117,11 +125,13 @@ const assertAuthBusiness = async (
 };
 
 const getBusinessAssetAccounts = async (db: AppEnv['Variables']['db'], businessId: string) => {
-    return db
+    await ensureDefaultAccounts(db, businessId);
+    const rows = await db
         .select()
         .from(accounts)
         .where(and(eq(accounts.businessId, businessId), eq(accounts.type, 'ASSET'), eq(accounts.isActive, true)))
         .orderBy(asc(accounts.code));
+    return rows.filter(isCashBankAssetAccount);
 };
 
 const getAccountBalances = async (
@@ -198,7 +208,7 @@ const createVoucher = async (params: {
     const voucherId = `v_${nanoid(18)}`;
     const voucherNumber = `${params.voucherNumberPrefix}-${Date.now()}`;
 
-    await params.db.transaction(async (tx) => {
+    await withTransaction(params.db, async (tx) => {
         await tx.insert(vouchers).values({
             id: voucherId,
             businessId: params.businessId,

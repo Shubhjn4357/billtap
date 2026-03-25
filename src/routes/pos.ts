@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { invoices, invoiceItems, items } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     getAccessibleBusiness,
@@ -132,7 +133,7 @@ posRoute.post('/sale', async (c) => {
         const paymentStatus = body.paidAmount >= totalInvoiceValue ? 'PAID' as const : 'PARTIALLY_PAID' as const;
         const invoiceId = `inv_${nanoid(18)}`;
 
-        await db.transaction(async (tx) => {
+        await withTransaction(db, async (tx) => {
             const itemIds = Array.from(new Set(body.items.map((entry) => entry.itemId).filter(Boolean))) as string[];
             const stockRows = itemIds.length > 0
                 ? await tx

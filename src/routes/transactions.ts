@@ -136,8 +136,8 @@ const deriveTransactionType = (entry: typeof invoices.$inferSelect) => {
     if (rawType === 'SALE' || rawType === 'PURCHASE' || rawType === 'RETURN_INWARD' || rawType === 'RETURN_OUTWARD') {
         return rawType;
     }
-    if (entry.invoiceType === 'CREDIT_NOTE_DOC') return 'RETURN_OUTWARD';
-    if (entry.invoiceType === 'DEBIT_NOTE_DOC') return 'RETURN_INWARD';
+    if (entry.invoiceType === 'CREDIT_NOTE_DOC') return 'RETURN_INWARD';
+    if (entry.invoiceType === 'DEBIT_NOTE_DOC') return 'RETURN_OUTWARD';
     return 'SALE';
 };
 
@@ -322,7 +322,13 @@ transactionsRoute.post('/', async (c) => {
         const authUser = c.get('authUser');
         if (!authUser) return c.json({ ok: false, message: 'Unauthorized.' }, 401);
 
-        const business = await ensurePrimaryBusiness(db, authUser);
+        const requestedBusinessId = getRequestedBusinessId(c);
+        const business =
+            await getAccessibleBusiness(db, authUser.id, requestedBusinessId)
+            ?? (requestedBusinessId ? null : await ensurePrimaryBusiness(db, authUser));
+        if (!business) {
+            return c.json({ ok: false, message: 'Business not found.' }, 404);
+        }
         const denied = requireOrganizationCapability(c, 'billing.write');
         if (denied) return denied;
         const deniedAction = requireOrganizationAction(c, 'billing.create');
@@ -332,7 +338,7 @@ transactionsRoute.post('/', async (c) => {
         assertFeatureFlag(subscription, 'GST_INVOICES');
         assertModuleEnabled(business, 'billing');
         const payload = createTransactionSchema.parse(await c.req.json());
-        if (payload.type === 'PURCHASE' || payload.type === 'RETURN_INWARD') {
+        if (payload.type === 'PURCHASE' || payload.type === 'RETURN_OUTWARD') {
             assertFeatureFlag(subscription, 'PURCHASE_MODULE');
         }
         const now = new Date();
@@ -446,7 +452,7 @@ transactionsRoute.post('/', async (c) => {
                 await tx.insert(parties).values({
                     id: newPartyId,
                     businessId: business.id,
-                    type: payload.type === 'PURCHASE' ? 'SUPPLIER' : 'CUSTOMER',
+                    type: payload.type === 'PURCHASE' || payload.type === 'RETURN_OUTWARD' ? 'SUPPLIER' : 'CUSTOMER',
                     name: payload.partyName,
                     nameLowercase: payload.partyName.toLowerCase(),
                     phone: payload.partyPhone ?? null,
@@ -859,7 +865,7 @@ transactionsRoute.delete('/:id', async (c) => {
         const lineGodowns = getTransportLineGodowns(transportDetails);
         const defaultGodownId = getTransportDefaultGodownId(transportDetails);
 
-        await db.transaction(async (tx) => {
+        await withTransaction(db, async (tx) => {
             if (!isNonPostingDoc) {
                 const lines = await tx
                     .select()

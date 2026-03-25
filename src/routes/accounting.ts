@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Context, Hono } from 'hono';
 import { and, asc, count, desc, eq, inArray } from 'drizzle-orm';
 import { withTransaction } from '../db/transaction';
 import { nanoid } from 'nanoid';
@@ -26,6 +26,7 @@ import {
     assertModuleEnabled,
     assertSubscriptionWriteAllowed,
 } from '../services/subscriptionPolicy';
+import { ensureDefaultAccounts } from '../services/accountingDefaults';
 
 const accountingRoute = new Hono<AppEnv>();
 
@@ -56,37 +57,6 @@ const journalSchema = z.object({
     lines: z.array(journalLineSchema).min(2),
 });
 
-const DEFAULT_SYSTEM_ACCOUNTS = [
-    // Assets
-    { code: '1000', name: 'Cash in Hand', type: 'ASSET' as const },
-    { code: '1010', name: 'Bank Accounts', type: 'ASSET' as const },
-    { code: '1100', name: 'Sundry Debtors', type: 'ASSET' as const },
-    { code: '1200', name: 'Stock-in-Hand', type: 'ASSET' as const },
-    { code: '1300', name: 'Fixed Assets', type: 'ASSET' as const },
-    { code: '1400', name: 'Deposits (Asset)', type: 'ASSET' as const },
-    { code: '1500', name: 'Loans & Advances (Asset)', type: 'ASSET' as const },
-    { code: '1600', name: 'Investments', type: 'ASSET' as const },
-    // Liabilities
-    { code: '2000', name: 'Sundry Creditors', type: 'LIABILITY' as const },
-    { code: '2100', name: 'Duties & Taxes', type: 'LIABILITY' as const },
-    { code: '2200', name: 'Provisions', type: 'LIABILITY' as const },
-    { code: '2300', name: 'Secured Loans', type: 'LIABILITY' as const },
-    { code: '2400', name: 'Unsecured Loans', type: 'LIABILITY' as const },
-    { code: '2500', name: 'Bank OD A/c', type: 'LIABILITY' as const },
-    // Equity
-    { code: '3000', name: 'Capital Account', type: 'EQUITY' as const },
-    { code: '3100', name: 'Reserves & Surplus', type: 'EQUITY' as const },
-    { code: '3200', name: 'Drawings / Suspense', type: 'EQUITY' as const },
-    // Income
-    { code: '4000', name: 'Sales Accounts', type: 'INCOME' as const },
-    { code: '4100', name: 'Direct Incomes', type: 'INCOME' as const },
-    { code: '4200', name: 'Indirect Incomes', type: 'INCOME' as const },
-    // Expenses
-    { code: '5000', name: 'Purchase Accounts', type: 'EXPENSE' as const },
-    { code: '5100', name: 'Direct Expenses', type: 'EXPENSE' as const },
-    { code: '5200', name: 'Indirect Expenses', type: 'EXPENSE' as const },
-];
-
 const resolveBusiness = async (c: Parameters<typeof requireAuth>[0]) => {
     const db = c.get('db');
     const authUser = c.get('authUser');
@@ -112,6 +82,7 @@ accountingRoute.get('/accounts', async (c) => {
     const subscription = await getActiveSubscription(db, business.id);
     assertAccountsModuleAccess(business);
     const type = c.req.query('type');
+    await ensureDefaultAccounts(db, business.id);
 
     const rows = type
         ? await db.select().from(accounts)
@@ -120,6 +91,24 @@ accountingRoute.get('/accounts', async (c) => {
         : await db.select().from(accounts)
             .where(eq(accounts.businessId, business.id))
             .orderBy(asc(accounts.code));
+
+    const accountIds = rows.map((entry) => entry.id);
+    const lines = accountIds.length === 0
+        ? []
+        : await db.select({
+            accountId: voucherLines.accountId,
+            debit: voucherLines.debit,
+            credit: voucherLines.credit,
+        })
+            .from(voucherLines)
+            .innerJoin(vouchers, eq(vouchers.id, voucherLines.voucherId))
+            .where(and(eq(vouchers.businessId, business.id), inArray(voucherLines.accountId, accountIds)));
+
+    const balances = new Map<string, number>();
+    for (const line of lines) {
+        const current = balances.get(line.accountId) ?? 0;
+        balances.set(line.accountId, current + Number(line.debit ?? 0) - Number(line.credit ?? 0));
+    }
 
     return c.json({
         ok: true,
@@ -134,7 +123,7 @@ accountingRoute.get('/accounts', async (c) => {
             isSystem: entry.isSystem,
             createdAt: entry.createdAt,
             updatedAt: entry.updatedAt,
-            balance: 0,
+            balance: balances.get(entry.id) ?? 0,
         })),
     });
 });
@@ -149,6 +138,7 @@ accountingRoute.get('/ledgers', async (c) => {
     const business = await resolveBusiness(c) ?? await ensurePrimaryBusiness(db, authUser);
     const subscription = await getActiveSubscription(db, business.id);
     assertAccountsModuleAccess(business);
+    await ensureDefaultAccounts(db, business.id);
 
     const includeInactive = c.req.query('includeInactive') === 'true';
     const ledgerAccounts = includeInactive
@@ -400,30 +390,11 @@ accountingRoute.post('/accounts/seed-default', async (c) => {
     assertSubscriptionWriteAllowed(subscription);
     assertAccountsModuleAccess(business);
 
-    const existing = await db.select().from(accounts).where(eq(accounts.businessId, business.id)).limit(1);
-    if (existing[0]) {
-        return c.json({ ok: true, message: 'Accounts already initialized.' });
-    }
-
-    const now = new Date();
-    await db.insert(accounts).values(DEFAULT_SYSTEM_ACCOUNTS.map((entry, index) => ({
-        id: `acc_${nanoid(16)}`,
-        businessId: business.id,
-        code: entry.code,
-        name: entry.name,
-        type: entry.type,
-        parentAccountId: null,
-        isDefault: true,
-        isSystem: true,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-    })));
-
+    await ensureDefaultAccounts(db, business.id);
     return c.json({ ok: true });
 });
 
-accountingRoute.post('/journals', async (c) => {
+const postJournal = async (c: Context<AppEnv>) => {
     try {
         const db = c.get('db');
         const authUser = c.get('authUser');
@@ -474,7 +445,10 @@ accountingRoute.post('/journals', async (c) => {
     } catch (error) {
         return c.json({ ok: false, message: error instanceof Error ? error.message : 'Failed to post journal.' }, 400);
     }
-});
+};
+
+accountingRoute.post('/journals', postJournal);
+accountingRoute.post('/journal', postJournal);
 
 accountingRoute.get('/trial-balance', async (c) => {
     const db = c.get('db');
@@ -487,6 +461,7 @@ accountingRoute.get('/trial-balance', async (c) => {
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
     assertAccountsModuleAccess(business);
+    await ensureDefaultAccounts(db, business.id);
 
     const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
     const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));

@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { and, desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
-import { adminAuditLogs, businesses } from '../db/schema';
+import { businesses } from '../db/schema';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import type { DrizzleClient } from '../db/client';
 import {
@@ -66,6 +66,20 @@ type OperationApproval = {
     reviewNote: string | null;
 };
 
+type OperationsAuditLog = {
+    id: string;
+    module: string;
+    action: string;
+    entityType: string | null;
+    entityId: string | null;
+    actorUid: string | null;
+    actorRole: string | null;
+    before: Record<string, unknown> | null;
+    after: Record<string, unknown> | null;
+    metadata: Record<string, unknown>;
+    createdAt: string;
+};
+
 const parseDateInput = (value?: string) => {
     if (!value) return null;
     const parsed = new Date(value);
@@ -85,6 +99,11 @@ const normalizeControls = (settings: Record<string, unknown>) => {
     };
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+    value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+
 const getFinancialPeriods = (settings: Record<string, unknown>): FinancialPeriod[] => {
     const raw = settings.operationsPeriods;
     if (!Array.isArray(raw)) return [];
@@ -102,53 +121,105 @@ const getApprovals = (settings: Record<string, unknown>): OperationApproval[] =>
         .sort((a, b) => (a.requestedAt < b.requestedAt ? 1 : -1));
 };
 
-const upsertApprovals = async (
+const getAuditLogs = (settings: Record<string, unknown>): OperationsAuditLog[] => {
+    const raw = settings.operationsAuditLogs;
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .filter((entry): entry is OperationsAuditLog => Boolean(entry) && typeof entry === 'object')
+        .map((entry) => entry as OperationsAuditLog)
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+};
+
+const trimAuditLogs = (logs: OperationsAuditLog[]) => logs.slice(0, 500);
+
+const updateOperationsSettings = async (
     db: DrizzleClient,
     businessId: string,
     currentSettings: Record<string, unknown>,
-    approvals: OperationApproval[]
+    patch: Record<string, unknown>
 ) => {
     await db.update(businesses).set({
         settings: {
             ...currentSettings,
-            operationsApprovals: approvals,
+            ...patch,
         },
         updatedAt: new Date(),
     }).where(eq(businesses.id, businessId));
+};
+
+const createAuditLogEntry = (params: {
+    action: string;
+    actorUid: string | null;
+    actorRole: string | null;
+    entityType?: string | null;
+    entityId?: string | null;
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+    metadata?: Record<string, unknown>;
+    module?: string;
+}): OperationsAuditLog => ({
+    id: `oplog_${nanoid(12)}`,
+    module: params.module ?? 'operations',
+    action: params.action,
+    entityType: params.entityType ?? null,
+    entityId: params.entityId ?? null,
+    actorUid: params.actorUid,
+    actorRole: params.actorRole,
+    before: params.before ?? null,
+    after: params.after ?? null,
+    metadata: params.metadata ?? {},
+    createdAt: new Date().toISOString(),
+});
+
+const upsertApprovals = async (
+    db: DrizzleClient,
+    businessId: string,
+    currentSettings: Record<string, unknown>,
+    approvals: OperationApproval[],
+    logs?: OperationsAuditLog[]
+) => {
+    await updateOperationsSettings(db, businessId, currentSettings, {
+        operationsApprovals: approvals,
+        ...(logs ? { operationsAuditLogs: trimAuditLogs(logs) } : {}),
+    });
 };
 
 const upsertFinancialPeriods = async (
     db: DrizzleClient,
     businessId: string,
     currentSettings: Record<string, unknown>,
-    periods: FinancialPeriod[]
+    periods: FinancialPeriod[],
+    logs?: OperationsAuditLog[]
 ) => {
-    await db.update(businesses).set({
-        settings: {
-            ...currentSettings,
-            operationsPeriods: periods,
-        },
-        updatedAt: new Date(),
-    }).where(eq(businesses.id, businessId));
+    await updateOperationsSettings(db, businessId, currentSettings, {
+        operationsPeriods: periods,
+        ...(logs ? { operationsAuditLogs: trimAuditLogs(logs) } : {}),
+    });
 };
 
 const appendApproval = async (
     db: DrizzleClient,
     businessId: string,
     currentSettings: Record<string, unknown>,
-    approval: OperationApproval
+    approval: OperationApproval,
+    logEntry?: OperationsAuditLog
 ) => {
     const currentApprovals = getApprovals(currentSettings);
-    await upsertApprovals(db, businessId, currentSettings, [approval, ...currentApprovals]);
+    const currentLogs = getAuditLogs(currentSettings);
+    await upsertApprovals(
+        db,
+        businessId,
+        currentSettings,
+        [approval, ...currentApprovals],
+        logEntry ? [logEntry, ...currentLogs] : currentLogs
+    );
 };
 
-const applyApprovalSideEffect = async (params: {
-    db: DrizzleClient;
-    businessId: string;
+const buildApprovalSideEffectPatch = (params: {
     currentSettings: Record<string, unknown>;
     approval: OperationApproval;
 }) => {
-    const { db, businessId, currentSettings, approval } = params;
+    const { currentSettings, approval } = params;
     const now = new Date().toISOString();
 
     if (approval.actionType === 'UPDATE_CONTROLS') {
@@ -159,14 +230,7 @@ const applyApprovalSideEffect = async (params: {
             stockAdjustmentApprovalRequired: Boolean(payload.stockAdjustmentApprovalRequired ?? true),
             periodLockEnabled: Boolean(payload.periodLockEnabled ?? true),
         };
-        await db.update(businesses).set({
-            settings: {
-                ...currentSettings,
-                operationsControls: nextControls,
-            },
-            updatedAt: new Date(),
-        }).where(eq(businesses.id, businessId));
-        return;
+        return { operationsControls: nextControls } satisfies Record<string, unknown>;
     }
 
     if (approval.actionType === 'LOCK_PERIOD') {
@@ -189,16 +253,15 @@ const applyApprovalSideEffect = async (params: {
             createdAt: now,
             updatedAt: now,
         };
-        await upsertFinancialPeriods(db, businessId, currentSettings, [nextPeriod, ...periods]);
-        return;
+        return { operationsPeriods: [nextPeriod, ...periods] } satisfies Record<string, unknown>;
     }
 
     if (approval.actionType === 'CLOSE_PERIOD' || approval.actionType === 'REOPEN_PERIOD') {
         const periodId = typeof approval.payload.periodId === 'string' ? approval.payload.periodId : '';
-        if (!periodId) return;
+        if (!periodId) return {};
         const periods = getFinancialPeriods(currentSettings);
         const idx = periods.findIndex((entry) => entry.id === periodId);
-        if (idx < 0) return;
+        if (idx < 0) return {};
         const targetStatus: PeriodStatus = approval.actionType === 'CLOSE_PERIOD' ? 'CLOSED' : 'OPEN';
         const updated = {
             ...periods[idx],
@@ -208,8 +271,10 @@ const applyApprovalSideEffect = async (params: {
         };
         const next = [...periods];
         next[idx] = updated;
-        await upsertFinancialPeriods(db, businessId, currentSettings, next);
+        return { operationsPeriods: next } satisfies Record<string, unknown>;
     }
+
+    return {};
 };
 
 const assertOperationsModuleAccess = (business: typeof businesses.$inferSelect) => {
@@ -316,17 +381,42 @@ operationsRoute.put('/controls', async (c) => {
                 reviewedAt: null,
                 reviewNote: null,
             };
-            await appendApproval(db, business.id, currentSettings, approval);
+            await appendApproval(
+                db,
+                business.id,
+                currentSettings,
+                approval,
+                createAuditLogEntry({
+                    action: 'OPERATIONS_CONTROLS_APPROVAL_REQUESTED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'approval',
+                    entityId: approval.id,
+                    after: asRecord(approval),
+                    metadata: {
+                        actionType: approval.actionType,
+                        module: approval.module,
+                    },
+                })
+            );
             return c.json({ ok: true, approvalId: approval.id, status: 'PENDING_APPROVAL' });
         }
 
-        await db.update(businesses).set({
-            settings: {
-                ...currentSettings,
-                operationsControls: nextControls,
-            },
-            updatedAt: new Date(),
-        }).where(eq(businesses.id, business.id));
+        await updateOperationsSettings(db, business.id, currentSettings, {
+            operationsControls: nextControls,
+            operationsAuditLogs: trimAuditLogs([
+                createAuditLogEntry({
+                    action: 'OPERATIONS_CONTROLS_UPDATED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'operations_controls',
+                    entityId: business.id,
+                    before: asRecord(currentControls),
+                    after: asRecord(nextControls),
+                }),
+                ...getAuditLogs(currentSettings),
+            ]),
+        });
 
         return c.json({ ok: true, controls: nextControls });
     } catch (error) {
@@ -394,7 +484,24 @@ operationsRoute.post('/approvals', async (c) => {
             reviewNote: null,
         };
 
-        await appendApproval(db, business.id, settings, approval);
+        await appendApproval(
+            db,
+            business.id,
+            settings,
+            approval,
+            createAuditLogEntry({
+                action: 'OPERATIONS_APPROVAL_REQUESTED',
+                actorUid: authUser.id,
+                actorRole: c.get('organizationRole') ?? null,
+                entityType: 'approval',
+                entityId: approval.id,
+                after: asRecord(approval),
+                metadata: {
+                    actionType: approval.actionType,
+                    module: approval.module,
+                },
+            })
+        );
         return c.json({ ok: true, approvalId: approval.id });
     } catch (error) {
         const mapped = toApiErrorPayload(error, {
@@ -430,16 +537,6 @@ operationsRoute.post('/approvals/:id/approve', async (c) => {
             return c.json({ ok: false, message: 'Approval is already finalized.' }, 400);
         }
 
-        await applyApprovalSideEffect({
-            db,
-            businessId: business.id,
-            currentSettings: settings,
-            approval: current,
-        });
-
-        const refreshedBusinessRows = await db.select().from(businesses).where(eq(businesses.id, business.id)).limit(1);
-        const refreshedSettings = (refreshedBusinessRows[0]?.settings ?? settings) as Record<string, unknown>;
-
         const updated: OperationApproval = {
             ...current,
             status: 'APPROVED',
@@ -450,7 +547,29 @@ operationsRoute.post('/approvals/:id/approve', async (c) => {
         };
         const nextApprovals = [...approvals];
         nextApprovals[index] = updated;
-        await upsertApprovals(db, business.id, refreshedSettings, nextApprovals);
+        await updateOperationsSettings(db, business.id, settings, {
+            ...buildApprovalSideEffectPatch({
+                currentSettings: settings,
+                approval: current,
+            }),
+            operationsApprovals: nextApprovals,
+            operationsAuditLogs: trimAuditLogs([
+                createAuditLogEntry({
+                    action: 'OPERATIONS_APPROVAL_APPROVED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'approval',
+                    entityId: current.id,
+                    before: asRecord(current),
+                    after: asRecord(updated),
+                    metadata: {
+                        actionType: current.actionType,
+                        module: current.module,
+                    },
+                }),
+                ...getAuditLogs(settings),
+            ]),
+        });
 
         return c.json({ ok: true, approval: updated });
     } catch (error) {
@@ -498,7 +617,28 @@ operationsRoute.post('/approvals/:id/reject', async (c) => {
         };
         const next = [...approvals];
         next[index] = updated;
-        await upsertApprovals(db, business.id, settings, next);
+        await upsertApprovals(
+            db,
+            business.id,
+            settings,
+            next,
+            [
+                createAuditLogEntry({
+                    action: 'OPERATIONS_APPROVAL_REJECTED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'approval',
+                    entityId: updated.id,
+                    before: asRecord(approvals[index]),
+                    after: asRecord(updated),
+                    metadata: {
+                        actionType: updated.actionType,
+                        module: updated.module,
+                    },
+                }),
+                ...getAuditLogs(settings),
+            ]
+        );
 
         return c.json({ ok: true, approval: updated });
     } catch (error) {
@@ -522,23 +662,11 @@ operationsRoute.get('/audit-logs', async (c) => {
         ?? await ensurePrimaryBusiness(db, authUser);
     assertOperationsModuleAccess(business);
     const limit = Math.min(Number(c.req.query('limit') ?? 50), 500);
-    const rows = await db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(limit);
+    const settings = (business.settings ?? {}) as Record<string, unknown>;
 
     return c.json({
         ok: true,
-        logs: rows.map((entry) => ({
-            id: entry.id,
-            module: 'admin',
-            action: entry.action,
-            entityType: entry.entityType,
-            entityId: entry.entityId,
-            actorUid: entry.adminEmail,
-            actorRole: entry.adminRole,
-            before: null,
-            after: null,
-            metadata: entry.metadataJson,
-            createdAt: entry.createdAt,
-        })),
+        logs: getAuditLogs(settings).slice(0, limit),
     });
 });
 
@@ -600,7 +728,24 @@ operationsRoute.post('/periods/lock', async (c) => {
                 reviewedAt: null,
                 reviewNote: null,
             };
-            await appendApproval(db, business.id, settings, approval);
+            await appendApproval(
+                db,
+                business.id,
+                settings,
+                approval,
+                createAuditLogEntry({
+                    action: 'OPERATIONS_PERIOD_LOCK_APPROVAL_REQUESTED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'approval',
+                    entityId: approval.id,
+                    after: asRecord(approval),
+                    metadata: {
+                        actionType: approval.actionType,
+                        module: approval.module,
+                    },
+                })
+            );
             return c.json({ ok: true, approvalId: approval.id, status: 'PENDING_APPROVAL' });
         }
 
@@ -621,7 +766,23 @@ operationsRoute.post('/periods/lock', async (c) => {
             updatedAt: now,
         };
 
-        await upsertFinancialPeriods(db, business.id, settings, [nextPeriod, ...current]);
+        await upsertFinancialPeriods(
+            db,
+            business.id,
+            settings,
+            [nextPeriod, ...current],
+            [
+                createAuditLogEntry({
+                    action: 'OPERATIONS_PERIOD_LOCKED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'financial_period',
+                    entityId: nextPeriod.id,
+                    after: asRecord(nextPeriod),
+                }),
+                ...getAuditLogs(settings),
+            ]
+        );
         return c.json({ ok: true, id, period: nextPeriod });
     } catch (error) {
         const mapped = toApiErrorPayload(error, {
@@ -667,7 +828,24 @@ operationsRoute.post('/periods/:id/close', async (c) => {
                 reviewedAt: null,
                 reviewNote: null,
             };
-            await appendApproval(db, business.id, settings, approval);
+            await appendApproval(
+                db,
+                business.id,
+                settings,
+                approval,
+                createAuditLogEntry({
+                    action: 'OPERATIONS_PERIOD_CLOSE_APPROVAL_REQUESTED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'approval',
+                    entityId: approval.id,
+                    after: asRecord(approval),
+                    metadata: {
+                        actionType: approval.actionType,
+                        module: approval.module,
+                    },
+                })
+            );
             return c.json({ ok: true, approvalId: approval.id, status: 'PENDING_APPROVAL' });
         }
         const current = getFinancialPeriods(settings);
@@ -684,7 +862,24 @@ operationsRoute.post('/periods/:id/close', async (c) => {
         const next = [...current];
         next[idx] = updated;
 
-        await upsertFinancialPeriods(db, business.id, settings, next);
+        await upsertFinancialPeriods(
+            db,
+            business.id,
+            settings,
+            next,
+            [
+                createAuditLogEntry({
+                    action: 'OPERATIONS_PERIOD_CLOSED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'financial_period',
+                    entityId: updated.id,
+                    before: asRecord(current[idx]),
+                    after: asRecord(updated),
+                }),
+                ...getAuditLogs(settings),
+            ]
+        );
         return c.json({ ok: true, period: updated });
     } catch (error) {
         const mapped = toApiErrorPayload(error, {
@@ -730,7 +925,24 @@ operationsRoute.post('/periods/:id/reopen', async (c) => {
                 reviewedAt: null,
                 reviewNote: null,
             };
-            await appendApproval(db, business.id, settings, approval);
+            await appendApproval(
+                db,
+                business.id,
+                settings,
+                approval,
+                createAuditLogEntry({
+                    action: 'OPERATIONS_PERIOD_REOPEN_APPROVAL_REQUESTED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'approval',
+                    entityId: approval.id,
+                    after: asRecord(approval),
+                    metadata: {
+                        actionType: approval.actionType,
+                        module: approval.module,
+                    },
+                })
+            );
             return c.json({ ok: true, approvalId: approval.id, status: 'PENDING_APPROVAL' });
         }
         const current = getFinancialPeriods(settings);
@@ -747,7 +959,24 @@ operationsRoute.post('/periods/:id/reopen', async (c) => {
         const next = [...current];
         next[idx] = updated;
 
-        await upsertFinancialPeriods(db, business.id, settings, next);
+        await upsertFinancialPeriods(
+            db,
+            business.id,
+            settings,
+            next,
+            [
+                createAuditLogEntry({
+                    action: 'OPERATIONS_PERIOD_REOPENED',
+                    actorUid: authUser.id,
+                    actorRole: c.get('organizationRole') ?? null,
+                    entityType: 'financial_period',
+                    entityId: updated.id,
+                    before: asRecord(current[idx]),
+                    after: asRecord(updated),
+                }),
+                ...getAuditLogs(settings),
+            ]
+        );
         return c.json({ ok: true, period: updated });
     } catch (error) {
         const mapped = toApiErrorPayload(error, {

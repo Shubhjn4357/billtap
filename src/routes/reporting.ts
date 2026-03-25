@@ -10,6 +10,7 @@ import {
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import { ensurePrimaryBusiness, getAccessibleBusiness, getActiveSubscription, getRequestedBusinessId } from './helpers';
 import { assertFeatureFlag, assertModuleEnabled } from '../services/subscriptionPolicy';
+import { ensureDefaultAccounts } from '../services/accountingDefaults';
 
 const reportingRoute = new Hono<AppEnv>();
 
@@ -27,6 +28,32 @@ const toCsv = (rows: Array<Record<string, unknown>>) => {
         lines.push(headers.map((header) => escape(row[header])).join(','));
     }
     return lines.join('\n');
+};
+
+const asMetadataRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+const deriveTransactionType = (entry: typeof invoices.$inferSelect) => {
+    const metadata = asMetadataRecord(entry.gstRateBreakupJson);
+    const rawType = typeof metadata.transactionType === 'string'
+        ? metadata.transactionType.toUpperCase()
+        : '';
+    if (rawType === 'SALE' || rawType === 'PURCHASE' || rawType === 'RETURN_INWARD' || rawType === 'RETURN_OUTWARD') {
+        return rawType;
+    }
+    if (entry.invoiceType === 'CREDIT_NOTE_DOC') return 'RETURN_INWARD';
+    if (entry.invoiceType === 'DEBIT_NOTE_DOC') return 'RETURN_OUTWARD';
+    return 'SALE';
+};
+
+const deriveDocumentKind = (entry: typeof invoices.$inferSelect) => {
+    const metadata = asMetadataRecord(entry.gstRateBreakupJson);
+    const documentKind = typeof metadata.documentKind === 'string'
+        ? metadata.documentKind.trim().toUpperCase()
+        : '';
+    return documentKind || entry.invoiceType;
 };
 
 reportingRoute.use('/*', requireAuth);
@@ -69,6 +96,7 @@ reportingRoute.get('/pnl', async (c) => {
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
     assertModuleEnabled(business, 'reports');
+    await ensureDefaultAccounts(db, business.id);
 
     const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
     const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
@@ -122,6 +150,7 @@ reportingRoute.get('/balance-sheet', async (c) => {
     const subscription = await getActiveSubscription(db, business.id);
     assertFeatureFlag(subscription, 'ADVANCED_REPORTS');
     assertModuleEnabled(business, 'reports');
+    await ensureDefaultAccounts(db, business.id);
 
     const accountRows = await db.select().from(accounts).where(eq(accounts.businessId, business.id));
     const voucherRows = await db.select().from(vouchers).where(eq(vouchers.businessId, business.id));
@@ -165,31 +194,47 @@ reportingRoute.get('/balance-sheet', async (c) => {
     const assets = accountRows
         .filter((entry) => entry.type === 'ASSET')
         .map((entry) => ({
-            account: entry.name,
+            accountId: entry.id,
+            accountName: entry.name,
+            accountType: entry.type,
             amount: (totals.get(entry.id)?.debit ?? 0) - (totals.get(entry.id)?.credit ?? 0),
         }));
     
     // Inject calculated Receivables if greater than 0
     if (receivables !== 0) {
-        assets.push({ account: 'Accounts Receivable (Calculated)', amount: receivables });
+        assets.push({
+            accountId: 'calculated_receivables',
+            accountName: 'Accounts Receivable (Calculated)',
+            accountType: 'ASSET',
+            amount: receivables,
+        });
     }
 
     const liabilities = accountRows
         .filter((entry) => entry.type === 'LIABILITY')
         .map((entry) => ({
-            account: entry.name,
+            accountId: entry.id,
+            accountName: entry.name,
+            accountType: entry.type,
             amount: (totals.get(entry.id)?.credit ?? 0) - (totals.get(entry.id)?.debit ?? 0),
         }));
     
     // Inject calculated Payables if greater than 0
     if (payables !== 0) {
-        liabilities.push({ account: 'Accounts Payable (Calculated)', amount: payables });
+        liabilities.push({
+            accountId: 'calculated_payables',
+            accountName: 'Accounts Payable (Calculated)',
+            accountType: 'LIABILITY',
+            amount: payables,
+        });
     }
 
     const equity = accountRows
         .filter((entry) => entry.type === 'EQUITY')
         .map((entry) => ({
-            account: entry.name,
+            accountId: entry.id,
+            accountName: entry.name,
+            accountType: entry.type,
             amount: (totals.get(entry.id)?.credit ?? 0) - (totals.get(entry.id)?.debit ?? 0),
         }));
 
@@ -227,6 +272,8 @@ reportingRoute.get('/export/transactions', async (c) => {
         invoiceNumber: entry.invoiceNumber,
         invoiceDate: entry.invoiceDate,
         invoiceType: entry.invoiceType,
+        transactionType: deriveTransactionType(entry),
+        documentKind: deriveDocumentKind(entry),
         totalInvoiceValue: entry.totalInvoiceValue,
         totalTaxAmount: entry.totalTaxAmount,
         paymentStatus: entry.paymentStatus,

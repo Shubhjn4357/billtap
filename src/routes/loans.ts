@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { eq, and, desc } from 'drizzle-orm';
 import { loans, loanTransactions } from '../db/schema';
+import { withTransaction } from '../db/transaction';
 import { requireAuth, type AppEnv } from '../middleware/auth';
 import {
     getAccessibleBusiness,
@@ -203,7 +204,7 @@ loansRoute.post('/:id/transactions', async (c) => {
         const signed = body.transactionType === 'DISBURSEMENT' ? body.amount : -body.amount;
         const newBalance = loan.currentBalance + signed;
 
-        const txn = await db.transaction(async (tx) => {
+        const txn = await withTransaction(db, async (tx) => {
             const [t] = await tx.insert(loanTransactions).values({
                 id: `ltxn_${nanoid(16)}`,
                 loanId,
