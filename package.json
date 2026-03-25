@@ -52,7 +52,7 @@
     "expo": "~55.0.4",
     "expo-background-fetch": "^55.0.10",
     "expo-background-task": "~55.0.10",
-    "expo-camera": "~55.0.10",
+    "expo-camera": "~55.0.11",
     "expo-clipboard": "^55.0.9",
     "expo-constants": "~55.0.9",
     "expo-dev-client": "^55.0.10",
