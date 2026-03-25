@@ -11,6 +11,7 @@ import { Radius, Spacing, type ColorPalette } from '../../../constants/theme';
 import { getSurfaceStyle, DESIGN_SPACING } from '../../../constants/designSystem';
 import { HubMetricCard } from '../../../components/ui/HubBlocks';
 import { AppInput } from '../../../components/ui/AppInput';
+import { SelectField, type SelectOption } from '../../../components/ui/SelectField';
 import type { Account } from '../../../types/domain';
 
 type JournalLine = {
@@ -28,6 +29,14 @@ export default function JournalScreen() {
     const { createJournal, isCreatingJournal } = useAccountingAccountMutations();
     const { accounts } = useAccountingAccounts();
     const activeAccounts = useMemo(() => accounts.filter((a: Account) => a.isActive !== false), [accounts]);
+    const accountOptions = useMemo<SelectOption[]>(
+        () => activeAccounts.map((account) => ({
+            label: account.name,
+            value: account.id,
+            description: `${account.code} | ${account.type}`,
+        })),
+        [activeAccounts]
+    );
 
     const [narration, setNarration] = useState('');
     const [lines, setLines] = useState<JournalLine[]>([
@@ -113,12 +122,13 @@ export default function JournalScreen() {
                                 </TouchableOpacity>
 
                                 <View style={s.accountPickerWrap}>
-                                    <View style={s.fakeSelect}>
-                                        <Text style={{ color: line.accountId ? colors.text : colors.textSecondary }}>
-                                            {activeAccounts.find((a: Account) => a.id === line.accountId)?.name || 'Select Account...'}
-                                        </Text>
-                                        <MaterialCommunityIcons name="chevron-down" size={20} color={colors.textSecondary} />
-                                    </View>
+                                    <SelectField
+                                        value={line.accountId || null}
+                                        onChange={(value) => handleUpdateLine(line.key, { accountId: value })}
+                                        options={accountOptions}
+                                        placeholder="Select Account..."
+                                        title="Select Account"
+                                    />
                                 </View>
 
                                 <AppInput
@@ -180,7 +190,6 @@ const styles = (colors: ColorPalette) => StyleSheet.create({
     typeBtn: { width: 44, height: 44, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
     typeBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
     accountPickerWrap: { flex: 1 },
-    fakeSelect: { height: 44, borderWidth: 1, borderColor: colors.border, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     amountInput: { width: 90, marginBottom: 0 },
     removeBtn: { padding: Spacing.xs },
     footer: { padding: DESIGN_SPACING.screenX, paddingBottom: Platform.OS === 'ios' ? DESIGN_SPACING.screenX : DESIGN_SPACING.screenX, borderTopWidth: 1, borderColor: colors.border },

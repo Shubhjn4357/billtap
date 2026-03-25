@@ -31,9 +31,8 @@ export function useInvoiceMutations() {
             await invalidateInvoiceViews(queryClient, businessId);
 
             try {
-                const isDeduction = payload.transactionType === 'SALE' 
-                    || payload.invoiceType === 'TAX_INVOICE' 
-                    || payload.invoiceType === 'BILL_OF_SUPPLY' 
+                const isDeduction = payload.transactionType === 'SALE'
+                    || payload.transactionType === 'RETURN_OUTWARD'
                     || payload.invoiceType === 'POS_BILL';
 
                 if (isDeduction && payload.items && payload.items.length > 0) {

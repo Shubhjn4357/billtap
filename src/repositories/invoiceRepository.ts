@@ -118,6 +118,13 @@ const KNOWN_SERVER_INVOICE_TYPES = new Set([
     'POS_BILL',
 ]);
 
+const KNOWN_CLIENT_INVOICE_TYPES = new Set([
+    ...KNOWN_SERVER_INVOICE_TYPES,
+    'PURCHASE_BILL',
+    'SALE_ORDER',
+    'PURCHASE_ORDER',
+]);
+
 const NON_POSTING_DOC_KINDS = new Set([
     'ESTIMATE',
     'PROFORMA',
@@ -163,8 +170,8 @@ const normalizeTransactionType = (payload: InvoiceCreateInput): TransactionType 
 
     const rawKind = String(payload.documentKind ?? payload.invoiceType ?? '').toUpperCase();
     if (rawKind === 'PURCHASE_BILL' || rawKind === 'PURCHASE_ORDER') return 'PURCHASE';
-    if (rawKind === 'DEBIT_NOTE_DOC') return 'RETURN_INWARD';
-    if (rawKind === 'CREDIT_NOTE_DOC') return 'RETURN_OUTWARD';
+    if (rawKind === 'CREDIT_NOTE_DOC') return 'RETURN_INWARD';
+    if (rawKind === 'DEBIT_NOTE_DOC') return 'RETURN_OUTWARD';
     return 'SALE';
 };
 
@@ -200,6 +207,20 @@ const toInvoicePaymentStatus = (
     if (paidAmount >= totalAmount && totalAmount > 0) return 'PAID';
     if (paidAmount > 0) return 'PARTIALLY_PAID';
     return 'UNPAID';
+};
+
+const resolveClientInvoiceType = (rawInvoiceType: unknown, rawDocumentKind: unknown) => {
+    const documentKind = String(rawDocumentKind ?? '').toUpperCase();
+    if (KNOWN_CLIENT_INVOICE_TYPES.has(documentKind)) {
+        return documentKind as Invoice['invoiceType'];
+    }
+
+    const invoiceType = String(rawInvoiceType ?? '').toUpperCase();
+    if (KNOWN_CLIENT_INVOICE_TYPES.has(invoiceType)) {
+        return invoiceType as Invoice['invoiceType'];
+    }
+
+    return 'TAX_INVOICE' as Invoice['invoiceType'];
 };
 
 const mapBuilderToServerCreatePayload = (payload: InvoiceCreateInput) => {
@@ -277,11 +298,7 @@ const mapServerTransactionToInvoice = (
     const invoiceId = raw.id || fallback.id || offlineSyncService.createLocalId('inv');
     const documentKind = String(raw.documentKind ?? '').toUpperCase();
     const rawInvoiceType = String(raw.invoiceType ?? '').toUpperCase();
-    const invoiceType = (KNOWN_SERVER_INVOICE_TYPES.has(rawInvoiceType)
-        ? rawInvoiceType
-        : KNOWN_SERVER_INVOICE_TYPES.has(documentKind)
-            ? documentKind
-            : 'TAX_INVOICE') as Invoice['invoiceType'];
+    const invoiceType = resolveClientInvoiceType(rawInvoiceType, documentKind);
 
     const mappedItems = (raw.items ?? []).map((entry, index) => {
         const quantity = toNumber(entry.quantity, 0);
@@ -405,6 +422,7 @@ const buildLocalInvoiceFromBuilder = (
     const items = payload.items ?? [];
     const transactionType = normalizeTransactionType(payload);
     const documentKind = toDocumentKind(payload);
+    const clientInvoiceType = resolveClientInvoiceType(toServerInvoiceType(payload), documentKind);
     const tcsAmount = toNumber(payload.tcsAmount, 0);
     const tdsAmount = toNumber(payload.tdsAmount, 0);
     const totalTaxableValue = items.reduce((sum, line) => sum + Number(line.taxableValue), 0);
@@ -429,7 +447,7 @@ const buildLocalInvoiceFromBuilder = (
     return {
         id,
         businessId: getRuntimeBusinessId() ?? 'offline',
-        invoiceType: toServerInvoiceType(payload) as Invoice['invoiceType'],
+        invoiceType: clientInvoiceType,
         invoiceNumber:
             payload.invoiceNumber
             || `OFF-${new Date().getFullYear()}-${id.slice(-6).toUpperCase()}`,

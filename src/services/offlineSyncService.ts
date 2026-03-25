@@ -91,6 +91,7 @@ type QueueMutation =
     | (QueueMutationBase & { type: 'record_invoice_payment'; payload: { invoiceId: string; paidAmount?: number; paymentMode?: string; date?: string } })
     | (QueueMutationBase & { type: 'delete_invoice'; payload: { id: string } })
     | (QueueMutationBase & { type: 'update_settings_section'; payload: { section: string; data: Record<string, unknown> } })
+    | (QueueMutationBase & { type: 'reset_settings_section'; payload: { section: string } })
     | (QueueMutationBase & { type: 'create_expense'; payload: Record<string, unknown> & { localId?: string } })
     | (QueueMutationBase & { type: 'upsert_expense'; payload: Record<string, unknown> & { id: string } })
     | (QueueMutationBase & { type: 'archive_expense'; payload: { id: string } })
@@ -135,6 +136,7 @@ type EnqueueMutation =
     | { type: 'record_invoice_payment'; payload: { invoiceId: string; paidAmount?: number; paymentMode?: string; date?: string } }
     | { type: 'delete_invoice'; payload: { id: string } }
     | { type: 'update_settings_section'; payload: { section: string; data: Record<string, unknown> } }
+    | { type: 'reset_settings_section'; payload: { section: string } }
     | { type: 'create_expense'; payload: Record<string, unknown> & { localId?: string } }
     | { type: 'upsert_expense'; payload: Record<string, unknown> & { id: string } }
     | { type: 'archive_expense'; payload: { id: string } }
@@ -332,8 +334,8 @@ const asUpsertExpenseMutation = (
 
 const asSettingsMutation = (
     mutation: QueueMutation
-): Extract<QueueMutation, { type: 'update_settings_section' }> | null =>
-    mutation.type === 'update_settings_section' ? mutation : null;
+): Extract<QueueMutation, { type: 'update_settings_section' | 'reset_settings_section' }> | null =>
+    mutation.type === 'update_settings_section' || mutation.type === 'reset_settings_section' ? mutation : null;
 
 const asRecordPaymentMutation = (
     mutation: QueueMutation
@@ -402,8 +404,8 @@ const compactQueueForEnqueue = (
         ];
     }
 
-    if (mutation.type === 'update_settings_section') {
-        const typed = mutation as Extract<EnqueueMutation, { type: 'update_settings_section' }>;
+    if (mutation.type === 'update_settings_section' || mutation.type === 'reset_settings_section') {
+        const typed = mutation as Extract<EnqueueMutation, { type: 'update_settings_section' | 'reset_settings_section' }>;
         const targetSection = typed.payload.section;
         return [
             ...queue.filter((entry) => {
@@ -565,6 +567,31 @@ const normalizeItemAdjustmentPayload = (
 
 const normalizeCashBankPayload = (payload: Record<string, unknown>) => ({
     ...payload,
+    accountId:
+        typeof payload.accountId === 'string' && payload.accountId.trim().length > 0
+            ? payload.accountId.trim()
+            : undefined,
+    fromAccountId:
+        typeof payload.fromAccountId === 'string' && payload.fromAccountId.trim().length > 0
+            ? payload.fromAccountId.trim()
+            : undefined,
+    toAccountId:
+        typeof payload.toAccountId === 'string' && payload.toAccountId.trim().length > 0
+            ? payload.toAccountId.trim()
+            : undefined,
+    partyId:
+        typeof payload.partyId === 'string' && payload.partyId.trim().length > 0
+            ? payload.partyId.trim()
+            : undefined,
+    paymentMode:
+        typeof payload.paymentMode === 'string' && payload.paymentMode.trim().length > 0
+            ? payload.paymentMode.trim().toUpperCase()
+            : undefined,
+    date: (() => {
+        if (typeof payload.date !== 'string' || payload.date.trim().length === 0) return undefined;
+        const parsed = new Date(payload.date);
+        return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+    })(),
     narration:
         typeof payload.narration === 'string'
             ? payload.narration
@@ -572,6 +599,395 @@ const normalizeCashBankPayload = (payload: Record<string, unknown>) => ({
                 ? payload.description
                 : undefined,
 });
+
+const normalizeOptionalString = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const normalizeIsoDateString = (value: unknown): string | undefined => {
+    if (typeof value !== 'string' || value.trim().length === 0) return undefined;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+};
+
+const normalizeInvoiceMutationPayload = (payload: Record<string, unknown>) => ({
+    ...payload,
+    id: normalizeOptionalString(payload.id),
+    localId: normalizeOptionalString(payload.localId),
+    type: normalizeOptionalString(payload.type)?.toUpperCase() ?? 'SALE',
+    documentKind: normalizeOptionalString(payload.documentKind)?.toUpperCase(),
+    invoiceType: normalizeOptionalString(payload.invoiceType)?.toUpperCase(),
+    partyId: normalizeOptionalString(payload.partyId),
+    partyName: normalizeOptionalString(payload.partyName),
+    partyPhone: normalizeOptionalString(payload.partyPhone),
+    billNumber: normalizeOptionalString(payload.billNumber),
+    billDate: normalizeIsoDateString(payload.billDate),
+    paymentMode: normalizeOptionalString(payload.paymentMode)?.toUpperCase(),
+    paymentStatus: normalizeOptionalString(payload.paymentStatus)?.toUpperCase(),
+    billMode: normalizeOptionalString(payload.billMode)?.toUpperCase(),
+    placeOfSupply: normalizeOptionalString(payload.placeOfSupply),
+    godownId: normalizeOptionalString(payload.godownId),
+    eInvoiceIrn: normalizeOptionalString(payload.eInvoiceIrn),
+    eInvoiceStatus: normalizeOptionalString(payload.eInvoiceStatus),
+    eWayBillNumber: normalizeOptionalString(payload.eWayBillNumber),
+    dueDate: normalizeIsoDateString(payload.dueDate),
+    nextReminderAt: normalizeIsoDateString(payload.nextReminderAt),
+    remark: normalizeOptionalString(payload.remark),
+    sourceVoucherId: normalizeOptionalString(payload.sourceVoucherId),
+    items: Array.isArray(payload.items)
+        ? payload.items
+            .map((entry) => {
+                const row = entry && typeof entry === 'object' && !Array.isArray(entry)
+                    ? entry as Record<string, unknown>
+                    : {};
+                return {
+                    id: normalizeOptionalString(row.id),
+                    godownId: normalizeOptionalString(row.godownId),
+                    name: normalizeOptionalString(row.name ?? row.description) ?? '',
+                    quantity: Number(row.quantity ?? 0),
+                    price: Number(row.price ?? row.rate ?? 0),
+                    tax: Number(row.tax ?? row.gstRate ?? 0),
+                    total: Number(row.total ?? 0),
+                };
+            })
+            .filter((entry) => entry.name.length > 0 && entry.quantity > 0)
+        : [],
+});
+
+const normalizeExpenseMutationPayload = (payload: Record<string, unknown>) => ({
+    ...payload,
+    id: normalizeOptionalString(payload.id),
+    localId: normalizeOptionalString(payload.localId),
+    category: normalizeOptionalString(payload.category)?.toUpperCase(),
+    amount: Number(payload.amount ?? 0),
+    date: normalizeIsoDateString(payload.date ?? payload.expenseDate),
+    description: normalizeOptionalString(payload.description),
+    paymentMode: normalizeOptionalString(payload.paymentMode)?.toUpperCase(),
+    partyId: normalizeOptionalString(payload.partyId),
+    receiptUrl: normalizeOptionalString(payload.receiptUrl),
+    accountId: normalizeOptionalString(payload.accountId),
+});
+
+const normalizeLoanMutationPayload = (payload: Record<string, unknown>) => ({
+    ...payload,
+    id: normalizeOptionalString(payload.id),
+    localId: normalizeOptionalString(payload.localId),
+    lenderBorrowerName: normalizeOptionalString(payload.lenderBorrowerName) ?? '',
+    loanType: normalizeOptionalString(payload.loanType)?.toUpperCase() ?? 'BORROWED',
+    openingDate: normalizeIsoDateString(payload.openingDate ?? payload.startDate),
+    openingBalance: Number(payload.openingBalance ?? payload.principalAmount ?? 0),
+    interestRatePercent: Number(payload.interestRatePercent ?? 0),
+    emiAmount: Number.isFinite(Number(payload.emiAmount)) && Number(payload.emiAmount) > 0
+        ? Number(payload.emiAmount)
+        : undefined,
+    partyId: normalizeOptionalString(payload.partyId),
+    accountId: normalizeOptionalString(payload.accountId),
+    notes: normalizeOptionalString(payload.notes),
+});
+
+const normalizeJournalPayload = (payload: {
+    date?: string;
+    narration?: string;
+    lines: { accountId: string; debit?: number; credit?: number }[];
+}) => ({
+    date: normalizeIsoDateString(payload.date),
+    narration: normalizeOptionalString(payload.narration),
+    lines: (payload.lines ?? [])
+        .map((line) => ({
+            accountId: normalizeOptionalString(line.accountId) ?? '',
+            debit: Number(line.debit ?? 0),
+            credit: Number(line.credit ?? 0),
+        }))
+          .filter((line) => line.accountId.length > 0),
+  });
+
+type DependencyBlock = {
+    code: string;
+    message: string;
+    status: 'retrying' | 'blocked_upgrade' | 'conflict_manual';
+};
+
+const toTrimmedId = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+};
+
+const uniqueIds = (values: unknown[]): string[] =>
+    Array.from(new Set(values.map(toTrimmedId).filter((value): value is string => value !== null)));
+
+const asMutationObjectArray = (value: unknown): Record<string, unknown>[] =>
+    Array.isArray(value)
+        ? value
+            .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry))
+            .map((entry) => entry as Record<string, unknown>)
+        : [];
+
+const getMutationReferenceItemIds = (mutation: QueueMutation): string[] => {
+    switch (mutation.type) {
+        case 'create_invoice':
+            return uniqueIds(
+                asMutationObjectArray((mutation.payload as Record<string, unknown>).items)
+                    .map((entry) => entry.id ?? entry.itemId)
+            );
+        case 'create_pos_sale':
+            return uniqueIds(
+                asMutationObjectArray((mutation.payload as Record<string, unknown>).items)
+                    .map((entry) => entry.itemId ?? entry.id)
+            );
+        case 'transfer_godown_stock':
+            return uniqueIds([mutation.payload.itemId]);
+        default:
+            return [];
+    }
+};
+
+const getMutationReferencePartyIds = (mutation: QueueMutation): string[] => {
+    switch (mutation.type) {
+        case 'create_invoice':
+        case 'create_expense':
+        case 'upsert_expense':
+        case 'create_loan':
+        case 'cash_bank_deposit':
+        case 'cash_bank_withdraw':
+        case 'create_pos_sale':
+            return uniqueIds([(mutation.payload as Record<string, unknown>).partyId]);
+        default:
+            return [];
+    }
+};
+
+const getMutationReferenceAccountIds = (mutation: QueueMutation): string[] => {
+    switch (mutation.type) {
+        case 'create_expense':
+        case 'upsert_expense':
+        case 'create_loan':
+        case 'cash_bank_deposit':
+        case 'cash_bank_withdraw':
+            return uniqueIds([(mutation.payload as Record<string, unknown>).accountId]);
+        case 'cash_bank_transfer':
+            return uniqueIds([
+                (mutation.payload as Record<string, unknown>).fromAccountId,
+                (mutation.payload as Record<string, unknown>).toAccountId,
+            ]);
+        case 'create_journal':
+            return uniqueIds(
+                asMutationObjectArray((mutation.payload as Record<string, unknown>).lines)
+                    .map((entry) => entry.accountId)
+            );
+        default:
+            return [];
+    }
+};
+
+const getMutationReferenceGodownIds = (mutation: QueueMutation): string[] => {
+    switch (mutation.type) {
+        case 'create_invoice': {
+            const payload = mutation.payload as Record<string, unknown>;
+            const lineGodownIds = asMutationObjectArray(payload.items).map((entry) => entry.godownId);
+            return uniqueIds([payload.godownId, ...lineGodownIds]);
+        }
+        case 'transfer_godown_stock':
+            return uniqueIds([mutation.payload.fromGodownId, mutation.payload.toGodownId]);
+        default:
+            return [];
+    }
+};
+
+const getMutationReferenceLoanIds = (mutation: QueueMutation): string[] => {
+    switch (mutation.type) {
+        case 'add_loan_transaction':
+            return uniqueIds([mutation.payload.loanId]);
+        default:
+            return [];
+    }
+};
+
+const getMutationReferenceInvoiceIds = (mutation: QueueMutation): string[] => {
+    switch (mutation.type) {
+        case 'record_invoice_payment':
+            return uniqueIds([mutation.payload.invoiceId]);
+        default:
+            return [];
+    }
+};
+
+const classifyBlockingItemMutation = (mutation: QueueMutation, itemId: string): 'pending' | 'removing' | null => {
+    switch (mutation.type) {
+        case 'upsert_item':
+        case 'restore_item':
+            return mutation.payload.id === itemId ? 'pending' : null;
+        case 'delete_item':
+        case 'permanent_delete_item':
+            return mutation.payload.id === itemId ? 'removing' : null;
+        default:
+            return null;
+    }
+};
+
+const classifyBlockingPartyMutation = (mutation: QueueMutation, partyId: string): 'pending' | 'removing' | null => {
+    switch (mutation.type) {
+        case 'upsert_party':
+        case 'restore_party':
+            return mutation.payload.id === partyId ? 'pending' : null;
+        case 'archive_party':
+        case 'permanent_delete_party':
+            return mutation.payload.id === partyId ? 'removing' : null;
+        default:
+            return null;
+    }
+};
+
+const classifyBlockingAccountMutation = (mutation: QueueMutation, accountId: string): 'pending' | 'removing' | null => {
+    switch (mutation.type) {
+        case 'create_accounting_account':
+            return mutation.payload.id === accountId ? 'pending' : null;
+        case 'deactivate_accounting_account':
+            return mutation.payload.id === accountId ? 'removing' : null;
+        default:
+            return null;
+    }
+};
+
+const classifyBlockingGodownMutation = (mutation: QueueMutation, godownId: string): 'pending' | 'removing' | null => {
+    switch (mutation.type) {
+        case 'create_godown': {
+            const payload = mutation.payload as Record<string, unknown>;
+            return toTrimmedId(payload.id) === godownId || toTrimmedId(payload.localId) === godownId
+                ? 'pending'
+                : null;
+        }
+        case 'delete_godown':
+            return mutation.payload.id === godownId ? 'removing' : null;
+        default:
+            return null;
+    }
+};
+
+const classifyBlockingLoanMutation = (mutation: QueueMutation, loanId: string): 'pending' | 'removing' | null => {
+    switch (mutation.type) {
+        case 'create_loan': {
+            const payload = mutation.payload as Record<string, unknown>;
+            return toTrimmedId(payload.id) === loanId || toTrimmedId(payload.localId) === loanId
+                ? 'pending'
+                : null;
+        }
+        default:
+            return null;
+    }
+};
+
+const classifyBlockingInvoiceMutation = (mutation: QueueMutation, invoiceId: string): 'pending' | 'removing' | null => {
+    switch (mutation.type) {
+        case 'create_invoice': {
+            const payload = mutation.payload as Record<string, unknown>;
+            return toTrimmedId(payload.id) === invoiceId || toTrimmedId(payload.localId) === invoiceId
+                ? 'pending'
+                : null;
+        }
+        case 'delete_invoice':
+            return mutation.payload.id === invoiceId ? 'removing' : null;
+        default:
+            return null;
+    }
+};
+
+const getDependencyStatusFromMutation = (mutation: QueueMutation): DependencyBlock['status'] => {
+    if (mutation.status === 'blocked_upgrade' || mutation.status === 'conflict_manual') {
+        return mutation.status;
+    }
+    return 'retrying';
+};
+
+const findDependencyBlockForIds = (
+    mutation: QueueMutation,
+    unresolvedEarlierMutations: QueueMutation[],
+    ids: string[],
+    entityLabel: string,
+    classify: (candidate: QueueMutation, id: string) => 'pending' | 'removing' | null
+): DependencyBlock | null => {
+    for (const id of ids) {
+        const blockingMutation = unresolvedEarlierMutations.find((candidate) => classify(candidate, id) !== null);
+        if (!blockingMutation) continue;
+
+        const blockingKind = classify(blockingMutation, id);
+        if (blockingKind === 'removing') {
+            return {
+                code: 'DEPENDENCY_CONFLICT',
+                status: 'conflict_manual',
+                message: `${mutation.type} references ${entityLabel} ${id}, but an earlier ${blockingMutation.type} mutation is queued first.`,
+            };
+        }
+
+        const dependencyStatus = getDependencyStatusFromMutation(blockingMutation);
+        return {
+            code:
+                dependencyStatus === 'blocked_upgrade'
+                    ? 'DEPENDENCY_BLOCKED_UPGRADE'
+                    : dependencyStatus === 'conflict_manual'
+                        ? 'DEPENDENCY_CONFLICT'
+                        : 'DEPENDENCY_PENDING',
+            status: dependencyStatus,
+            message:
+                dependencyStatus === 'retrying'
+                    ? `Waiting for ${entityLabel} ${id} to sync before replaying ${mutation.type}.`
+                    : dependencyStatus === 'blocked_upgrade'
+                        ? `${mutation.type} is blocked because ${entityLabel} ${id} depends on an upgrade-blocked mutation (${blockingMutation.type}).`
+                        : `${mutation.type} requires manual review because ${entityLabel} ${id} is blocked by ${blockingMutation.type}.`,
+        };
+    }
+
+    return null;
+};
+
+const findMutationDependencyBlock = (
+    mutation: QueueMutation,
+    unresolvedEarlierMutations: QueueMutation[]
+): DependencyBlock | null =>
+    findDependencyBlockForIds(
+        mutation,
+        unresolvedEarlierMutations,
+        getMutationReferenceItemIds(mutation),
+        'item',
+        classifyBlockingItemMutation
+    )
+    ?? findDependencyBlockForIds(
+        mutation,
+        unresolvedEarlierMutations,
+        getMutationReferencePartyIds(mutation),
+        'party',
+        classifyBlockingPartyMutation
+    )
+    ?? findDependencyBlockForIds(
+        mutation,
+        unresolvedEarlierMutations,
+        getMutationReferenceAccountIds(mutation),
+        'account',
+        classifyBlockingAccountMutation
+    )
+    ?? findDependencyBlockForIds(
+        mutation,
+        unresolvedEarlierMutations,
+        getMutationReferenceGodownIds(mutation),
+        'godown',
+        classifyBlockingGodownMutation
+    )
+    ?? findDependencyBlockForIds(
+        mutation,
+        unresolvedEarlierMutations,
+        getMutationReferenceLoanIds(mutation),
+        'loan',
+        classifyBlockingLoanMutation
+    )
+    ?? findDependencyBlockForIds(
+        mutation,
+        unresolvedEarlierMutations,
+        getMutationReferenceInvoiceIds(mutation),
+        'invoice',
+        classifyBlockingInvoiceMutation
+    );
 
 const applyMutation = async (mutation: QueueMutation): Promise<void> => {
     switch (mutation.type) {
@@ -606,7 +1022,7 @@ const applyMutation = async (mutation: QueueMutation): Promise<void> => {
             await api.delete(`/api/parties/${encodeURIComponent(mutation.payload.id)}/permanent`);
             return;
         case 'create_invoice': {
-            const payload = { ...mutation.payload };
+            const payload = normalizeInvoiceMutationPayload({ ...mutation.payload });
             if (typeof payload.localId === 'string' && payload.localId.trim()) {
                 payload.id = payload.localId.trim();
             }
@@ -628,12 +1044,19 @@ const applyMutation = async (mutation: QueueMutation): Promise<void> => {
             await api.delete(`/api/transactions/${encodeURIComponent(mutation.payload.id)}`);
             return;
         case 'update_settings_section':
+            if (Object.keys(asObject(mutation.payload.data)).length === 0) {
+                await api.delete(`/api/settings/${encodeURIComponent(mutation.payload.section)}`);
+                return;
+            }
             await api.put(`/api/settings/${encodeURIComponent(mutation.payload.section)}`, {
                 data: mutation.payload.data,
             });
             return;
+        case 'reset_settings_section':
+            await api.delete(`/api/settings/${encodeURIComponent(mutation.payload.section)}`);
+            return;
         case 'create_expense': {
-            const payload = { ...mutation.payload };
+            const payload = normalizeExpenseMutationPayload({ ...mutation.payload });
             if (!payload.id && typeof payload.localId === 'string' && payload.localId.trim()) {
                 payload.id = payload.localId.trim();
             }
@@ -656,7 +1079,7 @@ const applyMutation = async (mutation: QueueMutation): Promise<void> => {
             await api.delete(`/api/expenses/${encodeURIComponent(mutation.payload.id)}/permanent`);
             return;
         case 'create_loan': {
-            const payload = { ...mutation.payload };
+            const payload = normalizeLoanMutationPayload({ ...mutation.payload });
             if (!payload.id && typeof payload.localId === 'string' && payload.localId.trim()) {
                 payload.id = payload.localId.trim();
             }
@@ -757,7 +1180,7 @@ const applyMutation = async (mutation: QueueMutation): Promise<void> => {
             });
             return;
         case 'create_journal':
-            await api.post('/api/accounting/journal', mutation.payload);
+            await api.post('/api/accounting/journals', normalizeJournalPayload(mutation.payload));
             return;
         default:
             return;
@@ -801,6 +1224,10 @@ const resolveConflict = async (mutation: QueueMutation): Promise<boolean> => {
             case 'permanent_delete_expense':
                 return true;
             case 'update_settings_section': {
+                if (Object.keys(asObject(mutation.payload.data)).length === 0) {
+                    await api.delete(`/api/settings/${encodeURIComponent(mutation.payload.section)}`);
+                    return true;
+                }
                 const current = await api.get<{ ok?: boolean; data?: Record<string, unknown> }>(
                     `/api/settings/${encodeURIComponent(mutation.payload.section)}`
                 );
@@ -812,6 +1239,9 @@ const resolveConflict = async (mutation: QueueMutation): Promise<boolean> => {
                 });
                 return true;
             }
+            case 'reset_settings_section':
+                await api.delete(`/api/settings/${encodeURIComponent(mutation.payload.section)}`);
+                return true;
             case 'record_invoice_payment': {
                 const current = await api.get<{
                     ok?: boolean;
@@ -1012,6 +1442,24 @@ class OfflineSyncService {
 
                 if (typeof mutation.nextRetryAt === 'number' && mutation.nextRetryAt > now) {
                     nextQueue.push(mutation);
+                    continue;
+                }
+
+                const dependencyBlock = findMutationDependencyBlock(mutation, nextQueue);
+                if (dependencyBlock) {
+                    const nextAttemptCount = mutation.attemptCount + 1;
+                    nextQueue.push({
+                        ...mutation,
+                        status: dependencyBlock.status,
+                        attemptCount: nextAttemptCount,
+                        lastAttemptAt: new Date().toISOString(),
+                        lastError: dependencyBlock.message,
+                        lastErrorCode: dependencyBlock.code,
+                        nextRetryAt:
+                            dependencyBlock.status === 'retrying'
+                                ? Date.now() + Math.min(getRetryDelayMs(nextAttemptCount), 15_000)
+                                : undefined,
+                    });
                     continue;
                 }
 

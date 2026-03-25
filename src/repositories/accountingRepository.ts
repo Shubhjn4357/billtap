@@ -590,7 +590,7 @@ export const accountingRepository = {
         }
     },
     createJournalRemote: (data: { date?: string; narration?: string; lines: { accountId: string; debit?: number; credit?: number }[] }) =>
-        api.post<ApiResponse<{ id: string }>>('/api/accounting/journal', data),
+        api.post<ApiResponse<{ id: string }>>('/api/accounting/journals', data),
     createJournal: async (data: { date?: string; narration?: string; lines: { accountId: string; debit?: number; credit?: number }[] }) => {
         let syncMessage = 'Journal saved locally. Sync pending.';
         if (await isOnline()) {

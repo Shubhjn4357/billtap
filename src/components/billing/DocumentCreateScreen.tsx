@@ -126,7 +126,7 @@ export function DocumentCreateScreen({ config, isConversion }: { config: Billing
     const role = useAuthStore((state) => state.organizationRole);
     const subscription = useAuthStore((state) => state.subscription);
     const canCreateBilling = canPerformAction(role, 'billing.create', subscription, business);
-    const preferredPartyType = config.transactionType === 'PURCHASE' || config.transactionType === 'RETURN_INWARD'
+    const preferredPartyType = config.transactionType === 'PURCHASE' || config.transactionType === 'RETURN_OUTWARD'
         ? 'supplier'
         : 'customer';
     const pathname = usePathname();
@@ -374,7 +374,7 @@ export function DocumentCreateScreen({ config, isConversion }: { config: Billing
             return;
         }
         if (
-            (config.transactionType === 'PURCHASE' || config.transactionType === 'RETURN_INWARD')
+            (config.transactionType === 'PURCHASE' || config.transactionType === 'RETURN_OUTWARD')
             && !state.partyId
         ) {
             dialog.alert('Supplier required', 'Select or create a supplier before saving this document.');
@@ -776,7 +776,7 @@ function LineItemRow({
 }: LineItemRowProps) {
     const selectedItem = line.itemId ? itemById[line.itemId] : undefined;
     const resolveRateFromItem = (item: Item) => {
-        if (transactionType === 'PURCHASE' || transactionType === 'RETURN_INWARD') {
+        if (transactionType === 'PURCHASE' || transactionType === 'RETURN_OUTWARD') {
             return item.purchasePrice > 0 ? item.purchasePrice : item.salePrice;
         }
         return item.salePrice;

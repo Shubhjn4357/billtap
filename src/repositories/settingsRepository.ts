@@ -111,6 +111,7 @@ export const settingsRepository = {
         const normalizedSection = section.toUpperCase();
         const cached = await offlineSyncService.getCachedSettingsSection(normalizedSection);
         const previousData = asSettingsRecord(cached);
+        const previousAuditLogs = await offlineSyncService.getCachedOperationsAuditLogs();
         const mergedData = {
             ...previousData,
             ...asSettingsRecord(body.data),
@@ -120,8 +121,12 @@ export const settingsRepository = {
         await offlineSyncService.setCachedSettingsSection(normalizedSection, mergedData);
         writeSettingsSectionQueryCache(normalizedSection, mergedData);
 
-        // Dispatched audit trace without blocking the main thread execution
-        void auditRepository.logSettingChange(normalizedSection, mergedData).catch(() => null);
+        await auditRepository.logSettingChange({
+            section: normalizedSection,
+            action: 'SETTINGS_SECTION_UPDATED',
+            before: previousData,
+            after: mergedData,
+        });
 
         if (await isOnline()) {
             try {
@@ -144,6 +149,7 @@ export const settingsRepository = {
                         error: toApiError(error),
                     });
                     await offlineSyncService.setCachedSettingsSection(normalizedSection, previousData);
+                    await offlineSyncService.setCachedOperationsAuditLogs(previousAuditLogs);
                     writeSettingsSectionQueryCache(normalizedSection, previousData);
                     throw error;
                 }
@@ -179,9 +185,16 @@ export const settingsRepository = {
 
     resetSection: async (section: string): Promise<ApiOkResponse> => {
         const normalizedSection = section.toUpperCase();
-        const previousData = await offlineSyncService.getCachedSettingsSection(normalizedSection);
+        const previousData = asSettingsRecord(await offlineSyncService.getCachedSettingsSection(normalizedSection));
+        const previousAuditLogs = await offlineSyncService.getCachedOperationsAuditLogs();
         await offlineSyncService.setCachedSettingsSection(normalizedSection, {});
         writeSettingsSectionQueryCache(normalizedSection, {});
+        await auditRepository.logSettingChange({
+            section: normalizedSection,
+            action: 'SETTINGS_SECTION_RESET',
+            before: previousData,
+            after: {},
+        });
 
         if (await isOnline()) {
             try {
@@ -190,6 +203,7 @@ export const settingsRepository = {
             } catch (error) {
                 if (!shouldKeepLocalWriteOnError(error)) {
                     await offlineSyncService.setCachedSettingsSection(normalizedSection, previousData);
+                    await offlineSyncService.setCachedOperationsAuditLogs(previousAuditLogs);
                     writeSettingsSectionQueryCache(normalizedSection, previousData);
                     throw error;
                 }
@@ -199,8 +213,8 @@ export const settingsRepository = {
         const syncMessage = 'Settings reset locally. Sync pending.';
         await queueAndAttemptSync(
             {
-                type: 'update_settings_section',
-                payload: { section: normalizedSection, data: {} },
+                type: 'reset_settings_section',
+                payload: { section: normalizedSection },
             },
             syncMessage
         );

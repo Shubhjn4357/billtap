@@ -23,6 +23,35 @@ const queueAndAttemptSync = async (
 const shouldKeepLocalWriteOnError = (error: unknown) =>
     isOfflineLikeError(error) || isCloudWriteBlockedError(error);
 
+const normalizeCashBankRequest = <TPayload extends {
+    accountId?: string;
+    fromAccountId?: string;
+    toAccountId?: string;
+    partyId?: string;
+    paymentMode?: string;
+    narration?: string;
+    description?: string;
+    date?: string;
+}>(payload: TPayload) => {
+    const normalizedDate = payload.date?.trim()
+        ? (() => {
+            const parsed = new Date(payload.date as string);
+            return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+        })()
+        : undefined;
+
+    return {
+        ...payload,
+        ...(payload.accountId ? { accountId: payload.accountId.trim() } : {}),
+        ...(payload.fromAccountId ? { fromAccountId: payload.fromAccountId.trim() } : {}),
+        ...(payload.toAccountId ? { toAccountId: payload.toAccountId.trim() } : {}),
+        ...(payload.partyId ? { partyId: payload.partyId.trim() } : {}),
+        ...(payload.paymentMode ? { paymentMode: payload.paymentMode.trim().toUpperCase() } : {}),
+        ...(normalizedDate ? { date: normalizedDate } : {}),
+        narration: payload.narration ?? payload.description,
+    };
+};
+
 const writeCashBankBalancesQueryCache = (accounts: Account[]) => {
     const businessId = getRuntimeBusinessScope();
     queryClient.setQueryData(cashBankQueryKeys.balances(businessId), { ok: true, data: accounts });
@@ -126,15 +155,36 @@ const getLedgerRemote = async (accountId: string, params?: PaginationParams) => 
 };
 
 export const cashBankRepository = {
-    getOperations: () =>
-        api.get<ApiResponse<{
+    getOperations: async () => {
+        const res = await api.get<{
+            ok: boolean;
+            operations?: {
+                bankAccount?: string[];
+                cashInHand?: string[];
+                cheque?: string[];
+            };
+            voucherMapping?: Record<string, string>;
+            message?: string;
+        }>('/api/cash-bank/operations');
+        return {
+            ...res,
+            data: {
+                operations: {
+                    bankAccount: res.operations?.bankAccount ?? [],
+                    cashInHand: res.operations?.cashInHand ?? [],
+                    cheque: res.operations?.cheque ?? [],
+                },
+                voucherMapping: res.voucherMapping ?? {},
+            },
+        } as ApiResponse<{
             operations: {
                 bankAccount: string[];
                 cashInHand: string[];
                 cheque: string[];
             };
             voucherMapping: Record<string, string>;
-        }>>('/api/cash-bank/operations'),
+        }>;
+    },
     getSummary: () =>
         api.get<ApiResponse<{
             accounts: Account[];
@@ -167,20 +217,14 @@ export const cashBankRepository = {
         }
     },
     deposit: async (payload: { accountId: string; partyId?: string; amount: number; paymentMode?: string; narration?: string; description?: string; date?: string }) => {
+        const normalizedPayload = normalizeCashBankRequest(payload);
         const balanceChanges = [{ accountId: payload.accountId, delta: Number(payload.amount ?? 0) }];
         const previousBalances = await offlineSyncService.getCachedCashBankAccounts();
         await applyCashBankBalanceChanges(balanceChanges);
         let syncMessage = 'Deposit saved locally. Sync pending.';
         if (await isOnline()) {
             try {
-                return await api.post<ApiOkResponse>('/api/cash-bank/deposit', {
-                    accountId: payload.accountId,
-                    partyId: payload.partyId,
-                    amount: payload.amount,
-                    paymentMode: payload.paymentMode,
-                    date: payload.date,
-                    narration: payload.narration ?? payload.description,
-                });
+                return await api.post<ApiOkResponse>('/api/cash-bank/deposit', normalizedPayload);
             } catch (error) {
                 if (!shouldKeepLocalWriteOnError(error)) {
                     console.error('[cash-bank] deposit failed', { payload, error: toApiError(error) });
@@ -196,25 +240,19 @@ export const cashBankRepository = {
             }
         }
         return queueAndAttemptSync(
-            { type: 'cash_bank_deposit', payload },
+            { type: 'cash_bank_deposit', payload: normalizedPayload },
             syncMessage
         );
     },
     withdraw: async (payload: { accountId: string; partyId?: string; amount: number; paymentMode?: string; narration?: string; description?: string; date?: string }) => {
+        const normalizedPayload = normalizeCashBankRequest(payload);
         const balanceChanges = [{ accountId: payload.accountId, delta: -Number(payload.amount ?? 0) }];
         const previousBalances = await offlineSyncService.getCachedCashBankAccounts();
         await applyCashBankBalanceChanges(balanceChanges);
         let syncMessage = 'Withdrawal saved locally. Sync pending.';
         if (await isOnline()) {
             try {
-                return await api.post<ApiOkResponse>('/api/cash-bank/withdraw', {
-                    accountId: payload.accountId,
-                    partyId: payload.partyId,
-                    amount: payload.amount,
-                    paymentMode: payload.paymentMode,
-                    date: payload.date,
-                    narration: payload.narration ?? payload.description,
-                });
+                return await api.post<ApiOkResponse>('/api/cash-bank/withdraw', normalizedPayload);
             } catch (error) {
                 if (!shouldKeepLocalWriteOnError(error)) {
                     console.error('[cash-bank] withdraw failed', { payload, error: toApiError(error) });
@@ -230,11 +268,12 @@ export const cashBankRepository = {
             }
         }
         return queueAndAttemptSync(
-            { type: 'cash_bank_withdraw', payload },
+            { type: 'cash_bank_withdraw', payload: normalizedPayload },
             syncMessage
         );
     },
     transfer: async (payload: { fromAccountId: string; toAccountId: string; amount: number; narration?: string; description?: string; date?: string }) => {
+        const normalizedPayload = normalizeCashBankRequest(payload);
         const amount = Number(payload.amount ?? 0);
         const balanceChanges = [
             { accountId: payload.fromAccountId, delta: -amount },
@@ -245,13 +284,7 @@ export const cashBankRepository = {
         let syncMessage = 'Transfer saved locally. Sync pending.';
         if (await isOnline()) {
             try {
-                return await api.post<ApiOkResponse>('/api/cash-bank/transfer', {
-                    fromAccountId: payload.fromAccountId,
-                    toAccountId: payload.toAccountId,
-                    amount: payload.amount,
-                    date: payload.date,
-                    narration: payload.narration ?? payload.description,
-                });
+                return await api.post<ApiOkResponse>('/api/cash-bank/transfer', normalizedPayload);
             } catch (error) {
                 if (!shouldKeepLocalWriteOnError(error)) {
                     console.error('[cash-bank] transfer failed', { payload, error: toApiError(error) });
@@ -267,7 +300,7 @@ export const cashBankRepository = {
             }
         }
         return queueAndAttemptSync(
-            { type: 'cash_bank_transfer', payload },
+            { type: 'cash_bank_transfer', payload: normalizedPayload },
             syncMessage
         );
     },

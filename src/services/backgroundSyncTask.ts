@@ -66,7 +66,7 @@ export const backgroundSyncManager = {
     getStatus: async () => {
         try {
             return await BackgroundFetch.getStatusAsync();
-        } catch (_error) {
+        } catch {
             return null;
         }
     }

@@ -49,6 +49,13 @@ type OfflineQueueMutation = {
     payload?: Record<string, unknown>;
 };
 
+type RemoteSalesTrendTransaction = {
+    invoiceDate?: string | null;
+    transactionType?: string | null;
+    documentKind?: string | null;
+    totalInvoiceValue?: number | string | null;
+};
+
 const NON_POSTING_DOC_KINDS = new Set([
     'ESTIMATE',
     'PROFORMA',
@@ -85,8 +92,8 @@ const resolveInvoiceTransactionType = (invoice: Invoice): InvoiceTransactionType
         return 'NON_POSTING';
     }
     if (documentKind === 'PURCHASE_BILL' || documentKind === 'PURCHASE_ORDER') return 'PURCHASE';
-    if (documentKind === 'DEBIT_NOTE_DOC' || documentKind === 'PURCHASE_RETURN') return 'RETURN_INWARD';
-    if (documentKind === 'CREDIT_NOTE_DOC' || documentKind === 'SALE_RETURN') return 'RETURN_OUTWARD';
+    if (documentKind === 'CREDIT_NOTE_DOC' || documentKind === 'SALE_RETURN') return 'RETURN_INWARD';
+    if (documentKind === 'DEBIT_NOTE_DOC' || documentKind === 'PURCHASE_RETURN') return 'RETURN_OUTWARD';
     if (invoice.invoiceType === 'ESTIMATE' || invoice.invoiceType === 'PROFORMA') return 'NON_POSTING';
     return 'SALE';
 };
@@ -163,7 +170,7 @@ export const buildOfflineReportSummaryFromRecords = (
             continue;
         }
 
-        if (transactionType === 'RETURN_OUTWARD') {
+        if (transactionType === 'RETURN_INWARD') {
             totalSales -= invoiceTotal;
             totalTaxCollected -= toPositiveNumber(invoice.totalTaxAmount);
             outstandingReceivables -= openAmount;
@@ -176,7 +183,7 @@ export const buildOfflineReportSummaryFromRecords = (
             continue;
         }
 
-        if (transactionType === 'RETURN_INWARD') {
+        if (transactionType === 'RETURN_OUTWARD') {
             totalPurchases -= invoiceTotal;
             outstandingPayables -= openAmount;
         }
@@ -210,7 +217,7 @@ export const buildOfflineGstRowsFromInvoices = (
         }
 
         const transactionType = resolveInvoiceTransactionType(invoice);
-        if (transactionType !== 'SALE' && transactionType !== 'RETURN_OUTWARD') {
+        if (transactionType !== 'SALE' && transactionType !== 'RETURN_INWARD') {
             continue;
         }
 
@@ -494,6 +501,45 @@ const toTrendBucketKey = (date: Date, granularity: 'daily' | 'weekly' | 'monthly
     return date.toISOString().slice(0, 10);
 };
 
+const buildSalesTrendFromRemoteTransactions = (
+    transactions: RemoteSalesTrendTransaction[],
+    params?: DateRangeParams & { granularity?: 'daily' | 'weekly' | 'monthly' }
+): SalesTrendPoint[] => {
+    const granularity = params?.granularity ?? 'daily';
+    const buckets = new Map<string, SalesTrendPoint>();
+
+    for (const transaction of transactions) {
+        const invoiceDate = String(transaction.invoiceDate ?? '');
+        if (!isWithinDateRange(invoiceDate, params?.from, params?.to)) {
+            continue;
+        }
+
+        const transactionType = String(transaction.transactionType ?? '').toUpperCase();
+        const documentKind = String(transaction.documentKind ?? '').toUpperCase();
+        if (NON_POSTING_DOC_KINDS.has(documentKind)) {
+            continue;
+        }
+        if (transactionType !== 'SALE' && transactionType !== 'RETURN_INWARD') {
+            continue;
+        }
+
+        const date = new Date(invoiceDate);
+        if (Number.isNaN(date.getTime())) continue;
+
+        const key = toTrendBucketKey(date, granularity);
+        const sign = transactionType === 'RETURN_INWARD' ? -1 : 1;
+        const current = buckets.get(key) ?? { date: key, amount: 0, count: 0 };
+
+        buckets.set(key, {
+            date: key,
+            amount: roundCurrency(current.amount + (toPositiveNumber(transaction.totalInvoiceValue) * sign)),
+            count: Math.max(current.count + sign, 0),
+        });
+    }
+
+    return Array.from(buckets.values()).sort((left, right) => left.date.localeCompare(right.date));
+};
+
 export const buildOfflineSalesTrend = async (
     params?: DateRangeParams & { granularity?: 'daily' | 'weekly' | 'monthly' }
 ): Promise<ApiResponse<SalesTrendPoint[]>> => {
@@ -507,7 +553,7 @@ export const buildOfflineSalesTrend = async (
         }
 
         const transactionType = resolveInvoiceTransactionType(invoice);
-        if (transactionType !== 'SALE' && transactionType !== 'RETURN_OUTWARD') {
+        if (transactionType !== 'SALE' && transactionType !== 'RETURN_INWARD') {
             continue;
         }
 
@@ -515,7 +561,7 @@ export const buildOfflineSalesTrend = async (
         if (Number.isNaN(date.getTime())) continue;
 
         const key = toTrendBucketKey(date, granularity);
-        const sign = transactionType === 'RETURN_OUTWARD' ? -1 : 1;
+        const sign = transactionType === 'RETURN_INWARD' ? -1 : 1;
         const current = buckets.get(key) ?? { date: key, amount: 0, count: 0 };
         buckets.set(key, {
             date: key,
@@ -660,12 +706,17 @@ export const reportRepository = {
     ): Promise<ApiResponse<SalesTrendPoint[]>> => {
         const offline = await buildOfflineSalesTrend(params);
         try {
-            const res = await api.get<{ ok: boolean; transactions?: SalesTrendPoint[]; message?: string }>('/api/reporting/export/transactions', {
+            const res = await api.get<{
+                ok: boolean;
+                transactions?: RemoteSalesTrendTransaction[];
+                message?: string;
+            }>('/api/reporting/export/transactions', {
                 params,
             });
+            const remoteTrend = buildSalesTrendFromRemoteTransactions(res.transactions ?? [], params);
             return {
                 ok: res.ok,
-                data: Array.isArray(res.transactions) && res.transactions.length > 0 ? res.transactions : offline.data,
+                data: remoteTrend.length > 0 ? remoteTrend : offline.data,
                 message: res.message ?? offline.message,
             };
         } catch (error) {

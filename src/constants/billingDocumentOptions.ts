@@ -31,7 +31,7 @@ const BILLING_DOCUMENT_CONFIGS: Record<string, BillingDocumentConfig> = {
     CREDIT_NOTE_DOC: {
         title: 'Sale Return (Credit Note)',
         invoiceType: 'CREDIT_NOTE_DOC',
-        transactionType: 'RETURN_OUTWARD',
+        transactionType: 'RETURN_INWARD',
         documentKind: 'CREDIT_NOTE_DOC',
         partyPlaceholder: '+ Select Customer (optional)',
         helperText: 'Credit note against outward return. Sales impact with stock inward.',
@@ -39,7 +39,7 @@ const BILLING_DOCUMENT_CONFIGS: Record<string, BillingDocumentConfig> = {
     DEBIT_NOTE_DOC: {
         title: 'Purchase Return (Debit Note)',
         invoiceType: 'DEBIT_NOTE_DOC',
-        transactionType: 'RETURN_INWARD',
+        transactionType: 'RETURN_OUTWARD',
         documentKind: 'DEBIT_NOTE_DOC',
         partyPlaceholder: '+ Select Supplier (required)',
         helperText: 'Debit note for supplier return. Purchase impact with stock outward.',

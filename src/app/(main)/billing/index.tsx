@@ -192,7 +192,10 @@ function InvoiceRow({ invoice, colors }: { invoice: Invoice; colors: ColorPalett
             : invoice.paymentStatus === 'OVERDUE' ? colors.error
                 : colors.warning;
     const partyName = invoice.partySnapshot?.name ?? invoice.party?.name ?? 'Walk-in';
-    const rawType = invoice.invoiceType as string;
+    const metadata = invoice.gstRateBreakupJson && typeof invoice.gstRateBreakupJson === 'object' && !Array.isArray(invoice.gstRateBreakupJson)
+        ? invoice.gstRateBreakupJson as Record<string, unknown>
+        : {};
+    const rawType = String(metadata.documentKind ?? invoice.invoiceType ?? '').toUpperCase();
     const typeLabel = rawType === 'TAX_INVOICE' ? 'Sale'
         : rawType === 'PURCHASE_BILL' ? 'Purchase'
             : rawType === 'ESTIMATE' ? 'Estimate'
