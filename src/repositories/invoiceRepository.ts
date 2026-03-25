@@ -595,6 +595,34 @@ const getRemote = async (id: string) => {
     } as ApiResponse<Invoice>;
 };
 
+const adjustItemsStockOptimistic = async (items: { itemId?: string | null; quantity?: number | string | null }[] | undefined, transactionType: string, documentKind: string) => {
+    if (NON_POSTING_DOC_KINDS.has(documentKind)) return;
+    
+    const isDecrement = transactionType === 'SALE' || transactionType === 'RETURN_OUTWARD';
+    const multiplier = isDecrement ? -1 : 1;
+    
+    const cachedItems = await offlineSyncService.getCachedItems();
+    let updatedCount = 0;
+    
+    for (const line of (items ?? [])) {
+        if (!line.itemId) continue;
+        const index = cachedItems.findIndex(i => i.id === line.itemId);
+        if (index > -1) {
+            const item = cachedItems[index];
+            if (item.trackStock) {
+                const qty = Number(line.quantity) || 0;
+                item.stock = (item.stock || 0) + (qty * multiplier);
+                item.updatedAt = new Date().toISOString();
+                updatedCount++;
+            }
+        }
+    }
+    
+    if (updatedCount > 0) {
+        await offlineSyncService.setCachedItems(cachedItems);
+    }
+};
+
 export const invoiceRepository = {
     listRemote,
     getRemote,
@@ -633,6 +661,11 @@ export const invoiceRepository = {
         const localInvoice = buildLocalInvoiceFromBuilder(data);
         const syncPayload = mapBuilderToServerCreatePayload(data);
         await offlineSyncService.upsertCachedInvoice(localInvoice);
+        
+        const transactionType = normalizeTransactionType(data);
+        const documentKind = toDocumentKind(data);
+        await adjustItemsStockOptimistic(data.items, transactionType, documentKind);
+        
         await queueAndAttemptSync(
             {
                 type: 'create_invoice',
@@ -708,6 +741,9 @@ export const invoiceRepository = {
             roundOffAmount: payload.roundOffAmount ?? 0,
         });
         await offlineSyncService.upsertCachedInvoice(local);
+        
+        await adjustItemsStockOptimistic(payload.items, 'SALE', 'POS_BILL');
+
         await queueAndAttemptSync(
             {
                 type: 'create_pos_sale',

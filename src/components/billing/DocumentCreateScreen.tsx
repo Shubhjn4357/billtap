@@ -353,6 +353,21 @@ export function DocumentCreateScreen({ config, isConversion }: { config: Billing
 
     const { saveInvoice: submit, isSavingInvoice: isPending } = useInvoiceMutations();
 
+    const executeSave = (payload: InvoiceCreateInput) => {
+        void submit(payload)
+            .then((res) => {
+                void notify();
+                if (res.data?.id) {
+                    router.replace(`/(main)/billing/${res.data.id}` as Parameters<typeof router.replace>[0]);
+                    return;
+                }
+                smartBack();
+            })
+            .catch((error) => {
+                dialog.alert('Save failed', toUserMessage(error, 'Could not save transaction.'));
+            });
+    };
+
     const handleSave = () => {
         if (!canCreateBilling) {
             dialog.alert('Access denied', 'Your role cannot create billing transactions.');
@@ -382,18 +397,50 @@ export function DocumentCreateScreen({ config, isConversion }: { config: Billing
             sourceVoucherId: isReturn ? state.sourceVoucherId : null,
         };
 
-        void submit(payload)
-            .then((res) => {
-                void notify();
-                if (res.data?.id) {
-                    router.replace(`/(main)/billing/${res.data.id}` as Parameters<typeof router.replace>[0]);
-                    return;
+        if (config.transactionType === 'SALE' || config.transactionType === 'RETURN_OUTWARD') {
+            const quantityByItem = new Map<string, number>();
+            for (const line of payload.items ?? []) {
+                if (!line.itemId) continue;
+                quantityByItem.set(line.itemId, (quantityByItem.get(line.itemId) ?? 0) + (Number(line.quantity) || 0));
+            }
+            
+            const negativeStockWarnings: string[] = [];
+            const lowStockWarnings: string[] = [];
+            
+            for (const [itemId, qty] of quantityByItem.entries()) {
+                const item = itemById[itemId];
+                if (!item || !item.trackStock) continue;
+                
+                const remaining = item.stock - qty;
+                if (remaining < 0) {
+                    negativeStockWarnings.push(`• ${item.name} (Has ${item.stock}, Selling ${qty})`);
+                } else if (item.reorderLevel > 0 && remaining <= item.reorderLevel) {
+                    lowStockWarnings.push(`• ${item.name} (Remaining ${remaining} goes below min ${item.reorderLevel})`);
                 }
-                smartBack();
-            })
-            .catch((error) => {
-                dialog.alert('Save failed', toUserMessage(error, 'Could not save transaction.'));
-            });
+            }
+
+            if (negativeStockWarnings.length > 0) {
+                dialog.confirm(
+                    'Insufficient Stock',
+                    `The following items will go into negative stock:\n\n${negativeStockWarnings.join('\n')}\n\nDo you want to continue?`,
+                    () => executeSave(payload),
+                    'Continue'
+                );
+                return;
+            }
+
+            if (lowStockWarnings.length > 0) {
+                dialog.confirm(
+                    'Low Stock Alert',
+                    `The following items will fall below their reorder level:\n\n${lowStockWarnings.join('\n')}\n\nDo you want to continue?`,
+                    () => executeSave(payload),
+                    'Continue'
+                );
+                return;
+            }
+        }
+
+        executeSave(payload);
     };
 
     return (

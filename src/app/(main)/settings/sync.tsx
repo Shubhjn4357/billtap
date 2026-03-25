@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+    ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useSmartBack } from '../../../hooks/useSmartBack';
 import { useQueryClient } from '@tanstack/react-query';
@@ -23,6 +23,7 @@ import { useSyncQueueActions } from '../../../hooks/useSyncQueueActions';
 import { selectGeneralSyncSettings, type SyncConflictPolicy } from '../../../selectors/settingsSelectors';
 import { settingsSectionQueryKey } from '../../../state/settingsQueryKeys';
 import { useSettingsSectionMutation } from '../../../hooks/useSettingsSectionMutation';
+import * as Clipboard from 'expo-clipboard';
 
 const formatDate = (value?: string) => {
     if (!value) return '-';
@@ -225,6 +226,36 @@ export default function SyncDiagnosticsScreen() {
                                     </View>
                                 </UtilitySection>
 
+                                {queue.some(item => item.lastError) ? (
+                                    <UtilitySection title="Sync Error Log Console">
+                                        <View style={[s.card, getSurfaceStyle(colors, { elevated: true }), { backgroundColor: colors.surface }]}>
+                                            <View style={s.rowBetween}>
+                                                <Text style={[s.cardTitle, { color: colors.error }]}>Captured Sync Errors</Text>
+                                                <Pressable
+                                                    style={[s.actionBtn, { paddingVertical: Spacing.xs, minHeight: 0, backgroundColor: colors.surfaceVariant }]}
+                                                    onPress={async () => {
+                                                        const log = queue
+                                                            .filter(item => item.lastError)
+                                                            .map(item => `[${formatDate(item.lastAttemptAt ?? item.createdAt)}] ${item.type}: ${item.lastError} (Code: ${item.lastErrorCode ?? 'UNKNOWN'})`)
+                                                            .join('\n\n');
+                                                        await Clipboard.setStringAsync(log);
+                                                        dialog.alert('Copied', 'Error log copied to clipboard.');
+                                                    }}
+                                                >
+                                                    <Text style={[s.actionBtnText, { color: colors.textSecondary }]}>Copy All</Text>
+                                                </Pressable>
+                                            </View>
+                                            <ScrollView style={{ maxHeight: 200, marginTop: Spacing.sm }} nestedScrollEnabled>
+                                                {queue.filter(item => item.lastError).map(item => (
+                                                    <Text key={item.id} style={[s.consoleText, { color: colors.error }]} selectable>
+                                                        [{formatDate(item.lastAttemptAt ?? item.createdAt)}] {item.type}: {item.lastError}
+                                                    </Text>
+                                                ))}
+                                            </ScrollView>
+                                        </View>
+                                    </UtilitySection>
+                                ) : null}
+
                                 <UtilitySection title="Pending Queue Entries" count={queue.length}>
                                     <View />
                                 </UtilitySection>
@@ -261,6 +292,8 @@ const styles = (colors: ColorPalette) =>
         flex: { flex: 1 },
         centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
         heroWrap: { marginBottom: DESIGN_SPACING.cardGap },
+        rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+        consoleText: { fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginBottom: Spacing.xs },
         card: {
             borderRadius: Radius.card,
             padding: Spacing.md,

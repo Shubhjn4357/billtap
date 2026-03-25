@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { View } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -8,6 +9,7 @@ import { DialogProvider } from '../components/providers/DialogProvider';
 import { AppRuntimeProvider, useAppRuntime } from '../components/providers/AppRuntimeProvider';
 import { useAppColors } from '../hooks/useAppColors';
 import { queryClient } from '../state/queryClient';
+import { backgroundSyncManager } from '../services/backgroundSyncTask';
 
 function RootNavigator() {
     const colors = useAppColors();
@@ -59,6 +61,10 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+    useEffect(() => {
+        void backgroundSyncManager.register();
+    }, []);
+
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <QueryClientProvider client={queryClient}>
